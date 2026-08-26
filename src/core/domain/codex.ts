@@ -165,3 +165,7 @@ export function threadTitle(thread: Thread): string {
 export function isActive(status: ThreadStatus): boolean {
   return status.type === 'active'
 }
+
+export function threadsOlderThan(threads: Thread[], cutoff: number): Thread[] {
+  return threads.filter((thread) => (thread.recencyAt ?? thread.updatedAt) < cutoff)
+}

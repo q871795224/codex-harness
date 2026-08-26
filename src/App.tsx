@@ -11,6 +11,7 @@ import { useHarness } from './features/conversation/useHarness'
 
 export default function App() {
   const harness = useHarness()
+  const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState<'chat' | 'trajectory'>('chat')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const workspace = useMemo(
@@ -38,21 +39,22 @@ export default function App() {
   const canMutate = !harness.currentForeignActive
 
   return (
-    <div className="app-shell" data-font-size={harness.appearance.fontSize}>
+    <div className="app-shell" data-font-size={harness.appearance.fontSize} data-flavor={flavor}>
       <Sidebar
         workspaces={harness.workspaces}
         threads={harness.threads}
         threadRoots={harness.threadRoots}
         threadStates={harness.threadStates}
         selectedThreadId={harness.selectedThreadId}
-        selectedWorkspaceRoot={harness.selectedWorkspaceRoot}
         viewMode={harness.viewMode}
         navigationLayout={harness.navigation.layout}
         threadSort={harness.navigation.sort}
         manualThreadOrder={harness.navigation.manualThreadOrder}
         creatingThread={Boolean(harness.busy.createThread)}
+        archivingOldThreads={Boolean(harness.busy.archiveOldThreads)}
         onSelectThread={(threadId) => void harness.selectThread(threadId)}
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
+        onArchiveOldThreads={() => void harness.archiveOldThreads()}
         onNewThread={() => void harness.createThread()}
         onChooseWorkspace={() => void harness.chooseWorkspace()}
         onSearch={(term) => void harness.searchThreads(term)}

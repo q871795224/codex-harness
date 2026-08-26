@@ -27,6 +27,15 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
+开发版与稳定版使用相同的 Harness 本地状态和 Codex 历史，但有独立的 macOS App 身份，可同时运行。开发版使用绿色图标和主题：
+
+```bash
+pnpm tauri:dev
+pnpm tauri:build:dev
+```
+
+稳定版保持蓝色图标和主题，继续使用默认的 `pnpm tauri dev` 与 `pnpm tauri build`。
+
 如果 GUI 进程找不到 Codex CLI，可显式设置 `CODEX_HARNESS_CODEX_PATH` 为 `codex` 可执行文件路径。
 
 ## 分层

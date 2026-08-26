@@ -18,12 +18,18 @@
 ```bash
 pnpm install
 pnpm tauri dev
+pnpm tauri:dev
 pnpm test
 pnpm test:watch
 pnpm build
+pnpm build:dev
 (cd src-tauri && cargo test)
 pnpm tauri build
+pnpm tauri:build:dev
 ```
+
+- `pnpm tauri dev` / `pnpm tauri build` 是蓝色稳定版；`pnpm tauri:dev` / `pnpm tauri:build:dev` 是绿色开发版。
+- 两个 flavor 有独立的 macOS Bundle ID，可同时运行；它们有意共享 `~/.codex-harness`、Codex 配置和会话历史。
 
 ## 测试与发布
 

@@ -4,6 +4,8 @@ import {
   ArchiveRestore,
   ChevronDown,
   ChevronRight,
+  ChevronsDown,
+  ChevronsUp,
   CirclePlus,
   FolderGit2,
   GripVertical,
@@ -25,6 +27,8 @@ import type {
   Workspace,
 } from '../../core/domain/codex'
 import { relativeTime, truncate } from '../../core/domain/format'
+import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
+import harnessIcon from '../../../icon/codex-harness.svg'
 
 interface SidebarProps {
   workspaces: Workspace[]
@@ -32,14 +36,15 @@ interface SidebarProps {
   threadRoots: Record<string, string | null>
   threadStates: Record<string, ThreadUiState>
   selectedThreadId: string | null
-  selectedWorkspaceRoot: string | null
   viewMode: 'active' | 'archived'
   navigationLayout: NavigationLayout
   threadSort: ThreadSort
   manualThreadOrder: string[]
   creatingThread: boolean
+  archivingOldThreads: boolean
   onSelectThread: (threadId: string) => void
   onSelectWorkspace: (root: string) => void
+  onArchiveOldThreads: () => void
   onNewThread: () => void
   onChooseWorkspace: () => void
   onSearch: (term: string) => void
@@ -57,14 +62,15 @@ export function Sidebar({
   threadRoots,
   threadStates,
   selectedThreadId,
-  selectedWorkspaceRoot,
   viewMode,
   navigationLayout,
   threadSort,
   manualThreadOrder,
   creatingThread,
+  archivingOldThreads,
   onSelectThread,
   onSelectWorkspace,
+  onArchiveOldThreads,
   onNewThread,
   onChooseWorkspace,
   onSearch,
@@ -75,8 +81,10 @@ export function Sidebar({
   onManualThreadOrder,
   onOpenSettings,
 }: SidebarProps) {
+  const isDevelopmentFlavor = import.meta.env.MODE === 'dev'
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [highlightedWorkspaceRoot, setHighlightedWorkspaceRoot] = useState<string | null>(null)
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
   const [optionsOpen, setOptionsOpen] = useState(false)
   const onSearchRef = useRef(onSearch)
@@ -97,6 +105,15 @@ export function Sidebar({
     return () => window.clearTimeout(timeout)
   }, [query])
 
+  useEffect(() => {
+    const clearWorkspaceHighlight = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest('.workspace-row:not(.static)')) return
+      setHighlightedWorkspaceRoot(null)
+    }
+    window.addEventListener('pointerdown', clearWorkspaceHighlight)
+    return () => window.removeEventListener('pointerdown', clearWorkspaceHighlight)
+  }, [])
+
   const orderedThreads = useMemo(
     () => sortThreads(threads, threadSort, manualThreadOrder),
     [manualThreadOrder, threadSort, threads],
@@ -113,6 +130,13 @@ export function Sidebar({
     }
     return { byRoot, unsorted }
   }, [orderedThreads, threadRoots, workspaces])
+
+  const allWorkspacesExpanded = workspaces.length > 0 && workspaces.every((workspace) => expanded[workspace.root] ?? true)
+
+  const toggleAllWorkspaces = () => {
+    const nextValue = !allWorkspacesExpanded
+    setExpanded(Object.fromEntries(workspaces.map((workspace) => [workspace.root, nextValue])))
+  }
 
   const reorderThread = (draggedThreadId: string, targetThreadId: string) => {
     if (threadSort !== 'manual' || draggedThreadId === targetThreadId) return
@@ -148,9 +172,9 @@ export function Sidebar({
   return (
     <aside className="sidebar" aria-label="工作区与会话">
       <div className="brand-row">
-        <div className="brand-mark">C</div>
+        <img className="brand-mark" src={isDevelopmentFlavor ? harnessDevIcon : harnessIcon} alt="" />
         <span className="brand-name">codex <strong>HARNESS</strong></span>
-        <span className="brand-version">v1</span>
+        <span className="brand-version">{isDevelopmentFlavor ? 'DEV' : 'v1'}</span>
       </div>
 
       <button className="new-chat-button" type="button" onClick={onNewThread} disabled={creatingThread}>
@@ -173,6 +197,16 @@ export function Sidebar({
         <div className="sidebar-section-heading">
           <span>{navigationLayout === 'workspace' ? '工作区' : '会话'}</span>
           <div className="heading-actions">
+            {navigationLayout === 'workspace' && workspaces.length > 0 && (
+              <button
+                type="button"
+                title={allWorkspacesExpanded ? '折叠全部工作区' : '展开全部工作区'}
+                aria-label={allWorkspacesExpanded ? '折叠全部工作区' : '展开全部工作区'}
+                onClick={toggleAllWorkspaces}
+              >
+                {allWorkspacesExpanded ? <ChevronsUp size={15} /> : <ChevronsDown size={15} />}
+              </button>
+            )}
             <button type="button" title="视图与排序" onClick={() => setOptionsOpen((open) => !open)} aria-expanded={optionsOpen}>
               <SlidersHorizontal size={15} />
             </button>
@@ -226,8 +260,9 @@ export function Sidebar({
                 <section className="workspace-group" key={workspace.root}>
                   <button
                     type="button"
-                    className={`workspace-row ${selectedWorkspaceRoot === workspace.root ? 'selected' : ''}`}
+                    className={`workspace-row ${highlightedWorkspaceRoot === workspace.root ? 'selected' : ''}`}
                     onClick={() => {
+                      setHighlightedWorkspaceRoot(workspace.root)
                       onSelectWorkspace(workspace.root)
                       setExpanded((current) => ({ ...current, [workspace.root]: !(current[workspace.root] ?? true) }))
                     }}
@@ -258,15 +293,29 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-footer">
-        <button
-          type="button"
-          className={`archive-toggle ${viewMode === 'archived' ? 'active' : ''}`}
-          title={viewMode === 'active' ? '归档不会删除会话，可随时在这里恢复。' : '返回未归档会话'}
-          onClick={() => onViewMode(viewMode === 'active' ? 'archived' : 'active')}
-        >
-          {viewMode === 'active' ? <Archive size={16} /> : <ArchiveRestore size={16} />}
-          {viewMode === 'active' ? '已归档会话' : '返回会话'}
-        </button>
+        <div className="archive-split">
+          <button
+            type="button"
+            className={`archive-toggle ${viewMode === 'archived' ? 'active solo' : ''}`}
+            title={viewMode === 'active' ? '归档不会删除会话，可随时在这里恢复。' : '返回未归档会话'}
+            onClick={() => onViewMode(viewMode === 'active' ? 'archived' : 'active')}
+          >
+            {viewMode === 'active' ? <Archive size={16} /> : <ArchiveRestore size={16} />}
+            {viewMode === 'active' ? '已归档会话' : '返回会话'}
+          </button>
+          {viewMode === 'active' && (
+            <button
+              type="button"
+              className="archive-old-button"
+              title="一键归档 3 天前的所有会话"
+              aria-label="一键归档 3 天前的所有会话"
+              onClick={onArchiveOldThreads}
+              disabled={archivingOldThreads}
+            >
+              {archivingOldThreads ? <LoaderCircle className="spin" size={15} /> : <><Archive size={15} /><span>3 天+</span></>}
+            </button>
+          )}
+        </div>
         <button type="button" className="settings-toggle" onClick={onOpenSettings}>
           <Settings2 size={16} />
           设置

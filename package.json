@@ -4,12 +4,16 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 1420",
+    "dev": "vite --host 127.0.0.1 --port 1420 --strictPort --mode stable",
+    "dev:dev": "vite --host 127.0.0.1 --port 1421 --strictPort --mode dev",
     "build": "tsc -b && vite build",
+    "build:dev": "tsc -b && vite build --mode dev",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview --host 127.0.0.1 --port 1420",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
+    "tauri:build:dev": "tauri build --config src-tauri/tauri.dev.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

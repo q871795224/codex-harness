@@ -18,6 +18,7 @@ import {
 import type { ApprovalRequest, Thread, ThreadItemEntry, Workspace } from '../../core/domain/codex'
 import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
+import { groupTranscriptItems } from './transcript'
 
 interface ConversationHeaderProps {
   thread: Thread
@@ -113,7 +114,14 @@ export function ConversationView({ items, approvals, workspace, hasOlderTurns, l
               <p>这是一条新的 Codex 会话。消息会在 <strong>{workspace?.name ?? '当前工作区'}</strong> 中运行。</p>
             </div>
           )}
-          {items.map((entry, index) => <ThreadItemView key={`${entry.turnId}:${entry.item.id ?? index}`} entry={entry} />)}
+          {groupTranscriptItems(items).map((row, index) => (
+            <ThreadItemView
+              key={`${row.entry.turnId}:${row.entry.item.id ?? index}`}
+              entry={row.entry}
+              agentText={row.agentText}
+              showAgentLabel={row.showAgentLabel}
+            />
+          ))}
           {approvals.map((request) => (
             <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
           ))}
@@ -126,7 +134,15 @@ export function ConversationView({ items, approvals, workspace, hasOlderTurns, l
   )
 }
 
-const ThreadItemView = memo(function ThreadItemView({ entry }: { entry: ThreadItemEntry }) {
+const ThreadItemView = memo(function ThreadItemView({
+  entry,
+  agentText,
+  showAgentLabel = true,
+}: {
+  entry: ThreadItemEntry
+  agentText?: string
+  showAgentLabel?: boolean
+}) {
   const { item } = entry
   if (item.type === 'userMessage') {
     const text = itemText(item)
@@ -140,8 +156,8 @@ const ThreadItemView = memo(function ThreadItemView({ entry }: { entry: ThreadIt
   if (item.type === 'agentMessage') {
     return (
       <article className="message agent-message">
-        <div className="message-label"><Bot size={15} />Codex</div>
-        <div className="markdown-body"><ReactMarkdown>{item.text ?? ''}</ReactMarkdown></div>
+        {showAgentLabel && <div className="message-label"><Bot size={15} />Codex</div>}
+        <div className="markdown-body"><ReactMarkdown>{agentText ?? item.text ?? ''}</ReactMarkdown></div>
       </article>
     )
   }

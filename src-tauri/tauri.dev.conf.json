@@ -1,0 +1,24 @@
+{
+  "productName": "Codex Harness Dev",
+  "identifier": "com.local.codex-harness.dev",
+  "build": {
+    "beforeDevCommand": "pnpm dev:dev",
+    "devUrl": "http://localhost:1421",
+    "beforeBuildCommand": "pnpm build:dev"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Codex Harness Dev",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 980,
+        "minHeight": 640,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "icon": ["icons/icon-dev.icns"]
+  }
+}

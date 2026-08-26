@@ -20,7 +20,7 @@ import type {
   Turn,
   Workspace,
 } from '../../core/domain/codex'
-import { isActive, textInput } from '../../core/domain/codex'
+import { isActive, textInput, threadsOlderThan } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 
 type ViewMode = 'active' | 'archived'
@@ -45,6 +45,7 @@ interface ResumeResponse {
 
 interface ThreadListResponse {
   data: Thread[]
+  nextCursor: string | null
 }
 
 interface TurnsPageResponse {
@@ -323,6 +324,26 @@ export function useHarness() {
     void mapThreadRoots(response.data)
     return response.data
   }, [mapThreadRoots, viewMode])
+
+  const listAllActiveThreads = useCallback(async (): Promise<Thread[]> => {
+    const allThreads: Thread[] = []
+    let cursor: string | null = null
+
+    do {
+      const response: ThreadListResponse = await runtime.request<ThreadListResponse>('thread/list', {
+        cursor,
+        limit: 100,
+        sortKey: 'recency_at',
+        sortDirection: 'desc',
+        archived: false,
+        useStateDbOnly: true,
+      })
+      allThreads.push(...response.data)
+      cursor = response.nextCursor
+    } while (cursor)
+
+    return allThreads
+  }, [])
 
   const loadQueue = useCallback(async (threadId: string) => {
     try {
@@ -617,6 +638,52 @@ export function useHarness() {
     }
   }, [notify])
 
+  const archiveOldThreads = useCallback(async () => {
+    if (busy.archiveOldThreads) return
+
+    setBusy((current) => ({ ...current, archiveOldThreads: true }))
+    try {
+      const cutoff = Date.now() / 1_000 - 3 * 24 * 60 * 60
+      const candidates = threadsOlderThan(await listAllActiveThreads(), cutoff)
+      if (candidates.length === 0) {
+        notify('没有超过 3 天的会话需要归档')
+        return
+      }
+
+      const archivedIds = new Set<string>()
+      let failedCount = 0
+      for (const thread of candidates) {
+        try {
+          await runtime.request('thread/archive', { threadId: thread.id })
+          archivedIds.add(thread.id)
+        } catch {
+          failedCount += 1
+        }
+      }
+
+      if (archivedIds.size > 0) {
+        setThreads((current) => current.filter((thread) => !archivedIds.has(thread.id)))
+        if (archivedIds.has(selectedThreadIdRef.current ?? '')) {
+          selectedThreadIdRef.current = null
+          setSelectedThreadId(null)
+        }
+      }
+
+      if (failedCount > 0) {
+        const message = archivedIds.size > 0
+          ? `已归档 ${archivedIds.size} 个 3 天前的会话；${failedCount} 个未能归档`
+          : `未能归档 ${failedCount} 个 3 天前的会话`
+        notify(message, 'error')
+      } else {
+        notify(`已归档 ${archivedIds.size} 个 3 天前的会话`)
+      }
+    } catch (error) {
+      notify(`无法归档旧会话：${messageOf(error)}`, 'error')
+    } finally {
+      setBusy((current) => ({ ...current, archiveOldThreads: false }))
+    }
+  }, [busy.archiveOldThreads, listAllActiveThreads, notify])
+
   const unarchiveThread = useCallback(async (threadId: string) => {
     try {
       await runtime.request('thread/unarchive', { threadId })
@@ -906,6 +973,7 @@ export function useHarness() {
     startQueue,
     renameThread,
     archiveThread,
+    archiveOldThreads,
     unarchiveThread,
     answerApproval,
     setNavigationLayout,
