@@ -100,38 +100,81 @@ function AppearanceSettings({ fontSize, onFontSize }: { fontSize: FontSize; onFo
 
 function PluginSettings({ workspaces, threads, selectedThreadId }: { workspaces: Workspace[]; threads: Thread[]; selectedThreadId: string | null }) {
   const plugins = usePluginHost()
+  const [selectedPluginId, setSelectedPluginId] = useState(() => plugins.definitions[0]?.manifest.id ?? '')
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
+  const selectedDefinition = plugins.definitions.find((definition) => definition.manifest.id === selectedPluginId) ?? plugins.definitions[0] ?? null
+  const selectedInstances = selectedDefinition
+    ? plugins.instances.filter((instance) => instance.pluginId === selectedDefinition.manifest.id)
+    : []
+  const selectedInstance = selectedInstances.find((instance) => instance.instanceId === selectedInstanceId) ?? selectedInstances[0] ?? null
+
+  useEffect(() => {
+    if (!selectedDefinition) return
+    if (selectedDefinition.manifest.id !== selectedPluginId) setSelectedPluginId(selectedDefinition.manifest.id)
+    if (selectedInstance?.instanceId !== selectedInstanceId) setSelectedInstanceId(selectedInstance?.instanceId ?? null)
+  }, [selectedDefinition, selectedInstance, selectedInstanceId, selectedPluginId])
+
+  const selectDefinition = (definition: HarnessPlugin) => {
+    const firstInstance = plugins.instances.find((instance) => instance.pluginId === definition.manifest.id)
+    setSelectedPluginId(definition.manifest.id)
+    setSelectedInstanceId(firstInstance?.instanceId ?? null)
+  }
 
   return (
-    <section className="settings-section plugin-settings" aria-label="Harness 插件">
-      <div className="settings-section-title">
-        <Blocks size={17} />
-        <div>
-          <h3>Harness 插件</h3>
-          <p>每个实例拥有独立归属和配置；切换会话只改变可见性，不会停止后台实例。</p>
+    <section className="plugin-settings" aria-label="Harness 插件">
+      <aside className="plugin-catalog">
+        <div className="plugin-catalog-intro">
+          <span>{plugins.definitions.length} 个内置插件</span>
+          <p>选择插件与实例，在右侧调整归属和设置。</p>
         </div>
+        <nav className="plugin-catalog-list" aria-label="插件列表">
+          {plugins.loading ? <div className="plugin-settings-empty">正在读取插件实例…</div> : plugins.definitions.map((definition) => (
+            <PluginDefinitionNav
+              key={definition.manifest.id}
+              definition={definition}
+              instances={plugins.instances.filter((instance) => instance.pluginId === definition.manifest.id)}
+              selected={definition.manifest.id === selectedDefinition?.manifest.id}
+              selectedInstanceId={selectedInstance?.instanceId ?? null}
+              workspaces={workspaces}
+              threads={threads}
+              selectedThreadId={selectedThreadId}
+              onSelectDefinition={() => selectDefinition(definition)}
+              onSelectInstance={(instanceId) => {
+                setSelectedPluginId(definition.manifest.id)
+                setSelectedInstanceId(instanceId)
+              }}
+            />
+          ))}
+        </nav>
+      </aside>
+      <div className="plugin-detail-scroll">
+        {plugins.error && <div className="plugin-settings-error">{plugins.error}</div>}
+        {!plugins.loading && selectedDefinition && selectedInstance ? (
+          <PluginInstanceDetail
+            definition={selectedDefinition}
+            instance={selectedInstance}
+            workspaces={workspaces}
+            threads={threads}
+            selectedThreadId={selectedThreadId}
+          />
+        ) : !plugins.loading && selectedDefinition ? (
+          <div className="plugin-detail-empty"><Blocks size={20} /><strong>{selectedDefinition.manifest.name}</strong><p>这个插件还没有实例，请从左侧新增一个归属实例。</p></div>
+        ) : null}
       </div>
-
-      {plugins.error && <div className="plugin-settings-error">{plugins.error}</div>}
-      {plugins.loading ? <div className="plugin-settings-empty">正在读取插件实例…</div> : plugins.definitions.map((definition) => (
-        <PluginDefinitionCard
-          key={definition.manifest.id}
-          definition={definition}
-          instances={plugins.instances.filter((instance) => instance.pluginId === definition.manifest.id)}
-          workspaces={workspaces}
-          threads={threads}
-          selectedThreadId={selectedThreadId}
-        />
-      ))}
     </section>
   )
 }
 
-function PluginDefinitionCard({ definition, instances, workspaces, threads, selectedThreadId }: {
+function PluginDefinitionNav({ definition, instances, selected, selectedInstanceId, workspaces, threads, selectedThreadId, onSelectDefinition, onSelectInstance }: {
   definition: HarnessPlugin
   instances: PluginInstanceRecord[]
+  selected: boolean
+  selectedInstanceId: string | null
   workspaces: Workspace[]
   threads: Thread[]
   selectedThreadId: string | null
+  onSelectDefinition(): void
+  onSelectInstance(instanceId: string): void
 }) {
   const plugins = usePluginHost()
   const availableScope = useMemo(
@@ -139,10 +182,10 @@ function PluginDefinitionCard({ definition, instances, workspaces, threads, sele
     [definition, instances, selectedThreadId, threads, workspaces],
   )
 
-  const addInstance = () => {
+  const addInstance = async () => {
     if (!availableScope) return
     const now = Date.now()
-    void plugins.upsertInstance({
+    const instance: PluginInstanceRecord = {
       instanceId: crypto.randomUUID(),
       pluginId: definition.manifest.id,
       scope: availableScope,
@@ -150,38 +193,35 @@ function PluginDefinitionCard({ definition, instances, workspaces, threads, sele
       config: {},
       createdAt: now,
       updatedAt: now,
-    }).catch(() => undefined)
+    }
+    await plugins.upsertInstance(instance)
+    onSelectInstance(instance.instanceId)
   }
 
   return (
-    <article className="plugin-definition-card">
-      <header>
-        <div>
-          <strong>{definition.manifest.name}</strong>
-          <span>{definition.manifest.id} · v{definition.manifest.version}</span>
-        </div>
-        <button type="button" className="plugin-add" disabled={!availableScope} onClick={addInstance} title={availableScope ? '新增插件实例' : '没有可用的新归属'}>
-          <Plus size={14} />实例
+    <div className={`plugin-nav-group ${selected ? 'selected' : ''}`}>
+      <div className="plugin-nav-heading">
+        <button type="button" onClick={onSelectDefinition}>
+          <span className="plugin-nav-mark"><Blocks size={14} /></span>
+          <span><strong>{definition.manifest.name}</strong><small>v{definition.manifest.version} · {instances.length} 个实例</small></span>
         </button>
-      </header>
-      <p>{definition.manifest.description}</p>
-      <div className="plugin-instance-list">
-        {instances.map((instance) => (
-          <PluginInstanceCard
-            key={instance.instanceId}
-            definition={definition}
-            instance={instance}
-            workspaces={workspaces}
-            threads={threads}
-            selectedThreadId={selectedThreadId}
-          />
-        ))}
+        <button type="button" className="plugin-nav-add" disabled={!availableScope} onClick={() => void addInstance().catch(() => undefined)} title={availableScope ? '新增插件实例' : '没有可用的新归属'} aria-label={`新增 ${definition.manifest.name} 实例`}>
+          <Plus size={13} />
+        </button>
       </div>
-    </article>
+      {instances.length > 0 && <div className="plugin-nav-instances">
+        {instances.map((instance) => (
+          <button key={instance.instanceId} type="button" className={instance.instanceId === selectedInstanceId ? 'selected' : ''} aria-current={instance.instanceId === selectedInstanceId ? 'page' : undefined} onClick={() => onSelectInstance(instance.instanceId)}>
+            <span className={`plugin-status-dot ${plugins.status(instance.instanceId).phase}`} />
+            <span>{scopeSummary(instance.scope, workspaces, threads)}</span>
+          </button>
+        ))}
+      </div>}
+    </div>
   )
 }
 
-function PluginInstanceCard({ definition, instance, workspaces, threads, selectedThreadId }: {
+function PluginInstanceDetail({ definition, instance, workspaces, threads, selectedThreadId }: {
   definition: HarnessPlugin
   instance: PluginInstanceRecord
   workspaces: Workspace[]
@@ -204,9 +244,14 @@ function PluginInstanceCard({ definition, instance, workspaces, threads, selecte
   }
 
   return (
-    <div className="plugin-instance-card">
-      <div className="plugin-instance-head">
-        <span className={`plugin-status ${status.phase}`}><span />{statusLabel(status.phase)}</span>
+    <article className="plugin-instance-detail">
+      <header className="plugin-detail-head">
+        <div>
+          <span className="settings-kicker">PLUGIN INSTANCE</span>
+          <h3>{definition.manifest.name}</h3>
+          <p>{definition.manifest.description}</p>
+          <code>{definition.manifest.id} · v{definition.manifest.version}</code>
+        </div>
         <div className="plugin-instance-actions">
           <button type="button" className={instance.enabled ? 'enabled' : ''} onClick={() => void persist({ ...instance, enabled: !instance.enabled, updatedAt: Date.now() })}>
             <Power size={13} />{instance.enabled ? '已启用' : '已停用'}
@@ -215,9 +260,13 @@ function PluginInstanceCard({ definition, instance, workspaces, threads, selecte
             <button type="button" className="danger" aria-label="删除实例" onClick={() => void plugins.deleteInstance(instance.instanceId).catch(() => undefined)}><Trash2 size={13} /></button>
           )}
         </div>
-      </div>
+      </header>
 
-      <div className="plugin-scope-fields">
+      <div className="plugin-detail-status"><span className={`plugin-status ${status.phase}`}><span />{statusLabel(status.phase)}</span><span>{scopeSummary(instance.scope, workspaces, threads)}</span></div>
+
+      <section className="plugin-detail-section">
+        <div className="plugin-detail-section-title"><strong>实例归属</strong><p>切换会话只影响插件入口是否可见，不会停止后台实例。</p></div>
+        <div className="plugin-scope-fields">
         <label>
           <span>归属</span>
           <select value={instance.scope.kind} onChange={(event) => updateScopeKind(event.target.value as PluginScopeKind)}>
@@ -242,11 +291,19 @@ function PluginInstanceCard({ definition, instance, workspaces, threads, selecte
             </select>
           </label>
         )}
-      </div>
+        </div>
+      </section>
 
       {status.phase === 'failed' && <div className="plugin-instance-error">{status.error}</div>}
-      {Settings && <Settings instance={instance} saveConfig={(config) => plugins.upsertInstance({ ...instance, config, updatedAt: Date.now() })} />}
-    </div>
+      {Settings ? (
+        <section className="plugin-detail-section">
+          <div className="plugin-detail-section-title"><strong>插件设置</strong><p>这些配置只属于当前实例。</p></div>
+          <Settings instance={instance} saveConfig={(config) => plugins.upsertInstance({ ...instance, config, updatedAt: Date.now() })} />
+        </section>
+      ) : (
+        <section className="plugin-detail-section"><div className="plugin-detail-section-title"><strong>插件设置</strong><p>这个插件没有额外的业务设置。</p></div></section>
+      )}
+    </article>
   )
 }
 
@@ -289,6 +346,15 @@ function scopeIdentity(scope: PluginScope): string {
 function scopeKindLabel(kind: PluginScopeKind): string {
   if (kind === 'workspace') return 'Workspace'
   if (kind === 'thread') return 'Thread'
+  return '全局'
+}
+
+function scopeSummary(scope: PluginScope, workspaces: Workspace[], threads: Thread[]): string {
+  if (scope.kind === 'workspace') return workspaces.find((workspace) => workspace.root === scope.workspaceRoot)?.name ?? scope.workspaceRoot
+  if (scope.kind === 'thread') {
+    const thread = threads.find((candidate) => candidate.id === scope.threadId)
+    return thread ? threadTitle(thread) : scope.threadId
+  }
   return '全局'
 }
 
