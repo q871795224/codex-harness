@@ -1,8 +1,9 @@
-import { memo, useState } from 'react'
+import { memo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
   Archive,
   ArchiveRestore,
+  ArrowDownToLine,
   Bot,
   ChevronDown,
   ChevronRight,
@@ -90,27 +91,38 @@ interface ConversationViewProps {
 }
 
 export function ConversationView({ items, approvals, workspace, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns }: ConversationViewProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  const scrollToBottom = () => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }
+
   return (
-    <div className="conversation-scroll">
-      <div className="message-column">
-        {hasOlderTurns && (
-          <button className="load-older-turns" type="button" onClick={onLoadOlderTurns} disabled={loadingOlderTurns}>
-            {loadingOlderTurns ? '正在加载更早消息…' : '加载更早消息'}
-          </button>
-        )}
-        {items.length === 0 && (
-          <div className="fresh-thread">
-            <div className="fresh-thread-mark"><Bot size={24} /></div>
-            <h2>从这里开始</h2>
-            <p>这是一条新的 Codex 会话。消息会在 <strong>{workspace?.name ?? '当前工作区'}</strong> 中运行。</p>
-          </div>
-        )}
-        {items.map((entry, index) => <ThreadItemView key={`${entry.turnId}:${entry.item.id ?? index}`} entry={entry} />)}
-        {approvals.map((request) => (
-          <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
-        ))}
+    <section className="conversation-pane" aria-label="对话内容">
+      <div className="conversation-scroll" ref={scrollRef}>
+        <div className="message-column">
+          {hasOlderTurns && (
+            <button className="load-older-turns" type="button" onClick={onLoadOlderTurns} disabled={loadingOlderTurns}>
+              {loadingOlderTurns ? '正在加载更早消息…' : '加载更早消息'}
+            </button>
+          )}
+          {items.length === 0 && (
+            <div className="fresh-thread">
+              <div className="fresh-thread-mark"><Bot size={24} /></div>
+              <h2>从这里开始</h2>
+              <p>这是一条新的 Codex 会话。消息会在 <strong>{workspace?.name ?? '当前工作区'}</strong> 中运行。</p>
+            </div>
+          )}
+          {items.map((entry, index) => <ThreadItemView key={`${entry.turnId}:${entry.item.id ?? index}`} entry={entry} />)}
+          {approvals.map((request) => (
+            <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
+          ))}
+        </div>
       </div>
-    </div>
+      <button type="button" className="scroll-to-bottom" onClick={scrollToBottom} title="回到对话底部" aria-label="回到对话底部">
+        <ArrowDownToLine size={17} />
+      </button>
+    </section>
   )
 }
 
