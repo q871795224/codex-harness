@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Bot, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
-import { PluginHostProvider, PluginTabBoundary, usePluginHost } from './core/plugins/react'
+import { useAgentRunService } from './core/agent-runs/react'
+import { PluginComposerAction, PluginHostProvider, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer } from './features/conversation/Composer'
 import { ConversationStats } from './features/conversation/ConversationStats'
@@ -8,12 +9,14 @@ import { ConversationHeader, ConversationView } from './features/conversation/Co
 import { QueueDock } from './features/conversation/QueueDock'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
-import { builtInPlugins, defaultPluginInstances } from './plugins/trajectory'
+import { builtInPlugins, defaultPluginInstances } from './plugins'
 
 export default function App() {
   const harness = useHarness()
+  const agentRuns = useAgentRunService(harness.selectThread, harness.startTurnInThread)
+  const services = useMemo(() => ({ 'harness.agentRuns': agentRuns }), [agentRuns])
   return (
-    <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances}>
+    <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances} services={services}>
       <HarnessShell harness={harness} />
     </PluginHostProvider>
   )
@@ -29,6 +32,10 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
   )
   const pluginTabs = plugins.resolvedTabs({
+    threadId: harness.selectedThreadId,
+    workspaceRoot: workspace?.root ?? null,
+  })
+  const composerActions = plugins.resolvedComposerActions({
     threadId: harness.selectedThreadId,
     workspaceRoot: workspace?.root ?? null,
   })
@@ -151,6 +158,17 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   foreignActive={harness.currentForeignActive}
                   busy={Boolean(harness.busy.composer)}
                   contextUsage={harness.currentTokenUsage}
+                  pluginActions={composerActions.map((action) => (
+                    <PluginComposerAction
+                      key={`${action.pluginId}:${action.contribution.id}`}
+                      action={action}
+                      props={{
+                        threadId: harness.selectedThreadId,
+                        workspaceRoot: workspace?.root ?? null,
+                        disabled: harness.currentForeignActive || Boolean(harness.busy.composer),
+                      }}
+                    />
+                  ))}
                   onSend={harness.sendMessage}
                   onStop={harness.stopTurn}
                 />

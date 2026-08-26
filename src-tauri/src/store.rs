@@ -49,6 +49,42 @@ pub struct PluginInstance {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginRunInput {
+    pub run_id: String,
+    pub instance_id: String,
+    pub mode: String,
+    pub status: String,
+    pub title: String,
+    pub workspace_root: String,
+    pub parent_thread_id: Option<String>,
+    pub child_thread_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub error_summary: Option<String>,
+    pub completed_at: Option<i64>,
+    pub returned_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginRun {
+    pub run_id: String,
+    pub instance_id: String,
+    pub mode: String,
+    pub status: String,
+    pub title: String,
+    pub workspace_root: String,
+    pub parent_thread_id: Option<String>,
+    pub child_thread_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub error_summary: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub completed_at: Option<i64>,
+    pub returned_at: Option<i64>,
+}
+
 pub struct HarnessStore {
     connection: Mutex<Connection>,
 }
@@ -108,6 +144,25 @@ impl HarnessStore {
               PRIMARY KEY(instance_id, state_key),
               FOREIGN KEY(instance_id) REFERENCES plugin_instances(instance_id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS plugin_runs (
+              run_id TEXT PRIMARY KEY NOT NULL,
+              instance_id TEXT NOT NULL,
+              mode TEXT NOT NULL CHECK(mode IN ('detached', 'delegated')),
+              status TEXT NOT NULL CHECK(status IN ('starting', 'running', 'waitingApproval', 'completed', 'failed', 'cancelled')),
+              title TEXT NOT NULL,
+              workspace_root TEXT NOT NULL,
+              parent_thread_id TEXT,
+              child_thread_id TEXT,
+              turn_id TEXT,
+              error_summary TEXT,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              completed_at INTEGER,
+              returned_at INTEGER,
+              FOREIGN KEY(instance_id) REFERENCES plugin_instances(instance_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS plugin_runs_instance_updated
+              ON plugin_runs(instance_id, updated_at DESC);
             "#,
             )
             .map_err(|error| format!("无法初始化 Codex Harness 本地状态库: {error}"))?;
@@ -380,6 +435,75 @@ impl HarnessStore {
             .map_err(|error| format!("无法保存插件状态: {error}"))?;
         Ok(())
     }
+
+    pub fn list_plugin_runs(&self) -> Result<Vec<PluginRun>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT run_id, instance_id, mode, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at FROM plugin_runs ORDER BY updated_at DESC, run_id",
+            )
+            .map_err(|error| format!("无法读取插件任务: {error}"))?;
+        let rows = statement
+            .query_map([], plugin_run_from_row)
+            .map_err(|error| format!("无法读取插件任务: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("无法读取插件任务: {error}"))
+    }
+
+    pub fn upsert_plugin_run(&self, input: &PluginRunInput) -> Result<PluginRun, String> {
+        validate_plugin_run(input)?;
+        let now = now_ms();
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        connection
+            .execute(
+                r#"
+                INSERT INTO plugin_runs (
+                  run_id, instance_id, mode, status, title, workspace_root,
+                  parent_thread_id, child_thread_id, turn_id, error_summary,
+                  created_at, updated_at, completed_at, returned_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, ?12, ?13)
+                ON CONFLICT(run_id) DO UPDATE SET
+                  status = excluded.status,
+                  title = excluded.title,
+                  parent_thread_id = excluded.parent_thread_id,
+                  child_thread_id = excluded.child_thread_id,
+                  turn_id = excluded.turn_id,
+                  error_summary = excluded.error_summary,
+                  updated_at = excluded.updated_at,
+                  completed_at = excluded.completed_at,
+                  returned_at = excluded.returned_at
+                "#,
+                params![
+                    input.run_id,
+                    input.instance_id,
+                    input.mode,
+                    input.status,
+                    input.title,
+                    input.workspace_root,
+                    input.parent_thread_id,
+                    input.child_thread_id,
+                    input.turn_id,
+                    input.error_summary,
+                    now,
+                    input.completed_at,
+                    input.returned_at,
+                ],
+            )
+            .map_err(|error| format!("无法保存插件任务: {error}"))?;
+        connection
+            .query_row(
+                "SELECT run_id, instance_id, mode, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at FROM plugin_runs WHERE run_id = ?1",
+                [&input.run_id],
+                plugin_run_from_row,
+            )
+            .map_err(|error| format!("无法读取已保存的插件任务: {error}"))
+    }
 }
 
 fn normalized_scope_key(scope_kind: &str, scope_key: Option<&str>) -> Result<String, String> {
@@ -409,6 +533,48 @@ fn plugin_instance_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginI
         config,
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
+    })
+}
+
+fn validate_plugin_run(input: &PluginRunInput) -> Result<(), String> {
+    if input.run_id.trim().is_empty()
+        || input.instance_id.trim().is_empty()
+        || input.title.trim().is_empty()
+        || input.workspace_root.trim().is_empty()
+    {
+        return Err("插件任务缺少必要字段".to_string());
+    }
+    if !matches!(input.mode.as_str(), "detached" | "delegated") {
+        return Err(format!("不支持的插件任务模式: {}", input.mode));
+    }
+    if !matches!(
+        input.status.as_str(),
+        "starting" | "running" | "waitingApproval" | "completed" | "failed" | "cancelled"
+    ) {
+        return Err(format!("不支持的插件任务状态: {}", input.status));
+    }
+    if input.mode == "delegated" && input.parent_thread_id.is_none() {
+        return Err("delegated 任务必须指定 parent thread".to_string());
+    }
+    Ok(())
+}
+
+fn plugin_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginRun> {
+    Ok(PluginRun {
+        run_id: row.get(0)?,
+        instance_id: row.get(1)?,
+        mode: row.get(2)?,
+        status: row.get(3)?,
+        title: row.get(4)?,
+        workspace_root: row.get(5)?,
+        parent_thread_id: row.get(6)?,
+        child_thread_id: row.get(7)?,
+        turn_id: row.get(8)?,
+        error_summary: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+        completed_at: row.get(12)?,
+        returned_at: row.get(13)?,
     })
 }
 
@@ -596,5 +762,50 @@ mod tests {
             config: serde_json::Value::Null,
         };
         assert!(store.upsert_plugin_instance(&invalid_config).is_err());
+    }
+
+    #[test]
+    fn persists_plugin_run_without_conversation_content() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+        store
+            .upsert_plugin_instance(&PluginInstanceInput {
+                instance_id: "temporary-agent".to_string(),
+                plugin_id: "builtin.temporary-agent".to_string(),
+                scope_kind: "global".to_string(),
+                scope_key: None,
+                enabled: true,
+                config: serde_json::json!({}),
+            })
+            .expect("creates owner instance");
+        let mut run = PluginRunInput {
+            run_id: "run-1".to_string(),
+            instance_id: "temporary-agent".to_string(),
+            mode: "delegated".to_string(),
+            status: "starting".to_string(),
+            title: "检查发布状态".to_string(),
+            workspace_root: "/workspace/project".to_string(),
+            parent_thread_id: Some("parent-1".to_string()),
+            child_thread_id: None,
+            turn_id: None,
+            error_summary: None,
+            completed_at: None,
+            returned_at: None,
+        };
+        let created = store.upsert_plugin_run(&run).expect("creates plugin run");
+        assert_eq!(created.status, "starting");
+        assert_eq!(created.child_thread_id, None);
+
+        run.status = "completed".to_string();
+        run.child_thread_id = Some("child-1".to_string());
+        run.turn_id = Some("turn-1".to_string());
+        run.completed_at = Some(42);
+        let completed = store.upsert_plugin_run(&run).expect("completes plugin run");
+        assert_eq!(completed.created_at, created.created_at);
+        assert_eq!(completed.completed_at, Some(42));
+        assert_eq!(
+            store.list_plugin_runs().expect("lists plugin runs").len(),
+            1
+        );
     }
 }

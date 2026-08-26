@@ -1,6 +1,8 @@
 import { Component, createContext, useContext, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 import { runtime } from '../runtime/bridge'
 import type {
+  ComposerActionContribution,
+  ComposerActionProps,
   ConversationTabContribution,
   ConversationTabProps,
   HarnessPlugin,
@@ -17,6 +19,7 @@ interface PluginHostContextValue {
   error: string | null
   status(instanceId: string): PluginInstanceStatus
   resolvedTabs(context: PluginViewContext): ResolvedContribution<ConversationTabContribution>[]
+  resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[]
   upsertInstance(instance: PluginInstanceRecord): Promise<void>
   deleteInstance(instanceId: string): Promise<void>
 }
@@ -26,10 +29,11 @@ const PluginHostContext = createContext<PluginHostContextValue | null>(null)
 interface PluginHostProviderProps {
   definitions: HarnessPlugin[]
   defaultInstances: PluginInstanceRecord[]
+  services?: Record<string, unknown>
   children: ReactNode
 }
 
-export function PluginHostProvider({ definitions, defaultInstances, children }: PluginHostProviderProps) {
+export function PluginHostProvider({ definitions, defaultInstances, services, children }: PluginHostProviderProps) {
   const [revision, setRevision] = useState(0)
   const [instances, setInstances] = useState<PluginInstanceRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,6 +45,7 @@ export function PluginHostProvider({ definitions, defaultInstances, children }: 
         get: <T,>(key: string) => runtime.getPluginState<T>(instance.instanceId, key),
         set: <T,>(key: string, value: T) => runtime.setPluginState(instance.instanceId, key, value),
       }),
+      services,
       onChange: () => setRevision((current) => current + 1),
     })
   }
@@ -86,6 +91,7 @@ export function PluginHostProvider({ definitions, defaultInstances, children }: 
     error,
     status: (instanceId) => host.status(instanceId),
     resolvedTabs: (context) => host.resolvedTabs(context),
+    resolvedComposerActions: (context) => host.resolvedComposerActions(context),
     upsertInstance: async (instance) => {
       try {
         const saved = await runtime.upsertPluginInstance({ ...instance, updatedAt: Date.now() })
@@ -147,6 +153,13 @@ export class PluginTabBoundary extends Component<PluginTabBoundaryProps, PluginT
     }
     return this.props.tab.contribution.render(this.props.props)
   }
+}
+
+export function PluginComposerAction({ action, props }: {
+  action: ResolvedContribution<ComposerActionContribution>
+  props: ComposerActionProps
+}) {
+  return action.contribution.render(props)
 }
 
 function messageOf(error: unknown): string {

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, Send, Square } from 'lucide-react'
 import type { ThreadTokenUsage } from '../../core/domain/codex'
 
@@ -8,11 +8,12 @@ interface ComposerProps {
   foreignActive: boolean
   busy: boolean
   contextUsage: ThreadTokenUsage | null
+  pluginActions?: ReactNode
   onSend: (text: string, mode: 'interject' | 'queue') => Promise<void> | void
   onStop: () => Promise<void> | void
 }
 
-export function Composer({ disabled, working, foreignActive, busy, contextUsage, onSend, onStop }: ComposerProps) {
+export function Composer({ disabled, working, foreignActive, busy, contextUsage, pluginActions, onSend, onStop }: ComposerProps) {
   const [text, setText] = useState('')
   const [mode, setMode] = useState<'interject' | 'queue'>('interject')
   const [modeOpen, setModeOpen] = useState(false)
@@ -79,6 +80,7 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
             </div>
           ) : <span className="composer-hint">⌘↵ 发送</span>}
           <div className="composer-actions">
+            {pluginActions}
             {working && !foreignActive && (
               <button type="button" className="stop-button" onClick={() => void onStop()} title="停止当前轮">
                 <Square size={13} /> 停止

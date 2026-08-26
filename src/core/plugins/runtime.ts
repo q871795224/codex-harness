@@ -1,4 +1,5 @@
 import type {
+  ComposerActionContribution,
   ConversationTabContribution,
   HarnessPlugin,
   PluginCommand,
@@ -131,6 +132,7 @@ interface ActiveInstance {
 
 export interface PluginHostOptions {
   storage(instance: PluginInstanceRecord): PluginStorage
+  services?: Record<string, unknown>
   onChange?(): void
 }
 
@@ -141,6 +143,7 @@ export class PluginHost {
   private readonly services = new ServiceRegistry()
   private readonly events = new EventBus()
   private readonly tabs = new ContributionRegistry<ConversationTabContribution>()
+  private readonly composerActions = new ContributionRegistry<ComposerActionContribution>()
   private readonly commands = new CommandRegistry()
   private syncQueue: Promise<void> = Promise.resolve()
 
@@ -150,6 +153,7 @@ export class PluginHost {
       this.definitions.set(definition.manifest.id, definition)
     }
     sortPluginDefinitions(definitions)
+    for (const [id, service] of Object.entries(options.services ?? {})) this.services.provide(id, service)
   }
 
   manifests(): HarnessPlugin[] {
@@ -162,6 +166,10 @@ export class PluginHost {
 
   resolvedTabs(context: PluginViewContext): ResolvedContribution<ConversationTabContribution>[] {
     return resolveScopedContributions(this.tabs.list(), context)
+  }
+
+  resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[] {
+    return resolveScopedContributions(this.composerActions.list(), context)
   }
 
   syncInstances(instances: PluginInstanceRecord[]): Promise<void> {
@@ -259,6 +267,9 @@ export class PluginHost {
       slots: {
         conversationTabs: {
           register: (contribution) => lifecycle.effect(this.tabs.register({ ...metadata, contribution })),
+        },
+        composerActions: {
+          register: (contribution) => lifecycle.effect(this.composerActions.register({ ...metadata, contribution })),
         },
       },
       commands: {

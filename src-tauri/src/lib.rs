@@ -8,7 +8,10 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-use store::{HarnessStore, PluginInstance, PluginInstanceInput, ThreadUiState, Workspace};
+use store::{
+    HarnessStore, PluginInstance, PluginInstanceInput, PluginRun, PluginRunInput, ThreadUiState,
+    Workspace,
+};
 use tauri::{Manager, State};
 
 struct AppState {
@@ -136,6 +139,19 @@ fn set_plugin_state(
     state.store.set_plugin_state(&instance_id, &key, &value)
 }
 
+#[tauri::command]
+fn list_plugin_runs(state: State<'_, AppState>) -> Result<Vec<PluginRun>, String> {
+    state.store.list_plugin_runs()
+}
+
+#[tauri::command]
+fn upsert_plugin_run(
+    state: State<'_, AppState>,
+    input: PluginRunInput,
+) -> Result<PluginRun, String> {
+    state.store.upsert_plugin_run(&input)
+}
+
 pub fn run() {
     let store = HarnessStore::open().expect("无法初始化 Codex Harness 本地状态库");
     tauri::Builder::default()
@@ -164,6 +180,8 @@ pub fn run() {
             delete_plugin_instance,
             get_plugin_state,
             set_plugin_state,
+            list_plugin_runs,
+            upsert_plugin_run,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错");

@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import type { AppServerEvent, JsonObject, ThreadUiState, Workspace } from '../domain/codex'
+import { textInput, type AppServerEvent, type JsonObject, type Thread, type ThreadUiState, type Turn, type Workspace } from '../domain/codex'
+import type { AgentRun, ThreadInspection } from '../agent-runs/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 
 interface PluginInstanceDto {
@@ -89,6 +90,76 @@ export const runtime = {
     return invoke<void>('set_plugin_state', { instanceId, key, value })
   },
 
+  listPluginRuns(): Promise<AgentRun[]> {
+    return invoke<AgentRun[]>('list_plugin_runs')
+  },
+
+  upsertPluginRun(run: AgentRun): Promise<AgentRun> {
+    return invoke<AgentRun>('upsert_plugin_run', {
+      input: {
+        runId: run.runId,
+        instanceId: run.instanceId,
+        mode: run.mode,
+        status: run.status,
+        title: run.title,
+        workspaceRoot: run.workspaceRoot,
+        parentThreadId: run.parentThreadId,
+        childThreadId: run.childThreadId,
+        turnId: run.turnId,
+        errorSummary: run.errorSummary,
+        completedAt: run.completedAt,
+        returnedAt: run.returnedAt,
+      },
+    })
+  },
+
+  async startCodexThread(workspaceRoot: string): Promise<string> {
+    const response = await invoke<{ thread: Thread }>('app_server_request', {
+      method: 'thread/start',
+      params: { cwd: workspaceRoot },
+    })
+    return response.thread.id
+  },
+
+  async startCodexTurn(threadId: string, prompt: string): Promise<string> {
+    const response = await invoke<{ turn: Turn }>('app_server_request', {
+      method: 'turn/start',
+      params: {
+        threadId,
+        clientUserMessageId: crypto.randomUUID(),
+        input: [textInput(prompt)],
+      },
+    })
+    return response.turn.id
+  },
+
+  interruptCodexTurn(threadId: string, turnId: string): Promise<void> {
+    return invoke<void>('app_server_request', {
+      method: 'turn/interrupt',
+      params: { threadId, turnId },
+    })
+  },
+
+  async inspectCodexThread(threadId: string): Promise<ThreadInspection> {
+    const response = await resumeThread(threadId, 1)
+    const turns = response.initialTurnsPage?.data ?? response.thread.turns ?? []
+    return {
+      active: response.thread.status.type === 'active',
+      lastTurnStatus: turns[0]?.status ?? null,
+    }
+  },
+
+  async readLastAgentMessage(threadId: string): Promise<string> {
+    const response = await resumeThread(threadId, 5)
+    const turns = response.initialTurnsPage?.data ?? response.thread.turns ?? []
+    for (const turn of turns) {
+      for (const item of [...turn.items].reverse()) {
+        if (item.type === 'agentMessage' && item.text?.trim()) return item.text.trim()
+      }
+    }
+    throw new Error('子 Agent 尚未生成可回传的结果')
+  },
+
   listenEvents(handler: (event: AppServerEvent) => void): Promise<() => void> {
     return listen<AppServerEvent>('app-server:event', (event) => handler(event.payload))
   },
@@ -96,6 +167,18 @@ export const runtime = {
   listenTransport(handler: (event: JsonObject) => void): Promise<() => void> {
     return listen<JsonObject>('app-server:transport', (event) => handler(event.payload))
   },
+}
+
+interface ResumeThreadResponse {
+  thread: Thread
+  initialTurnsPage?: { data: Turn[]; nextCursor: string | null } | null
+}
+
+function resumeThread(threadId: string, limit: number): Promise<ResumeThreadResponse> {
+  return invoke<ResumeThreadResponse>('app_server_request', {
+    method: 'thread/resume',
+    params: { threadId, initialTurnsPage: { limit, sortDirection: 'desc', itemsView: 'full' } },
+  })
 }
 
 function pluginScopeKey(scope: PluginScope): string | null {

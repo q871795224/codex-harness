@@ -473,6 +473,7 @@ export function useHarness() {
         input: inputs ?? (text ? [textInput(text)] : []),
       })
       setActiveTurn(threadId, response.turn.id, true)
+      return response.turn.id
     } finally {
       locallyStartingRef.current.delete(threadId)
     }
@@ -965,6 +966,7 @@ export function useHarness() {
     loadOlderTurns,
     chooseWorkspace,
     createThread,
+    startTurnInThread: (threadId: string, prompt: string) => startTurn(threadId, prompt),
     sendMessage,
     stopTurn,
     editQueue,

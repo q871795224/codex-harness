@@ -53,6 +53,16 @@ export interface ConversationTabContribution {
   render(props: ConversationTabProps): ReactNode
 }
 
+export interface ComposerActionProps extends PluginViewContext {
+  disabled: boolean
+}
+
+export interface ComposerActionContribution {
+  id: string
+  order?: number
+  render(props: ComposerActionProps): ReactNode
+}
+
 export interface PluginSettingsProps {
   instance: PluginInstanceRecord
   saveConfig(config: Record<string, unknown>): Promise<void>
@@ -77,6 +87,9 @@ export interface PluginEventAccess {
 export interface PluginSlotAccess {
   conversationTabs: {
     register(contribution: ConversationTabContribution): void
+  }
+  composerActions: {
+    register(contribution: ComposerActionContribution): void
   }
 }
 
