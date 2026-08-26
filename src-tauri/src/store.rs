@@ -30,7 +30,10 @@ pub struct HarnessStore {
 
 impl HarnessStore {
     pub fn open() -> Result<Self, String> {
-        let root = harness_data_dir()?;
+        Self::open_at(harness_data_dir()?)
+    }
+
+    fn open_at(root: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&root).map_err(|error| {
             format!(
                 "无法创建 Codex Harness 数据目录 {}: {error}",
@@ -212,4 +215,89 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        env, fs,
+        path::PathBuf,
+        process,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let suffix = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
+            Self(env::temp_dir().join(format!(
+                "codex-harness-store-test-{}-{suffix}",
+                process::id()
+            )))
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn persists_workspace_and_thread_ui_state() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+
+        let workspace = store
+            .upsert_workspace("/workspace/project", "project")
+            .expect("stores workspace");
+        assert_eq!(workspace.root, "/workspace/project");
+        assert_eq!(workspace.name, "project");
+        assert!(workspace.created_at > 0);
+
+        store
+            .set_thread_state("thread-1", Some(42), Some("working"))
+            .expect("stores initial thread state");
+        store
+            .set_thread_state("thread-1", None, Some("success"))
+            .expect("updates badge without clearing last-read timestamp");
+        drop(store);
+
+        let reloaded = HarnessStore::open_at(directory.0.clone()).expect("reopens isolated store");
+        let workspaces = reloaded.list_workspaces().expect("lists workspace");
+        assert_eq!(workspaces.len(), 1);
+        assert_eq!(workspaces[0].name, "project");
+
+        let states = reloaded.list_thread_states().expect("lists thread state");
+        assert_eq!(states.len(), 1);
+        assert_eq!(states[0].thread_id, "thread-1");
+        assert_eq!(states[0].last_read_at, Some(42));
+        assert_eq!(states[0].badge.as_deref(), Some("success"));
+    }
+
+    #[test]
+    fn reads_and_writes_app_state() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+
+        assert_eq!(
+            store
+                .get_app_state("selectedThreadId")
+                .expect("reads missing state"),
+            None
+        );
+        store
+            .set_app_state("selectedThreadId", "thread-2")
+            .expect("stores application state");
+        assert_eq!(
+            store
+                .get_app_state("selectedThreadId")
+                .expect("reads saved state"),
+            Some("thread-2".to_string())
+        );
+    }
 }

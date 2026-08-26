@@ -69,3 +69,76 @@ fn git<const N: usize>(cwd: &Path, args: [&str; N]) -> Result<String, String> {
     }
     String::from_utf8(output.stdout).map_err(|error| format!("Git 输出不是有效 UTF-8: {error}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        env, fs,
+        path::PathBuf,
+        process::{self, Command},
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let suffix = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
+            let path =
+                env::temp_dir().join(format!("codex-harness-git-test-{}-{suffix}", process::id()));
+            fs::create_dir_all(&path).expect("creates test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn init_git(path: &Path) {
+        let output = Command::new("git")
+            .arg("init")
+            .current_dir(path)
+            .output()
+            .expect("starts git init");
+        assert!(
+            output.status.success(),
+            "git init failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn resolves_main_workspace_from_a_nested_git_directory() {
+        let directory = TestDir::new();
+        init_git(&directory.0);
+        let nested = directory.0.join("nested");
+        fs::create_dir_all(&nested).expect("creates nested directory");
+
+        let workspace = resolve_main_workspace(nested.to_str().expect("UTF-8 path"))
+            .expect("resolves main workspace");
+        let expected_root = fs::canonicalize(&directory.0).expect("canonicalizes test root");
+        assert_eq!(workspace.root, expected_root.to_string_lossy().into_owned());
+        assert_eq!(
+            workspace.name,
+            expected_root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_a_directory_outside_a_git_workspace() {
+        let directory = TestDir::new();
+        let error = resolve_main_workspace(directory.0.to_str().expect("UTF-8 path"))
+            .expect_err("non-Git directory must be rejected");
+
+        assert!(!error.trim().is_empty());
+    }
+}
