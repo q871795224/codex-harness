@@ -72,10 +72,13 @@ export default function App() {
                 approvals={currentApprovals}
                 workspace={workspace}
                 archived={harness.viewMode === 'archived'}
+                hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
+                loadingOlderTurns={Boolean(harness.busy.olderTurns)}
                 onRename={(name) => void harness.renameThread(harness.currentThread!.id, name)}
                 onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
                 onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
+                onLoadOlderTurns={() => void harness.loadOlderTurns()}
               />
             ) : <TrajectoryView items={harness.currentDetail?.items ?? []} />}
 

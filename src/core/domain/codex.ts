@@ -72,7 +72,7 @@ export interface QueuedSubmission {
 export interface ThreadDetail {
   thread: Thread
   items: ThreadItemEntry[]
-  nextItemsCursor: string | null
+  nextTurnsCursor: string | null
   activeTurnId: string | null
   foreignActive: boolean
 }

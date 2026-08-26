@@ -11,15 +11,25 @@ pub fn resolve_main_workspace(path: &str) -> Result<Workspace, String> {
         return Err("请选择一个目录，而不是文件。".to_string());
     }
 
-    let inside = git(&selected, ["rev-parse", "--is-inside-work-tree"])?;
-    if inside.trim() != "true" {
+    // Query both values in one subprocess. This runs for historic sessions as
+    // well, so halving the Git process count noticeably improves sidebar load.
+    let git_info = git(
+        &selected,
+        ["rev-parse", "--is-inside-work-tree", "--git-common-dir"],
+    )?;
+    let mut git_info = git_info.lines();
+    if git_info.next().map(str::trim) != Some("true") {
         return Err("所选目录不在 Git 工作区中。请选择主工作区或其任意子目录。".to_string());
     }
 
     // Git returns the shared git directory for both the main checkout and every linked worktree.
     // Its parent is therefore the only navigation root we persist and expose to new threads.
-    let common_dir = git(&selected, ["rev-parse", "--git-common-dir"])?;
-    let common_dir = PathBuf::from(common_dir.trim());
+    let common_dir = git_info
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "无法从 Git 元数据确定主工作区。".to_string())?;
+    let common_dir = PathBuf::from(common_dir);
     let common_dir = if common_dir.is_absolute() {
         common_dir
     } else {

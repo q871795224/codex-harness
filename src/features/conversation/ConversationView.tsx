@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
   Archive,
@@ -25,10 +25,13 @@ interface ConversationViewProps {
   approvals: ApprovalRequest[]
   workspace: Workspace | null
   archived: boolean
+  hasOlderTurns: boolean
+  loadingOlderTurns: boolean
   onRename: (name: string) => void
   onArchive: () => void
   onUnarchive: () => void
   onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
+  onLoadOlderTurns: () => void
 }
 
 export function ConversationView({
@@ -37,10 +40,13 @@ export function ConversationView({
   approvals,
   workspace,
   archived,
+  hasOlderTurns,
+  loadingOlderTurns,
   onRename,
   onArchive,
   onUnarchive,
   onAnswerApproval,
+  onLoadOlderTurns,
 }: ConversationViewProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
@@ -94,6 +100,11 @@ export function ConversationView({
 
       <div className="conversation-scroll">
         <div className="message-column">
+          {hasOlderTurns && (
+            <button className="load-older-turns" type="button" onClick={onLoadOlderTurns} disabled={loadingOlderTurns}>
+              {loadingOlderTurns ? '正在加载更早消息…' : '加载更早消息'}
+            </button>
+          )}
           {items.length === 0 && (
             <div className="fresh-thread">
               <div className="fresh-thread-mark"><Bot size={24} /></div>
@@ -111,7 +122,7 @@ export function ConversationView({
   )
 }
 
-function ThreadItemView({ entry }: { entry: ThreadItemEntry }) {
+const ThreadItemView = memo(function ThreadItemView({ entry }: { entry: ThreadItemEntry }) {
   const { item } = entry
   if (item.type === 'userMessage') {
     const text = itemText(item)
@@ -143,7 +154,7 @@ function ThreadItemView({ entry }: { entry: ThreadItemEntry }) {
   if (item.type === 'mcpToolCall') return <McpItem item={item} />
   // Reasoning and internal raw response payloads intentionally do not enter the chat transcript.
   return null
-}
+})
 
 function CommandItem({ item }: { item: ThreadItemEntry['item'] }) {
   const [open, setOpen] = useState(false)

@@ -28,6 +28,11 @@ interface ThreadListResponse {
   data: Thread[]
 }
 
+interface TurnsPageResponse {
+  data: Turn[]
+  nextCursor: string | null
+}
+
 interface QueueListResponse {
   data: QueuedSubmission[]
 }
@@ -183,10 +188,13 @@ export function useHarness() {
 
   const refreshThreads = useCallback(async (mode: ViewMode = viewMode, searchTerm = '') => {
     const response = await runtime.request<ThreadListResponse>('thread/list', {
-      limit: 250,
+      // The state DB already backs normal Codex session navigation. Avoid the
+      // expensive JSONL scan-and-repair path on every Harness refresh.
+      limit: 100,
       sortKey: 'recency_at',
       sortDirection: 'desc',
       archived: mode === 'archived',
+      useStateDbOnly: true,
       ...(searchTerm.trim() ? { searchTerm: searchTerm.trim() } : {}),
     })
     setThreads(response.data)
@@ -211,9 +219,12 @@ export function useHarness() {
     try {
       const response = await runtime.request<ResumeResponse>('thread/resume', {
         threadId,
-        initialTurnsPage: { limit: 200, sortDirection: 'asc', itemsView: 'full' },
+        // Match the CLI's bounded history strategy: hydrate only the newest
+        // page first, then let the user explicitly ask for older history.
+        initialTurnsPage: { limit: 5, sortDirection: 'desc', itemsView: 'full' },
       })
-      const turns = response.initialTurnsPage?.data ?? response.thread.turns ?? []
+      const initialTurns = response.initialTurnsPage?.data ?? response.thread.turns ?? []
+      const turns = response.initialTurnsPage ? [...initialTurns].reverse() : initialTurns
       const items = turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item })))
       const activeTurnId = findActiveTurn(turns)
       const owned = ownedActiveThreadsRef.current[threadId] === true
@@ -222,7 +233,7 @@ export function useHarness() {
         [threadId]: {
           thread: response.thread,
           items,
-          nextItemsCursor: null,
+          nextTurnsCursor: response.initialTurnsPage?.nextCursor ?? null,
           activeTurnId,
           foreignActive: activeTurnId !== null && !owned,
         },
@@ -238,6 +249,36 @@ export function useHarness() {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
     }
   }, [loadQueue, markThreadRead, notify, upsertThread])
+
+  const loadOlderTurns = useCallback(async () => {
+    const threadId = selectedThreadIdRef.current
+    const cursor = threadId ? details[threadId]?.nextTurnsCursor : null
+    if (!threadId || !cursor || busy.olderTurns) return
+
+    setBusy((current) => ({ ...current, olderTurns: true }))
+    try {
+      const response = await runtime.request<TurnsPageResponse>('thread/turns/list', {
+        threadId,
+        cursor,
+        limit: 5,
+        sortDirection: 'desc',
+        itemsView: 'full',
+      })
+      if (selectedThreadIdRef.current !== threadId) return
+      const olderItems = [...response.data]
+        .reverse()
+        .flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item })))
+      updateDetail(threadId, (detail) => ({
+        ...detail,
+        items: [...olderItems, ...detail.items],
+        nextTurnsCursor: response.nextCursor,
+      }))
+    } catch (error) {
+      notify(`无法加载更早消息：${messageOf(error)}`, 'error')
+    } finally {
+      setBusy((current) => ({ ...current, olderTurns: false }))
+    }
+  }, [busy.olderTurns, details, notify, updateDetail])
 
   const chooseWorkspace = useCallback(async () => {
     try {
@@ -710,6 +751,7 @@ export function useHarness() {
     currentForeignActive,
     isCurrentWorking: Boolean(activeTurnId),
     selectThread,
+    loadOlderTurns,
     chooseWorkspace,
     createThread,
     sendMessage,

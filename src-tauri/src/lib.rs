@@ -4,13 +4,17 @@ mod store;
 
 use app_server::AppServerManager;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use store::{HarnessStore, ThreadUiState, Workspace};
 use tauri::{Manager, State};
 
 struct AppState {
     app_server: Arc<AppServerManager>,
     store: HarnessStore,
+    workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
 }
 
 #[tauri::command]
@@ -45,14 +49,27 @@ fn register_workspace(state: State<'_, AppState>, path: String) -> Result<Worksp
 }
 
 #[tauri::command]
-fn map_thread_workspaces(paths: Vec<String>) -> HashMap<String, Option<Workspace>> {
-    let mut mapped = HashMap::new();
-    for path in paths {
+async fn map_thread_workspaces(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<HashMap<String, Option<Workspace>>, String> {
+    let cache = state.workspace_cache.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cache = cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut mapped = HashMap::new();
+        for path in paths {
+            let workspace = cache
+                .entry(path.clone())
+                .or_insert_with(|| git_workspace::resolve_main_workspace(&path).ok())
+                .clone();
+            mapped.insert(path, workspace);
+        }
         mapped
-            .entry(path.clone())
-            .or_insert_with(|| git_workspace::resolve_main_workspace(&path).ok());
-    }
-    mapped
+    })
+    .await
+    .map_err(|error| format!("工作区映射任务异常结束: {error}"))
 }
 
 #[tauri::command]
@@ -91,6 +108,7 @@ pub fn run() {
             app.manage(AppState {
                 app_server: manager,
                 store,
+                workspace_cache: Arc::new(Mutex::new(HashMap::new())),
             });
             Ok(())
         })

@@ -75,6 +75,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .thread-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 1; }
 .thread-row time { color: #989da7; font-size: 10px; white-space: nowrap; }
 .empty-thread-list { margin: 3px 0 8px 27px; color: #afb3bb; font-size: 11px; }
+.show-more-sessions { width: calc(100% - 8px); height: 27px; margin: 3px 4px 2px; border: 0; border-radius: 6px; background: transparent; color: #6878bf; cursor: pointer; font-size: 11px; text-align: left; }
+.show-more-sessions:hover { background: #edf0fb; color: #4055b5; }
 
 .status-dot { display: inline-block; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 99px; }
 .status-dot.empty { width: 7px; background: transparent; }
@@ -114,6 +116,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .conversation-scroll, .trajectory-scroll { flex: 1; min-height: 0; overflow: auto; scroll-behavior: smooth; }
 .message-column, .trajectory-list { width: min(880px, calc(100% - 64px)); margin: 0 auto; }
 .message-column { padding: 13px 0 32px; }
+.load-older-turns { display: block; min-width: 120px; height: 28px; margin: 0 auto 22px; padding: 0 12px; border: 1px solid #dde1eb; border-radius: 7px; background: #fff; color: #6572aa; cursor: pointer; font-size: 11px; }
+.load-older-turns:hover:not(:disabled) { border-color: #c4cced; background: #f6f7fd; color: #4a5da9; }
+.load-older-turns:disabled { cursor: wait; opacity: .65; }
 .message { margin: 0 0 26px; }
 .message-label { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: #828894; font-size: 11px; font-weight: 620; }
 .agent-message .message-label { color: #5865a8; }
