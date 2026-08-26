@@ -1,0 +1,15 @@
+# Local reference material and generated protocol snapshots.
+-temp/
+
+# JavaScript / Vite
+node_modules/
+dist/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/

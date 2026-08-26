@@ -1,0 +1,768 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  AppServerEvent,
+  ApprovalRequest,
+  Badge,
+  JsonObject,
+  PendingSteer,
+  QueuedSubmission,
+  Thread,
+  ThreadDetail,
+  ThreadItem,
+  ThreadItemEntry,
+  ThreadUiState,
+  Turn,
+  Workspace,
+} from '../../core/domain/codex'
+import { isActive, textInput } from '../../core/domain/codex'
+import { runtime } from '../../core/runtime/bridge'
+
+type ViewMode = 'active' | 'archived'
+
+interface ResumeResponse {
+  thread: Thread
+  initialTurnsPage?: { data: Turn[]; nextCursor: string | null } | null
+}
+
+interface ThreadListResponse {
+  data: Thread[]
+}
+
+interface QueueListResponse {
+  data: QueuedSubmission[]
+}
+
+interface StartTurnResponse {
+  turn: Turn
+}
+
+interface StartThreadResponse {
+  thread: Thread
+}
+
+interface HookToast {
+  kind: 'error' | 'info'
+  message: string
+}
+
+function eventThreadId(params: JsonObject): string | null {
+  const value = params.threadId ?? params.conversationId
+  return typeof value === 'string' ? value : null
+}
+
+function toThreadItem(value: unknown): ThreadItem | null {
+  if (!value || typeof value !== 'object' || !('type' in value)) return null
+  return value as ThreadItem
+}
+
+function newClientId(): string {
+  return crypto.randomUUID()
+}
+
+function findActiveTurn(turns: Turn[]): string | null {
+  return turns.find((turn) => turn.status === 'inProgress')?.id ?? null
+}
+
+function upsertItem(items: ThreadItemEntry[], turnId: string, nextItem: ThreadItem): ThreadItemEntry[] {
+  const id = typeof nextItem.id === 'string' ? nextItem.id : null
+  if (!id) return [...items, { turnId, item: nextItem }]
+  const found = items.findIndex((entry) => entry.item.id === id)
+  if (found < 0) return [...items, { turnId, item: nextItem }]
+  const copy = [...items]
+  copy[found] = { turnId, item: { ...copy[found].item, ...nextItem } }
+  return copy
+}
+
+function updateItem(items: ThreadItemEntry[], itemId: string, update: (item: ThreadItem) => ThreadItem): ThreadItemEntry[] {
+  return items.map((entry) => entry.item.id === itemId ? { ...entry, item: update(entry.item) } : entry)
+}
+
+export function useHarness() {
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [bootError, setBootError] = useState<string | null>(null)
+  const [threads, setThreads] = useState<Thread[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [threadRoots, setThreadRoots] = useState<Record<string, string | null>>({})
+  const [threadStates, setThreadStates] = useState<Record<string, ThreadUiState>>({})
+  const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
+  const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
+  const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
+  const [pendingSteers, setPendingSteers] = useState<Record<string, PendingSteer[]>>({})
+  const [activeTurnIds, setActiveTurnIds] = useState<Record<string, string>>({})
+  const [ownedActiveThreads, setOwnedActiveThreads] = useState<Record<string, boolean>>({})
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
+  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('active')
+  const [toast, setToast] = useState<HookToast | null>(null)
+  const [busy, setBusy] = useState<Record<string, boolean>>({})
+
+  const selectedThreadIdRef = useRef<string | null>(null)
+  const pendingRestartRef = useRef<Record<string, PendingSteer[]>>({})
+  const locallyStartingRef = useRef(new Set<string>())
+  const activeTurnIdsRef = useRef<Record<string, string>>({})
+  const ownedActiveThreadsRef = useRef<Record<string, boolean>>({})
+  const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
+
+  useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
+  useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
+  useEffect(() => { ownedActiveThreadsRef.current = ownedActiveThreads }, [ownedActiveThreads])
+  useEffect(() => { approvalsRef.current = approvals }, [approvals])
+
+  const notify = useCallback((message: string, kind: HookToast['kind'] = 'info') => {
+    setToast({ message, kind })
+  }, [])
+
+  useEffect(() => {
+    if (!toast) return undefined
+    const timeout = window.setTimeout(() => setToast(null), toast.kind === 'error' ? 6_000 : 3_500)
+    return () => window.clearTimeout(timeout)
+  }, [toast])
+
+  const updateThread = useCallback((threadId: string, change: (thread: Thread) => Thread) => {
+    setThreads((current) => current.map((thread) => thread.id === threadId ? change(thread) : thread))
+  }, [])
+
+  const upsertThread = useCallback((nextThread: Thread) => {
+    setThreads((current) => {
+      const index = current.findIndex((thread) => thread.id === nextThread.id)
+      if (index < 0) return [nextThread, ...current]
+      const copy = [...current]
+      copy[index] = { ...copy[index], ...nextThread }
+      return copy
+    })
+  }, [])
+
+  const updateDetail = useCallback((threadId: string, change: (detail: ThreadDetail) => ThreadDetail) => {
+    setDetails((current) => {
+      const detail = current[threadId]
+      return detail ? { ...current, [threadId]: change(detail) } : current
+    })
+  }, [])
+
+  const persistBadge = useCallback((threadId: string, badge: Badge, lastReadAt: number | null = null) => {
+    setThreadStates((current) => ({
+      ...current,
+      [threadId]: {
+        threadId,
+        lastReadAt: lastReadAt ?? current[threadId]?.lastReadAt ?? null,
+        badge,
+      },
+    }))
+    void runtime.setThreadState(threadId, lastReadAt, badge).catch(() => undefined)
+  }, [])
+
+  const markThreadRead = useCallback((threadId: string) => {
+    const now = Date.now()
+    const hasApproval = (approvalsRef.current[threadId] ?? []).length > 0
+    persistBadge(threadId, hasApproval ? 'approval' : null, now)
+  }, [persistBadge])
+
+  const mapThreadRoots = useCallback(async (nextThreads: Thread[]) => {
+    const paths = [...new Set(nextThreads.map((thread) => thread.cwd).filter(Boolean))]
+    if (paths.length === 0) return
+    try {
+      const mapped = await runtime.mapThreadWorkspaces(paths)
+      setThreadRoots((current) => {
+        const next = { ...current }
+        for (const thread of nextThreads) next[thread.id] = mapped[thread.cwd]?.root ?? null
+        return next
+      })
+      const discovered = Object.values(mapped).filter((workspace): workspace is Workspace => workspace !== null)
+      if (discovered.length > 0) {
+        setWorkspaces((current) => {
+          const byRoot = new Map(current.map((workspace) => [workspace.root, workspace]))
+          for (const workspace of discovered) if (!byRoot.has(workspace.root)) byRoot.set(workspace.root, workspace)
+          return [...byRoot.values()]
+        })
+        setSelectedWorkspaceRoot((current) => current ?? discovered[0].root)
+      }
+    } catch {
+      // A non-Git historic session is intentionally left in 未分组.
+    }
+  }, [])
+
+  const refreshThreads = useCallback(async (mode: ViewMode = viewMode, searchTerm = '') => {
+    const response = await runtime.request<ThreadListResponse>('thread/list', {
+      limit: 250,
+      sortKey: 'recency_at',
+      sortDirection: 'desc',
+      archived: mode === 'archived',
+      ...(searchTerm.trim() ? { searchTerm: searchTerm.trim() } : {}),
+    })
+    setThreads(response.data)
+    void mapThreadRoots(response.data)
+    return response.data
+  }, [mapThreadRoots, viewMode])
+
+  const loadQueue = useCallback(async (threadId: string) => {
+    try {
+      const response = await runtime.request<QueueListResponse>('thread/queue/list', { threadId, limit: 100 })
+      setQueues((current) => ({ ...current, [threadId]: response.data }))
+    } catch (error) {
+      notify(`无法读取排队消息：${messageOf(error)}`, 'error')
+    }
+  }, [notify])
+
+  const selectThread = useCallback(async (threadId: string) => {
+    setSelectedThreadId(threadId)
+    void runtime.setAppState('selectedThreadId', threadId).catch(() => undefined)
+    markThreadRead(threadId)
+    setBusy((current) => ({ ...current, [`load:${threadId}`]: true }))
+    try {
+      const response = await runtime.request<ResumeResponse>('thread/resume', {
+        threadId,
+        initialTurnsPage: { limit: 200, sortDirection: 'asc', itemsView: 'full' },
+      })
+      const turns = response.initialTurnsPage?.data ?? response.thread.turns ?? []
+      const items = turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item })))
+      const activeTurnId = findActiveTurn(turns)
+      const owned = ownedActiveThreadsRef.current[threadId] === true
+      setDetails((current) => ({
+        ...current,
+        [threadId]: {
+          thread: response.thread,
+          items,
+          nextItemsCursor: null,
+          activeTurnId,
+          foreignActive: activeTurnId !== null && !owned,
+        },
+      }))
+      upsertThread(response.thread)
+      if (activeTurnId) {
+        setActiveTurnIds((current) => ({ ...current, [threadId]: activeTurnId }))
+      }
+      await loadQueue(threadId)
+    } catch (error) {
+      notify(`无法恢复会话：${messageOf(error)}`, 'error')
+    } finally {
+      setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
+    }
+  }, [loadQueue, markThreadRead, notify, upsertThread])
+
+  const chooseWorkspace = useCallback(async () => {
+    try {
+      const workspace = await runtime.chooseWorkspace()
+      if (!workspace) return
+      setWorkspaces((current) => [workspace, ...current.filter((item) => item.root !== workspace.root)])
+      setSelectedWorkspaceRoot(workspace.root)
+      notify(`已添加 ${workspace.name}`)
+      await refreshThreads()
+    } catch (error) {
+      notify(messageOf(error), 'error')
+    }
+  }, [notify, refreshThreads])
+
+  const createThread = useCallback(async () => {
+    if (!selectedWorkspaceRoot) {
+      notify('请先在左侧选择一个 Git 主工作区。', 'error')
+      return
+    }
+    setBusy((current) => ({ ...current, createThread: true }))
+    try {
+      const response = await runtime.request<StartThreadResponse>('thread/start', { cwd: selectedWorkspaceRoot })
+      upsertThread(response.thread)
+      setThreadRoots((current) => ({ ...current, [response.thread.id]: selectedWorkspaceRoot }))
+      await selectThread(response.thread.id)
+    } catch (error) {
+      notify(`无法创建会话：${messageOf(error)}`, 'error')
+    } finally {
+      setBusy((current) => ({ ...current, createThread: false }))
+    }
+  }, [notify, selectThread, selectedWorkspaceRoot, upsertThread])
+
+  const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
+    setActiveTurnIds((current) => ({ ...current, [threadId]: turnId }))
+    setOwnedActiveThreads((current) => ({ ...current, [threadId]: owned }))
+    updateDetail(threadId, (detail) => ({ ...detail, activeTurnId: turnId, foreignActive: !owned }))
+    updateThread(threadId, (thread) => ({ ...thread, status: { type: 'active', activeFlags: [] } }))
+    persistBadge(threadId, 'working')
+  }, [persistBadge, updateDetail, updateThread])
+
+  const startTurn = useCallback(async (threadId: string, text: string | null, inputs?: ReturnType<typeof textInput>[]) => {
+    locallyStartingRef.current.add(threadId)
+    try {
+      const response = await runtime.request<StartTurnResponse>('turn/start', {
+        threadId,
+        clientUserMessageId: newClientId(),
+        input: inputs ?? (text ? [textInput(text)] : []),
+      })
+      setActiveTurn(threadId, response.turn.id, true)
+    } finally {
+      locallyStartingRef.current.delete(threadId)
+    }
+  }, [setActiveTurn])
+
+  const sendMessage = useCallback(async (text: string, mode: 'interject' | 'queue') => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId || !text.trim()) return
+    const activeTurnId = activeTurnIdsRef.current[threadId]
+    const owned = ownedActiveThreadsRef.current[threadId] === true
+    if (activeTurnId && !owned) {
+      notify('该会话正由其他客户端运行；请等待当前轮结束。', 'error')
+      return
+    }
+    setBusy((current) => ({ ...current, composer: true }))
+    try {
+      if (!activeTurnId) {
+        await startTurn(threadId, text.trim())
+        return
+      }
+
+      const clientUserMessageId = newClientId()
+      if (mode === 'queue') {
+        await runtime.request('thread/queue/add', {
+          threadId,
+          clientUserMessageId,
+          input: [textInput(text.trim())],
+        })
+        await loadQueue(threadId)
+        return
+      }
+
+      await runtime.request('turn/steer', {
+        threadId,
+        expectedTurnId: activeTurnId,
+        clientUserMessageId,
+        input: [textInput(text.trim())],
+      })
+      setPendingSteers((current) => ({
+        ...current,
+        [threadId]: [...(current[threadId] ?? []), { clientUserMessageId, text: text.trim(), createdAt: Date.now() }],
+      }))
+    } catch (error) {
+      notify(`无法发送消息：${messageOf(error)}`, 'error')
+    } finally {
+      setBusy((current) => ({ ...current, composer: false }))
+    }
+  }, [loadQueue, notify, startTurn])
+
+  const stopTurn = useCallback(async () => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId) return
+    const turnId = activeTurnIdsRef.current[threadId]
+    if (!turnId || !ownedActiveThreadsRef.current[threadId]) return
+    const steers = pendingSteers[threadId] ?? []
+    if (steers.length > 0) pendingRestartRef.current[threadId] = steers
+    setBusy((current) => ({ ...current, stop: true }))
+    try {
+      await runtime.request('turn/interrupt', { threadId, turnId })
+    } catch (error) {
+      delete pendingRestartRef.current[threadId]
+      notify(`无法停止当前轮：${messageOf(error)}`, 'error')
+    } finally {
+      setBusy((current) => ({ ...current, stop: false }))
+    }
+  }, [notify, pendingSteers])
+
+  const editQueue = useCallback(async (queueId: string, text: string) => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId || !text.trim()) return
+    try {
+      await runtime.request('thread/queue/update', { threadId, queuedSubmissionId: queueId, input: [textInput(text.trim())] })
+      await loadQueue(threadId)
+    } catch (error) {
+      notify(`无法修改排队消息：${messageOf(error)}`, 'error')
+    }
+  }, [loadQueue, notify])
+
+  const removeQueue = useCallback(async (queueId: string) => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId) return
+    try {
+      await runtime.request('thread/queue/delete', { threadId, queuedSubmissionId: queueId })
+      setQueues((current) => ({ ...current, [threadId]: (current[threadId] ?? []).filter((item) => item.id !== queueId) }))
+    } catch (error) {
+      notify(`无法撤回排队消息：${messageOf(error)}`, 'error')
+    }
+  }, [notify])
+
+  const promoteQueue = useCallback(async (queue: QueuedSubmission) => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId) return
+    const activeTurnId = activeTurnIdsRef.current[threadId]
+    if (!activeTurnId || !ownedActiveThreadsRef.current[threadId]) {
+      notify('只有 Harness 正在运行该会话时，才能将排队消息改为插话。', 'error')
+      return
+    }
+    setBusy((current) => ({ ...current, [`promote:${queue.id}`]: true }))
+    try {
+      // App Server has no atomic promote operation. Delete first avoids a duplicated follow-up;
+      // on a failed steer we immediately restore the same server-owned queue entry.
+      await runtime.request('thread/queue/delete', { threadId, queuedSubmissionId: queue.id })
+      try {
+        await runtime.request('turn/steer', {
+          threadId,
+          expectedTurnId: activeTurnId,
+          clientUserMessageId: queue.clientUserMessageId,
+          input: queue.input,
+        })
+      } catch (error) {
+        await runtime.request('thread/queue/add', {
+          threadId,
+          clientUserMessageId: queue.clientUserMessageId,
+          input: queue.input,
+        }).catch(() => undefined)
+        throw error
+      }
+      const text = queue.input.map((input) => input.type === 'text' ? input.text : '').filter(Boolean).join('\n')
+      setPendingSteers((current) => ({
+        ...current,
+        [threadId]: [...(current[threadId] ?? []), { clientUserMessageId: queue.clientUserMessageId, text, createdAt: Date.now() }],
+      }))
+      setQueues((current) => ({ ...current, [threadId]: (current[threadId] ?? []).filter((item) => item.id !== queue.id) }))
+    } catch (error) {
+      await loadQueue(threadId)
+      notify(`未能改为插话；消息已尝试恢复到队列：${messageOf(error)}`, 'error')
+    } finally {
+      setBusy((current) => ({ ...current, [`promote:${queue.id}`]: false }))
+    }
+  }, [loadQueue, notify])
+
+  const startQueue = useCallback(async () => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId || activeTurnIdsRef.current[threadId]) return
+    const queue = queues[threadId] ?? []
+    if (queue.length === 0) return
+    try {
+      const response = await runtime.request<StartTurnResponse>('thread/queue/start', { threadId, queuedSubmissionId: queue[0].id })
+      setActiveTurn(threadId, response.turn.id, true)
+    } catch (error) {
+      notify(`无法继续队列：${messageOf(error)}`, 'error')
+    }
+  }, [notify, queues, setActiveTurn])
+
+  const renameThread = useCallback(async (threadId: string, name: string) => {
+    try {
+      await runtime.request('thread/name/set', { threadId, name: name.trim() })
+      updateThread(threadId, (thread) => ({ ...thread, name: name.trim() || null }))
+      updateDetail(threadId, (detail) => ({ ...detail, thread: { ...detail.thread, name: name.trim() || null } }))
+    } catch (error) {
+      notify(`无法重命名会话：${messageOf(error)}`, 'error')
+    }
+  }, [notify, updateDetail, updateThread])
+
+  const archiveThread = useCallback(async (threadId: string) => {
+    try {
+      await runtime.request('thread/archive', { threadId })
+      setThreads((current) => current.filter((thread) => thread.id !== threadId))
+      if (selectedThreadIdRef.current === threadId) setSelectedThreadId(null)
+      notify('已归档会话')
+    } catch (error) {
+      notify(`无法归档会话：${messageOf(error)}`, 'error')
+    }
+  }, [notify])
+
+  const unarchiveThread = useCallback(async (threadId: string) => {
+    try {
+      await runtime.request('thread/unarchive', { threadId })
+      setThreads((current) => current.filter((thread) => thread.id !== threadId))
+      if (selectedThreadIdRef.current === threadId) setSelectedThreadId(null)
+      notify('已恢复会话')
+    } catch (error) {
+      notify(`无法恢复会话：${messageOf(error)}`, 'error')
+    }
+  }, [notify])
+
+  const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
+    try {
+      await runtime.respond(request.id, approvalResult(request.method, decision))
+      setApprovals((current) => ({
+        ...current,
+        [request.threadId]: (current[request.threadId] ?? []).filter((item) => item.id !== request.id),
+      }))
+      const remaining = (approvalsRef.current[request.threadId] ?? []).filter((item) => item.id !== request.id)
+      if (remaining.length === 0 && activeTurnIdsRef.current[request.threadId]) persistBadge(request.threadId, 'working')
+    } catch (error) {
+      notify(`无法提交审批结果：${messageOf(error)}`, 'error')
+    }
+  }, [notify, persistBadge])
+
+  const handleEvent = useCallback((event: AppServerEvent) => {
+    const method = event.method
+    const params = event.params ?? {}
+    if (!method) return
+
+    if (event.id !== undefined && isApprovalRequest(method)) {
+      const threadId = eventThreadId(params)
+      if (threadId) {
+        const request: ApprovalRequest = { id: event.id, method, params, threadId }
+        setApprovals((current) => ({ ...current, [threadId]: [...(current[threadId] ?? []), request] }))
+        persistBadge(threadId, 'approval')
+      }
+      return
+    }
+
+    if (method === 'thread/started') {
+      const thread = params.thread as Thread | undefined
+      if (thread) {
+        upsertThread(thread)
+        void mapThreadRoots([thread])
+      }
+      return
+    }
+
+    if (method === 'thread/status/changed') {
+      const threadId = eventThreadId(params)
+      const status = params.status as Thread['status'] | undefined
+      if (threadId && status) {
+        updateThread(threadId, (thread) => ({ ...thread, status }))
+        updateDetail(threadId, (detail) => ({ ...detail, thread: { ...detail.thread, status } }))
+        if (status.type === 'systemError') persistBadge(threadId, 'error')
+      }
+      return
+    }
+
+    if (method === 'thread/name/updated') {
+      const threadId = eventThreadId(params)
+      const name = typeof params.threadName === 'string' ? params.threadName : null
+      if (threadId) {
+        updateThread(threadId, (thread) => ({ ...thread, name }))
+        updateDetail(threadId, (detail) => ({ ...detail, thread: { ...detail.thread, name } }))
+      }
+      return
+    }
+
+    if (method === 'turn/started') {
+      const threadId = eventThreadId(params)
+      const turn = params.turn as Turn | undefined
+      if (threadId && turn) {
+        const owned = locallyStartingRef.current.has(threadId) || ownedActiveThreadsRef.current[threadId] === true
+        setActiveTurn(threadId, turn.id, owned)
+        updateDetail(threadId, (detail) => ({
+          ...detail,
+          items: turn.items.reduce((items, item) => upsertItem(items, turn.id, item), detail.items),
+        }))
+      }
+      return
+    }
+
+    if (method === 'item/started' || method === 'item/completed') {
+      const threadId = eventThreadId(params)
+      const turnId = typeof params.turnId === 'string' ? params.turnId : null
+      const item = toThreadItem(params.item)
+      if (threadId && turnId && item) {
+        updateDetail(threadId, (detail) => ({ ...detail, items: upsertItem(detail.items, turnId, item) }))
+        if (item.type === 'userMessage') {
+          const clientId = typeof item.clientId === 'string' ? item.clientId : null
+          if (clientId) {
+            setPendingSteers((current) => ({
+              ...current,
+              [threadId]: (current[threadId] ?? []).filter((steer) => steer.clientUserMessageId !== clientId),
+            }))
+          }
+        }
+      }
+      return
+    }
+
+    if (method === 'item/agentMessage/delta') {
+      const threadId = eventThreadId(params)
+      const itemId = typeof params.itemId === 'string' ? params.itemId : null
+      const delta = typeof params.delta === 'string' ? params.delta : ''
+      if (threadId && itemId) {
+        updateDetail(threadId, (detail) => ({
+          ...detail,
+          items: updateItem(detail.items, itemId, (item) => ({ ...item, text: `${item.text ?? ''}${delta}` })),
+        }))
+      }
+      return
+    }
+
+    if (method === 'item/commandExecution/outputDelta') {
+      const threadId = eventThreadId(params)
+      const itemId = typeof params.itemId === 'string' ? params.itemId : null
+      const delta = typeof params.delta === 'string' ? params.delta : ''
+      if (threadId && itemId) {
+        updateDetail(threadId, (detail) => ({
+          ...detail,
+          items: updateItem(detail.items, itemId, (item) => ({ ...item, aggregatedOutput: `${item.aggregatedOutput ?? ''}${delta}` })),
+        }))
+      }
+      return
+    }
+
+    if (method === 'turn/completed') {
+      const threadId = eventThreadId(params)
+      const turn = params.turn as Turn | undefined
+      if (threadId && turn) {
+        updateDetail(threadId, (detail) => ({
+          ...detail,
+          items: turn.items.reduce((items, item) => upsertItem(items, turn.id, item), detail.items),
+          activeTurnId: detail.activeTurnId === turn.id ? null : detail.activeTurnId,
+        }))
+        setActiveTurnIds((current) => {
+          const next = { ...current }
+          if (next[threadId] === turn.id) delete next[threadId]
+          return next
+        })
+        setOwnedActiveThreads((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        updateThread(threadId, (thread) => ({ ...thread, status: { type: 'idle' }, updatedAt: Math.floor(Date.now() / 1000) }))
+        const badge: Badge = turn.status === 'failed' ? 'error' : selectedThreadIdRef.current === threadId ? null : 'success'
+        persistBadge(threadId, badge)
+
+        const restarts = pendingRestartRef.current[threadId]
+        if (restarts?.length) {
+          delete pendingRestartRef.current[threadId]
+          setPendingSteers((current) => ({ ...current, [threadId]: [] }))
+          void startTurn(threadId, null, restarts.map((steer) => textInput(steer.text))).catch((error) => {
+            notify(`插话未能在停止后继续发送：${messageOf(error)}`, 'error')
+          })
+        }
+      }
+      return
+    }
+
+    if (method === 'thread/queue/changed') {
+      const threadId = eventThreadId(params)
+      if (threadId) void loadQueue(threadId)
+      return
+    }
+
+    if (method === 'serverRequest/resolved') {
+      const threadId = eventThreadId(params)
+      const requestId = params.requestId
+      if (threadId && (typeof requestId === 'string' || typeof requestId === 'number')) {
+        setApprovals((current) => ({
+          ...current,
+          [threadId]: (current[threadId] ?? []).filter((request) => request.id !== requestId),
+        }))
+      }
+      return
+    }
+
+    if (method === 'thread/archived' || method === 'thread/deleted' || method === 'thread/unarchived') {
+      const threadId = eventThreadId(params)
+      if (threadId) setThreads((current) => current.filter((thread) => thread.id !== threadId))
+    }
+  }, [loadQueue, mapThreadRoots, notify, persistBadge, setActiveTurn, startTurn, updateDetail, updateThread, upsertThread])
+
+  useEffect(() => {
+    let disposed = false
+    let unlistenEvents: (() => void) | undefined
+    let unlistenTransport: (() => void) | undefined
+    const bootstrap = async () => {
+      try {
+        const [storedWorkspaces, storedStates, rememberedThreadId] = await Promise.all([
+          runtime.listWorkspaces(),
+          runtime.listThreadStates(),
+          runtime.getAppState('selectedThreadId'),
+        ])
+        if (disposed) return
+        setWorkspaces(storedWorkspaces)
+        setThreadStates(Object.fromEntries(storedStates.map((state) => [state.threadId, state])))
+        if (storedWorkspaces.length > 0) setSelectedWorkspaceRoot(storedWorkspaces[0].root)
+        const loadedThreads = await refreshThreads('active')
+        if (disposed) return
+        setPhase('ready')
+        if (rememberedThreadId && loadedThreads.some((thread) => thread.id === rememberedThreadId)) {
+          void selectThread(rememberedThreadId)
+        }
+      } catch (error) {
+        if (!disposed) {
+          setPhase('error')
+          setBootError(messageOf(error))
+        }
+      }
+    }
+    void bootstrap()
+    void runtime.listenEvents(handleEvent).then((unlisten) => { unlistenEvents = unlisten })
+    void runtime.listenTransport((event) => {
+      if (event.kind === 'disconnected') notify(String(event.message ?? 'Codex App Server 连接已断开。'), 'error')
+    }).then((unlisten) => { unlistenTransport = unlisten })
+    return () => {
+      disposed = true
+      unlistenEvents?.()
+      unlistenTransport?.()
+    }
+  }, [handleEvent, notify, refreshThreads, selectThread])
+
+  const currentThread = useMemo(
+    () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
+    [selectedThreadId, threads],
+  )
+  const currentDetail = selectedThreadId ? details[selectedThreadId] ?? null : null
+  const activeTurnId = selectedThreadId ? activeTurnIds[selectedThreadId] ?? currentDetail?.activeTurnId ?? null : null
+  const currentForeignActive = currentDetail?.foreignActive ?? (Boolean(activeTurnId) && !ownedActiveThreads[selectedThreadId ?? ''])
+
+  return {
+    phase,
+    bootError,
+    threads,
+    workspaces,
+    threadRoots,
+    threadStates,
+    details,
+    queues,
+    approvals,
+    pendingSteers,
+    selectedThreadId,
+    selectedWorkspaceRoot,
+    viewMode,
+    toast,
+    busy,
+    currentThread,
+    currentDetail,
+    activeTurnId,
+    currentForeignActive,
+    isCurrentWorking: Boolean(activeTurnId),
+    selectThread,
+    chooseWorkspace,
+    createThread,
+    sendMessage,
+    stopTurn,
+    editQueue,
+    removeQueue,
+    promoteQueue,
+    startQueue,
+    renameThread,
+    archiveThread,
+    unarchiveThread,
+    answerApproval,
+    setSelectedWorkspaceRoot,
+    setViewMode: async (mode: ViewMode) => {
+      setViewMode(mode)
+      try {
+        await refreshThreads(mode)
+      } catch (error) {
+        notify(`无法读取会话：${messageOf(error)}`, 'error')
+      }
+    },
+    searchThreads: async (term: string) => {
+      try {
+        await refreshThreads(viewMode, term)
+      } catch (error) {
+        notify(`无法搜索会话：${messageOf(error)}`, 'error')
+      }
+    },
+    refresh: async () => {
+      try {
+        await refreshThreads()
+      } catch (error) {
+        notify(`无法刷新会话：${messageOf(error)}`, 'error')
+      }
+    },
+  }
+}
+
+function isApprovalRequest(method: string): boolean {
+  return method === 'execCommandApproval'
+    || method === 'applyPatchApproval'
+    || method.endsWith('/requestApproval')
+    || method === 'item/tool/requestUserInput'
+}
+
+function approvalResult(method: string, decision: unknown): JsonObject {
+  if (method === 'execCommandApproval' || method === 'applyPatchApproval') {
+    return { decision: decision === 'accept' ? 'approved' : { denied: { rejection: 'Denied in Codex Harness' } } }
+  }
+  if (method === 'item/tool/requestUserInput') return { answers: {} }
+  return { decision }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
