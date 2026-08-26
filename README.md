@@ -14,7 +14,7 @@
 
 ## 阶段 2
 
-- Harness 已加载随 App 发布的内置插件；暂不加载外部代码或管理 Codex 插件。
+- Harness 已加载随 App 发布的内置插件；外部 Harness 插件需等待独立 WebView 权限隔离完成，Codex 插件继续由 App Server 管理。
 - 插件实例可归属于全局、workspace 或 thread，并拥有独立启停、配置和本地 KV。
 - “轨迹”已作为首个内置插件通过 `conversation.tabs` slot 接入。
 - “临时 Agent”通过独立 child thread 支持后台运行与人工确认回传，运行索引不保存会话正文。

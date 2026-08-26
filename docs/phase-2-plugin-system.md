@@ -463,7 +463,7 @@ workspace/thread scope 的 SeaTalk 实例用于“只给这个项目或会话配
 
 进入条件：前三个阶段已经用 UI、后台 Agent 和外部连接验证生命周期与权限边界。
 
-届时再确定预构建包格式、manifest schema、签名/哈希、原子安装、升级回滚和 sandboxed UI transport。首版只考虑本地文件安装，不做 marketplace，也不合并 Codex 插件生命周期。
+评估结论见 [阶段 2.4 外部插件安全评估](./phase-2.4-external-plugin-evaluation.md)：第三方代码不能通过 `dynamic import()` 或 iframe 进入主 WebView。目标方案使用校验过的本地包、独立 Tauri WebView principal、零默认 native capability 和 schema 化 RPC；在隔离、安装回滚和 CSP 门槛全部完成前，外部加载入口保持关闭，不做 marketplace，也不合并 Codex 插件生命周期。
 
 ## 验证与回滚
 
