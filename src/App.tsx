@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Bot, MessageSquareText, PanelLeftClose, Route, RotateCw } from 'lucide-react'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer } from './features/conversation/Composer'
+import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
 import { TrajectoryView } from './features/conversation/TrajectoryView'
@@ -44,6 +45,9 @@ export default function App() {
         selectedThreadId={harness.selectedThreadId}
         selectedWorkspaceRoot={harness.selectedWorkspaceRoot}
         viewMode={harness.viewMode}
+        navigationLayout={harness.navigation.layout}
+        threadSort={harness.navigation.sort}
+        manualThreadOrder={harness.navigation.manualThreadOrder}
         creatingThread={Boolean(harness.busy.createThread)}
         onSelectThread={(threadId) => void harness.selectThread(threadId)}
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
@@ -52,6 +56,9 @@ export default function App() {
         onSearch={(term) => void harness.searchThreads(term)}
         onRefresh={() => void harness.refresh()}
         onViewMode={(mode) => void harness.setViewMode(mode)}
+        onNavigationLayout={harness.setNavigationLayout}
+        onThreadSort={harness.setThreadSort}
+        onManualThreadOrder={harness.setManualThreadOrder}
       />
       <main className="main-pane">
         {harness.currentThread ? (
@@ -100,8 +107,14 @@ export default function App() {
                   working={harness.isCurrentWorking}
                   foreignActive={harness.currentForeignActive}
                   busy={Boolean(harness.busy.composer)}
+                  contextUsage={harness.currentTokenUsage}
                   onSend={harness.sendMessage}
                   onStop={harness.stopTurn}
+                />
+                <ConversationStats
+                  turns={harness.currentDetail?.turns ?? []}
+                  items={harness.currentDetail?.items ?? []}
+                  tokenUsage={harness.currentTokenUsage}
                 />
               </div>
             )}

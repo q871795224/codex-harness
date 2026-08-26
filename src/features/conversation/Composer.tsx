@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronDown, Send, Square } from 'lucide-react'
+import type { ThreadTokenUsage } from '../../core/domain/codex'
 
 interface ComposerProps {
   disabled: boolean
   working: boolean
   foreignActive: boolean
   busy: boolean
+  contextUsage: ThreadTokenUsage | null
   onSend: (text: string, mode: 'interject' | 'queue') => Promise<void> | void
   onStop: () => Promise<void> | void
 }
 
-export function Composer({ disabled, working, foreignActive, busy, onSend, onStop }: ComposerProps) {
+export function Composer({ disabled, working, foreignActive, busy, contextUsage, onSend, onStop }: ComposerProps) {
   const [text, setText] = useState('')
   const [mode, setMode] = useState<'interject' | 'queue'>('interject')
   const [modeOpen, setModeOpen] = useState(false)
@@ -19,6 +21,17 @@ export function Composer({ disabled, working, foreignActive, busy, onSend, onSto
   useEffect(() => {
     ref.current?.focus()
   }, [disabled])
+
+  useLayoutEffect(() => {
+    const textarea = ref.current
+    if (!textarea) return
+    // Five 24px lines, including the editor's padding, retains a compact composer.
+    const maximumHeight = 124
+    textarea.style.height = '0px'
+    const nextHeight = Math.min(textarea.scrollHeight, maximumHeight)
+    textarea.style.height = `${Math.max(28, nextHeight)}px`
+    textarea.style.overflowY = textarea.scrollHeight > maximumHeight ? 'auto' : 'hidden'
+  }, [text])
 
   const submit = async () => {
     const message = text.trim()
@@ -45,13 +58,13 @@ export function Composer({ disabled, working, foreignActive, busy, onSend, onSto
               void submit()
             }
           }}
-          rows={2}
+          rows={1}
         />
         <div className="composer-footer">
           {working && !foreignActive ? (
             <div className="send-mode-wrap">
               <button type="button" className="send-mode" onClick={() => setModeOpen((open) => !open)}>
-                {mode === 'interject' ? '插话' : '排队'}<ChevronDown size={13} />
+                {mode === 'interject' ? '插话' : '排队'}<ChevronDown size={14} />
               </button>
               {modeOpen && (
                 <div className="send-mode-menu">
@@ -71,12 +84,47 @@ export function Composer({ disabled, working, foreignActive, busy, onSend, onSto
                 <Square size={13} /> 停止
               </button>
             )}
+            <ContextRing usage={contextUsage} />
             <button type="button" className="send-button" disabled={disabled || busy || !text.trim()} onClick={() => void submit()} title="发送消息">
-              <Send size={16} />
+              <Send size={17} />
             </button>
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+function ContextRing({ usage }: { usage: ThreadTokenUsage | null }) {
+  const windowSize = usage?.modelContextWindow ?? null
+  const used = usage?.last.totalTokens ?? null
+  const percent = windowSize && used !== null ? Math.min(100, Math.max(0, (used / windowSize) * 100)) : 0
+  const circumference = 2 * Math.PI * 9
+  const dashOffset = circumference * (1 - percent / 100)
+  const tone = percent >= 90 ? 'danger' : percent >= 75 ? 'warning' : ''
+  const label = windowSize && used !== null
+    ? `上下文已使用 ${formatTokens(used)} / ${formatTokens(windowSize)} tokens（${Math.round(percent)}%）`
+    : '等待 App Server 提供上下文窗口用量'
+
+  return (
+    <span className={`context-ring ${tone}`} title={label} aria-label={label}>
+      <svg viewBox="0 0 24 24" aria-hidden>
+        <circle className="context-ring-track" cx="12" cy="12" r="9" />
+        <circle
+          className="context-ring-progress"
+          cx="12"
+          cy="12"
+          r="9"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+        />
+      </svg>
+    </span>
+  )
+}
+
+function formatTokens(value: number): string {
+  if (value < 1_000) return String(Math.round(value))
+  if (value < 1_000_000) return `${Math.round(value / 1_000)}K`
+  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
 }

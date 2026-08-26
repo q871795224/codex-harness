@@ -4,12 +4,16 @@ import type {
   ApprovalRequest,
   Badge,
   JsonObject,
+  NavigationLayout,
+  NavigationPreferences,
   PendingSteer,
   QueuedSubmission,
   Thread,
   ThreadDetail,
   ThreadItem,
   ThreadItemEntry,
+  ThreadSort,
+  ThreadTokenUsage,
   ThreadUiState,
   Turn,
   Workspace,
@@ -18,6 +22,14 @@ import { isActive, textInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 
 type ViewMode = 'active' | 'archived'
+
+const NAVIGATION_PREFERENCES_KEY = 'navigationPreferences'
+
+const defaultNavigationPreferences: NavigationPreferences = {
+  layout: 'workspace',
+  sort: 'recent',
+  manualThreadOrder: [],
+}
 
 interface ResumeResponse {
   thread: Thread
@@ -78,6 +90,66 @@ function upsertItem(items: ThreadItemEntry[], turnId: string, nextItem: ThreadIt
   return copy
 }
 
+function upsertTurn(turns: Turn[], nextTurn: Turn): Turn[] {
+  const index = turns.findIndex((turn) => turn.id === nextTurn.id)
+  if (index < 0) return [...turns, nextTurn]
+  const copy = [...turns]
+  const current = copy[index]
+  copy[index] = {
+    ...current,
+    ...nextTurn,
+    // A turn/started event can arrive without items for a turn that was already
+    // hydrated from history. Do not throw that known history away.
+    items: nextTurn.items.length > 0 ? nextTurn.items : current.items,
+  }
+  return copy
+}
+
+function parseNavigationPreferences(raw: string | null): NavigationPreferences {
+  if (!raw) return defaultNavigationPreferences
+  try {
+    const value = JSON.parse(raw) as Partial<NavigationPreferences>
+    return {
+      layout: value.layout === 'list' ? 'list' : 'workspace',
+      sort: value.sort === 'manual' ? 'manual' : 'recent',
+      manualThreadOrder: Array.isArray(value.manualThreadOrder)
+        ? [...new Set(value.manualThreadOrder.filter((id): id is string => typeof id === 'string'))].slice(0, 500)
+        : [],
+    }
+  } catch {
+    return defaultNavigationPreferences
+  }
+}
+
+function parseTokenUsage(value: unknown): ThreadTokenUsage | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as JsonObject
+  const breakdown = (candidate: unknown) => {
+    if (!candidate || typeof candidate !== 'object') return null
+    const source = candidate as JsonObject
+    const number = (key: string, fallback = 0) => {
+      const next = source[key]
+      return typeof next === 'number' && Number.isFinite(next) ? Math.max(0, next) : fallback
+    }
+    if (typeof source.totalTokens !== 'number') return null
+    return {
+      totalTokens: number('totalTokens'),
+      inputTokens: number('inputTokens'),
+      cachedInputTokens: number('cachedInputTokens'),
+      cacheWriteInputTokens: number('cacheWriteInputTokens'),
+      outputTokens: number('outputTokens'),
+      reasoningOutputTokens: number('reasoningOutputTokens'),
+    }
+  }
+  const total = breakdown(raw.total)
+  const last = breakdown(raw.last)
+  if (!total || !last) return null
+  const modelContextWindow = typeof raw.modelContextWindow === 'number' && Number.isFinite(raw.modelContextWindow)
+    ? Math.max(0, raw.modelContextWindow)
+    : null
+  return { total, last, modelContextWindow }
+}
+
 function updateItem(items: ThreadItemEntry[], itemId: string, update: (item: ThreadItem) => ThreadItem): ThreadItemEntry[] {
   return items.map((entry) => entry.item.id === itemId ? { ...entry, item: update(entry.item) } : entry)
 }
@@ -90,6 +162,8 @@ export function useHarness() {
   const [threadRoots, setThreadRoots] = useState<Record<string, string | null>>({})
   const [threadStates, setThreadStates] = useState<Record<string, ThreadUiState>>({})
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
+  const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
+  const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
   const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
   const [pendingSteers, setPendingSteers] = useState<Record<string, PendingSteer[]>>({})
@@ -116,6 +190,29 @@ export function useHarness() {
   const notify = useCallback((message: string, kind: HookToast['kind'] = 'info') => {
     setToast({ message, kind })
   }, [])
+
+  const updateNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
+    setNavigation((current) => {
+      const next = change(current)
+      void runtime.setAppState(NAVIGATION_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
+    })
+  }, [])
+
+  const setNavigationLayout = useCallback((layout: NavigationLayout) => {
+    updateNavigation((current) => ({ ...current, layout }))
+  }, [updateNavigation])
+
+  const setThreadSort = useCallback((sort: ThreadSort) => {
+    updateNavigation((current) => ({ ...current, sort }))
+  }, [updateNavigation])
+
+  const setManualThreadOrder = useCallback((manualThreadOrder: string[]) => {
+    updateNavigation((current) => ({
+      ...current,
+      manualThreadOrder: [...new Set(manualThreadOrder.filter((id) => Boolean(id)))].slice(0, 500),
+    }))
+  }, [updateNavigation])
 
   useEffect(() => {
     if (!toast) return undefined
@@ -232,6 +329,7 @@ export function useHarness() {
         ...current,
         [threadId]: {
           thread: response.thread,
+          turns,
           items,
           nextTurnsCursor: response.initialTurnsPage?.nextCursor ?? null,
           activeTurnId,
@@ -270,6 +368,7 @@ export function useHarness() {
         .flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item })))
       updateDetail(threadId, (detail) => ({
         ...detail,
+        turns: [...response.data].reverse().concat(detail.turns),
         items: [...olderItems, ...detail.items],
         nextTurnsCursor: response.nextCursor,
       }))
@@ -563,6 +662,15 @@ export function useHarness() {
       return
     }
 
+    if (method === 'thread/tokenUsage/updated') {
+      const threadId = eventThreadId(params)
+      const tokenUsage = parseTokenUsage(params.tokenUsage)
+      if (threadId && tokenUsage) {
+        setThreadTokenUsages((current) => ({ ...current, [threadId]: tokenUsage }))
+      }
+      return
+    }
+
     if (method === 'turn/started') {
       const threadId = eventThreadId(params)
       const turn = params.turn as Turn | undefined
@@ -571,6 +679,7 @@ export function useHarness() {
         setActiveTurn(threadId, turn.id, owned)
         updateDetail(threadId, (detail) => ({
           ...detail,
+          turns: upsertTurn(detail.turns, turn),
           items: turn.items.reduce((items, item) => upsertItem(items, turn.id, item), detail.items),
         }))
       }
@@ -628,6 +737,7 @@ export function useHarness() {
       if (threadId && turn) {
         updateDetail(threadId, (detail) => ({
           ...detail,
+          turns: upsertTurn(detail.turns, turn),
           items: turn.items.reduce((items, item) => upsertItem(items, turn.id, item), detail.items),
           activeTurnId: detail.activeTurnId === turn.id ? null : detail.activeTurnId,
         }))
@@ -687,14 +797,16 @@ export function useHarness() {
     let unlistenTransport: (() => void) | undefined
     const bootstrap = async () => {
       try {
-        const [storedWorkspaces, storedStates, rememberedThreadId] = await Promise.all([
+        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation] = await Promise.all([
           runtime.listWorkspaces(),
           runtime.listThreadStates(),
           runtime.getAppState('selectedThreadId'),
+          runtime.getAppState(NAVIGATION_PREFERENCES_KEY),
         ])
         if (disposed) return
         setWorkspaces(storedWorkspaces)
         setThreadStates(Object.fromEntries(storedStates.map((state) => [state.threadId, state])))
+        setNavigation(parseNavigationPreferences(storedNavigation))
         if (storedWorkspaces.length > 0) setSelectedWorkspaceRoot(storedWorkspaces[0].root)
         const loadedThreads = await refreshThreads('active')
         if (disposed) return
@@ -726,6 +838,7 @@ export function useHarness() {
     [selectedThreadId, threads],
   )
   const currentDetail = selectedThreadId ? details[selectedThreadId] ?? null : null
+  const currentTokenUsage = selectedThreadId ? threadTokenUsages[selectedThreadId] ?? null : null
   const activeTurnId = selectedThreadId ? activeTurnIds[selectedThreadId] ?? currentDetail?.activeTurnId ?? null : null
   const currentForeignActive = currentDetail?.foreignActive ?? (Boolean(activeTurnId) && !ownedActiveThreads[selectedThreadId ?? ''])
 
@@ -737,6 +850,8 @@ export function useHarness() {
     threadRoots,
     threadStates,
     details,
+    threadTokenUsages,
+    navigation,
     queues,
     approvals,
     pendingSteers,
@@ -747,6 +862,7 @@ export function useHarness() {
     busy,
     currentThread,
     currentDetail,
+    currentTokenUsage,
     activeTurnId,
     currentForeignActive,
     isCurrentWorking: Boolean(activeTurnId),
@@ -764,6 +880,9 @@ export function useHarness() {
     archiveThread,
     unarchiveThread,
     answerApproval,
+    setNavigationLayout,
+    setThreadSort,
+    setManualThreadOrder,
     setSelectedWorkspaceRoot,
     setViewMode: async (mode: ViewMode) => {
       setViewMode(mode)

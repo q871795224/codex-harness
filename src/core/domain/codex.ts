@@ -7,6 +7,15 @@ export interface Workspace {
   lastOpenedAt: number
 }
 
+export type NavigationLayout = 'workspace' | 'list'
+export type ThreadSort = 'recent' | 'manual'
+
+export interface NavigationPreferences {
+  layout: NavigationLayout
+  sort: ThreadSort
+  manualThreadOrder: string[]
+}
+
 export type ThreadStatus =
   | { type: 'notLoaded' }
   | { type: 'idle' }
@@ -63,6 +72,21 @@ export interface ThreadItemEntry {
   item: ThreadItem
 }
 
+export interface TokenUsageBreakdown {
+  totalTokens: number
+  inputTokens: number
+  cachedInputTokens: number
+  cacheWriteInputTokens: number
+  outputTokens: number
+  reasoningOutputTokens: number
+}
+
+export interface ThreadTokenUsage {
+  total: TokenUsageBreakdown
+  last: TokenUsageBreakdown
+  modelContextWindow: number | null
+}
+
 export interface QueuedSubmission {
   id: string
   input: UserInput[]
@@ -71,6 +95,7 @@ export interface QueuedSubmission {
 
 export interface ThreadDetail {
   thread: Thread
+  turns: Turn[]
   items: ThreadItemEntry[]
   nextTurnsCursor: string | null
   activeTurnId: string | null
