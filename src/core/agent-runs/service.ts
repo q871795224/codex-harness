@@ -35,7 +35,7 @@ export class AgentRunCoordinator implements AgentRunService {
       instanceId: input.instanceId,
       mode: input.mode,
       status: 'starting',
-      title: runTitle(prompt),
+      title: runTitle(input.title?.trim() || prompt),
       workspaceRoot: input.workspaceRoot,
       parentThreadId: input.parentThreadId ?? null,
       childThreadId: null,

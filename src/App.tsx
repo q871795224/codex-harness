@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Bot, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
+import type { LocalConnectorService } from './core/local-connectors/types'
 import { PluginComposerAction, PluginHostProvider, PluginTabBoundary, usePluginHost } from './core/plugins/react'
+import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer } from './features/conversation/Composer'
 import { ConversationStats } from './features/conversation/ConversationStats'
@@ -14,7 +16,14 @@ import { builtInPlugins, defaultPluginInstances } from './plugins'
 export default function App() {
   const harness = useHarness()
   const agentRuns = useAgentRunService(harness.selectThread, harness.startTurnInThread)
-  const services = useMemo(() => ({ 'harness.agentRuns': agentRuns }), [agentRuns])
+  const services = useMemo(() => ({
+    'harness.agentRuns': agentRuns,
+    'harness.localConnectors': {
+      health: runtime.localConnectorHealth,
+      listMessages: runtime.localConnectorListMessages,
+      sendMessage: runtime.localConnectorSendMessage,
+    } satisfies LocalConnectorService,
+  }), [agentRuns])
   return (
     <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances} services={services}>
       <HarnessShell harness={harness} />

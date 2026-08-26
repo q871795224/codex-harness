@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { textInput, type AppServerEvent, type JsonObject, type Thread, type ThreadUiState, type Turn, type Workspace } from '../domain/codex'
 import type { AgentRun, ThreadInspection } from '../agent-runs/types'
+import type { LocalConnectorHealth, LocalConnectorMessage, LocalConnectorSendInput } from '../local-connectors/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 
 interface PluginInstanceDto {
@@ -111,6 +112,18 @@ export const runtime = {
         returnedAt: run.returnedAt,
       },
     })
+  },
+
+  localConnectorHealth(baseUrl: string): Promise<LocalConnectorHealth> {
+    return invoke<LocalConnectorHealth>('local_connector_health', { baseUrl })
+  },
+
+  localConnectorListMessages(baseUrl: string, limit = 50): Promise<LocalConnectorMessage[]> {
+    return invoke<LocalConnectorMessage[]>('local_connector_list_messages', { baseUrl, limit })
+  },
+
+  localConnectorSendMessage(baseUrl: string, input: LocalConnectorSendInput): Promise<{ ok: boolean; messageId?: string }> {
+    return invoke<{ ok: boolean; messageId?: string }>('local_connector_send_message', { baseUrl, input })
   },
 
   async startCodexThread(workspaceRoot: string): Promise<string> {

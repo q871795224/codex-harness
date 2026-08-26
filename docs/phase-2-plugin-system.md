@@ -356,7 +356,7 @@ flowchart LR
 ```
 
 - `bridge-agent` 负责 SeaTalk WebSocket/OpenAPI、鉴权、重连、event id 去重、消息归一化、发送和通信审计。
-- `harness.localConnectors` 只允许访问用户批准的 localhost endpoint，提供健康检查、SSE 订阅和规范化发信 API。
+- `harness.localConnectors` 首版只允许访问字面量 loopback endpoint，提供健康检查、最近消息查询和规范化发信 API；插件实例在生命周期内轮询 Inbox，后续需要更低延迟时再把 `/v1/events` 接成原生 SSE 订阅。
 - SeaTalk 插件负责 account 选择、scope、SeaTalk conversation 到 Harness workspace/thread 的路由、草稿交互和运行状态。
 
 这样可以复用已有实现，避免在 Tauri 和 React 中重新实现 SeaTalk 协议。bridge 是独立 companion daemon，关闭 Harness 不应停止它。Harness 关闭期间 bridge 可以继续收取、去重和持久化事件；需要实时 Agent 回复的常驻远程 bot 仍由现有 dshbot/bridge runtime 承担，桌面插件首版不承诺离线自动回复。
@@ -451,13 +451,13 @@ workspace/thread scope 的 SeaTalk 实例用于“只给这个项目或会话配
 
 交付内容：
 
-1. 为现有 `bridge-agent` 固化 Harness 所需的 health、SSE、send 与 route identity contract。
+1. 为现有 `bridge-agent` 固化 Harness 所需的 health、message list 与 send contract。
 2. 实现 permission-gated `harness.localConnectors`。
-3. 实现 `builtin.seatalk` 的连接设置、route 设置、状态入口、Inbox 和发送草稿 UI。
+3. 实现 `builtin.seatalk` 的连接设置、scope、状态入口、内存 Inbox 和发送草稿 UI。
 4. 先完成 Harness → SeaTalk 草稿确认发送，再完成 SeaTalk → Harness draft inbox。
 5. 在明确离线语义和审批通道后，灰度 inbound `agent` 模式。
 
-验收标准：插件不保存 SeaTalk secret；重复事件不会重复创建 turn；同一 route 串行；发送必须确认；关闭 Harness 不停止 bridge；Harness 重启后能恢复 route 和未完成状态。
+本切片验收标准：插件不保存 SeaTalk secret 或消息正文；发送必须编辑预览并显式确认；关闭 Harness 不停止 bridge；插件重启后恢复 scope 与 connector 配置。自动入站 Agent、route 到持久 Codex thread、串行处理与未完成草稿恢复留到需要桌面端常驻回复语义时实现，当前继续由既有 bridge/dshbot runtime 承担。
 
 ### 阶段 2.4：外部 Harness 插件评估
 
@@ -497,5 +497,5 @@ pnpm build
 
 1. 临时 Agent 的 delegated 结果回传是否首版只允许人工确认，还是同时提供明确开启的自动回传。
 2. thread-scoped 插件在 thread 归档后是保留为 disabled，还是随归档自动清理。
-3. SeaTalk companion 的首版 contract 直接复用 `bridge-agent` 现有 `/v1/messages`、`/v1/events`，还是增加专用的 route/inbox API。
+3. SeaTalk companion 已直接复用 `bridge-agent` 的 `/healthz` 与 `/v1/messages`；是否为自动入站 Agent 增加专用 route/inbox API 留待该能力启动时决定。
 4. 外部插件是否是阶段 2 的交付内容，或在三个内置垂直切片完成后另立阶段。

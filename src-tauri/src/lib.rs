@@ -1,8 +1,12 @@
 mod app_server;
 mod git_workspace;
+mod local_connector;
 mod store;
 
 use app_server::AppServerManager;
+use local_connector::{
+    ConnectorHealth, ConnectorMessage, LocalConnector, SendMessageInput, SendMessageResult,
+};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -16,8 +20,35 @@ use tauri::{Manager, State};
 
 struct AppState {
     app_server: Arc<AppServerManager>,
+    local_connector: LocalConnector,
     store: HarnessStore,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
+}
+
+#[tauri::command]
+async fn local_connector_health(
+    state: State<'_, AppState>,
+    base_url: String,
+) -> Result<ConnectorHealth, String> {
+    state.local_connector.health(&base_url).await
+}
+
+#[tauri::command]
+async fn local_connector_list_messages(
+    state: State<'_, AppState>,
+    base_url: String,
+    limit: u16,
+) -> Result<Vec<ConnectorMessage>, String> {
+    state.local_connector.list_messages(&base_url, limit).await
+}
+
+#[tauri::command]
+async fn local_connector_send_message(
+    state: State<'_, AppState>,
+    base_url: String,
+    input: SendMessageInput,
+) -> Result<SendMessageResult, String> {
+    state.local_connector.send_message(&base_url, input).await
 }
 
 #[tauri::command]
@@ -160,6 +191,7 @@ pub fn run() {
             let manager = Arc::new(AppServerManager::new(app.handle().clone()));
             app.manage(AppState {
                 app_server: manager,
+                local_connector: LocalConnector::new(),
                 store,
                 workspace_cache: Arc::new(Mutex::new(HashMap::new())),
             });
@@ -182,6 +214,9 @@ pub fn run() {
             set_plugin_state,
             list_plugin_runs,
             upsert_plugin_run,
+            local_connector_health,
+            local_connector_list_messages,
+            local_connector_send_message,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错");

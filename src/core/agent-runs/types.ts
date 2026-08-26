@@ -22,6 +22,7 @@ export interface AgentRun {
 
 export interface StartAgentRunInput {
   instanceId: string
+  title?: string
   mode: AgentRunMode
   workspaceRoot: string
   parentThreadId?: string | null
