@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-use store::{HarnessStore, ThreadUiState, Workspace};
+use store::{HarnessStore, PluginInstance, PluginInstanceInput, ThreadUiState, Workspace};
 use tauri::{Manager, State};
 
 struct AppState {
@@ -99,6 +99,43 @@ fn set_app_state(state: State<'_, AppState>, key: String, value: String) -> Resu
     state.store.set_app_state(&key, &value)
 }
 
+#[tauri::command]
+fn list_plugin_instances(state: State<'_, AppState>) -> Result<Vec<PluginInstance>, String> {
+    state.store.list_plugin_instances()
+}
+
+#[tauri::command]
+fn upsert_plugin_instance(
+    state: State<'_, AppState>,
+    input: PluginInstanceInput,
+) -> Result<PluginInstance, String> {
+    state.store.upsert_plugin_instance(&input)
+}
+
+#[tauri::command]
+fn delete_plugin_instance(state: State<'_, AppState>, instance_id: String) -> Result<(), String> {
+    state.store.delete_plugin_instance(&instance_id)
+}
+
+#[tauri::command]
+fn get_plugin_state(
+    state: State<'_, AppState>,
+    instance_id: String,
+    key: String,
+) -> Result<Option<Value>, String> {
+    state.store.get_plugin_state(&instance_id, &key)
+}
+
+#[tauri::command]
+fn set_plugin_state(
+    state: State<'_, AppState>,
+    instance_id: String,
+    key: String,
+    value: Value,
+) -> Result<(), String> {
+    state.store.set_plugin_state(&instance_id, &key, &value)
+}
+
 pub fn run() {
     let store = HarnessStore::open().expect("无法初始化 Codex Harness 本地状态库");
     tauri::Builder::default()
@@ -122,6 +159,11 @@ pub fn run() {
             set_thread_state,
             get_app_state,
             set_app_state,
+            list_plugin_instances,
+            upsert_plugin_instance,
+            delete_plugin_instance,
+            get_plugin_state,
+            set_plugin_state,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错");

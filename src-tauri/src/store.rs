@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     env, fs,
     path::PathBuf,
@@ -24,6 +25,30 @@ pub struct ThreadUiState {
     pub badge: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInstanceInput {
+    pub instance_id: String,
+    pub plugin_id: String,
+    pub scope_kind: String,
+    pub scope_key: Option<String>,
+    pub enabled: bool,
+    pub config: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInstance {
+    pub instance_id: String,
+    pub plugin_id: String,
+    pub scope_kind: String,
+    pub scope_key: Option<String>,
+    pub enabled: bool,
+    pub config: Value,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 pub struct HarnessStore {
     connection: Mutex<Connection>,
 }
@@ -46,6 +71,7 @@ impl HarnessStore {
             .execute_batch(
                 r#"
             PRAGMA journal_mode = WAL;
+            PRAGMA foreign_keys = ON;
             CREATE TABLE IF NOT EXISTS workspaces (
               git_root TEXT PRIMARY KEY NOT NULL,
               display_name TEXT NOT NULL,
@@ -62,6 +88,25 @@ impl HarnessStore {
               state_key TEXT PRIMARY KEY NOT NULL,
               state_value TEXT NOT NULL,
               updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS plugin_instances (
+              instance_id TEXT PRIMARY KEY NOT NULL,
+              plugin_id TEXT NOT NULL,
+              scope_kind TEXT NOT NULL CHECK(scope_kind IN ('global', 'workspace', 'thread')),
+              scope_key TEXT NOT NULL DEFAULT '',
+              enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+              config_json TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              UNIQUE(plugin_id, scope_kind, scope_key)
+            );
+            CREATE TABLE IF NOT EXISTS plugin_state (
+              instance_id TEXT NOT NULL,
+              state_key TEXT NOT NULL,
+              value_json TEXT NOT NULL,
+              updated_at INTEGER NOT NULL,
+              PRIMARY KEY(instance_id, state_key),
+              FOREIGN KEY(instance_id) REFERENCES plugin_instances(instance_id) ON DELETE CASCADE
             );
             "#,
             )
@@ -201,6 +246,170 @@ impl HarnessStore {
             Err(error) => Err(format!("无法读取应用状态: {error}")),
         }
     }
+
+    pub fn list_plugin_instances(&self) -> Result<Vec<PluginInstance>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT instance_id, plugin_id, scope_kind, scope_key, enabled, config_json, created_at, updated_at FROM plugin_instances ORDER BY created_at, instance_id",
+            )
+            .map_err(|error| format!("无法读取插件实例: {error}"))?;
+        let rows = statement
+            .query_map([], plugin_instance_from_row)
+            .map_err(|error| format!("无法读取插件实例: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("无法读取插件实例: {error}"))
+    }
+
+    pub fn upsert_plugin_instance(
+        &self,
+        input: &PluginInstanceInput,
+    ) -> Result<PluginInstance, String> {
+        if input.instance_id.trim().is_empty() || input.plugin_id.trim().is_empty() {
+            return Err("插件 instance id 和 plugin id 不能为空".to_string());
+        }
+        if !input.config.is_object() {
+            return Err("插件配置必须是 JSON object".to_string());
+        }
+        let scope_key = normalized_scope_key(&input.scope_kind, input.scope_key.as_deref())?;
+        let config_json = serde_json::to_string(&input.config)
+            .map_err(|error| format!("无法序列化插件配置: {error}"))?;
+        let now = now_ms();
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        connection
+            .execute(
+                r#"
+                INSERT INTO plugin_instances (
+                  instance_id, plugin_id, scope_kind, scope_key, enabled, config_json, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+                ON CONFLICT(instance_id) DO UPDATE SET
+                  plugin_id = excluded.plugin_id,
+                  scope_kind = excluded.scope_kind,
+                  scope_key = excluded.scope_key,
+                  enabled = excluded.enabled,
+                  config_json = excluded.config_json,
+                  updated_at = excluded.updated_at
+                "#,
+                params![
+                    input.instance_id,
+                    input.plugin_id,
+                    input.scope_kind,
+                    scope_key,
+                    input.enabled,
+                    config_json,
+                    now,
+                ],
+            )
+            .map_err(|error| format!("无法保存插件实例: {error}"))?;
+        connection
+            .query_row(
+                "SELECT instance_id, plugin_id, scope_kind, scope_key, enabled, config_json, created_at, updated_at FROM plugin_instances WHERE instance_id = ?1",
+                [&input.instance_id],
+                plugin_instance_from_row,
+            )
+            .map_err(|error| format!("无法读取已保存的插件实例: {error}"))
+    }
+
+    pub fn delete_plugin_instance(&self, instance_id: &str) -> Result<(), String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        connection
+            .execute(
+                "DELETE FROM plugin_instances WHERE instance_id = ?1",
+                [instance_id],
+            )
+            .map_err(|error| format!("无法删除插件实例: {error}"))?;
+        Ok(())
+    }
+
+    pub fn get_plugin_state(&self, instance_id: &str, key: &str) -> Result<Option<Value>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        let value: Option<String> = match connection.query_row(
+            "SELECT value_json FROM plugin_state WHERE instance_id = ?1 AND state_key = ?2",
+            params![instance_id, key],
+            |row| row.get(0),
+        ) {
+            Ok(value) => Some(value),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(error) => return Err(format!("无法读取插件状态: {error}")),
+        };
+        value
+            .map(|raw| {
+                serde_json::from_str(&raw).map_err(|error| format!("插件状态 JSON 已损坏: {error}"))
+            })
+            .transpose()
+    }
+
+    pub fn set_plugin_state(
+        &self,
+        instance_id: &str,
+        key: &str,
+        value: &Value,
+    ) -> Result<(), String> {
+        if key.trim().is_empty() {
+            return Err("插件状态 key 不能为空".to_string());
+        }
+        let value_json =
+            serde_json::to_string(value).map_err(|error| format!("无法序列化插件状态: {error}"))?;
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        connection
+            .execute(
+                r#"
+                INSERT INTO plugin_state (instance_id, state_key, value_json, updated_at)
+                VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT(instance_id, state_key) DO UPDATE SET
+                  value_json = excluded.value_json,
+                  updated_at = excluded.updated_at
+                "#,
+                params![instance_id, key, value_json, now_ms()],
+            )
+            .map_err(|error| format!("无法保存插件状态: {error}"))?;
+        Ok(())
+    }
+}
+
+fn normalized_scope_key(scope_kind: &str, scope_key: Option<&str>) -> Result<String, String> {
+    match scope_kind {
+        "global" => Ok(String::new()),
+        "workspace" | "thread" => scope_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| format!("{scope_kind} scope 必须指定 owner")),
+        _ => Err(format!("不支持的插件 scope: {scope_kind}")),
+    }
+}
+
+fn plugin_instance_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginInstance> {
+    let raw_scope_key: String = row.get(3)?;
+    let raw_config: String = row.get(5)?;
+    let config = serde_json::from_str(&raw_config).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    Ok(PluginInstance {
+        instance_id: row.get(0)?,
+        plugin_id: row.get(1)?,
+        scope_kind: row.get(2)?,
+        scope_key: (!raw_scope_key.is_empty()).then_some(raw_scope_key),
+        enabled: row.get(4)?,
+        config,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
 }
 
 fn harness_data_dir() -> Result<PathBuf, String> {
@@ -299,5 +508,93 @@ mod tests {
                 .expect("reads saved state"),
             Some("thread-2".to_string())
         );
+    }
+
+    #[test]
+    fn persists_scoped_plugin_instances_and_private_state() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+        let mut input = PluginInstanceInput {
+            instance_id: "trajectory-global".to_string(),
+            plugin_id: "builtin.trajectory".to_string(),
+            scope_kind: "global".to_string(),
+            scope_key: None,
+            enabled: true,
+            config: serde_json::json!({"compact": true}),
+        };
+
+        let created = store
+            .upsert_plugin_instance(&input)
+            .expect("creates plugin instance");
+        assert_eq!(created.scope_key, None);
+        assert_eq!(created.config, serde_json::json!({"compact": true}));
+
+        store
+            .set_plugin_state(
+                &input.instance_id,
+                "selection",
+                &serde_json::json!({"row": 3}),
+            )
+            .expect("stores namespaced plugin state");
+        assert_eq!(
+            store
+                .get_plugin_state(&input.instance_id, "selection")
+                .expect("reads plugin state"),
+            Some(serde_json::json!({"row": 3}))
+        );
+
+        input.scope_kind = "workspace".to_string();
+        input.scope_key = Some("/workspace/project".to_string());
+        input.enabled = false;
+        let updated = store
+            .upsert_plugin_instance(&input)
+            .expect("updates plugin instance");
+        assert_eq!(updated.scope_key.as_deref(), Some("/workspace/project"));
+        assert!(!updated.enabled);
+        assert_eq!(updated.created_at, created.created_at);
+
+        drop(store);
+        let reloaded = HarnessStore::open_at(directory.0.clone()).expect("reopens isolated store");
+        assert_eq!(
+            reloaded
+                .list_plugin_instances()
+                .expect("lists instances")
+                .len(),
+            1
+        );
+        reloaded
+            .delete_plugin_instance(&input.instance_id)
+            .expect("deletes instance");
+        assert_eq!(
+            reloaded
+                .get_plugin_state(&input.instance_id, "selection")
+                .expect("state was deleted with instance"),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_scoped_plugin_without_owner() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+        let input = PluginInstanceInput {
+            instance_id: "bad".to_string(),
+            plugin_id: "builtin.trajectory".to_string(),
+            scope_kind: "thread".to_string(),
+            scope_key: None,
+            enabled: true,
+            config: serde_json::json!({}),
+        };
+        assert!(store.upsert_plugin_instance(&input).is_err());
+
+        let invalid_config = PluginInstanceInput {
+            instance_id: "bad-config".to_string(),
+            plugin_id: "builtin.trajectory".to_string(),
+            scope_kind: "global".to_string(),
+            scope_key: None,
+            enabled: true,
+            config: serde_json::Value::Null,
+        };
+        assert!(store.upsert_plugin_instance(&invalid_config).is_err());
     }
 }

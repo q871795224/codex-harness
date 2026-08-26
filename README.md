@@ -12,6 +12,12 @@
 
 不在 V1：模型 / 沙箱选择器、任务与监控、内嵌终端、永久删除、插件运行时。
 
+## 阶段 2
+
+- Harness 已加载随 App 发布的内置插件；暂不加载外部代码或管理 Codex 插件。
+- 插件实例可归属于全局、workspace 或 thread，并拥有独立启停、配置和本地 KV。
+- “轨迹”已作为首个内置插件通过 `conversation.tabs` slot 接入。
+
 ## 开发
 
 先确保本机已安装并登录 Codex CLI。Harness 会在连接前检查 `codex app-server daemon`，未运行时启动它，运行中时直接复用；关闭 Harness 不会停止 daemon。
@@ -40,6 +46,6 @@ pnpm tauri:build:dev
 
 ## 分层
 
-`src-tauri/src/app_server.rs` 是唯一接触 Unix socket WebSocket 和 JSON-RPC 的 native bridge；React 只通过 Tauri IPC 调用它。功能代码按 `src/features` 分组，`src/extensions/types.ts` 仅保留未来插件协议的类型边界，V1 不加载任何外部插件。
+`src-tauri/src/app_server.rs` 是唯一接触 Unix socket WebSocket 和 JSON-RPC 的 native bridge；React 只通过 Tauri IPC 调用它。功能代码按 `src/features` 分组，插件契约位于 `src/extensions/types.ts`，内核与 React host 位于 `src/core/plugins/`，随 App 发布的内置插件位于 `src/plugins/`。当前不加载任何外部插件。
 
 DeepSeek Harness 仅作为 MIT 许可的交互参考；本项目未复制其源代码。

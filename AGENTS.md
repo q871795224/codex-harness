@@ -6,6 +6,8 @@
 - `src-tauri/` 是 Tauri 的 Rust 原生层：应用入口、Tauri IPC 命令、本地 SQLite 状态，以及到 Codex App Server 的 Unix socket/WebSocket 连接。
 - 前端只能经 `src/core/runtime/bridge.ts` 调用原生能力；新增 IPC 时，同时在 Rust 中注册命令，并在 bridge 中提供类型化封装。
 - `src/core/domain/` 放共享领域类型和格式化逻辑；按界面功能组织的代码放在 `src/features/`。
+- `src/core/plugins/` 放 Harness 插件内核与 React host，`src/plugins/` 放随 App 发布的内置插件；插件只能通过 `src/extensions/types.ts` 中的 context、service、event 和 slot 契约接入能力。
+- 插件实例归属于 `global`、`workspace` 或 `thread`。实例生命周期独立于当前选中的会话，切换页面只改变 contribution 可见性，不能中断后台任务或连接。
 - `src-tauri/src/app_server.rs` 是唯一可直接接触 App Server 传输协议的模块。不要在 React 组件中直接实现协议或连接逻辑。
 
 ## 本地状态与安全

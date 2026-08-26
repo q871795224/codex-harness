@@ -1,25 +1,42 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bot, MessageSquareText, PanelLeftClose, Route, RotateCw } from 'lucide-react'
+import { Bot, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { PluginHostProvider, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer } from './features/conversation/Composer'
 import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
-import { TrajectoryView } from './features/conversation/TrajectoryView'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
+import { builtInPlugins, defaultPluginInstances } from './plugins/trajectory'
 
 export default function App() {
   const harness = useHarness()
+  return (
+    <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances}>
+      <HarnessShell harness={harness} />
+    </PluginHostProvider>
+  )
+}
+
+function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
+  const plugins = usePluginHost()
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
-  const [tab, setTab] = useState<'chat' | 'trajectory'>('chat')
+  const [tab, setTab] = useState('chat')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const workspace = useMemo(
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
   )
+  const pluginTabs = plugins.resolvedTabs({
+    threadId: harness.selectedThreadId,
+    workspaceRoot: workspace?.root ?? null,
+  })
+  const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
 
-  useEffect(() => setTab('chat'), [harness.selectedThreadId])
+  useEffect(() => {
+    if (tab !== 'chat' && !selectedPluginTab) setTab('chat')
+  }, [selectedPluginTab, tab])
 
   if (harness.phase === 'loading') return <LaunchScreen label="正在连接本机 Codex App Server…" />
   if (harness.phase === 'error') {
@@ -80,7 +97,16 @@ export default function App() {
             <div className="tab-bar">
               <div className="thread-tabs">
                 <button type="button" className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}><MessageSquareText size={15} />对话</button>
-                <button type="button" className={tab === 'trajectory' ? 'active' : ''} onClick={() => setTab('trajectory')}><Route size={15} />轨迹</button>
+                {pluginTabs.map((entry) => {
+                  const contribution = entry.contribution
+                  const tabId = pluginTabKey(entry.pluginId, contribution.id)
+                  const Icon = contribution.icon
+                  return (
+                    <button key={tabId} type="button" className={tab === tabId ? 'active' : ''} onClick={() => setTab(tabId)}>
+                      {Icon && <Icon size={15} />}{contribution.label}
+                    </button>
+                  )
+                })}
               </div>
               <span className="connection-state"><span />本机 App Server</span>
             </div>
@@ -95,7 +121,16 @@ export default function App() {
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
                 onLoadOlderTurns={() => void harness.loadOlderTurns()}
               />
-            ) : <TrajectoryView items={harness.currentDetail?.items ?? []} />}
+            ) : selectedPluginTab ? (
+              <PluginTabBoundary
+                tab={selectedPluginTab}
+                props={{
+                  threadId: harness.selectedThreadId,
+                  workspaceRoot: workspace?.root ?? null,
+                  items: harness.currentDetail?.items ?? [],
+                }}
+              />
+            ) : null}
 
             {harness.viewMode === 'active' && tab === 'chat' && (
               <div className="input-column">
@@ -132,6 +167,9 @@ export default function App() {
       {settingsOpen && (
         <SettingsDialog
           fontSize={harness.appearance.fontSize}
+          workspaces={harness.workspaces}
+          threads={harness.threads}
+          selectedThreadId={harness.selectedThreadId}
           onFontSize={harness.setFontSize}
           onClose={() => setSettingsOpen(false)}
         />
@@ -139,6 +177,10 @@ export default function App() {
       {harness.toast && <div className={`toast ${harness.toast.kind}`}>{harness.toast.message}</div>}
     </div>
   )
+}
+
+function pluginTabKey(pluginId: string, contributionId: string): string {
+  return `${pluginId}:${contributionId}`
 }
 
 function LaunchScreen({ label }: { label: string }) {
