@@ -16,6 +16,12 @@ export interface NavigationPreferences {
   manualThreadOrder: string[]
 }
 
+export type FontSize = 'compact' | 'standard' | 'large'
+
+export interface AppearancePreferences {
+  fontSize: FontSize
+}
+
 export type ThreadStatus =
   | { type: 'notLoaded' }
   | { type: 'idle' }

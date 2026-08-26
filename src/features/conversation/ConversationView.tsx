@@ -6,7 +6,6 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
-  CircleAlert,
   Command,
   FileCode2,
   GitBranch,
@@ -19,35 +18,16 @@ import type { ApprovalRequest, Thread, ThreadItemEntry, Workspace } from '../../
 import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
 
-interface ConversationViewProps {
+interface ConversationHeaderProps {
   thread: Thread
-  items: ThreadItemEntry[]
-  approvals: ApprovalRequest[]
   workspace: Workspace | null
   archived: boolean
-  hasOlderTurns: boolean
-  loadingOlderTurns: boolean
   onRename: (name: string) => void
   onArchive: () => void
   onUnarchive: () => void
-  onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
-  onLoadOlderTurns: () => void
 }
 
-export function ConversationView({
-  thread,
-  items,
-  approvals,
-  workspace,
-  archived,
-  hasOlderTurns,
-  loadingOlderTurns,
-  onRename,
-  onArchive,
-  onUnarchive,
-  onAnswerApproval,
-  onLoadOlderTurns,
-}: ConversationViewProps) {
+export function ConversationHeader({ thread, workspace, archived, onRename, onArchive, onUnarchive }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -57,68 +37,80 @@ export function ConversationView({
   }
 
   return (
-    <>
-      <header className="thread-header">
-        <div className="thread-title-wrap">
-          {editingTitle ? (
-            <input
-              autoFocus
-              className="thread-title-editor"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              onBlur={saveTitle}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  setTitle(threadTitle(thread))
-                  setEditingTitle(false)
-                }
-                if (event.key === 'Enter') saveTitle()
-              }}
-            />
-          ) : (
-            <button className="thread-title-button" type="button" onClick={() => setEditingTitle(true)} title="重命名会话">
-              <h1>{threadTitle(thread)}</h1>
-              <Pencil size={15} />
-            </button>
-          )}
-          <div className="thread-context">
-            <span><GitBranch size={13} />{workspace?.name ?? '未分组'}</span>
-            {thread.gitInfo?.branch && <span>{thread.gitInfo.branch}</span>}
-            <span className="thread-path" title={thread.cwd}>{thread.cwd}</span>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="header-action"
-          onClick={archived ? onUnarchive : onArchive}
-          title={archived ? '恢复会话' : '归档会话'}
-        >
-          {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-          {archived ? '恢复' : '归档'}
-        </button>
-      </header>
-
-      <div className="conversation-scroll">
-        <div className="message-column">
-          {hasOlderTurns && (
-            <button className="load-older-turns" type="button" onClick={onLoadOlderTurns} disabled={loadingOlderTurns}>
-              {loadingOlderTurns ? '正在加载更早消息…' : '加载更早消息'}
-            </button>
-          )}
-          {items.length === 0 && (
-            <div className="fresh-thread">
-              <div className="fresh-thread-mark"><Bot size={24} /></div>
-              <h2>从这里开始</h2>
-              <p>这是一条新的 Codex 会话。消息会在 <strong>{workspace?.name ?? '当前工作区'}</strong> 中运行。</p>
-            </div>
-          )}
-          {items.map((entry, index) => <ThreadItemView key={`${entry.turnId}:${entry.item.id ?? index}`} entry={entry} />)}
-          {approvals.map((request) => (
-            <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
-          ))}
+    <header className="thread-header">
+      <div className="thread-title-wrap">
+        {editingTitle ? (
+          <input
+            autoFocus
+            className="thread-title-editor"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            onBlur={saveTitle}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setTitle(threadTitle(thread))
+                setEditingTitle(false)
+              }
+              if (event.key === 'Enter') saveTitle()
+            }}
+          />
+        ) : (
+          <button className="thread-title-button" type="button" onClick={() => setEditingTitle(true)} title="重命名会话">
+            <h1>{threadTitle(thread)}</h1>
+            <Pencil size={15} />
+          </button>
+        )}
+        <div className="thread-context">
+          <span><GitBranch size={13} />{workspace?.name ?? '未分组'}</span>
+          {thread.gitInfo?.branch && <span>{thread.gitInfo.branch}</span>}
+          <span className="thread-path" title={thread.cwd}>{thread.cwd}</span>
         </div>
       </div>
-    </>
+      <button
+        type="button"
+        className="header-action"
+        onClick={archived ? onUnarchive : onArchive}
+        title={archived ? '恢复会话' : '归档会话'}
+      >
+        {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+        {archived ? '恢复' : '归档'}
+      </button>
+    </header>
+  )
+}
+
+interface ConversationViewProps {
+  items: ThreadItemEntry[]
+  approvals: ApprovalRequest[]
+  workspace: Workspace | null
+  hasOlderTurns: boolean
+  loadingOlderTurns: boolean
+  onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
+  onLoadOlderTurns: () => void
+}
+
+export function ConversationView({ items, approvals, workspace, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns }: ConversationViewProps) {
+  return (
+    <div className="conversation-scroll">
+      <div className="message-column">
+        {hasOlderTurns && (
+          <button className="load-older-turns" type="button" onClick={onLoadOlderTurns} disabled={loadingOlderTurns}>
+            {loadingOlderTurns ? '正在加载更早消息…' : '加载更早消息'}
+          </button>
+        )}
+        {items.length === 0 && (
+          <div className="fresh-thread">
+            <div className="fresh-thread-mark"><Bot size={24} /></div>
+            <h2>从这里开始</h2>
+            <p>这是一条新的 Codex 会话。消息会在 <strong>{workspace?.name ?? '当前工作区'}</strong> 中运行。</p>
+          </div>
+        )}
+        {items.map((entry, index) => <ThreadItemView key={`${entry.turnId}:${entry.item.id ?? index}`} entry={entry} />)}
+        {approvals.map((request) => (
+          <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
+        ))}
+      </div>
+    </div>
   )
 }
 

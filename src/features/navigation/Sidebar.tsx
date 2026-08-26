@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings2,
   SlidersHorizontal,
 } from 'lucide-react'
 import type {
@@ -47,6 +48,7 @@ interface SidebarProps {
   onNavigationLayout: (layout: NavigationLayout) => void
   onThreadSort: (sort: ThreadSort) => void
   onManualThreadOrder: (order: string[]) => void
+  onOpenSettings: () => void
 }
 
 export function Sidebar({
@@ -71,6 +73,7 @@ export function Sidebar({
   onNavigationLayout,
   onThreadSort,
   onManualThreadOrder,
+  onOpenSettings,
 }: SidebarProps) {
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -263,6 +266,10 @@ export function Sidebar({
         >
           {viewMode === 'active' ? <Archive size={16} /> : <ArchiveRestore size={16} />}
           {viewMode === 'active' ? '已归档会话' : '返回会话'}
+        </button>
+        <button type="button" className="settings-toggle" onClick={onOpenSettings}>
+          <Settings2 size={16} />
+          设置
         </button>
       </div>
     </aside>

@@ -3,14 +3,16 @@ import { Bot, MessageSquareText, PanelLeftClose, Route, RotateCw } from 'lucide-
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer } from './features/conversation/Composer'
 import { ConversationStats } from './features/conversation/ConversationStats'
-import { ConversationView } from './features/conversation/ConversationView'
+import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
 import { TrajectoryView } from './features/conversation/TrajectoryView'
+import { SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
 
 export default function App() {
   const harness = useHarness()
   const [tab, setTab] = useState<'chat' | 'trajectory'>('chat')
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const workspace = useMemo(
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
@@ -36,7 +38,7 @@ export default function App() {
   const canMutate = !harness.currentForeignActive
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-font-size={harness.appearance.fontSize}>
       <Sidebar
         workspaces={harness.workspaces}
         threads={harness.threads}
@@ -59,10 +61,20 @@ export default function App() {
         onNavigationLayout={harness.setNavigationLayout}
         onThreadSort={harness.setThreadSort}
         onManualThreadOrder={harness.setManualThreadOrder}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       <main className="main-pane">
         {harness.currentThread ? (
           <>
+            <ConversationHeader
+              key={harness.currentThread.id}
+              thread={harness.currentThread}
+              workspace={workspace}
+              archived={harness.viewMode === 'archived'}
+              onRename={(name) => void harness.renameThread(harness.currentThread!.id, name)}
+              onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
+              onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
+            />
             <div className="tab-bar">
               <div className="thread-tabs">
                 <button type="button" className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}><MessageSquareText size={15} />对话</button>
@@ -73,17 +85,11 @@ export default function App() {
 
             {tab === 'chat' ? (
               <ConversationView
-                key={harness.currentThread.id}
-                thread={harness.currentThread}
                 items={harness.currentDetail?.items ?? []}
                 approvals={currentApprovals}
                 workspace={workspace}
-                archived={harness.viewMode === 'archived'}
                 hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
                 loadingOlderTurns={Boolean(harness.busy.olderTurns)}
-                onRename={(name) => void harness.renameThread(harness.currentThread!.id, name)}
-                onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
-                onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
                 onLoadOlderTurns={() => void harness.loadOlderTurns()}
               />
@@ -121,6 +127,13 @@ export default function App() {
           </>
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread()} onWorkspace={() => void harness.chooseWorkspace()} />}
       </main>
+      {settingsOpen && (
+        <SettingsDialog
+          fontSize={harness.appearance.fontSize}
+          onFontSize={harness.setFontSize}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
       {harness.toast && <div className={`toast ${harness.toast.kind}`}>{harness.toast.message}</div>}
     </div>
   )

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AppServerEvent,
+  AppearancePreferences,
   ApprovalRequest,
   Badge,
+  FontSize,
   JsonObject,
   NavigationLayout,
   NavigationPreferences,
@@ -24,11 +26,16 @@ import { runtime } from '../../core/runtime/bridge'
 type ViewMode = 'active' | 'archived'
 
 const NAVIGATION_PREFERENCES_KEY = 'navigationPreferences'
+const APPEARANCE_PREFERENCES_KEY = 'appearancePreferences'
 
 const defaultNavigationPreferences: NavigationPreferences = {
   layout: 'workspace',
   sort: 'recent',
   manualThreadOrder: [],
+}
+
+const defaultAppearancePreferences: AppearancePreferences = {
+  fontSize: 'standard',
 }
 
 interface ResumeResponse {
@@ -121,6 +128,18 @@ function parseNavigationPreferences(raw: string | null): NavigationPreferences {
   }
 }
 
+function parseAppearancePreferences(raw: string | null): AppearancePreferences {
+  if (!raw) return defaultAppearancePreferences
+  try {
+    const value = JSON.parse(raw) as Partial<AppearancePreferences>
+    return {
+      fontSize: value.fontSize === 'compact' || value.fontSize === 'large' ? value.fontSize : 'standard',
+    }
+  } catch {
+    return defaultAppearancePreferences
+  }
+}
+
 function parseTokenUsage(value: unknown): ThreadTokenUsage | null {
   if (!value || typeof value !== 'object') return null
   const raw = value as JsonObject
@@ -164,6 +183,7 @@ export function useHarness() {
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
   const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
   const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
+  const [appearance, setAppearance] = useState<AppearancePreferences>(defaultAppearancePreferences)
   const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
   const [pendingSteers, setPendingSteers] = useState<Record<string, PendingSteer[]>>({})
@@ -213,6 +233,11 @@ export function useHarness() {
       manualThreadOrder: [...new Set(manualThreadOrder.filter((id) => Boolean(id)))].slice(0, 500),
     }))
   }, [updateNavigation])
+
+  const setFontSize = useCallback((fontSize: FontSize) => {
+    setAppearance({ fontSize })
+    void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify({ fontSize })).catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (!toast) return undefined
@@ -797,16 +822,18 @@ export function useHarness() {
     let unlistenTransport: (() => void) | undefined
     const bootstrap = async () => {
       try {
-        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation] = await Promise.all([
+        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance] = await Promise.all([
           runtime.listWorkspaces(),
           runtime.listThreadStates(),
           runtime.getAppState('selectedThreadId'),
           runtime.getAppState(NAVIGATION_PREFERENCES_KEY),
+          runtime.getAppState(APPEARANCE_PREFERENCES_KEY),
         ])
         if (disposed) return
         setWorkspaces(storedWorkspaces)
         setThreadStates(Object.fromEntries(storedStates.map((state) => [state.threadId, state])))
         setNavigation(parseNavigationPreferences(storedNavigation))
+        setAppearance(parseAppearancePreferences(storedAppearance))
         if (storedWorkspaces.length > 0) setSelectedWorkspaceRoot(storedWorkspaces[0].root)
         const loadedThreads = await refreshThreads('active')
         if (disposed) return
@@ -852,6 +879,7 @@ export function useHarness() {
     details,
     threadTokenUsages,
     navigation,
+    appearance,
     queues,
     approvals,
     pendingSteers,
@@ -883,6 +911,7 @@ export function useHarness() {
     setNavigationLayout,
     setThreadSort,
     setManualThreadOrder,
+    setFontSize,
     setSelectedWorkspaceRoot,
     setViewMode: async (mode: ViewMode) => {
       setViewMode(mode)
