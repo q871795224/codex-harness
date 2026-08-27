@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { Bot, Check, Inbox, LoaderCircle, MessageCircleReply, RefreshCw, Send } from 'lucide-react'
+import { Bot, Check, CircleHelp, Inbox, LoaderCircle, MessageCircleReply, RefreshCw, Send } from 'lucide-react'
 import type { AgentRunService } from '../../core/agent-runs/types'
 import { itemText } from '../../core/domain/codex'
 import type { LocalConnectorMessage, LocalConnectorService, LocalConnectorSendInput } from '../../core/local-connectors/types'
@@ -347,15 +347,12 @@ function SeaTalkSettings({ instance, saveConfig }: PluginSettingsProps) {
   }
   return (
     <div className="plugin-business-settings seatalk-settings">
-      <label><span>Bridge 地址</span><input value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} /></label>
-      <label><span>Bridge account</span><input value={form.account} onChange={(event) => setForm({ ...form, account: event.target.value })} /></label>
-      <div className="seatalk-settings-target">
-        <label><span>默认目标</span><select value={form.defaultTargetType} onChange={(event) => setForm({ ...form, defaultTargetType: event.target.value as 'user' | 'group' })}><option value="group">群组</option><option value="user">同事</option></select></label>
-        <label><span>目标 ID</span><input value={form.defaultTargetId} onChange={(event) => setForm({ ...form, defaultTargetId: event.target.value })} /></label>
-      </div>
-      <label><span>默认 Thread ID</span><input value={form.defaultThreadId} onChange={(event) => setForm({ ...form, defaultThreadId: event.target.value })} placeholder="可选" /></label>
-      <p>只允许连接字面量 127.0.0.1 / ::1。App secret 和 token 必须继续保存在 bridge-agent 中。</p>
-      <button type="button" onClick={() => void save()}>{saved ? '已保存' : '保存 SeaTalk 设置'}</button>
+      <label className="plugin-setting-row"><span>Bridge 地址 <i className="plugin-field-help" title="仅允许连接本机 127.0.0.1 或 ::1；凭据仍由 bridge-agent 管理。"><CircleHelp size={13} /></i></span><input value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} /></label>
+      <label className="plugin-setting-row"><span>Bridge account</span><input value={form.account} onChange={(event) => setForm({ ...form, account: event.target.value })} /></label>
+      <label className="plugin-setting-row"><span>默认目标</span><select value={form.defaultTargetType} onChange={(event) => setForm({ ...form, defaultTargetType: event.target.value as 'user' | 'group' })}><option value="group">群组</option><option value="user">同事</option></select></label>
+      <label className="plugin-setting-row"><span>目标 ID</span><input value={form.defaultTargetId} onChange={(event) => setForm({ ...form, defaultTargetId: event.target.value })} /></label>
+      <label className="plugin-setting-row"><span>默认 Thread ID</span><input value={form.defaultThreadId} onChange={(event) => setForm({ ...form, defaultThreadId: event.target.value })} placeholder="可选" /></label>
+      <div className="plugin-setting-row plugin-setting-actions"><span>保存设置</span><button type="button" onClick={() => void save()}>{saved ? '已保存' : '保存'}</button></div>
     </div>
   )
 }

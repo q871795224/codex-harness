@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { isActive, itemText, queueText, textInput, threadTitle, threadsOlderThan, type Thread } from './codex'
+import {
+  DEFAULT_FONT_SIZE,
+  DEFAULT_FONT_SIZES,
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
+  isActive,
+  itemText,
+  normalizeFontSize,
+  normalizeFontSizePreferences,
+  queueText,
+  textInput,
+  threadTitle,
+  threadsOlderThan,
+  type Thread,
+} from './codex'
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {
@@ -25,6 +39,42 @@ describe('threadTitle', () => {
   it('falls back to preview and then the new-thread label', () => {
     expect(threadTitle(makeThread({ name: ' ', preview: '首次请求' }))).toBe('首次请求')
     expect(threadTitle(makeThread({ name: null, preview: '  ' }))).toBe('新会话')
+  })
+})
+
+describe('normalizeFontSize', () => {
+  it('keeps a whole-pixel value within the supported range', () => {
+    expect(normalizeFontSize(16.4)).toBe(16)
+    expect(normalizeFontSize(MIN_FONT_SIZE - 4)).toBe(MIN_FONT_SIZE)
+    expect(normalizeFontSize(MAX_FONT_SIZE + 4)).toBe(MAX_FONT_SIZE)
+  })
+
+  it('migrates the former three size choices', () => {
+    expect(normalizeFontSize('compact')).toBe(14)
+    expect(normalizeFontSize('standard')).toBe(DEFAULT_FONT_SIZE)
+    expect(normalizeFontSize('large')).toBe(16)
+    expect(normalizeFontSize('unexpected')).toBe(DEFAULT_FONT_SIZE)
+  })
+})
+
+describe('normalizeFontSizePreferences', () => {
+  it('keeps independently saved area values', () => {
+    expect(normalizeFontSizePreferences({
+      fontSizes: { navigation: 14, conversation: 17, settings: 16, plugins: 18 },
+    })).toEqual({ navigation: 14, conversation: 17, settings: 16, plugins: 18 })
+  })
+
+  it('migrates the former global size without changing each area baseline', () => {
+    expect(normalizeFontSizePreferences({ fontSize: 'large' })).toEqual({
+      navigation: 14,
+      conversation: 16,
+      settings: 16,
+      plugins: 16,
+    })
+    expect(normalizeFontSizePreferences({ fontSizes: { conversation: 17 } })).toEqual({
+      ...DEFAULT_FONT_SIZES,
+      conversation: 17,
+    })
   })
 })
 

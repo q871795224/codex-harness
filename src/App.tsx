@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Bot, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
+import { DEFAULT_FONT_SIZES } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
 import { PluginComposerAction, PluginHostProvider, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { runtime } from './core/runtime/bridge'
@@ -72,7 +73,16 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const canMutate = !harness.currentForeignActive
 
   return (
-    <div className="app-shell" data-font-size={harness.appearance.fontSize} data-flavor={flavor}>
+    <div
+      className="app-shell"
+      data-flavor={flavor}
+      style={{
+        '--h-navigation-font-offset': `${harness.appearance.fontSizes.navigation - DEFAULT_FONT_SIZES.navigation}px`,
+        '--h-conversation-font-offset': `${harness.appearance.fontSizes.conversation - DEFAULT_FONT_SIZES.conversation}px`,
+        '--h-settings-font-offset': `${harness.appearance.fontSizes.settings - DEFAULT_FONT_SIZES.settings}px`,
+        '--h-plugin-font-offset': `${harness.appearance.fontSizes.plugins - DEFAULT_FONT_SIZES.plugins}px`,
+      } as CSSProperties}
+    >
       <Sidebar
         workspaces={harness.workspaces}
         threads={harness.threads}
@@ -193,11 +203,12 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
       </main>
       {settingsOpen && (
         <SettingsDialog
-          fontSize={harness.appearance.fontSize}
+          fontSizes={harness.appearance.fontSizes}
           workspaces={harness.workspaces}
           threads={harness.threads}
           selectedThreadId={harness.selectedThreadId}
           onFontSize={harness.setFontSize}
+          onResetFontSizes={harness.resetFontSizes}
           onClose={() => setSettingsOpen(false)}
         />
       )}

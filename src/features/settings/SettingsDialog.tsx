@@ -1,28 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Blocks, Check, Palette, Plus, Power, Trash2, Type, X } from 'lucide-react'
+import { Blocks, CircleHelp, Minus, Palette, Plus, Power, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
-import type { FontSize, Thread, Workspace } from '../../core/domain/codex'
-import { threadTitle } from '../../core/domain/codex'
+import type { FontSize, FontSizeArea, FontSizePreferences, Thread, Workspace } from '../../core/domain/codex'
+import { DEFAULT_FONT_SIZES, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 
 interface SettingsDialogProps {
-  fontSize: FontSize
+  fontSizes: FontSizePreferences
   workspaces: Workspace[]
   threads: Thread[]
   selectedThreadId: string | null
-  onFontSize: (fontSize: FontSize) => void
+  onFontSize: (area: FontSizeArea, fontSize: FontSize) => void
+  onResetFontSizes: () => void
   onClose: () => void
 }
 
 type SettingsPage = 'appearance' | 'plugins'
 
-const fontSizeOptions: Array<{ value: FontSize; label: string; detail: string }> = [
-  { value: 'compact', label: '紧凑', detail: '信息密度更高' },
-  { value: 'standard', label: '标准', detail: '当前推荐大小' },
-  { value: 'large', label: '大', detail: '更舒适的阅读' },
+const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
+  { area: 'navigation', label: '导航与列表' },
+  { area: 'conversation', label: '会话与输入' },
+  { area: 'settings', label: '设置界面' },
+  { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ fontSize, workspaces, threads, selectedThreadId, onFontSize, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadId, onFontSize, onResetFontSizes, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const heading = page === 'appearance' ? '外观' : '插件'
 
@@ -62,7 +64,7 @@ export function SettingsDialog({ fontSize, workspaces, threads, selectedThreadId
           </header>
 
           {page === 'appearance' ? (
-            <AppearanceSettings fontSize={fontSize} onFontSize={onFontSize} />
+            <AppearanceSettings fontSizes={fontSizes} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />
           ) : (
             <PluginSettings workspaces={workspaces} threads={threads} selectedThreadId={selectedThreadId} />
           )}
@@ -72,29 +74,42 @@ export function SettingsDialog({ fontSize, workspaces, threads, selectedThreadId
   )
 }
 
-function AppearanceSettings({ fontSize, onFontSize }: { fontSize: FontSize; onFontSize: (fontSize: FontSize) => void }) {
+function AppearanceSettings({ fontSizes, onFontSize, onResetFontSizes }: {
+  fontSizes: FontSizePreferences
+  onFontSize: (area: FontSizeArea, fontSize: FontSize) => void
+  onResetFontSizes: () => void
+}) {
+  const canReset = fontSizeAreas.some(({ area }) => fontSizes[area] !== DEFAULT_FONT_SIZES[area])
+
   return (
     <section className="settings-section" aria-labelledby="font-size-title">
       <div className="settings-section-title">
         <Type size={17} />
-        <div>
-          <h3 id="font-size-title">字体大小</h3>
-          <p>立即应用，并仅保存在这台设备上。</p>
+        <h3 id="font-size-title">字体大小</h3>
+      </div>
+      <div className="settings-row-list">
+        {fontSizeAreas.map(({ area, label }) => (
+          <div key={area} className="settings-row">
+            <span>{label}</span>
+            <FontSizeStepper label={label} value={fontSizes[area]} onChange={(value) => onFontSize(area, value)} />
+          </div>
+        ))}
+        <div className="settings-row settings-reset-row">
+          <span>全部字号</span>
+          <button type="button" onClick={onResetFontSizes} disabled={!canReset}>恢复默认</button>
         </div>
       </div>
-      <div className="font-size-options" role="radiogroup" aria-label="字体大小">
-        {fontSizeOptions.map((option) => {
-          const selected = fontSize === option.value
-          return (
-            <button key={option.value} type="button" role="radio" aria-checked={selected} className={selected ? 'selected' : ''} onClick={() => onFontSize(option.value)}>
-              <span>{option.label}</span>
-              <small>{option.detail}</small>
-              {selected && <Check size={16} aria-hidden />}
-            </button>
-          )
-        })}
-      </div>
     </section>
+  )
+}
+
+function FontSizeStepper({ label, value, onChange }: { label: string; value: FontSize; onChange: (value: FontSize) => void }) {
+  return (
+    <div className="font-size-stepper">
+      <button type="button" onClick={() => onChange(value - 1)} disabled={value <= MIN_FONT_SIZE} aria-label={`减小${label}字号`}><Minus size={16} /></button>
+      <output aria-label={`${label}字号`}>{value} px</output>
+      <button type="button" onClick={() => onChange(value + 1)} disabled={value >= MAX_FONT_SIZE} aria-label={`增大${label}字号`}><Plus size={16} /></button>
+    </div>
   )
 }
 
@@ -124,8 +139,7 @@ function PluginSettings({ workspaces, threads, selectedThreadId }: { workspaces:
     <section className="plugin-settings" aria-label="Harness 插件">
       <aside className="plugin-catalog">
         <div className="plugin-catalog-intro">
-          <span>{plugins.definitions.length} 个内置插件</span>
-          <p>选择插件与实例，在右侧调整归属和设置。</p>
+          <span>插件 <em>{plugins.definitions.length}</em></span>
         </div>
         <nav className="plugin-catalog-list" aria-label="插件列表">
           {plugins.loading ? <div className="plugin-settings-empty">正在读取插件实例…</div> : plugins.definitions.map((definition) => (
@@ -158,7 +172,7 @@ function PluginSettings({ workspaces, threads, selectedThreadId }: { workspaces:
             selectedThreadId={selectedThreadId}
           />
         ) : !plugins.loading && selectedDefinition ? (
-          <div className="plugin-detail-empty"><Blocks size={20} /><strong>{selectedDefinition.manifest.name}</strong><p>这个插件还没有实例，请从左侧新增一个归属实例。</p></div>
+          <div className="plugin-detail-empty"><Blocks size={20} /><strong>{selectedDefinition.manifest.name}</strong><p>暂无实例，点击 + 新增。</p></div>
         ) : null}
       </div>
     </section>
@@ -181,6 +195,9 @@ function PluginDefinitionNav({ definition, instances, selected, selectedInstance
     () => nextAvailableScope(definition, instances, workspaces, threads, selectedThreadId),
     [definition, instances, selectedThreadId, threads, workspaces],
   )
+  const selectedInstance = selected
+    ? instances.find((instance) => instance.instanceId === selectedInstanceId) ?? null
+    : null
 
   const addInstance = async () => {
     if (!availableScope) return
@@ -198,16 +215,22 @@ function PluginDefinitionNav({ definition, instances, selected, selectedInstance
     onSelectInstance(instance.instanceId)
   }
 
+  const removeSelectedInstance = async () => {
+    if (!selectedInstance) return
+    await plugins.deleteInstance(selectedInstance.instanceId)
+  }
+
   return (
     <div className={`plugin-nav-group ${selected ? 'selected' : ''}`}>
       <div className="plugin-nav-heading">
         <button type="button" onClick={onSelectDefinition}>
           <span className="plugin-nav-mark"><Blocks size={14} /></span>
-          <span><strong>{definition.manifest.name}</strong><small>v{definition.manifest.version} · {instances.length} 个实例</small></span>
+          <span title={definition.manifest.description}><strong>{definition.manifest.name}</strong><small>{instances.length} 个实例</small></span>
         </button>
-        <button type="button" className="plugin-nav-add" disabled={!availableScope} onClick={() => void addInstance().catch(() => undefined)} title={availableScope ? '新增插件实例' : '没有可用的新归属'} aria-label={`新增 ${definition.manifest.name} 实例`}>
-          <Plus size={13} />
-        </button>
+        <div className="plugin-nav-actions">
+          <button type="button" className="plugin-nav-add" disabled={!availableScope} onClick={() => void addInstance().catch(() => undefined)} title={availableScope ? '新增插件实例' : '没有可用的新归属'} aria-label={`新增 ${definition.manifest.name} 实例`}><Plus size={14} /></button>
+          <button type="button" className="plugin-nav-remove" disabled={!selectedInstance} onClick={() => void removeSelectedInstance().catch(() => undefined)} title={selectedInstance ? '删除当前插件实例' : '请选择要删除的实例'} aria-label={`删除 ${definition.manifest.name} 当前实例`}><Minus size={14} /></button>
+        </div>
       </div>
       {instances.length > 0 && <div className="plugin-nav-instances">
         {instances.map((instance) => (
@@ -247,28 +270,19 @@ function PluginInstanceDetail({ definition, instance, workspaces, threads, selec
     <article className="plugin-instance-detail">
       <header className="plugin-detail-head">
         <div>
-          <span className="settings-kicker">PLUGIN INSTANCE</span>
-          <h3>{definition.manifest.name}</h3>
-          <p>{definition.manifest.description}</p>
-          <code>{definition.manifest.id} · v{definition.manifest.version}</code>
+          <div className="plugin-detail-title"><h3>{definition.manifest.name}</h3><span className="plugin-field-help" title={definition.manifest.description} aria-label="插件说明"><CircleHelp size={15} /></span></div>
+          <div className="plugin-detail-status"><span className={`plugin-status ${status.phase}`}><span />{statusLabel(status.phase)}</span></div>
         </div>
         <div className="plugin-instance-actions">
-          <button type="button" className={instance.enabled ? 'enabled' : ''} onClick={() => void persist({ ...instance, enabled: !instance.enabled, updatedAt: Date.now() })}>
+          <button type="button" className={instance.enabled ? 'enabled' : ''} onClick={() => void persist({ ...instance, enabled: !instance.enabled, updatedAt: Date.now() })} title={instance.enabled ? '停用当前实例' : '启用当前实例'}>
             <Power size={13} />{instance.enabled ? '已启用' : '已停用'}
           </button>
-          {!instance.instanceId.endsWith(':default') && (
-            <button type="button" className="danger" aria-label="删除实例" onClick={() => void plugins.deleteInstance(instance.instanceId).catch(() => undefined)}><Trash2 size={13} /></button>
-          )}
         </div>
       </header>
 
-      <div className="plugin-detail-status"><span className={`plugin-status ${status.phase}`}><span />{statusLabel(status.phase)}</span><span>{scopeSummary(instance.scope, workspaces, threads)}</span></div>
-
-      <section className="plugin-detail-section">
-        <div className="plugin-detail-section-title"><strong>实例归属</strong><p>切换会话只影响插件入口是否可见，不会停止后台实例。</p></div>
-        <div className="plugin-scope-fields">
-        <label>
-          <span>归属</span>
+      <div className="plugin-detail-form">
+        <label className="plugin-setting-row">
+          <span>归属 <i className="plugin-field-help" title="全局实例始终可用；Workspace 和 Thread 实例只在对应范围内显示。"><CircleHelp size={13} /></i></span>
           <select value={instance.scope.kind} onChange={(event) => updateScopeKind(event.target.value as PluginScopeKind)}>
             {definition.manifest.supportedScopes.map((kind) => (
               <option key={kind} value={kind} disabled={!scopeForKind(kind, workspaces, threads, selectedThreadId)}>{scopeKindLabel(kind)}</option>
@@ -276,7 +290,7 @@ function PluginInstanceDetail({ definition, instance, workspaces, threads, selec
           </select>
         </label>
         {instance.scope.kind === 'workspace' && (
-          <label>
+          <label className="plugin-setting-row">
             <span>Workspace</span>
             <select value={instance.scope.workspaceRoot} onChange={(event) => updateOwner(event.target.value)}>
               {workspaces.map((workspace) => <option key={workspace.root} value={workspace.root}>{workspace.name}</option>)}
@@ -284,25 +298,19 @@ function PluginInstanceDetail({ definition, instance, workspaces, threads, selec
           </label>
         )}
         {instance.scope.kind === 'thread' && (
-          <label>
+          <label className="plugin-setting-row">
             <span>Thread</span>
             <select value={instance.scope.threadId} onChange={(event) => updateOwner(event.target.value)}>
               {threads.map((thread) => <option key={thread.id} value={thread.id}>{threadTitle(thread)}</option>)}
             </select>
           </label>
         )}
-        </div>
-      </section>
 
-      {status.phase === 'failed' && <div className="plugin-instance-error">{status.error}</div>}
-      {Settings ? (
-        <section className="plugin-detail-section">
-          <div className="plugin-detail-section-title"><strong>插件设置</strong><p>这些配置只属于当前实例。</p></div>
+        {status.phase === 'failed' && <div className="plugin-instance-error">{status.error}</div>}
+        {Settings ? (
           <Settings instance={instance} saveConfig={(config) => plugins.upsertInstance({ ...instance, config, updatedAt: Date.now() })} />
-        </section>
-      ) : (
-        <section className="plugin-detail-section"><div className="plugin-detail-section-title"><strong>插件设置</strong><p>这个插件没有额外的业务设置。</p></div></section>
-      )}
+        ) : null}
+      </div>
     </article>
   )
 }

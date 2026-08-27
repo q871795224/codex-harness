@@ -10,7 +10,10 @@ import type {
   PluginInstanceStatus,
   PluginViewContext,
 } from '../../extensions/types'
+import { defaultPluginInstancesToSeed, removedDefaultPluginInstanceIds } from './defaults'
 import { PluginHost, type ResolvedContribution } from './runtime'
+
+const REMOVED_DEFAULT_PLUGIN_INSTANCE_IDS_KEY = 'removedDefaultPluginInstanceIds'
 
 interface PluginHostContextValue {
   definitions: HarnessPlugin[]
@@ -57,8 +60,10 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
       try {
         const stored = await runtime.listPluginInstances()
         const next = [...stored]
-        for (const fallback of defaultInstances) {
-          if (next.some((instance) => instance.pluginId === fallback.pluginId)) continue
+        const removedDefaultInstanceIds = removedDefaultPluginInstanceIds(
+          await runtime.getAppState(REMOVED_DEFAULT_PLUGIN_INSTANCE_IDS_KEY),
+        )
+        for (const fallback of defaultPluginInstancesToSeed(stored, defaultInstances, removedDefaultInstanceIds)) {
           next.push(await runtime.upsertPluginInstance(fallback))
         }
         if (!disposed) {
@@ -104,6 +109,15 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     },
     deleteInstance: async (instanceId) => {
       try {
+        if (defaultInstances.some((instance) => instance.instanceId === instanceId)) {
+          const currentRemoved = removedDefaultPluginInstanceIds(
+            await runtime.getAppState(REMOVED_DEFAULT_PLUGIN_INSTANCE_IDS_KEY),
+          )
+          await runtime.setAppState(
+            REMOVED_DEFAULT_PLUGIN_INSTANCE_IDS_KEY,
+            JSON.stringify([...new Set([...currentRemoved, instanceId])]),
+          )
+        }
         await runtime.deletePluginInstance(instanceId)
         setInstances((current) => current.filter((instance) => instance.instanceId !== instanceId))
         setError(null)
@@ -112,7 +126,7 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
         throw nextError
       }
     },
-  }), [definitions, error, host, instances, loading, revision])
+  }), [defaultInstances, definitions, error, host, instances, loading, revision])
 
   return <PluginHostContext.Provider value={value}>{children}</PluginHostContext.Provider>
 }

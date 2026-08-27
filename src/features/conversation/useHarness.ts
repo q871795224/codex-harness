@@ -5,6 +5,7 @@ import type {
   ApprovalRequest,
   Badge,
   FontSize,
+  FontSizeArea,
   JsonObject,
   NavigationLayout,
   NavigationPreferences,
@@ -20,7 +21,7 @@ import type {
   Turn,
   Workspace,
 } from '../../core/domain/codex'
-import { isActive, textInput, threadsOlderThan } from '../../core/domain/codex'
+import { defaultFontSizePreferences, isActive, normalizeFontSize, normalizeFontSizePreferences, textInput, threadsOlderThan } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 
 type ViewMode = 'active' | 'archived'
@@ -35,7 +36,7 @@ const defaultNavigationPreferences: NavigationPreferences = {
 }
 
 const defaultAppearancePreferences: AppearancePreferences = {
-  fontSize: 'standard',
+  fontSizes: defaultFontSizePreferences(),
 }
 
 interface ResumeResponse {
@@ -132,9 +133,9 @@ function parseNavigationPreferences(raw: string | null): NavigationPreferences {
 function parseAppearancePreferences(raw: string | null): AppearancePreferences {
   if (!raw) return defaultAppearancePreferences
   try {
-    const value = JSON.parse(raw) as Partial<AppearancePreferences>
+    const value = JSON.parse(raw)
     return {
-      fontSize: value.fontSize === 'compact' || value.fontSize === 'large' ? value.fontSize : 'standard',
+      fontSizes: normalizeFontSizePreferences(value),
     }
   } catch {
     return defaultAppearancePreferences
@@ -235,9 +236,18 @@ export function useHarness() {
     }))
   }, [updateNavigation])
 
-  const setFontSize = useCallback((fontSize: FontSize) => {
-    setAppearance({ fontSize })
-    void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify({ fontSize })).catch(() => undefined)
+  const setFontSize = useCallback((area: FontSizeArea, fontSize: FontSize) => {
+    setAppearance((current) => {
+      const fontSizes = { ...current.fontSizes, [area]: normalizeFontSize(fontSize) }
+      void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify({ fontSizes })).catch(() => undefined)
+      return { fontSizes }
+    })
+  }, [])
+
+  const resetFontSizes = useCallback(() => {
+    const fontSizes = defaultFontSizePreferences()
+    setAppearance({ fontSizes })
+    void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify({ fontSizes })).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -982,6 +992,7 @@ export function useHarness() {
     setThreadSort,
     setManualThreadOrder,
     setFontSize,
+    resetFontSizes,
     setSelectedWorkspaceRoot,
     setViewMode: async (mode: ViewMode) => {
       setViewMode(mode)

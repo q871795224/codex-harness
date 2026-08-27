@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useState } from 'react'
-import { Bot, ExternalLink, ListTodo, LoaderCircle, Play, RotateCcw, Square } from 'lucide-react'
+import { Bot, CircleHelp, ExternalLink, ListTodo, LoaderCircle, Play, RotateCcw, Square } from 'lucide-react'
 import type { AgentRun, AgentRunMode, AgentRunService } from '../../core/agent-runs/types'
 import type { HarnessPlugin, PluginInstanceRecord, PluginSettingsProps, PluginViewContext } from '../../extensions/types'
 
@@ -174,12 +174,13 @@ function TemporaryAgentSettings({ instance, saveConfig }: PluginSettingsProps) {
   const config = readConfig(instance.config)
   return (
     <div className="plugin-business-settings">
-      <strong>默认运行模式</strong>
-      <select value={config.defaultMode} onChange={(event) => void saveConfig({ ...instance.config, defaultMode: event.target.value })}>
-        <option value="detached">独立运行</option>
-        <option value="delegated">委派并回传</option>
-      </select>
-      <p>委派模式只有在选中父会话时可用，结果仍需手动确认回传。</p>
+      <label className="plugin-setting-row">
+        <span>默认运行模式 <i className="plugin-field-help" title="委派模式会把结果回传到当前会话；独立运行不会关联父会话。"><CircleHelp size={13} /></i></span>
+        <select value={config.defaultMode} onChange={(event) => void saveConfig({ ...instance.config, defaultMode: event.target.value })}>
+          <option value="detached">独立运行</option>
+          <option value="delegated">委派并回传</option>
+        </select>
+      </label>
     </div>
   )
 }

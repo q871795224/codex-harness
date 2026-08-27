@@ -12,12 +12,6 @@ export const trajectoryPlugin: HarnessPlugin = {
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
   },
-  settings: () => (
-    <div className="plugin-business-settings">
-      <strong>轨迹展示</strong>
-      <p>当前版本会隐藏 reasoning 与 raw response，只展示 App Server 已公开的执行事件。</p>
-    </div>
-  ),
   activate(ctx) {
     ctx.slots.conversationTabs.register({
       id: 'trajectory',

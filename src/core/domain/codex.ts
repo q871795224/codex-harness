@@ -16,10 +16,63 @@ export interface NavigationPreferences {
   manualThreadOrder: string[]
 }
 
-export type FontSize = 'compact' | 'standard' | 'large'
+export const MIN_FONT_SIZE = 13
+export const DEFAULT_FONT_SIZE = 15
+export const MAX_FONT_SIZE = 19
+
+export type FontSize = number
+export type FontSizeArea = 'navigation' | 'conversation' | 'settings' | 'plugins'
+
+export interface FontSizePreferences {
+  navigation: FontSize
+  conversation: FontSize
+  settings: FontSize
+  plugins: FontSize
+}
+
+export const DEFAULT_FONT_SIZES: FontSizePreferences = {
+  navigation: 13,
+  conversation: DEFAULT_FONT_SIZE,
+  settings: DEFAULT_FONT_SIZE,
+  plugins: DEFAULT_FONT_SIZE,
+}
+
+export function normalizeFontSize(value: unknown): FontSize {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, Math.round(value)))
+  }
+  if (value === 'compact') return 14
+  if (value === 'large') return 16
+  return DEFAULT_FONT_SIZE
+}
+
+export function defaultFontSizePreferences(): FontSizePreferences {
+  return { ...DEFAULT_FONT_SIZES }
+}
+
+export function normalizeFontSizePreferences(value: unknown): FontSizePreferences {
+  const raw = value && typeof value === 'object' ? value as JsonObject : {}
+  const saved = raw.fontSizes && typeof raw.fontSizes === 'object' ? raw.fontSizes as JsonObject : null
+  if (saved) {
+    return {
+      navigation: normalizeFontSize(saved.navigation ?? DEFAULT_FONT_SIZES.navigation),
+      conversation: normalizeFontSize(saved.conversation ?? DEFAULT_FONT_SIZES.conversation),
+      settings: normalizeFontSize(saved.settings ?? DEFAULT_FONT_SIZES.settings),
+      plugins: normalizeFontSize(saved.plugins ?? DEFAULT_FONT_SIZES.plugins),
+    }
+  }
+
+  const offset = normalizeFontSize(raw.fontSize) - DEFAULT_FONT_SIZE
+  return {
+    navigation: normalizeFontSize(DEFAULT_FONT_SIZES.navigation + offset),
+    conversation: normalizeFontSize(DEFAULT_FONT_SIZES.conversation + offset),
+    settings: normalizeFontSize(DEFAULT_FONT_SIZES.settings + offset),
+    plugins: normalizeFontSize(DEFAULT_FONT_SIZES.plugins + offset),
+  }
+}
 
 export interface AppearancePreferences {
-  fontSize: FontSize
+  fontSizes: FontSizePreferences
 }
 
 export type ThreadStatus =
