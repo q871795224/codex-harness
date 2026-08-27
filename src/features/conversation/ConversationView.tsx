@@ -1,4 +1,4 @@
-import { memo, useRef, useState, type ReactNode } from 'react'
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
   Archive,
@@ -51,11 +51,12 @@ export function ConversationHeader({ thread, workspace, archived, onRename, onAr
             onChange={(event) => setTitle(event.target.value)}
             onBlur={saveTitle}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') {
+              const action = titleEditorKeyAction(event.key, event.nativeEvent.isComposing, event.keyCode)
+              if (action === 'cancel') {
                 setTitle(threadTitle(thread))
                 setEditingTitle(false)
               }
-              if (event.key === 'Enter') saveTitle()
+              if (action === 'save') saveTitle()
             }}
           />
         ) : (
@@ -83,6 +84,13 @@ export function ConversationHeader({ thread, workspace, archived, onRename, onAr
   )
 }
 
+export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode = 0): 'save' | 'cancel' | null {
+  if (isComposing || keyCode === 229) return null
+  if (key === 'Escape') return 'cancel'
+  if (key === 'Enter') return 'save'
+  return null
+}
+
 interface ConversationViewProps {
   items: ThreadItemEntry[]
   approvals: ApprovalRequest[]
@@ -99,6 +107,14 @@ interface ConversationViewProps {
 
 export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onWorkspaceChange, newThreadPanels }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const initiallyPositioned = useRef(false)
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll || initiallyPositioned.current || items.length === 0) return
+    scroll.scrollTop = scroll.scrollHeight
+    initiallyPositioned.current = true
+  }, [items.length])
 
   const scrollToBottom = () => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })

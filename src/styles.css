@@ -187,9 +187,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .agent-message .message-label { color: #5865a8; }
 .user-message { display: flex; flex-direction: column; align-items: flex-end; }
 .user-message .message-label { margin-right: 4px; }
-.user-bubble { max-width: 78%; padding: 10px 13px; border-radius: 12px 12px 3px 12px; background: #eff2fa; color: #292d37; white-space: pre-wrap; font-size: 15px; line-height: 1.68; }
+.user-bubble { max-width: 78%; overflow-wrap: anywhere; padding: 10px 13px; border-radius: 12px 12px 3px 12px; background: #eff2fa; color: #292d37; white-space: pre-wrap; word-break: break-word; font-size: 15px; line-height: 1.68; }
 .user-attachments { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }.user-attachments:first-child { margin-top: 0; }.user-attachments span { display: flex; align-items: center; gap: 5px; max-width: 260px; overflow: hidden; padding: 3px 7px; border: 1px solid #d7ddec; border-radius: 6px; background: rgba(255, 255, 255, .55); color: #596372; font-size: 11px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.markdown-body { color: #262932; font-size: 15px; line-height: 1.76; }
+.markdown-body { min-width: 0; overflow-wrap: anywhere; color: #262932; word-break: break-word; font-size: 15px; line-height: 1.76; }
 .markdown-body > :first-child { margin-top: 0; }
 .markdown-body > :last-child { margin-bottom: 0; }
 .markdown-body p { margin: 0 0 13px; }
@@ -304,7 +304,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 
 .composer-zone { position: relative; }.foreign-active-note { margin: 0 10px 7px; color: #ab7c32; font-size: 12px; }
 .composer-card { padding: 11px 12px 9px; border: 1px solid #dcdfe5; border-radius: 13px; background: #fff; box-shadow: 0 5px 20px rgba(27, 32, 44, .065); }.composer-card:focus-within { border-color: #b5c0f7; box-shadow: 0 0 0 3px rgba(96, 119, 230, .08), 0 5px 20px rgba(27, 32, 44, .06); }.composer-card.disabled { background: #fafafa; }
-.composer-card textarea { display: block; width: 100%; min-height: 28px; max-height: 124px; padding: 0; resize: none; border: 0; outline: 0; background: transparent; color: #1f232b; font-size: 15px; line-height: 24px; }.composer-card textarea::placeholder { color: #8f96a1; }.composer-card textarea:disabled { cursor: not-allowed; color: #777d87; }
+.composer-card textarea { display: block; width: 100%; min-height: 28px; max-height: 124px; overflow-x: hidden; overflow-wrap: anywhere; padding: 0; resize: none; border: 0; outline: 0; background: transparent; color: #1f232b; white-space: pre-wrap; word-break: break-word; font-size: 15px; line-height: 24px; }.composer-card textarea::placeholder { color: #8f96a1; }.composer-card textarea:disabled { cursor: not-allowed; color: #777d87; }
+.composer-suggestions { max-height: 238px; margin: 8px -3px 2px; overflow-y: auto; padding: 5px; border: 1px solid #e0e3e9; border-radius: 9px; background: #fbfcfe; box-shadow: 0 6px 18px rgba(26, 32, 44, .08); }
+.composer-suggestions-label { padding: 4px 7px 5px; color: #8a919d; font-size: 10px; font-weight: 720; letter-spacing: .06em; }
+.composer-suggestions button { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 7px; width: 100%; padding: 7px; border: 0; border-radius: 6px; background: transparent; color: #69727f; text-align: left; cursor: pointer; }
+.composer-suggestions button.selected { background: #edf1ff; color: #5267bd; }
+.composer-suggestions button > span { min-width: 0; }
+.composer-suggestions strong, .composer-suggestions small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-suggestions strong { color: #353b46; font-size: 12px; font-weight: 650; }
+.composer-suggestions small { margin-top: 2px; color: #949ba6; font-size: 10px; }
+.composer-suggestions-state { padding: 15px 8px; color: #9299a4; font-size: 11px; text-align: center; }
+.composer-suggestions-state.error { color: #ba6262; }
 .composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 7px; }.composer-left-actions, .composer-actions { display: flex; align-items: center; gap: 7px; min-width: 0; }.composer-left-actions { flex: 1; }.composer-actions { justify-content: flex-end; }.composer-icon-button { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: #4d5561; cursor: pointer; }.composer-icon-button:hover:not(:disabled) { background: rgba(39, 48, 65, .055); color: #344ba5; }.composer-icon-button:disabled { cursor: default; opacity: .4; }.approval-select, .model-effort-control select { height: 29px; min-width: 0; padding: 0 19px 0 4px; appearance: none; border: 0; border-radius: 0; outline: 0; background-color: transparent; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%233e4652' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 3px center; color: #343b46; font-size: 11px; font-weight: 560; cursor: pointer; }.approval-select:disabled, .model-effort-control select:disabled { cursor: default; opacity: .45; }.model-effort-control { display: flex; min-width: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; }.model-effort-control select { max-width: 180px; background-color: transparent; }.model-effort-control select + select { max-width: 82px; margin-left: 5px; border-left: 0; }.composer-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }.composer-attachments > span { display: flex; align-items: center; gap: 5px; max-width: 220px; height: 27px; padding: 0 4px 0 8px; border: 1px solid #dfe3eb; border-radius: 7px; background: #f8f9fb; color: #5d6673; font-size: 11px; }.composer-attachments > span > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.composer-attachments button { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #8b929d; cursor: pointer; }.composer-attachments button:hover { background: #e9ebef; color: #535a65; }.composer-inline-error { margin-top: 4px; color: #b25858; font-size: 11px; }.send-button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: #7087e8; color: #fff; cursor: pointer; }.send-button:hover:not(:disabled) { background: #5f78df; }.send-button:disabled { background: #d7dbe8; color: #f7f8fb; cursor: default; }.stop-button { display: flex; align-items: center; gap: 5px; height: 29px; padding: 0 8px; border: 1px solid #e2d6d6; border-radius: 6px; background: #fffafa; color: #a46161; cursor: pointer; font-size: 12px; }.stop-button:hover { background: #fff1f1; }
 .context-ring { display: grid; flex: 0 0 auto; place-items: center; width: 24px; height: 24px; color: #7187e4; }
 .context-ring svg { display: block; width: 24px; height: 24px; overflow: visible; }
@@ -345,6 +355,21 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .settings-reset-row button { justify-self: end; height: 32px; padding: 0 11px; border: 1px solid #d9dee8; border-radius: 7px; background: #fff; color: #5369c5; cursor: pointer; font-size: calc(13px + var(--h-settings-font-offset)); }
 .settings-reset-row button:hover:not(:disabled) { border-color: #aebcf0; background: #f4f6ff; }
 .settings-reset-row button:disabled { cursor: default; opacity: .45; }
+.settings-stack { display: grid; align-content: start; gap: 32px; }
+.settings-preference-block { width: min(620px, 100%); }
+.theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.theme-options > button { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 11px; min-height: 66px; padding: 8px; border: 1px solid #dfe3ea; border-radius: 10px; background: #fff; color: #747c88; text-align: left; cursor: pointer; }
+.theme-options > button:hover { border-color: #bac4e8; background: #fafbff; }
+.theme-options > button.selected { border-color: #9caee9; background: #f3f5ff; box-shadow: 0 0 0 2px rgba(91, 115, 215, .07); }
+.theme-options > button > span:last-child { min-width: 0; }
+.theme-options strong, .theme-options small { display: block; }
+.theme-options strong { color: #343a44; font-size: calc(14px + var(--h-settings-font-offset)); }
+.theme-options small { margin-top: 3px; color: #949ba6; font-size: calc(11px + var(--h-settings-font-offset)); }
+.theme-preview { display: grid; place-items: center; width: 50px; height: 48px; border: 1px solid #dfe2e8; border-radius: 7px; }
+.theme-preview.light { background: linear-gradient(145deg, #fff 0 52%, #edf0f5 52%); color: #69727f; }
+.theme-preview.dark { border-color: #303641; background: linear-gradient(145deg, #20242b 0 52%, #12151a 52%); color: #bec8ee; }
+.settings-row select { min-width: 210px; height: 33px; padding: 0 9px; border: 1px solid #dfe2e7; border-radius: 7px; background: #fff; color: #454b56; font-size: calc(13px + var(--h-settings-font-offset)); }
+.settings-shortcut-note { padding: 9px 0; color: #9299a4; font-size: calc(11px + var(--h-settings-font-offset)); text-align: right; }
 .codex-settings { display: grid; align-content: start; gap: 24px; }.codex-setting-card { width: min(720px, 100%); }.settings-section-title > div { flex: 1; min-width: 0; }.settings-section-title p { margin: 4px 0 0; color: #8b929d; font-size: calc(12px + var(--h-settings-font-offset)); line-height: 1.4; }.codex-setting-card .settings-row-list { width: 100%; margin-top: 14px; }.codex-setting-card .settings-row select { min-width: 210px; height: 33px; padding: 0 9px; border: 1px solid #dfe2e7; border-radius: 7px; background: #fff; color: #454b56; font-size: calc(13px + var(--h-settings-font-offset)); }.codex-refresh-button { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid #dfe3e9; border-radius: 7px; background: #fff; color: #6475c3; cursor: pointer; }.codex-refresh-button:disabled { cursor: default; opacity: .45; }.codex-inventory-list { margin-top: 14px; border-top: 1px solid #e7e9ee; }.codex-inventory-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 58px; padding: 7px 0; border-bottom: 1px solid #e7e9ee; }.codex-inventory-row > div { min-width: 0; }.codex-inventory-name { display: flex; align-items: center; gap: 7px; }.codex-inventory-name > span { flex: 0 0 auto; padding: 2px 6px; border-radius: 5px; background: #f0f2f6; color: #737c89; font-size: calc(9px + var(--h-settings-font-offset)); font-weight: 620; }.codex-inventory-row strong, .codex-inventory-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.codex-inventory-row strong { color: #3d444e; font-size: calc(14px + var(--h-settings-font-offset)); }.codex-inventory-row small { max-width: 520px; margin-top: 3px; color: #969da8; font-size: calc(11px + var(--h-settings-font-offset)); }.codex-inventory-row button { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; height: 30px; padding: 0 9px; border: 1px solid #dfe2e7; border-radius: 7px; background: #fff; color: #9d5555; cursor: pointer; }.codex-inventory-row button.enabled { border-color: #cfe6d7; background: #f4fbf6; color: #43815b; }.codex-runtime-status { flex: 0 0 auto; padding: 3px 8px; border-radius: 999px; background: #f0f2f6; color: #68717e; font-size: calc(11px + var(--h-settings-font-offset)); font-weight: 650; }.codex-runtime-status.connected, .codex-runtime-status.enabled { background: #eaf7ee; color: #318052; }.codex-runtime-status.disabled, .codex-runtime-status.failed, .codex-runtime-status.cancelled { background: #fff0f0; color: #b64f4f; }.codex-runtime-status.starting, .codex-runtime-status.authenticationRequired { background: #fff7e8; color: #a66f24; }.codex-empty { padding: 24px 0; color: #969da8; font-size: calc(13px + var(--h-settings-font-offset)); text-align: center; }
 .codex-scan-path { color: #68717f; font-family: var(--h-font-mono); font-size: .92em; }
 .codex-inventory-row .codex-skill-status { height: auto; padding: 3px 8px; border: 0; border-radius: 999px; font-size: calc(11px + var(--h-settings-font-offset)); font-weight: 650; }
@@ -466,6 +491,235 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .empty-state, .boot-error { display: grid; flex: 1; place-content: center; justify-items: center; padding: 30px; color: #818690; text-align: center; }.empty-state-icon, .boot-error-mark { display: grid; place-items: center; width: 45px; height: 45px; margin-bottom: 15px; border-radius: 13px; background: #eef1fa; color: #657ad5; }.empty-state h1, .boot-error h1 { margin: 0 0 8px; color: #32353d; font-size: 18px; font-weight: 650; }.empty-state p, .boot-error p { max-width: 440px; margin: 0; font-size: 13px; line-height: 1.7; }.empty-state button, .boot-error button { display: flex; align-items: center; gap: 6px; height: 32px; margin-top: 18px; padding: 0 11px; border: 1px solid #cbd4f4; border-radius: 7px; background: #f6f8ff; color: #5269c5; cursor: pointer; font-size: 12px; }.empty-state button:hover, .boot-error button:hover { background: #edf1ff; }
 .launch-screen { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 100%; color: #707784; font-size: 13px; }.launch-orbit { width: 17px; height: 17px; border: 2px solid #b6c0ee; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
 .toast { position: fixed; z-index: 20; right: 22px; bottom: 22px; max-width: min(460px, calc(100vw - 44px)); padding: 10px 12px; border: 1px solid #d6dbe7; border-radius: 8px; background: rgba(255, 255, 255, .96); color: #49505d; box-shadow: 0 8px 25px rgba(20, 25, 35, .13); font-size: 12px; backdrop-filter: blur(9px); }.toast.error { border-color: #edcbcb; color: #a34e4e; }
+
+/* Dark theme keeps the same restrained workspace hierarchy with warmer blacks. */
+.app-shell[data-theme='dark'] {
+  color-scheme: dark;
+  color: #e4e7ed;
+  background:
+    radial-gradient(105% 82% at -14% -18%, rgba(var(--flavor-glow-secondary), .10), transparent 58%),
+    radial-gradient(70% 58% at 108% 115%, rgba(var(--flavor-glow-primary), .08), transparent 62%),
+    #15171b;
+}
+.app-shell[data-theme='dark'] .sidebar { border-color: #30333a; background: rgba(25, 27, 32, .9); color: #e3e5ea; }
+.app-shell[data-theme='dark'] .main-pane { background: rgba(20, 22, 27, .88); }
+.app-shell[data-theme='dark'] .brand-name,
+.app-shell[data-theme='dark'] .thread-row,
+.app-shell[data-theme='dark'] .thread-title-button,
+.app-shell[data-theme='dark'] .thread-title-editor,
+.app-shell[data-theme='dark'] .markdown-body,
+.app-shell[data-theme='dark'] .markdown-body h1,
+.app-shell[data-theme='dark'] .markdown-body h2,
+.app-shell[data-theme='dark'] .markdown-body h3,
+.app-shell[data-theme='dark'] .fresh-thread strong,
+.app-shell[data-theme='dark'] .composer-card textarea,
+.app-shell[data-theme='dark'] .settings-dialog h2,
+.app-shell[data-theme='dark'] .settings-section-title h3,
+.app-shell[data-theme='dark'] .theme-options strong,
+.app-shell[data-theme='dark'] .codex-inventory-row strong,
+.app-shell[data-theme='dark'] .plugin-detail-head h3,
+.app-shell[data-theme='dark'] .plugin-detail-empty strong,
+.app-shell[data-theme='dark'] .agent-runs-heading h2,
+.app-shell[data-theme='dark'] .agent-run-card strong,
+.app-shell[data-theme='dark'] .seatalk-heading h2,
+.app-shell[data-theme='dark'] .seatalk-card-title h3,
+.app-shell[data-theme='dark'] .seatalk-message header strong,
+.app-shell[data-theme='dark'] .empty-state h1,
+.app-shell[data-theme='dark'] .boot-error h1 { color: #e6e8ed; }
+.app-shell[data-theme='dark'] .brand-version,
+.app-shell[data-theme='dark'] .sidebar-section-heading,
+.app-shell[data-theme='dark'] .thread-row time,
+.app-shell[data-theme='dark'] .empty-thread-list,
+.app-shell[data-theme='dark'] .thread-context,
+.app-shell[data-theme='dark'] .connection-state,
+.app-shell[data-theme='dark'] .message-label,
+.app-shell[data-theme='dark'] .fresh-thread,
+.app-shell[data-theme='dark'] .conversation-stats,
+.app-shell[data-theme='dark'] .settings-section-title p,
+.app-shell[data-theme='dark'] .settings-shortcut-note,
+.app-shell[data-theme='dark'] .codex-inventory-row small,
+.app-shell[data-theme='dark'] .codex-empty,
+.app-shell[data-theme='dark'] .plugin-detail-empty,
+.app-shell[data-theme='dark'] .plugin-status,
+.app-shell[data-theme='dark'] .agent-runs-heading p,
+.app-shell[data-theme='dark'] .agent-run-card small,
+.app-shell[data-theme='dark'] .seatalk-heading p,
+.app-shell[data-theme='dark'] .seatalk-card-title p,
+.app-shell[data-theme='dark'] .seatalk-message time,
+.app-shell[data-theme='dark'] .seatalk-message footer span,
+.app-shell[data-theme='dark'] .empty-state,
+.app-shell[data-theme='dark'] .boot-error,
+.app-shell[data-theme='dark'] .launch-screen { color: #959ca8; }
+.app-shell[data-theme='dark'] .new-chat-button,
+.app-shell[data-theme='dark'] .sidebar-search,
+.app-shell[data-theme='dark'] .header-action,
+.app-shell[data-theme='dark'] .load-older-turns,
+.app-shell[data-theme='dark'] .scroll-to-bottom,
+.app-shell[data-theme='dark'] .composer-card,
+.app-shell[data-theme='dark'] .send-mode-menu,
+.app-shell[data-theme='dark'] .settings-dialog,
+.app-shell[data-theme='dark'] .settings-panel-head,
+.app-shell[data-theme='dark'] .theme-options > button,
+.app-shell[data-theme='dark'] .settings-row select,
+.app-shell[data-theme='dark'] .font-size-stepper button,
+.app-shell[data-theme='dark'] .settings-reset-row button,
+.app-shell[data-theme='dark'] .codex-refresh-button,
+.app-shell[data-theme='dark'] .codex-inventory-row button,
+.app-shell[data-theme='dark'] .settings-open-logs,
+.app-shell[data-theme='dark'] .settings-versions-refresh,
+.app-shell[data-theme='dark'] .plugin-detail-scroll,
+.app-shell[data-theme='dark'] .plugin-instance-actions button,
+.app-shell[data-theme='dark'] .plugin-setting-row select,
+.app-shell[data-theme='dark'] .plugin-setting-row input,
+.app-shell[data-theme='dark'] .agent-run-launcher,
+.app-shell[data-theme='dark'] .agent-run-card,
+.app-shell[data-theme='dark'] .agent-launcher-popover,
+.app-shell[data-theme='dark'] .seatalk-connection,
+.app-shell[data-theme='dark'] .seatalk-card,
+.app-shell[data-theme='dark'] .seatalk-draft input,
+.app-shell[data-theme='dark'] .seatalk-draft select,
+.app-shell[data-theme='dark'] .seatalk-draft textarea,
+.app-shell[data-theme='dark'] .seatalk-settings input,
+.app-shell[data-theme='dark'] .seatalk-settings select,
+.app-shell[data-theme='dark'] .seatalk-confirm button,
+.app-shell[data-theme='dark'] .toast { border-color: #373b44; background: #23262c; color: #cbd0d9; }
+.app-shell[data-theme='dark'] .new-chat-button:hover:not(:disabled),
+.app-shell[data-theme='dark'] .sidebar-search:focus-within,
+.app-shell[data-theme='dark'] .settings-close:hover,
+.app-shell[data-theme='dark'] .theme-options > button:hover,
+.app-shell[data-theme='dark'] .font-size-stepper button:hover:not(:disabled),
+.app-shell[data-theme='dark'] .settings-reset-row button:hover:not(:disabled),
+.app-shell[data-theme='dark'] .settings-open-logs:hover,
+.app-shell[data-theme='dark'] .settings-versions-refresh:hover:not(:disabled) { border-color: #59647f; background: #2a2e36; }
+.app-shell[data-theme='dark'] .sidebar-search input,
+.app-shell[data-theme='dark'] .thread-title-editor,
+.app-shell[data-theme='dark'] .settings-row select,
+.app-shell[data-theme='dark'] .plugin-setting-row select,
+.app-shell[data-theme='dark'] .plugin-setting-row input,
+.app-shell[data-theme='dark'] .seatalk-draft input,
+.app-shell[data-theme='dark'] .seatalk-draft select,
+.app-shell[data-theme='dark'] .seatalk-draft textarea,
+.app-shell[data-theme='dark'] .seatalk-settings input,
+.app-shell[data-theme='dark'] .seatalk-settings select { color: #d9dde5; }
+.app-shell[data-theme='dark'] .sidebar-footer,
+.app-shell[data-theme='dark'] .tab-bar,
+.app-shell[data-theme='dark'] .settings-panel-head,
+.app-shell[data-theme='dark'] .settings-row-list,
+.app-shell[data-theme='dark'] .settings-row,
+.app-shell[data-theme='dark'] .settings-versions,
+.app-shell[data-theme='dark'] .codex-inventory-list,
+.app-shell[data-theme='dark'] .codex-inventory-row,
+.app-shell[data-theme='dark'] .plugin-detail-head,
+.app-shell[data-theme='dark'] .plugin-setting-row,
+.app-shell[data-theme='dark'] .seatalk-settings .plugin-setting-row { border-color: #32363e; }
+.app-shell[data-theme='dark'] .heading-actions button:hover,
+.app-shell[data-theme='dark'] .workspace-row:hover,
+.app-shell[data-theme='dark'] .thread-row:hover,
+.app-shell[data-theme='dark'] .archive-toggle:hover,
+.app-shell[data-theme='dark'] .archive-toggle.active,
+.app-shell[data-theme='dark'] .settings-toggle:hover,
+.app-shell[data-theme='dark'] .archive-old-button:hover:not(:disabled),
+.app-shell[data-theme='dark'] .composer-icon-button:hover:not(:disabled),
+.app-shell[data-theme='dark'] .composer-attachments button:hover,
+.app-shell[data-theme='dark'] .send-mode:hover { background: #2b2e35; color: #d7dae1; }
+.app-shell[data-theme='dark'] .workspace-row,
+.app-shell[data-theme='dark'] .archive-toggle,
+.app-shell[data-theme='dark'] .settings-toggle,
+.app-shell[data-theme='dark'] .archive-old-button,
+.app-shell[data-theme='dark'] .thread-tabs button,
+.app-shell[data-theme='dark'] .header-action,
+.app-shell[data-theme='dark'] .composer-icon-button,
+.app-shell[data-theme='dark'] .settings-nav nav button,
+.app-shell[data-theme='dark'] .settings-close { color: #a6adb8; }
+.app-shell[data-theme='dark'] .workspace-row.selected,
+.app-shell[data-theme='dark'] .thread-row.selected,
+.app-shell[data-theme='dark'] .heading-actions .navigation-options button.selected,
+.app-shell[data-theme='dark'] .heading-actions .navigation-options button:hover,
+.app-shell[data-theme='dark'] .settings-nav nav button.selected,
+.app-shell[data-theme='dark'] .theme-options > button.selected,
+.app-shell[data-theme='dark'] .send-mode-menu button.selected,
+.app-shell[data-theme='dark'] .send-mode-menu button:hover,
+.app-shell[data-theme='dark'] .plugin-nav-instances button:hover,
+.app-shell[data-theme='dark'] .plugin-nav-instances button.selected { background: #293149; color: #aebdf5; }
+.app-shell[data-theme='dark'] .navigation-options,
+.app-shell[data-theme='dark'] .composer-suggestions { border-color: #383d47; background: rgba(31, 34, 40, .98); box-shadow: 0 10px 28px rgba(0, 0, 0, .28); }
+.app-shell[data-theme='dark'] .composer-suggestions button.selected { background: #293149; color: #aebdf5; }
+.app-shell[data-theme='dark'] .composer-suggestions strong { color: #dfe2e8; }
+.app-shell[data-theme='dark'] .composer-suggestions-label,
+.app-shell[data-theme='dark'] .composer-suggestions small,
+.app-shell[data-theme='dark'] .composer-suggestions-state { color: #929aa6; }
+.app-shell[data-theme='dark'] .user-bubble { background: #29303d; color: #e0e3e9; }
+.app-shell[data-theme='dark'] .user-attachments span { border-color: #424957; background: rgba(18, 20, 24, .35); color: #bdc3cd; }
+.app-shell[data-theme='dark'] .markdown-body code { background: #292c33; color: #d0d5de; }
+.app-shell[data-theme='dark'] .markdown-body pre { border-color: #353941; background: #202227; }
+.app-shell[data-theme='dark'] .markdown-body blockquote { border-color: #4a5268; color: #aeb4bf; }
+.app-shell[data-theme='dark'] .tool-card { border-color: #353941; background: #202329; }
+.app-shell[data-theme='dark'] .tool-card.failed { border-color: #654141; background: #2d2224; }
+.app-shell[data-theme='dark'] .tool-card-head,
+.app-shell[data-theme='dark'] .tool-card-head code { color: #c7ccd4; }
+.app-shell[data-theme='dark'] .tool-card-body { border-color: #353941; }
+.app-shell[data-theme='dark'] .tool-card-body pre { background: #191b20; color: #cdd1d8; }
+.app-shell[data-theme='dark'] .approval-card { border-color: #66512c; background: #2b261c; }
+.app-shell[data-theme='dark'] .approval-content h3 { color: #e1c38d; }
+.app-shell[data-theme='dark'] .approval-content p { color: #bea97f; }
+.app-shell[data-theme='dark'] .approval-content code { color: #d6bd88; }
+.app-shell[data-theme='dark'] .trajectory-scroll,
+.app-shell[data-theme='dark'] .agent-runs-scroll { background: rgba(20, 22, 27, .55); }
+.app-shell[data-theme='dark'] .trajectory-list::before { background: #363a42; }
+.app-shell[data-theme='dark'] .trajectory-icon { box-shadow: 0 0 0 4px #17191e; }
+.app-shell[data-theme='dark'] .steer-panel,
+.app-shell[data-theme='dark'] .queue-panel { border-color: #353942; background: #202329; }
+.app-shell[data-theme='dark'] .steer-panel { background: #202533; }
+.app-shell[data-theme='dark'] .dock-label,
+.app-shell[data-theme='dark'] .queue-list,
+.app-shell[data-theme='dark'] .queue-row + .queue-row { border-color: #343842; }
+.app-shell[data-theme='dark'] .queue-text,
+.app-shell[data-theme='dark'] .steer-row > span { color: #c8ccd4; }
+.app-shell[data-theme='dark'] .composer-card.disabled { background: #202329; }
+.app-shell[data-theme='dark'] .composer-attachments > span { border-color: #3b404a; background: #292c33; color: #bdc3cd; }
+.app-shell[data-theme='dark'] .approval-select,
+.app-shell[data-theme='dark'] .model-effort-control select { color: #c7ccd5; filter: brightness(1.5); }
+.app-shell[data-theme='dark'] .context-ring-track { stroke: #3b404a; }
+.app-shell[data-theme='dark'] .send-mode { background: #292c33; color: #adb4c0; }
+.app-shell[data-theme='dark'] .settings-backdrop { background: rgba(5, 7, 10, .58); }
+.app-shell[data-theme='dark'] .settings-nav,
+.app-shell[data-theme='dark'] .plugin-catalog { border-color: #32363e; background: #1d2025; }
+.app-shell[data-theme='dark'] .settings-versions { background: #1d2025; }
+.app-shell[data-theme='dark'] .settings-row > span,
+.app-shell[data-theme='dark'] .font-size-stepper output,
+.app-shell[data-theme='dark'] .settings-versions-title,
+.app-shell[data-theme='dark'] .settings-version-list dd,
+.app-shell[data-theme='dark'] .plugin-catalog-intro > span,
+.app-shell[data-theme='dark'] .plugin-setting-row > span,
+.app-shell[data-theme='dark'] .seatalk-settings .plugin-setting-row > span { color: #c8cdd5; }
+.app-shell[data-theme='dark'] .theme-preview.light { filter: brightness(.82); }
+.app-shell[data-theme='dark'] .codex-inventory-name > span,
+.app-shell[data-theme='dark'] .codex-runtime-status { background: #292d34; color: #aab2bf; }
+.app-shell[data-theme='dark'] .codex-runtime-status.connected,
+.app-shell[data-theme='dark'] .codex-runtime-status.enabled { background: #1f3829; color: #79c594; }
+.app-shell[data-theme='dark'] .codex-runtime-status.disabled,
+.app-shell[data-theme='dark'] .codex-runtime-status.failed,
+.app-shell[data-theme='dark'] .codex-runtime-status.cancelled { background: #3a2527; color: #e08b8b; }
+.app-shell[data-theme='dark'] .plugin-catalog-intro,
+.app-shell[data-theme='dark'] .plugin-catalog,
+.app-shell[data-theme='dark'] .plugin-nav-group,
+.app-shell[data-theme='dark'] .plugin-detail-head { border-color: #32363e; }
+.app-shell[data-theme='dark'] .agent-run-mode button,
+.app-shell[data-theme='dark'] .agent-run-actions button,
+.app-shell[data-theme='dark'] .composer-plugin-button { border-color: #3a3f49; background: #292c33; color: #abb4d9; }
+.app-shell[data-theme='dark'] .agent-run-result { border-color: #373b44; background: #1b1d22; color: #c6cbd4; }
+.app-shell[data-theme='dark'] .seatalk-scroll { background: linear-gradient(145deg, #17201f 0%, #191c23 60%, #17191e 100%); }
+.app-shell[data-theme='dark'] .seatalk-card,
+.app-shell[data-theme='dark'] .seatalk-message { border-color: #35403f; background: rgba(31, 36, 38, .92); }
+.app-shell[data-theme='dark'] .seatalk-message p,
+.app-shell[data-theme='dark'] .seatalk-draft-editor textarea,
+.app-shell[data-theme='dark'] .seatalk-confirm pre { color: #d2d7db; }
+.app-shell[data-theme='dark'] .seatalk-confirm { border-color: #394150; background: #22262f; }
+.app-shell[data-theme='dark'] .empty-state-icon,
+.app-shell[data-theme='dark'] .boot-error-mark { background: #293149; color: #aebdf5; }
+.app-shell[data-theme='dark'][data-flavor='dev'] .workspace-row.selected,
+.app-shell[data-theme='dark'][data-flavor='dev'] .heading-actions .navigation-options button.selected,
+.app-shell[data-theme='dark'][data-flavor='dev'] .heading-actions .navigation-options button:hover { background: #20362b; color: #83cda3; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 

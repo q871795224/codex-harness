@@ -100,6 +100,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
     <div
       className="app-shell"
       data-flavor={flavor}
+      data-theme={harness.appearance.theme}
       style={{
         '--h-navigation-font-offset': `${harness.appearance.fontSizes.navigation - DEFAULT_FONT_SIZES.navigation}px`,
         '--h-conversation-font-offset': `${harness.appearance.fontSizes.conversation - DEFAULT_FONT_SIZES.conversation}px`,
@@ -173,6 +174,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
 
             {tab === 'chat' ? (
               <ConversationView
+                key={harness.currentThread.id}
                 items={harness.currentDetail?.items ?? []}
                 approvals={currentApprovals}
                 workspace={workspace}
@@ -232,6 +234,8 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   foreignActive={harness.currentForeignActive}
                   busy={Boolean(harness.busy.composer)}
                   contextUsage={harness.currentTokenUsage}
+                  workspaceRoot={harness.currentThread?.cwd ?? workspace?.root ?? null}
+                  sendShortcut={harness.keyboard.sendShortcut}
                   models={codex.models}
                   settings={codex.settingsForThread(harness.selectedThreadId)}
                   settingsDisabled={codex.loading}
@@ -251,14 +255,18 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
       </main>
       {settingsOpen && (
         <SettingsDialog
+          theme={harness.appearance.theme}
           fontSizes={harness.appearance.fontSizes}
+          sendShortcut={harness.keyboard.sendShortcut}
           workspaces={harness.workspaces}
           threads={harness.threads}
           selectedThreadId={harness.selectedThreadId}
           selectedWorkspaceRoot={(harness.selectedThreadId ? harness.threadRoots[harness.selectedThreadId] : null) ?? harness.selectedWorkspaceRoot}
           codex={codex}
+          onTheme={harness.setTheme}
           onFontSize={harness.setFontSize}
           onResetFontSizes={harness.resetFontSizes}
+          onSendShortcut={harness.setSendShortcut}
           onClose={() => setSettingsOpen(false)}
         />
       )}

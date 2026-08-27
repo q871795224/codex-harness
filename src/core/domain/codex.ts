@@ -85,7 +85,23 @@ export function normalizeFontSizePreferences(value: unknown): FontSizePreference
 }
 
 export interface AppearancePreferences {
+  theme: Theme
   fontSizes: FontSizePreferences
+}
+
+export type Theme = 'light' | 'dark'
+export type SendShortcut = 'mod-enter' | 'enter'
+
+export interface KeyboardPreferences {
+  sendShortcut: SendShortcut
+}
+
+export function normalizeTheme(value: unknown): Theme {
+  return value === 'dark' ? 'dark' : 'light'
+}
+
+export function normalizeSendShortcut(value: unknown): SendShortcut {
+  return value === 'enter' ? 'enter' : 'mod-enter'
 }
 
 export type ThreadStatus =
@@ -185,6 +201,7 @@ export type UserInput =
   | { type: 'text'; text: string; text_elements: unknown[] }
   | { type: 'image'; url: string }
   | { type: 'localImage'; path: string }
+  | { type: 'skill'; name: string; path: string }
   | { type: 'mention'; name: string; path: string }
 
 export interface ThreadItem extends JsonObject {
@@ -306,6 +323,34 @@ export function threadTitle(thread: Thread): string {
 
 export function isActive(status: ThreadStatus): boolean {
   return status.type === 'active'
+}
+
+export function touchThreadActivity(thread: Thread, timestamp = Math.floor(Date.now() / 1_000)): Thread {
+  return { ...thread, updatedAt: timestamp, recencyAt: timestamp }
+}
+
+export function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: string[]): Thread[] {
+  const byRecentActivity = (left: Thread, right: Thread) => {
+    const activeDifference = Number(isActive(right.status)) - Number(isActive(left.status))
+    if (activeDifference !== 0) return activeDifference
+    const leftDate = left.recencyAt ?? left.updatedAt
+    const rightDate = right.recencyAt ?? right.updatedAt
+    return rightDate - leftDate
+  }
+  const recentFirst = [...threads].sort(byRecentActivity)
+  if (sort === 'recent') return recentFirst
+
+  const ranks = new Map(manualOrder.map((id, index) => [id, index]))
+  return recentFirst.sort((left, right) => {
+    const activeDifference = Number(isActive(right.status)) - Number(isActive(left.status))
+    if (activeDifference !== 0) return activeDifference
+    const leftRank = ranks.get(left.id)
+    const rightRank = ranks.get(right.id)
+    if (leftRank === undefined && rightRank === undefined) return 0
+    if (leftRank === undefined) return 1
+    if (rightRank === undefined) return -1
+    return leftRank - rightRank
+  })
 }
 
 export function threadsOlderThan(threads: Thread[], cutoff: number): Thread[] {

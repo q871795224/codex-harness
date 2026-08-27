@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Blocks, BrainCircuit, CircleHelp, FolderOpen, LoaderCircle, Minus, Palette, Plus, Power, RefreshCw, Server, Sparkles, Type, X } from 'lucide-react'
+import { Blocks, BrainCircuit, CircleHelp, FolderOpen, Keyboard, LoaderCircle, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
-import type { CodexSkill, FontSize, FontSizeArea, FontSizePreferences, RuntimeVersions, Thread, Workspace } from '../../core/domain/codex'
+import type { CodexSkill, FontSize, FontSizeArea, FontSizePreferences, RuntimeVersions, SendShortcut, Theme, Thread, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 import type { useCodexCore } from '../codex/useCodexCore'
 
 interface SettingsDialogProps {
+  theme: Theme
   fontSizes: FontSizePreferences
+  sendShortcut: SendShortcut
   workspaces: Workspace[]
   threads: Thread[]
   selectedThreadId: string | null
   selectedWorkspaceRoot: string | null
   codex: ReturnType<typeof useCodexCore>
+  onTheme: (theme: Theme) => void
   onFontSize: (area: FontSizeArea, fontSize: FontSize) => void
   onResetFontSizes: () => void
+  onSendShortcut: (shortcut: SendShortcut) => void
   onClose: () => void
 }
 
-type SettingsPage = 'appearance' | 'models' | 'skills' | 'mcp' | 'plugins'
+type SettingsPage = 'appearance' | 'keyboard' | 'models' | 'skills' | 'mcp' | 'plugins'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -28,7 +32,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadId, selectedWorkspaceRoot, codex, onFontSize, onResetFontSizes, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ theme, fontSizes, sendShortcut, workspaces, threads, selectedThreadId, selectedWorkspaceRoot, codex, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -36,6 +40,7 @@ export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadI
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const pageMeta: Record<SettingsPage, { heading: string; kicker: string }> = {
     appearance: { heading: '外观', kicker: 'APPEARANCE' },
+    keyboard: { heading: '按键', kicker: 'KEYBOARD' },
     models: { heading: '模型', kicker: 'CODEX' },
     skills: { heading: '技能', kicker: 'CODEX' },
     mcp: { heading: 'MCP', kicker: 'CODEX' },
@@ -87,6 +92,9 @@ export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadI
             <button type="button" className={page === 'appearance' ? 'selected' : ''} aria-current={page === 'appearance' ? 'page' : undefined} onClick={() => setPage('appearance')}>
               <Palette size={16} />外观
             </button>
+            <button type="button" className={page === 'keyboard' ? 'selected' : ''} aria-current={page === 'keyboard' ? 'page' : undefined} onClick={() => setPage('keyboard')}>
+              <Keyboard size={16} />按键
+            </button>
             <button type="button" className={page === 'models' ? 'selected' : ''} aria-current={page === 'models' ? 'page' : undefined} onClick={() => setPage('models')}>
               <BrainCircuit size={16} />模型
             </button>
@@ -111,7 +119,8 @@ export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadI
             <button type="button" className="settings-close" onClick={onClose} aria-label="关闭设置"><X size={18} /></button>
           </header>
 
-          {page === 'appearance' && <AppearanceSettings fontSizes={fontSizes} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
+          {page === 'appearance' && <AppearanceSettings theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
+          {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} onSendShortcut={onSendShortcut} />}
           {page === 'models' && <ModelsSettings codex={codex} />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
           {page === 'mcp' && <McpSettings codex={codex} />}
@@ -287,30 +296,69 @@ function skillSource(skill: CodexSkill): string {
   return skill.scope
 }
 
-function AppearanceSettings({ fontSizes, onFontSize, onResetFontSizes }: {
+function AppearanceSettings({ theme, fontSizes, onTheme, onFontSize, onResetFontSizes }: {
+  theme: Theme
   fontSizes: FontSizePreferences
+  onTheme: (theme: Theme) => void
   onFontSize: (area: FontSizeArea, fontSize: FontSize) => void
   onResetFontSizes: () => void
 }) {
   const canReset = fontSizeAreas.some(({ area }) => fontSizes[area] !== DEFAULT_FONT_SIZES[area])
 
   return (
-    <section className="settings-section" aria-labelledby="font-size-title">
+    <div className="settings-section settings-stack">
+      <section className="settings-preference-block" aria-labelledby="theme-title">
+        <div className="settings-section-title">
+          <Palette size={17} />
+          <div><h3 id="theme-title">主题</h3><p>切换 Harness 的界面配色。</p></div>
+        </div>
+        <div className="theme-options" role="radiogroup" aria-label="主题">
+          <button type="button" role="radio" aria-checked={theme === 'light'} className={theme === 'light' ? 'selected' : ''} onClick={() => onTheme('light')}>
+            <span className="theme-preview light"><Sun size={16} /></span><span><strong>浅色</strong><small>明亮、清晰</small></span>
+          </button>
+          <button type="button" role="radio" aria-checked={theme === 'dark'} className={theme === 'dark' ? 'selected' : ''} onClick={() => onTheme('dark')}>
+            <span className="theme-preview dark"><Moon size={16} /></span><span><strong>深色</strong><small>低光环境</small></span>
+          </button>
+        </div>
+      </section>
+      <section className="settings-preference-block" aria-labelledby="font-size-title">
+        <div className="settings-section-title">
+          <Type size={17} />
+          <h3 id="font-size-title">字体大小</h3>
+        </div>
+        <div className="settings-row-list">
+          {fontSizeAreas.map(({ area, label }) => (
+            <div key={area} className="settings-row">
+              <span>{label}</span>
+              <FontSizeStepper label={label} value={fontSizes[area]} onChange={(value) => onFontSize(area, value)} />
+            </div>
+          ))}
+          <div className="settings-row settings-reset-row">
+            <span>全部字号</span>
+            <button type="button" onClick={onResetFontSizes} disabled={!canReset}>恢复默认</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function KeyboardSettings({ sendShortcut, onSendShortcut }: { sendShortcut: SendShortcut; onSendShortcut: (shortcut: SendShortcut) => void }) {
+  return (
+    <section className="settings-section" aria-labelledby="send-shortcut-title">
       <div className="settings-section-title">
-        <Type size={17} />
-        <h3 id="font-size-title">字体大小</h3>
+        <Keyboard size={17} />
+        <div><h3 id="send-shortcut-title">发送消息</h3><p>输入法正在组词时，回车不会触发发送。</p></div>
       </div>
       <div className="settings-row-list">
-        {fontSizeAreas.map(({ area, label }) => (
-          <div key={area} className="settings-row">
-            <span>{label}</span>
-            <FontSizeStepper label={label} value={fontSizes[area]} onChange={(value) => onFontSize(area, value)} />
-          </div>
-        ))}
-        <div className="settings-row settings-reset-row">
-          <span>全部字号</span>
-          <button type="button" onClick={onResetFontSizes} disabled={!canReset}>恢复默认</button>
-        </div>
+        <label className="settings-row">
+          <span>发送快捷键</span>
+          <select value={sendShortcut} onChange={(event) => onSendShortcut(event.target.value as SendShortcut)}>
+            <option value="mod-enter">⌘ / Ctrl + Enter</option>
+            <option value="enter">Enter</option>
+          </select>
+        </label>
+        <div className="settings-shortcut-note">{sendShortcut === 'enter' ? 'Shift + Enter 换行' : 'Enter 换行'}</div>
       </div>
     </section>
   )

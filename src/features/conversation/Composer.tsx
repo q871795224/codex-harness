@@ -1,8 +1,20 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, FileText, Image, Plus, Send, Square, X } from 'lucide-react'
-import type { ApprovalPolicy, CodexModel, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
+import { ChevronDown, FileText, Image, Plus, Send, Sparkles, Square, X } from 'lucide-react'
+import type { ApprovalPolicy, CodexModel, CodexSkill, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
+import {
+  absoluteMentionPath,
+  activeComposerTrigger,
+  expandCollapsedPastes,
+  hasSkillMarker,
+  insertCollapsedPaste,
+  matchesSendShortcut,
+  reconcileCollapsedPastes,
+  replaceComposerTrigger,
+  shouldCollapsePaste,
+  type CollapsedPaste,
+} from './composerInput'
 
 interface ComposerProps {
   disabled: boolean
@@ -10,6 +22,8 @@ interface ComposerProps {
   foreignActive: boolean
   busy: boolean
   contextUsage: ThreadTokenUsage | null
+  workspaceRoot: string | null
+  sendShortcut: SendShortcut
   models: CodexModel[]
   settings: ThreadCodexSettings
   settingsDisabled?: boolean
@@ -21,19 +35,67 @@ interface ComposerProps {
 interface ComposerAttachment {
   path: string
   name: string
-  kind: 'image' | 'file'
+  kind: 'image' | 'file' | 'skill'
 }
 
-export function Composer({ disabled, working, foreignActive, busy, contextUsage, models, settings, settingsDisabled, onSettingsChange, onSend, onStop }: ComposerProps) {
+interface FuzzyFileSearchResult {
+  root: string
+  path: string
+  match_type: 'file' | 'directory'
+  file_name: string
+}
+
+interface ComposerSuggestion {
+  kind: 'file' | 'skill'
+  name: string
+  path: string
+  detail: string
+}
+
+export function Composer({ disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, models, settings, settingsDisabled, onSettingsChange, onSend, onStop }: ComposerProps) {
   const [text, setText] = useState('')
+  const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>([])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
   const [mode, setMode] = useState<'interject' | 'queue'>('interject')
   const [modeOpen, setModeOpen] = useState(false)
   const [attachmentBusy, setAttachmentBusy] = useState(false)
+  const [cursor, setCursor] = useState<number | null>(0)
+  const [fileMatches, setFileMatches] = useState<FuzzyFileSearchResult[]>([])
+  const [skills, setSkills] = useState<CodexSkill[]>([])
+  const [loadedSkillsRoot, setLoadedSkillsRoot] = useState<string | null>(null)
+  const [suggestionBusy, setSuggestionBusy] = useState(false)
+  const [suggestionError, setSuggestionError] = useState<string | null>(null)
+  const [highlightedSuggestion, setHighlightedSuggestion] = useState(0)
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const selectedModel = models.find((model) => model.model === settings.model) ?? models[0] ?? null
   const imageUnsupported = attachments.some((item) => item.kind === 'image') && selectedModel !== null && !selectedModel.inputModalities.includes('image')
-  const hasContent = Boolean(text.trim() || attachments.length)
+  const expandedText = useMemo(() => expandCollapsedPastes(text, collapsedPastes), [collapsedPastes, text])
+  const hasContent = Boolean(expandedText.trim() || attachments.length)
+  const trigger = useMemo(() => activeComposerTrigger(text, cursor), [cursor, text])
+  const triggerKind = trigger?.kind ?? null
+  const triggerQuery = trigger?.query ?? ''
+
+  const suggestions = useMemo<ComposerSuggestion[]>(() => {
+    if (!trigger || suggestionsDismissed) return []
+    if (trigger.kind === 'file') {
+      return fileMatches
+        .filter((match) => match.match_type === 'file')
+        .slice(0, 8)
+        .map((match) => ({
+          kind: 'file',
+          name: match.file_name || match.path.split(/[\\/]/).pop() || match.path,
+          path: absoluteMentionPath(match.root, match.path),
+          detail: match.path,
+        }))
+    }
+    const query = trigger.query.toLocaleLowerCase()
+    return skills
+      .filter((skill) => skill.enabled && (!query || skill.name.toLocaleLowerCase().includes(query) || skill.description.toLocaleLowerCase().includes(query)))
+      .slice(0, 8)
+      .map((skill) => ({ kind: 'skill', name: skill.name, path: skill.path, detail: skill.description }))
+  }, [fileMatches, skills, suggestionsDismissed, trigger])
+  const suggestionsOpen = Boolean(trigger && !suggestionsDismissed)
 
   useEffect(() => { ref.current?.focus() }, [disabled])
 
@@ -47,19 +109,94 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
     textarea.style.overflowY = textarea.scrollHeight > maximumHeight ? 'auto' : 'hidden'
   }, [text])
 
+  useEffect(() => {
+    setSkills([])
+    setLoadedSkillsRoot(null)
+  }, [workspaceRoot])
+
+  useEffect(() => {
+    if (triggerKind !== 'skill' || !workspaceRoot || loadedSkillsRoot === workspaceRoot) return
+    let disposed = false
+    setSuggestionBusy(true)
+    setSuggestionError(null)
+    void runtime.request<{ data: Array<{ skills: CodexSkill[] }> }>('skills/list', { cwds: [workspaceRoot] })
+      .then((result) => {
+        if (disposed) return
+        setSkills(result.data.flatMap((entry) => entry.skills))
+        setLoadedSkillsRoot(workspaceRoot)
+      })
+      .catch((error) => { if (!disposed) setSuggestionError(error instanceof Error ? error.message : String(error)) })
+      .finally(() => { if (!disposed) setSuggestionBusy(false) })
+    return () => { disposed = true }
+  }, [loadedSkillsRoot, triggerKind, workspaceRoot])
+
+  useEffect(() => {
+    if (triggerKind !== 'file' || !workspaceRoot) {
+      setFileMatches([])
+      return undefined
+    }
+    let disposed = false
+    setFileMatches([])
+    const timeout = window.setTimeout(() => {
+      setSuggestionBusy(true)
+      setSuggestionError(null)
+      void runtime.request<{ files: FuzzyFileSearchResult[] }>('fuzzyFileSearch', {
+        query: triggerQuery,
+        roots: [workspaceRoot],
+        cancellationToken: crypto.randomUUID(),
+      }).then((result) => {
+        if (!disposed) setFileMatches(result.files)
+      }).catch((error) => {
+        if (!disposed) setSuggestionError(error instanceof Error ? error.message : String(error))
+      }).finally(() => {
+        if (!disposed) setSuggestionBusy(false)
+      })
+    }, 100)
+    return () => {
+      disposed = true
+      window.clearTimeout(timeout)
+    }
+  }, [triggerKind, triggerQuery, workspaceRoot])
+
+  useEffect(() => { setHighlightedSuggestion(0) }, [triggerKind, triggerQuery])
+
   const inputs = useMemo<UserInput[]>(() => [
-    ...(text.trim() ? [textInput(text.trim())] : []),
+    ...(expandedText.trim() ? [textInput(collapsedPastes.length > 0 ? expandedText : expandedText.trim())] : []),
     ...attachments.map((attachment): UserInput => attachment.kind === 'image'
       ? { type: 'localImage', path: attachment.path }
+      : attachment.kind === 'skill'
+        ? { type: 'skill', name: attachment.name, path: attachment.path }
       : { type: 'mention', name: attachment.name, path: attachment.path }),
-  ], [attachments, text])
+  ], [attachments, collapsedPastes.length, expandedText])
 
   const submit = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return
     await onSend(inputs, mode)
     setText('')
+    setCollapsedPastes([])
     setAttachments([])
+    setFileMatches([])
+    setCursor(0)
+    setSuggestionsDismissed(false)
     setMode('interject')
+  }
+
+  const chooseSuggestion = (suggestion: ComposerSuggestion) => {
+    if (!trigger) return
+    const replacement = suggestion.kind === 'skill' ? `$${suggestion.name}` : ''
+    const next = replaceComposerTrigger(text, trigger, replacement)
+    setCollapsedPastes((current) => reconcileCollapsedPastes(text, next.text, current))
+    setText(next.text)
+    setCursor(next.cursor)
+    setAttachments((current) => current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
+      ? current
+      : [...current, { kind: suggestion.kind, name: suggestion.name, path: suggestion.path }])
+    setFileMatches([])
+    setSuggestionsDismissed(false)
+    requestAnimationFrame(() => {
+      ref.current?.focus()
+      ref.current?.setSelectionRange(next.cursor, next.cursor)
+    })
   }
 
   const addFiles = async () => {
@@ -90,7 +227,7 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
           <div className="composer-attachments">
             {attachments.map((attachment) => (
               <span key={attachment.path} title={attachment.path}>
-                {attachment.kind === 'image' ? <Image size={13} /> : <FileText size={13} />}
+                {attachment.kind === 'image' ? <Image size={13} /> : attachment.kind === 'skill' ? <Sparkles size={13} /> : <FileText size={13} />}
                 <span>{attachment.name}</span>
                 <button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.path !== attachment.path))} aria-label={`移除 ${attachment.name}`}><X size={12} /></button>
               </span>
@@ -102,15 +239,89 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
           value={text}
           disabled={disabled || busy}
           placeholder={foreignActive ? '等待其他客户端完成当前轮' : '给 Codex 发送消息'}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            const nextText = event.target.value
+            setCollapsedPastes((current) => reconcileCollapsedPastes(text, nextText, current))
+            setText(nextText)
+            setCursor(event.target.selectionStart)
+            setSuggestionsDismissed(false)
+            setAttachments((current) => current.filter((item) => item.kind !== 'skill' || hasSkillMarker(nextText, item.name)))
+          }}
+          onPaste={(event) => {
+            const content = event.clipboardData.getData('text/plain')
+            if (!shouldCollapsePaste(content)) return
+            event.preventDefault()
+            const textarea = event.currentTarget
+            const next = insertCollapsedPaste(text, textarea.selectionStart, textarea.selectionEnd, content, collapsedPastes)
+            setText(next.text)
+            setCollapsedPastes(next.pastes)
+            setCursor(next.cursor)
+            setSuggestionsDismissed(false)
+            setAttachments((current) => current.filter((item) => item.kind !== 'skill' || hasSkillMarker(next.text, item.name)))
+            requestAnimationFrame(() => {
+              ref.current?.focus()
+              ref.current?.setSelectionRange(next.cursor, next.cursor)
+            })
+          }}
+          onClick={(event) => setCursor(event.currentTarget.selectionStart)}
+          onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
           onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            if (suggestionsOpen && suggestions.length > 0 && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault()
+                const direction = event.key === 'ArrowDown' ? 1 : -1
+                setHighlightedSuggestion((current) => (current + direction + suggestions.length) % suggestions.length)
+                return
+              }
+              if (event.key === 'Enter' || event.key === 'Tab') {
+                event.preventDefault()
+                chooseSuggestion(suggestions[highlightedSuggestion] ?? suggestions[0])
+                return
+              }
+            }
+            if (suggestionsOpen && event.key === 'Escape') {
+              event.preventDefault()
+              setSuggestionsDismissed(true)
+              return
+            }
+            if (matchesSendShortcut({
+              key: event.key,
+              metaKey: event.metaKey,
+              ctrlKey: event.ctrlKey,
+              shiftKey: event.shiftKey,
+              altKey: event.altKey,
+              isComposing: event.nativeEvent.isComposing,
+              keyCode: event.keyCode,
+            }, sendShortcut)) {
               event.preventDefault()
               void submit()
             }
           }}
           rows={1}
+          wrap="soft"
         />
+        {suggestionsOpen && (
+          <div className="composer-suggestions" role="listbox" aria-label={triggerKind === 'file' ? '文件建议' : '技能建议'}>
+            <div className="composer-suggestions-label">{triggerKind === 'file' ? '@ 文件' : '$ Skill'}</div>
+            {suggestions.map((suggestion, index) => (
+              <button
+                key={`${suggestion.kind}:${suggestion.path}`}
+                type="button"
+                role="option"
+                aria-selected={index === highlightedSuggestion}
+                className={index === highlightedSuggestion ? 'selected' : ''}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => chooseSuggestion(suggestion)}
+              >
+                {suggestion.kind === 'skill' ? <Sparkles size={14} /> : <FileText size={14} />}
+                <span><strong>{suggestion.name}</strong><small>{suggestion.detail}</small></span>
+              </button>
+            ))}
+            {suggestionBusy && suggestions.length === 0 && <div className="composer-suggestions-state">正在搜索…</div>}
+            {!suggestionBusy && !suggestionError && suggestions.length === 0 && <div className="composer-suggestions-state">没有匹配项</div>}
+            {suggestionError && <div className="composer-suggestions-state error">{suggestionError}</div>}
+          </div>
+        )}
         {imageUnsupported && <div className="composer-inline-error">当前模型不支持图片输入，请更换模型或移除图片。</div>}
         <div className="composer-footer">
           <div className="composer-left-actions">

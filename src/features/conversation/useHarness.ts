@@ -7,6 +7,7 @@ import type {
   FontSize,
   FontSizeArea,
   JsonObject,
+  KeyboardPreferences,
   NavigationLayout,
   NavigationPreferences,
   PendingSteer,
@@ -18,10 +19,12 @@ import type {
   ThreadSort,
   ThreadTokenUsage,
   ThreadUiState,
+  Theme,
   Turn,
   UserInput,
   Workspace,
   WorkspaceSort,
+  SendShortcut,
 } from '../../core/domain/codex'
 import {
   DEFAULT_SIDEBAR_WIDTH,
@@ -30,16 +33,29 @@ import {
   isActive,
   normalizeFontSize,
   normalizeFontSizePreferences,
+  normalizeSendShortcut,
   normalizeSidebarWidth,
+  normalizeTheme,
   textInput,
+  touchThreadActivity,
   threadsOlderThan,
 } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
+import {
+  activateTurn,
+  completeTurn,
+  completedForeignActive,
+  deriveForeignActive,
+  ownsStartedTurn,
+  syncResumedTurn,
+  type ActiveTurnOwnership,
+} from './turnOwnership'
 
 type ViewMode = 'active' | 'archived'
 
 const NAVIGATION_PREFERENCES_KEY = 'navigationPreferences'
 const APPEARANCE_PREFERENCES_KEY = 'appearancePreferences'
+const KEYBOARD_PREFERENCES_KEY = 'keyboardPreferences'
 
 const defaultNavigationPreferences: NavigationPreferences = {
   layout: 'workspace',
@@ -51,7 +67,12 @@ const defaultNavigationPreferences: NavigationPreferences = {
 }
 
 const defaultAppearancePreferences: AppearancePreferences = {
+  theme: 'light',
   fontSizes: defaultFontSizePreferences(),
+}
+
+const defaultKeyboardPreferences: KeyboardPreferences = {
+  sendShortcut: 'mod-enter',
 }
 
 interface ResumeResponse {
@@ -157,10 +178,21 @@ function parseAppearancePreferences(raw: string | null): AppearancePreferences {
   try {
     const value = JSON.parse(raw)
     return {
+      theme: normalizeTheme(value?.theme),
       fontSizes: normalizeFontSizePreferences(value),
     }
   } catch {
     return defaultAppearancePreferences
+  }
+}
+
+function parseKeyboardPreferences(raw: string | null): KeyboardPreferences {
+  if (!raw) return defaultKeyboardPreferences
+  try {
+    const value = JSON.parse(raw) as Partial<KeyboardPreferences>
+    return { sendShortcut: normalizeSendShortcut(value.sendShortcut) }
+  } catch {
+    return defaultKeyboardPreferences
   }
 }
 
@@ -208,6 +240,7 @@ export function useHarness() {
   const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
   const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
   const [appearance, setAppearance] = useState<AppearancePreferences>(defaultAppearancePreferences)
+  const [keyboard, setKeyboard] = useState<KeyboardPreferences>(defaultKeyboardPreferences)
   const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
   const [pendingSteers, setPendingSteers] = useState<Record<string, PendingSteer[]>>({})
@@ -223,15 +256,21 @@ export function useHarness() {
   const threadsRef = useRef<Thread[]>([])
   const pendingRestartRef = useRef<Record<string, PendingSteer[]>>({})
   const locallyStartingRef = useRef(new Set<string>())
+  const emptyDraftThreadIdsRef = useRef(new Set<string>())
   const activeTurnIdsRef = useRef<Record<string, string>>({})
   const ownedActiveThreadsRef = useRef<Record<string, boolean>>({})
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
 
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
   useEffect(() => { threadsRef.current = threads }, [threads])
-  useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
-  useEffect(() => { ownedActiveThreadsRef.current = ownedActiveThreads }, [ownedActiveThreads])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
+
+  const commitTurnOwnership = useCallback((next: ActiveTurnOwnership) => {
+    activeTurnIdsRef.current = next.activeTurnIds
+    ownedActiveThreadsRef.current = next.ownedActiveThreads
+    setActiveTurnIds(next.activeTurnIds)
+    setOwnedActiveThreads(next.ownedActiveThreads)
+  }, [])
 
   const notify = useCallback((message: string, kind: HookToast['kind'] = 'info') => {
     setToast({ message, kind })
@@ -275,15 +314,32 @@ export function useHarness() {
   const setFontSize = useCallback((area: FontSizeArea, fontSize: FontSize) => {
     setAppearance((current) => {
       const fontSizes = { ...current.fontSizes, [area]: normalizeFontSize(fontSize) }
-      void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify({ fontSizes })).catch(() => undefined)
-      return { fontSizes }
+      const next = { ...current, fontSizes }
+      void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
     })
   }, [])
 
   const resetFontSizes = useCallback(() => {
-    const fontSizes = defaultFontSizePreferences()
-    setAppearance({ fontSizes })
-    void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify({ fontSizes })).catch(() => undefined)
+    setAppearance((current) => {
+      const next = { ...current, fontSizes: defaultFontSizePreferences() }
+      void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
+    })
+  }, [])
+
+  const setTheme = useCallback((theme: Theme) => {
+    setAppearance((current) => {
+      const next = { ...current, theme: normalizeTheme(theme) }
+      void runtime.setAppState(APPEARANCE_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
+    })
+  }, [])
+
+  const setSendShortcut = useCallback((sendShortcut: SendShortcut) => {
+    const next = { sendShortcut: normalizeSendShortcut(sendShortcut) }
+    setKeyboard(next)
+    void runtime.setAppState(KEYBOARD_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -345,7 +401,10 @@ export function useHarness() {
       if (discovered.length > 0) {
         setWorkspaces((current) => {
           const byRoot = new Map(current.map((workspace) => [workspace.root, workspace]))
-          for (const workspace of discovered) if (!byRoot.has(workspace.root)) byRoot.set(workspace.root, workspace)
+          for (const workspace of discovered) {
+            const existing = byRoot.get(workspace.root)
+            byRoot.set(workspace.root, existing ? { ...existing, name: workspace.name } : workspace)
+          }
           return [...byRoot.values()]
         })
         setSelectedWorkspaceRoot((current) => current ?? discovered[0].root)
@@ -400,8 +459,30 @@ export function useHarness() {
     }
   }, [notify])
 
+  const discardEmptyDraftThread = useCallback((threadId: string | null) => {
+    if (!threadId || !emptyDraftThreadIdsRef.current.delete(threadId)) return
+    setThreads((current) => current.filter((thread) => thread.id !== threadId))
+    setDetails((current) => {
+      const next = { ...current }
+      delete next[threadId]
+      return next
+    })
+    setThreadRoots((current) => {
+      const next = { ...current }
+      delete next[threadId]
+      return next
+    })
+    void runtime.request('thread/delete', { threadId }).catch((error) => {
+      notify(`无法清理空白会话：${messageOf(error)}`, 'error')
+      void refreshThreads()
+    })
+  }, [notify, refreshThreads])
+
   const selectThread = useCallback(async (threadId: string) => {
+    const previousThreadId = selectedThreadIdRef.current
+    selectedThreadIdRef.current = threadId
     setSelectedThreadId(threadId)
+    if (previousThreadId !== threadId) discardEmptyDraftThread(previousThreadId)
     void runtime.setAppState('selectedThreadId', threadId).catch(() => undefined)
     markThreadRead(threadId)
     setBusy((current) => ({ ...current, [`load:${threadId}`]: true }))
@@ -416,7 +497,12 @@ export function useHarness() {
       const turns = response.initialTurnsPage ? [...initialTurns].reverse() : initialTurns
       const items = turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item })))
       const activeTurnId = findActiveTurn(turns)
-      const owned = ownedActiveThreadsRef.current[threadId] === true
+      const ownership = syncResumedTurn({
+        activeTurnIds: activeTurnIdsRef.current,
+        ownedActiveThreads: ownedActiveThreadsRef.current,
+      }, threadId, activeTurnId)
+      commitTurnOwnership(ownership)
+      const owned = ownership.ownedActiveThreads[threadId] === true
       setDetails((current) => ({
         ...current,
         [threadId]: {
@@ -429,9 +515,6 @@ export function useHarness() {
         },
       }))
       upsertThread(response.thread)
-      if (activeTurnId) {
-        setActiveTurnIds((current) => ({ ...current, [threadId]: activeTurnId }))
-      }
       await loadQueue(threadId)
     } catch (error) {
       const thread = threadsRef.current.find((item) => item.id === threadId)
@@ -445,7 +528,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
     }
-  }, [loadQueue, markThreadRead, notify, upsertThread])
+  }, [commitTurnOwnership, discardEmptyDraftThread, loadQueue, markThreadRead, notify, upsertThread])
 
   const loadOlderTurns = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -499,9 +582,13 @@ export function useHarness() {
     setBusy((current) => ({ ...current, createThread: true }))
     try {
       const response = await runtime.request<StartThreadResponse>('thread/start', { cwd: selectedWorkspaceRoot })
+      const previousThreadId = selectedThreadIdRef.current
+      emptyDraftThreadIdsRef.current.add(response.thread.id)
       upsertThread(response.thread)
       setThreadRoots((current) => ({ ...current, [response.thread.id]: selectedWorkspaceRoot }))
+      selectedThreadIdRef.current = response.thread.id
       setSelectedThreadId(response.thread.id)
+      if (previousThreadId !== response.thread.id) discardEmptyDraftThread(previousThreadId)
       void runtime.setAppState('selectedThreadId', response.thread.id).catch(() => undefined)
       markThreadRead(response.thread.id)
       // Do not call `thread/resume` here. A newly started, empty thread has no
@@ -512,7 +599,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [markThreadRead, notify, selectedWorkspaceRoot, upsertThread])
+  }, [discardEmptyDraftThread, markThreadRead, notify, selectedWorkspaceRoot, upsertThread])
 
   const changeThreadWorkspace = useCallback(async (threadId: string, workspaceRoot: string) => {
     if (!workspaceRoot || threadRoots[threadId] === workspaceRoot) return
@@ -534,14 +621,17 @@ export function useHarness() {
   }, [notify, threadRoots, updateDetail, updateThread])
 
   const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
-    setActiveTurnIds((current) => ({ ...current, [threadId]: turnId }))
-    setOwnedActiveThreads((current) => ({ ...current, [threadId]: owned }))
+    commitTurnOwnership(activateTurn({
+      activeTurnIds: activeTurnIdsRef.current,
+      ownedActiveThreads: ownedActiveThreadsRef.current,
+    }, threadId, turnId, owned))
     updateDetail(threadId, (detail) => ({ ...detail, activeTurnId: turnId, foreignActive: !owned }))
-    updateThread(threadId, (thread) => ({ ...thread, status: { type: 'active', activeFlags: [] } }))
+    updateThread(threadId, (thread) => touchThreadActivity({ ...thread, status: { type: 'active', activeFlags: [] } }))
     persistBadge(threadId, 'working')
-  }, [persistBadge, updateDetail, updateThread])
+  }, [commitTurnOwnership, persistBadge, updateDetail, updateThread])
 
   const startTurn = useCallback(async (threadId: string, text: string | null, inputs?: UserInput[]) => {
+    emptyDraftThreadIdsRef.current.delete(threadId)
     locallyStartingRef.current.add(threadId)
     try {
       const response = await runtime.request<StartTurnResponse>('turn/start', {
@@ -819,7 +909,9 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       const status = params.status as Thread['status'] | undefined
       if (threadId && status) {
-        updateThread(threadId, (thread) => ({ ...thread, status }))
+        updateThread(threadId, (thread) => status.type === 'active'
+          ? touchThreadActivity({ ...thread, status })
+          : { ...thread, status })
         updateDetail(threadId, (detail) => ({ ...detail, thread: { ...detail.thread, status } }))
         if (status.type === 'systemError') persistBadge(threadId, 'error')
       }
@@ -849,7 +941,10 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       const turn = params.turn as Turn | undefined
       if (threadId && turn) {
-        const owned = locallyStartingRef.current.has(threadId) || ownedActiveThreadsRef.current[threadId] === true
+        const owned = ownsStartedTurn({
+          activeTurnIds: activeTurnIdsRef.current,
+          ownedActiveThreads: ownedActiveThreadsRef.current,
+        }, threadId, turn.id, locallyStartingRef.current.has(threadId))
         setActiveTurn(threadId, turn.id, owned)
         updateDetail(threadId, (detail) => ({
           ...detail,
@@ -914,18 +1009,13 @@ export function useHarness() {
           turns: upsertTurn(detail.turns, turn),
           items: turn.items.reduce((items, item) => upsertItem(items, turn.id, item), detail.items),
           activeTurnId: detail.activeTurnId === turn.id ? null : detail.activeTurnId,
+          foreignActive: completedForeignActive(detail.activeTurnId, detail.foreignActive, turn.id),
         }))
-        setActiveTurnIds((current) => {
-          const next = { ...current }
-          if (next[threadId] === turn.id) delete next[threadId]
-          return next
-        })
-        setOwnedActiveThreads((current) => {
-          const next = { ...current }
-          delete next[threadId]
-          return next
-        })
-        updateThread(threadId, (thread) => ({ ...thread, status: { type: 'idle' }, updatedAt: Math.floor(Date.now() / 1000) }))
+        commitTurnOwnership(completeTurn({
+          activeTurnIds: activeTurnIdsRef.current,
+          ownedActiveThreads: ownedActiveThreadsRef.current,
+        }, threadId, turn.id))
+        updateThread(threadId, (thread) => touchThreadActivity({ ...thread, status: { type: 'idle' } }))
         const badge: Badge = turn.status === 'failed' ? 'error' : selectedThreadIdRef.current === threadId ? null : 'success'
         persistBadge(threadId, badge)
 
@@ -961,9 +1051,12 @@ export function useHarness() {
 
     if (method === 'thread/archived' || method === 'thread/deleted' || method === 'thread/unarchived') {
       const threadId = eventThreadId(params)
-      if (threadId) setThreads((current) => current.filter((thread) => thread.id !== threadId))
+      if (threadId) {
+        emptyDraftThreadIdsRef.current.delete(threadId)
+        setThreads((current) => current.filter((thread) => thread.id !== threadId))
+      }
     }
-  }, [loadQueue, mapThreadRoots, notify, persistBadge, setActiveTurn, startTurn, updateDetail, updateThread, upsertThread])
+  }, [commitTurnOwnership, loadQueue, mapThreadRoots, notify, persistBadge, setActiveTurn, startTurn, updateDetail, updateThread, upsertThread])
 
   useEffect(() => {
     let disposed = false
@@ -971,18 +1064,20 @@ export function useHarness() {
     let unlistenTransport: (() => void) | undefined
     const bootstrap = async () => {
       try {
-        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance] = await Promise.all([
+        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance, storedKeyboard] = await Promise.all([
           runtime.listWorkspaces(),
           runtime.listThreadStates(),
           runtime.getAppState('selectedThreadId'),
           runtime.getAppState(NAVIGATION_PREFERENCES_KEY),
           runtime.getAppState(APPEARANCE_PREFERENCES_KEY),
+          runtime.getAppState(KEYBOARD_PREFERENCES_KEY),
         ])
         if (disposed) return
         setWorkspaces(storedWorkspaces)
         setThreadStates(Object.fromEntries(storedStates.map((state) => [state.threadId, state])))
         setNavigation(parseNavigationPreferences(storedNavigation))
         setAppearance(parseAppearancePreferences(storedAppearance))
+        setKeyboard(parseKeyboardPreferences(storedKeyboard))
         if (storedWorkspaces.length > 0) setSelectedWorkspaceRoot(storedWorkspaces[0].root)
         const loadedThreads = await refreshThreads('active')
         if (disposed) return
@@ -1016,7 +1111,10 @@ export function useHarness() {
   const currentDetail = selectedThreadId ? details[selectedThreadId] ?? null : null
   const currentTokenUsage = selectedThreadId ? threadTokenUsages[selectedThreadId] ?? null : null
   const activeTurnId = selectedThreadId ? activeTurnIds[selectedThreadId] ?? currentDetail?.activeTurnId ?? null : null
-  const currentForeignActive = currentDetail?.foreignActive ?? (Boolean(activeTurnId) && !ownedActiveThreads[selectedThreadId ?? ''])
+  const currentForeignActive = deriveForeignActive(
+    activeTurnId,
+    ownedActiveThreads[selectedThreadId ?? ''] === true,
+  )
 
   return {
     phase,
@@ -1029,6 +1127,7 @@ export function useHarness() {
     threadTokenUsages,
     navigation,
     appearance,
+    keyboard,
     queues,
     approvals,
     pendingSteers,
@@ -1067,6 +1166,8 @@ export function useHarness() {
     setSidebarCollapsed,
     setFontSize,
     resetFontSizes,
+    setTheme,
+    setSendShortcut,
     setSelectedWorkspaceRoot,
     changeThreadWorkspace,
     setViewMode: async (mode: ViewMode) => {

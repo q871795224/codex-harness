@@ -9,12 +9,16 @@ import {
   itemText,
   normalizeFontSize,
   normalizeFontSizePreferences,
+  normalizeSendShortcut,
   normalizeSidebarWidth,
+  normalizeTheme,
   queueText,
+  sortThreads,
   sortWorkspacesByRecentThread,
   textInput,
   threadTitle,
   threadsOlderThan,
+  touchThreadActivity,
   type Thread,
   type Workspace,
 } from './codex'
@@ -114,6 +118,15 @@ describe('normalizeFontSizePreferences', () => {
   })
 })
 
+describe('display and keyboard preferences', () => {
+  it('uses stable defaults for unknown stored values', () => {
+    expect(normalizeTheme('dark')).toBe('dark')
+    expect(normalizeTheme('system')).toBe('light')
+    expect(normalizeSendShortcut('enter')).toBe('enter')
+    expect(normalizeSendShortcut('shift-enter')).toBe('mod-enter')
+  })
+})
+
 describe('thread content helpers', () => {
   it('extracts user text in message order', () => {
     expect(itemText({ type: 'userMessage', content: [textInput('第一段'), textInput('第二段')] })).toBe('第一段\n第二段')
@@ -140,6 +153,23 @@ describe('isActive', () => {
   it('only treats active thread statuses as active', () => {
     expect(isActive({ type: 'active', activeFlags: ['waitingOnApproval'] })).toBe(true)
     expect(isActive({ type: 'idle' })).toBe(false)
+  })
+})
+
+describe('thread list activity', () => {
+  it('moves active threads ahead of newer idle threads in recent and manual modes', () => {
+    const active = makeThread({ id: 'active', updatedAt: 10, recencyAt: 10, status: { type: 'active', activeFlags: [] } })
+    const idle = makeThread({ id: 'idle', updatedAt: 20, recencyAt: 20 })
+
+    expect(sortThreads([idle, active], 'recent', []).map((thread) => thread.id)).toEqual(['active', 'idle'])
+    expect(sortThreads([idle, active], 'manual', ['idle', 'active']).map((thread) => thread.id)).toEqual(['active', 'idle'])
+  })
+
+  it('updates both server timestamps when local turn activity arrives', () => {
+    const touched = touchThreadActivity(makeThread({ updatedAt: 10, recencyAt: 12 }), 30)
+
+    expect(touched.updatedAt).toBe(30)
+    expect(touched.recencyAt).toBe(30)
   })
 })
 

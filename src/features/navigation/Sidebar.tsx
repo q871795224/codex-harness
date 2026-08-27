@@ -36,7 +36,7 @@ import type {
   Workspace,
   WorkspaceSort,
 } from '../../core/domain/codex'
-import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sortWorkspacesByRecentThread } from '../../core/domain/codex'
+import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sortThreads, sortWorkspacesByRecentThread } from '../../core/domain/codex'
 import { relativeTime, truncate } from '../../core/domain/format'
 import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
 import harnessIcon from '../../../icon/codex-harness.svg'
@@ -500,7 +500,7 @@ function ThreadList({
             {manualSort && <GripVertical className="thread-drag-handle" size={14} aria-hidden />}
             <StatusDot badge={badge} />
             <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
-            <time>{relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
+            <time>{isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
           </button>
         )
       })}
@@ -511,25 +511,6 @@ function ThreadList({
       )}
     </div>
   )
-}
-
-function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: string[]): Thread[] {
-  const recentFirst = [...threads].sort((left, right) => {
-    const leftDate = left.recencyAt ?? left.updatedAt
-    const rightDate = right.recencyAt ?? right.updatedAt
-    return rightDate - leftDate
-  })
-  if (sort === 'recent') return recentFirst
-
-  const ranks = new Map(manualOrder.map((id, index) => [id, index]))
-  return recentFirst.sort((left, right) => {
-    const leftRank = ranks.get(left.id)
-    const rightRank = ranks.get(right.id)
-    if (leftRank === undefined && rightRank === undefined) return 0
-    if (leftRank === undefined) return 1
-    if (rightRank === undefined) return -1
-    return leftRank - rightRank
-  })
 }
 
 function initialVisibleCount(threads: Thread[]): number {
