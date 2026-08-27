@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -280,12 +280,7 @@ impl AppServerManager {
             }
 
             reader_alive.store(false, Ordering::Relaxed);
-            reader_diagnostics.record(
-                "info",
-                "app-server",
-                "connection.closed",
-                json!({}),
-            );
+            reader_diagnostics.record("info", "app-server", "connection.closed", json!({}));
             let mut waiters = reader_pending.lock().await;
             for (_, sender) in waiters.drain() {
                 let _ = sender.send(Err("Codex App Server 连接已关闭。请重试。".to_string()));
@@ -349,8 +344,10 @@ fn ensure_daemon() -> Result<String, String> {
         }
     }
 
-    let output = Command::new(&codex)
-        .args(["app-server", "daemon", "start"])
+    let mut command = codex_command(&codex);
+    command.args(["app-server", "daemon", "start"]);
+    raise_open_file_limit(&mut command);
+    let output = command
         .output()
         .map_err(|error| format!("无法启动 Codex App Server: {error}"))?;
     if !output.status.success() {
@@ -390,7 +387,7 @@ pub fn runtime_versions() -> RuntimeVersions {
 }
 
 fn daemon_info(codex: &Path) -> Result<DaemonInfo, String> {
-    let output = Command::new(codex)
+    let output = codex_command(codex)
         .args(["app-server", "daemon", "version"])
         .output()
         .map_err(|error| format!("无法检查 Codex App Server: {error}"))?;
@@ -402,7 +399,7 @@ fn daemon_info(codex: &Path) -> Result<DaemonInfo, String> {
 }
 
 fn cli_version(codex: &Path) -> Result<String, String> {
-    let output = Command::new(codex)
+    let output = codex_command(codex)
         .arg("--version")
         .output()
         .map_err(|error| format!("无法读取 Codex CLI 版本: {error}"))?;
@@ -417,10 +414,80 @@ fn parse_cli_version(output: &str) -> Option<String> {
     output.split_whitespace().last().map(ToOwned::to_owned)
 }
 
+fn codex_command(codex: &Path) -> Command {
+    let mut command = Command::new(codex);
+    if let Some(codex_home) = managed_codex_home(codex) {
+        if let Some(home) = codex_home.parent() {
+            command.env("HOME", home);
+        }
+        command.env("CODEX_HOME", codex_home);
+    }
+    command
+}
+
+fn managed_codex_home(codex: &Path) -> Option<PathBuf> {
+    fs::canonicalize(codex)
+        .ok()
+        .and_then(|path| codex_home_ancestor(&path))
+        .or_else(|| codex_home_ancestor(codex))
+        .or_else(|| {
+            env::var_os("CODEX_HOME")
+                .map(PathBuf::from)
+                .filter(|path| path.file_name().is_some_and(|name| name == ".codex"))
+        })
+        .or_else(|| {
+            env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".codex"))
+        })
+}
+
+fn codex_home_ancestor(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|ancestor| ancestor.file_name().is_some_and(|name| name == ".codex"))
+        .map(Path::to_path_buf)
+}
+
+#[cfg(unix)]
+fn raise_open_file_limit(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    // The daemon inherits this limit from the short-lived `daemon start` process.
+    unsafe {
+        command.pre_exec(|| {
+            let mut limit = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            limit.rlim_cur = limit.rlim_max.min(4096);
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn raise_open_file_limit(_command: &mut Command) {}
+
 fn find_codex_binary() -> Result<PathBuf, String> {
     if let Some(path) = env::var_os("CODEX_HARNESS_CODEX_PATH").map(PathBuf::from) {
         if path.is_file() {
             return Ok(path);
+        }
+    }
+
+    if let Some(codex_home) = env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.file_name().is_some_and(|name| name == ".codex"))
+    {
+        let candidate = codex_home.join("packages/standalone/current/codex");
+        if candidate.is_file() {
+            return Ok(candidate);
         }
     }
 
@@ -463,12 +530,15 @@ mod tests {
 
     #[test]
     fn reads_app_server_version_from_daemon_status() {
-        let info: DaemonInfo = serde_json::from_str(r#"{
+        let info: DaemonInfo = serde_json::from_str(
+            r#"{
           "status": "running",
           "socketPath": "/tmp/codex.sock",
           "managedCodexVersion": "0.149.0",
           "appServerVersion": "0.150.1"
-        }"#).expect("parses daemon response");
+        }"#,
+        )
+        .expect("parses daemon response");
 
         assert_eq!(info.status, "running");
         assert_eq!(info.socket_path.as_deref(), Some("/tmp/codex.sock"));
@@ -478,7 +548,21 @@ mod tests {
 
     #[test]
     fn extracts_the_cli_version_from_its_standard_output() {
-        assert_eq!(parse_cli_version("codex-cli 0.150.1\n"), Some("0.150.1".to_string()));
+        assert_eq!(
+            parse_cli_version("codex-cli 0.150.1\n"),
+            Some("0.150.1".to_string())
+        );
         assert_eq!(parse_cli_version("\n"), None);
+    }
+
+    #[test]
+    fn derives_codex_home_from_the_managed_binary_path() {
+        assert_eq!(
+            codex_home_ancestor(Path::new(
+                "/Users/example/.codex/packages/standalone/current/bin/codex"
+            )),
+            Some(PathBuf::from("/Users/example/.codex"))
+        );
+        assert_eq!(codex_home_ancestor(Path::new("/usr/local/bin/codex")), None);
     }
 }

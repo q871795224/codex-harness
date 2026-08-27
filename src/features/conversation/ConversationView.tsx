@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from 'react'
+import { memo, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
   Archive,
@@ -9,7 +9,9 @@ import {
   ChevronRight,
   Command,
   FileCode2,
+  FileText,
   GitBranch,
+  Image,
   Pencil,
   ShieldAlert,
   Terminal,
@@ -89,9 +91,10 @@ interface ConversationViewProps {
   loadingOlderTurns: boolean
   onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
   onLoadOlderTurns: () => void
+  newThreadPanels?: ReactNode
 }
 
-export function ConversationView({ items, approvals, workspace, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns }: ConversationViewProps) {
+export function ConversationView({ items, approvals, workspace, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, newThreadPanels }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -108,10 +111,13 @@ export function ConversationView({ items, approvals, workspace, hasOlderTurns, l
             </button>
           )}
           {items.length === 0 && (
-            <div className="fresh-thread">
-              <div className="fresh-thread-mark"><Bot size={24} /></div>
-              <h2>从这里开始</h2>
-              <p>这是一条新的 Codex 会话。消息会在 <strong>{workspace?.name ?? '当前工作区'}</strong> 中运行。</p>
+            <div className="fresh-thread-wrap">
+              <div className="fresh-thread">
+                <div className="fresh-thread-mark"><Bot size={24} /></div>
+                <h2>从这里开始</h2>
+                <p>这是一条新的 Codex 会话。消息会在 <strong>{workspace?.name ?? '当前工作区'}</strong> 中运行。</p>
+              </div>
+              {newThreadPanels}
             </div>
           )}
           {groupTranscriptItems(items).map((row, index) => (
@@ -146,10 +152,18 @@ const ThreadItemView = memo(function ThreadItemView({
   const { item } = entry
   if (item.type === 'userMessage') {
     const text = itemText(item)
-    return text ? (
+    const attachments = (item.content ?? []).filter((content) => content.type === 'localImage' || content.type === 'image' || content.type === 'mention')
+    return text || attachments.length ? (
       <article className="message user-message">
         <div className="message-label"><UserRound size={14} />你</div>
-        <div className="user-bubble">{text}</div>
+        <div className="user-bubble">
+          {text && <div>{text}</div>}
+          {attachments.length > 0 && <div className="user-attachments">{attachments.map((attachment, index) => {
+            const path = attachment.type === 'image' ? attachment.url : attachment.path
+            const name = attachment.type === 'mention' ? attachment.name : path.split(/[\\/]/).pop() || path
+            return <span key={`${path}:${index}`} title={path}>{attachment.type === 'mention' ? <FileText size={13} /> : <Image size={13} />}{name}</span>
+          })}</div>}
+        </div>
       </article>
     ) : null
   }

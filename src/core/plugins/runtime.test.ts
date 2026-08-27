@@ -70,6 +70,7 @@ describe('plugin host lifecycle', () => {
       ctx.effect(() => { calls.push('first') })
       ctx.effect(() => { calls.push('second') })
       ctx.slots.conversationTabs.register({ id: 'tab', label: 'Tab', render: () => null })
+      ctx.slots.newThreadPanels.register({ id: 'launcher', render: () => null })
     })
     const bad = plugin('plugin-b', () => { throw new Error('boom') })
     const host = new PluginHost([good, bad], { storage: () => storage })
@@ -82,10 +83,12 @@ describe('plugin host lifecycle', () => {
     expect(host.status('instance-1').phase).toBe('active')
     expect(host.status('instance-2')).toEqual({ phase: 'failed', error: 'boom' })
     expect(host.resolvedTabs({ threadId: null, workspaceRoot: null })).toHaveLength(1)
+    expect(host.resolvedNewThreadPanels({ threadId: null, workspaceRoot: null })).toHaveLength(1)
 
     await host.syncInstances([])
     expect(calls).toEqual(['second', 'first'])
     expect(host.resolvedTabs({ threadId: null, workspaceRoot: null })).toHaveLength(0)
+    expect(host.resolvedNewThreadPanels({ threadId: null, workspaceRoot: null })).toHaveLength(0)
   })
 
   it('reactivates an instance when its config changes', async () => {

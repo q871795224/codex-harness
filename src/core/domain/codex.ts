@@ -115,6 +115,62 @@ export interface RuntimeVersions {
   codexCli: string | null
 }
 
+export type ApprovalPolicy = 'untrusted' | 'on-request' | 'never'
+export type ApprovalsReviewer = 'user' | 'auto_review'
+export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+
+export interface ThreadCodexSettings {
+  model: string
+  effort: string
+  approvalPolicy: ApprovalPolicy
+  approvalsReviewer: ApprovalsReviewer
+  sandboxMode: SandboxMode
+}
+
+export interface ReasoningEffortOption {
+  reasoningEffort: string
+  description: string
+}
+
+export interface CodexModel {
+  id: string
+  model: string
+  displayName: string
+  description: string
+  hidden: boolean
+  supportedReasoningEfforts: ReasoningEffortOption[]
+  defaultReasoningEffort: string
+  inputModalities: string[]
+  isDefault: boolean
+}
+
+export interface CodexConfig {
+  model: string | null
+  model_reasoning_effort: string | null
+  approval_policy: ApprovalPolicy | null
+  approvals_reviewer?: ApprovalsReviewer | null
+  sandbox_mode?: SandboxMode | null
+  mcp_servers?: Record<string, { enabled?: boolean }>
+}
+
+export interface CodexSkill {
+  name: string
+  description: string
+  path: string
+  scope: string
+  enabled: boolean
+  pluginId: string | null
+}
+
+export interface McpServerStatus {
+  name: string
+  runtimeStatus: string | { state?: string; [key: string]: unknown } | null
+  pluginId: string | null
+  tools: Record<string, unknown>
+  resources: unknown[]
+  authStatus: string | { state?: string; [key: string]: unknown }
+}
+
 export interface Turn {
   id: string
   items: ThreadItem[]
@@ -125,11 +181,11 @@ export interface Turn {
   durationMs: number | null
 }
 
-export type UserInput = {
-  type: 'text'
-  text: string
-  text_elements: unknown[]
-}
+export type UserInput =
+  | { type: 'text'; text: string; text_elements: unknown[] }
+  | { type: 'image'; url: string }
+  | { type: 'localImage'; path: string }
+  | { type: 'mention'; name: string; path: string }
 
 export interface ThreadItem extends JsonObject {
   type: string
@@ -227,7 +283,7 @@ export const textInput = (text: string): UserInput => ({
 export function itemText(item: ThreadItem): string {
   if (item.type === 'userMessage') {
     return (item.content ?? [])
-      .filter((content): content is UserInput => content.type === 'text')
+      .filter((content): content is Extract<UserInput, { type: 'text' }> => content.type === 'text')
       .map((content) => content.text)
       .join('\n')
   }
@@ -235,10 +291,13 @@ export function itemText(item: ThreadItem): string {
 }
 
 export function queueText(queue: QueuedSubmission): string {
-  return queue.input
-    .filter((content): content is UserInput => content.type === 'text')
+  const text = queue.input
+    .filter((content): content is Extract<UserInput, { type: 'text' }> => content.type === 'text')
     .map((content) => content.text)
     .join('\n')
+  if (text) return text
+  const count = queue.input.filter((content) => content.type === 'localImage' || content.type === 'image' || content.type === 'mention').length
+  return count ? `${count} 个附件` : ''
 }
 
 export function threadTitle(thread: Thread): string {

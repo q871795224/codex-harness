@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import type { ThreadItemEntry } from '../core/domain/codex'
+import type { CodexModel, ThreadCodexSettings, ThreadItemEntry } from '../core/domain/codex'
 
 export type PluginScopeKind = 'global' | 'workspace' | 'thread'
 
@@ -63,6 +63,19 @@ export interface ComposerActionContribution {
   render(props: ComposerActionProps): ReactNode
 }
 
+export interface NewThreadPanelProps extends PluginViewContext {
+  models: CodexModel[]
+  settings: ThreadCodexSettings
+  disabled: boolean
+  onSettingsChange(patch: Partial<ThreadCodexSettings>): Promise<void> | void
+}
+
+export interface NewThreadPanelContribution {
+  id: string
+  order?: number
+  render(props: NewThreadPanelProps): ReactNode
+}
+
 export interface PluginSettingsProps {
   instance: PluginInstanceRecord
   saveConfig(config: Record<string, unknown>): Promise<void>
@@ -85,6 +98,9 @@ export interface PluginEventAccess {
 }
 
 export interface PluginSlotAccess {
+  newThreadPanels: {
+    register(contribution: NewThreadPanelContribution): void
+  }
   conversationTabs: {
     register(contribution: ConversationTabContribution): void
   }

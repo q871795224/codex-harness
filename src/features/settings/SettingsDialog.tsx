@@ -1,22 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Blocks, CircleHelp, FolderOpen, LoaderCircle, Minus, Palette, Plus, Power, RefreshCw, Type, X } from 'lucide-react'
+import { Blocks, BrainCircuit, CircleHelp, FolderOpen, LoaderCircle, Minus, Palette, Plus, Power, RefreshCw, Server, Sparkles, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
-import type { FontSize, FontSizeArea, FontSizePreferences, RuntimeVersions, Thread, Workspace } from '../../core/domain/codex'
+import type { CodexSkill, FontSize, FontSizeArea, FontSizePreferences, RuntimeVersions, Thread, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
+import type { useCodexCore } from '../codex/useCodexCore'
 
 interface SettingsDialogProps {
   fontSizes: FontSizePreferences
   workspaces: Workspace[]
   threads: Thread[]
   selectedThreadId: string | null
+  selectedWorkspaceRoot: string | null
+  codex: ReturnType<typeof useCodexCore>
   onFontSize: (area: FontSizeArea, fontSize: FontSize) => void
   onResetFontSizes: () => void
   onClose: () => void
 }
 
-type SettingsPage = 'appearance' | 'plugins'
+type SettingsPage = 'appearance' | 'models' | 'skills' | 'mcp' | 'plugins'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -25,13 +28,19 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadId, onFontSize, onResetFontSizes, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadId, selectedWorkspaceRoot, codex, onFontSize, onResetFontSizes, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
   const [versionsError, setVersionsError] = useState<string | null>(null)
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
-  const heading = page === 'appearance' ? '外观' : '插件'
+  const pageMeta: Record<SettingsPage, { heading: string; kicker: string }> = {
+    appearance: { heading: '外观', kicker: 'APPEARANCE' },
+    models: { heading: '模型', kicker: 'CODEX' },
+    skills: { heading: '技能', kicker: 'CODEX' },
+    mcp: { heading: 'MCP', kicker: 'CODEX' },
+    plugins: { heading: '插件', kicker: 'EXTENSIONS' },
+  }
 
   const loadVersions = useCallback(async () => {
     setVersionsLoading(true)
@@ -78,6 +87,15 @@ export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadI
             <button type="button" className={page === 'appearance' ? 'selected' : ''} aria-current={page === 'appearance' ? 'page' : undefined} onClick={() => setPage('appearance')}>
               <Palette size={16} />外观
             </button>
+            <button type="button" className={page === 'models' ? 'selected' : ''} aria-current={page === 'models' ? 'page' : undefined} onClick={() => setPage('models')}>
+              <BrainCircuit size={16} />模型
+            </button>
+            <button type="button" className={page === 'skills' ? 'selected' : ''} aria-current={page === 'skills' ? 'page' : undefined} onClick={() => setPage('skills')}>
+              <Sparkles size={16} />技能
+            </button>
+            <button type="button" className={page === 'mcp' ? 'selected' : ''} aria-current={page === 'mcp' ? 'page' : undefined} onClick={() => setPage('mcp')}>
+              <Server size={16} />MCP
+            </button>
             <button type="button" className={page === 'plugins' ? 'selected' : ''} aria-current={page === 'plugins' ? 'page' : undefined} onClick={() => setPage('plugins')}>
               <Blocks size={16} />插件
             </button>
@@ -87,17 +105,17 @@ export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadI
         <div className="settings-panel">
           <header className="settings-panel-head">
             <div>
-              <span className="settings-kicker">{page === 'appearance' ? 'APPEARANCE' : 'EXTENSIONS'}</span>
-              <h2 id="settings-title">{heading}</h2>
+              <span className="settings-kicker">{pageMeta[page].kicker}</span>
+              <h2 id="settings-title">{pageMeta[page].heading}</h2>
             </div>
             <button type="button" className="settings-close" onClick={onClose} aria-label="关闭设置"><X size={18} /></button>
           </header>
 
-          {page === 'appearance' ? (
-            <AppearanceSettings fontSizes={fontSizes} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />
-          ) : (
-            <PluginSettings workspaces={workspaces} threads={threads} selectedThreadId={selectedThreadId} />
-          )}
+          {page === 'appearance' && <AppearanceSettings fontSizes={fontSizes} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
+          {page === 'models' && <ModelsSettings codex={codex} />}
+          {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
+          {page === 'mcp' && <McpSettings codex={codex} />}
+          {page === 'plugins' && <PluginSettings workspaces={workspaces} threads={threads} selectedThreadId={selectedThreadId} />}
           <SettingsVersions
             versions={versions}
             loading={versionsLoading}
@@ -169,6 +187,104 @@ function SettingsVersions({
       </div>
     </footer>
   )
+}
+
+function ModelsSettings({ codex }: { codex: ReturnType<typeof useCodexCore> }) {
+  const selectedModel = codex.models.find((model) => model.model === codex.defaults.model) ?? codex.models[0] ?? null
+
+  return (
+    <div className="settings-section codex-settings">
+      <section className="codex-setting-card">
+        <div className="settings-section-title"><BrainCircuit size={17} /><div><h3>默认模型</h3><p>用于新会话；单个会话可在输入框中覆盖。</p></div></div>
+        <div className="settings-row-list">
+          <label className="settings-row"><span>模型</span><select value={codex.defaults.model} disabled={codex.loading || codex.models.length === 0} onChange={(event) => void codex.updateDefault('model', event.target.value)}>{codex.models.map((model) => <option key={model.id} value={model.model}>{model.displayName}</option>)}</select></label>
+          <label className="settings-row"><span>推理强度</span><select value={codex.defaults.effort} disabled={codex.loading || !selectedModel} onChange={(event) => void codex.updateDefault('model_reasoning_effort', event.target.value)}>{(selectedModel?.supportedReasoningEfforts ?? []).map((option) => <option key={option.reasoningEffort} value={option.reasoningEffort}>{option.reasoningEffort}</option>)}</select></label>
+          <label className="settings-row"><span>审批模式</span><select value={codex.defaults.approvalPolicy} disabled={codex.loading} onChange={(event) => void codex.updateDefault('approval_policy', event.target.value)}><option value="on-request">On request</option><option value="untrusted">Untrusted</option><option value="never">Never</option></select></label>
+        </div>
+      </section>
+      {codex.error && <div className="plugin-settings-error">{codex.error}</div>}
+    </div>
+  )
+}
+
+function SkillsSettings({ workspaceRoot }: { workspaceRoot: string | null }) {
+  const [skills, setSkills] = useState<CodexSkill[]>([])
+  const [scanErrors, setScanErrors] = useState<Array<{ path: string; message: string }>>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadSkills = useCallback(async (forceReload = false) => {
+    setLoading(true)
+    setError(null)
+    setScanErrors([])
+    try {
+      if (!workspaceRoot) {
+        setSkills([])
+        return
+      }
+      const skillResult = await runtime.request<{ data: Array<{ skills: CodexSkill[]; errors: Array<{ path: string; message: string }> }> }>('skills/list', { cwds: [workspaceRoot], forceReload })
+      setSkills(skillResult.data.flatMap((entry) => entry.skills))
+      setScanErrors(skillResult.data.flatMap((entry) => entry.errors ?? []))
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setLoading(false)
+    }
+  }, [workspaceRoot])
+
+  useEffect(() => { void loadSkills() }, [loadSkills])
+
+  const toggleSkill = async (skill: CodexSkill) => {
+    setError(null)
+    try {
+      await runtime.request('skills/config/write', { path: skill.path, enabled: !skill.enabled })
+      await loadSkills(true)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    }
+  }
+
+  return (
+    <div className="settings-section codex-settings">
+      <section className="codex-setting-card">
+        <div className="settings-section-title"><Sparkles size={17} /><div><h3>已发现技能</h3><p>{workspaceRoot ? <>Codex 基于目录 <code className="codex-scan-path">{workspaceRoot}</code> 发现 {skills.length} 个有效技能</> : '选择一个目录上下文后查看可用技能。'}</p></div><button type="button" className="codex-refresh-button" disabled={loading || !workspaceRoot} onClick={() => void loadSkills(true)}><RefreshCw size={14} /></button></div>
+        <div className="codex-inventory-list">
+          {skills.map((skill) => <div className="codex-inventory-row" key={skill.path}><div><div className="codex-inventory-name"><strong>{skill.name}</strong><span>{skillSource(skill)}</span></div><small>{skill.description || skill.path}</small></div><button type="button" className={`codex-runtime-status codex-skill-status ${skill.enabled ? 'connected' : 'disabled'}`} onClick={() => void toggleSkill(skill)}><Power size={11} />{skill.enabled ? '已启用' : '已停用'}</button></div>)}
+          {!loading && workspaceRoot && skills.length === 0 && <div className="codex-empty">这个目录上下文中没有发现技能。</div>}
+        </div>
+      </section>
+      {scanErrors.map((scanError) => <div key={`${scanError.path}:${scanError.message}`} className="plugin-settings-error"><strong>{scanError.path}</strong><br />{scanError.message}</div>)}
+      {error && <div className="plugin-settings-error">{error}</div>}
+    </div>
+  )
+}
+
+function McpSettings({ codex }: { codex: ReturnType<typeof useCodexCore> }) {
+  return (
+    <div className="settings-section codex-settings">
+      <section className="codex-setting-card">
+        <div className="settings-section-title"><Server size={17} /><div><h3>已配置服务</h3><p>显示 Codex 全局配置中的 MCP 服务及运行状态。</p></div><button type="button" className="codex-refresh-button" disabled={codex.mcpLoading} onClick={() => void codex.reloadMcp()}><RefreshCw size={14} /></button></div>
+        <div className="codex-inventory-list">
+          {codex.mcpServers.map((server) => {
+            const toolCount = Object.keys(server.tools ?? {}).length
+            const enabled = codex.config.mcp_servers?.[server.name]?.enabled !== false
+            return <div className="codex-inventory-row" key={server.name}><div><strong>{server.name}</strong><small>{toolCount} 个工具{server.pluginId ? ` · 插件：${server.pluginId}` : ''}</small></div><span className={`codex-runtime-status ${enabled ? 'enabled' : 'disabled'}`}>{enabled ? '已启用' : '已停用'}</span></div>
+          })}
+          {!codex.mcpLoading && codex.mcpServers.length === 0 && <div className="codex-empty">没有配置 MCP 服务。</div>}
+        </div>
+      </section>
+      {codex.mcpError && <div className="plugin-settings-error">{codex.mcpError}</div>}
+    </div>
+  )
+}
+
+function skillSource(skill: CodexSkill): string {
+  if (skill.pluginId) return `插件 · ${skill.pluginId}`
+  if (skill.scope === 'repo') return '仓库'
+  if (skill.scope === 'user') return '用户'
+  if (skill.scope === 'system') return '系统'
+  if (skill.scope === 'admin') return '管理员'
+  return skill.scope
 }
 
 function AppearanceSettings({ fontSizes, onFontSize, onResetFontSizes }: {

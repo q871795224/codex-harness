@@ -6,6 +6,8 @@ import type {
   ConversationTabContribution,
   ConversationTabProps,
   HarnessPlugin,
+  NewThreadPanelContribution,
+  NewThreadPanelProps,
   PluginInstanceRecord,
   PluginInstanceStatus,
   PluginViewContext,
@@ -22,6 +24,7 @@ interface PluginHostContextValue {
   error: string | null
   status(instanceId: string): PluginInstanceStatus
   resolvedTabs(context: PluginViewContext): ResolvedContribution<ConversationTabContribution>[]
+  resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[]
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[]
   upsertInstance(instance: PluginInstanceRecord): Promise<void>
   deleteInstance(instanceId: string): Promise<void>
@@ -96,6 +99,7 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     error,
     status: (instanceId) => host.status(instanceId),
     resolvedTabs: (context) => host.resolvedTabs(context),
+    resolvedNewThreadPanels: (context) => host.resolvedNewThreadPanels(context),
     resolvedComposerActions: (context) => host.resolvedComposerActions(context),
     upsertInstance: async (instance) => {
       try {
@@ -174,6 +178,44 @@ export function PluginComposerAction({ action, props }: {
   props: ComposerActionProps
 }) {
   return action.contribution.render(props)
+}
+
+export function PluginNewThreadPanel({ panel, props }: {
+  panel: ResolvedContribution<NewThreadPanelContribution>
+  props: NewThreadPanelProps
+}) {
+  return (
+    <PluginRenderBoundary pluginId={panel.pluginId} instanceId={panel.instanceId} label="新会话面板">
+      {panel.contribution.render(props)}
+    </PluginRenderBoundary>
+  )
+}
+
+class PluginRenderBoundary extends Component<{
+  pluginId: string
+  instanceId: string
+  label: string
+  children: ReactNode
+}, { error: string | null }> {
+  state = { error: null as string | null }
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: messageOf(error) }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error(`[plugin:${this.props.pluginId}] ${this.props.label} render failed`, error, info)
+  }
+
+  componentDidUpdate(previous: Readonly<typeof this.props>): void {
+    if (previous.instanceId !== this.props.instanceId && this.state.error) this.setState({ error: null })
+  }
+
+  render(): ReactNode {
+    return this.state.error
+      ? <div className="plugin-error">插件{this.props.label}加载失败：{this.state.error}</div>
+      : this.props.children
+  }
 }
 
 function messageOf(error: unknown): string {

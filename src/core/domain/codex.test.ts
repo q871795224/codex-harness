@@ -123,6 +123,17 @@ describe('thread content helpers', () => {
     expect(itemText({ type: 'agentMessage', text: '回复内容' })).toBe('回复内容')
     expect(queueText({ id: 'queue-1', input: [textInput('继续'), textInput('执行')], clientUserMessageId: 'message-1' })).toBe('继续\n执行')
   })
+
+  it('keeps attachment-only queue entries visible without leaking full paths', () => {
+    expect(queueText({
+      id: 'queue-2',
+      input: [
+        { type: 'localImage', path: '/private/tmp/design.png' },
+        { type: 'mention', name: 'requirements.pdf', path: '/private/tmp/requirements.pdf' },
+      ],
+      clientUserMessageId: 'message-2',
+    })).toBe('2 个附件')
+  })
 })
 
 describe('isActive', () => {

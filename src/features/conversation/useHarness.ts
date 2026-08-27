@@ -19,6 +19,7 @@ import type {
   ThreadTokenUsage,
   ThreadUiState,
   Turn,
+  UserInput,
   Workspace,
   WorkspaceSort,
 } from '../../core/domain/codex'
@@ -521,7 +522,7 @@ export function useHarness() {
     persistBadge(threadId, 'working')
   }, [persistBadge, updateDetail, updateThread])
 
-  const startTurn = useCallback(async (threadId: string, text: string | null, inputs?: ReturnType<typeof textInput>[]) => {
+  const startTurn = useCallback(async (threadId: string, text: string | null, inputs?: UserInput[]) => {
     locallyStartingRef.current.add(threadId)
     try {
       const response = await runtime.request<StartTurnResponse>('turn/start', {
@@ -536,9 +537,13 @@ export function useHarness() {
     }
   }, [setActiveTurn])
 
-  const sendMessage = useCallback(async (text: string, mode: 'interject' | 'queue') => {
+  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue') => {
     const threadId = selectedThreadIdRef.current
-    if (!threadId || !text.trim()) return
+    if (!threadId || input.length === 0) return
+    const text = input
+      .filter((item): item is Extract<UserInput, { type: 'text' }> => item.type === 'text')
+      .map((item) => item.text)
+      .join('\n')
     const activeTurnId = activeTurnIdsRef.current[threadId]
     const owned = ownedActiveThreadsRef.current[threadId] === true
     if (activeTurnId && !owned) {
@@ -548,7 +553,7 @@ export function useHarness() {
     setBusy((current) => ({ ...current, composer: true }))
     try {
       if (!activeTurnId) {
-        await startTurn(threadId, text.trim())
+        await startTurn(threadId, null, input)
         return
       }
 
@@ -557,7 +562,7 @@ export function useHarness() {
         await runtime.request('thread/queue/add', {
           threadId,
           clientUserMessageId,
-          input: [textInput(text.trim())],
+          input,
         })
         await loadQueue(threadId)
         return
@@ -567,11 +572,11 @@ export function useHarness() {
         threadId,
         expectedTurnId: activeTurnId,
         clientUserMessageId,
-        input: [textInput(text.trim())],
+        input,
       })
       setPendingSteers((current) => ({
         ...current,
-        [threadId]: [...(current[threadId] ?? []), { clientUserMessageId, text: text.trim(), createdAt: Date.now() }],
+        [threadId]: [...(current[threadId] ?? []), { clientUserMessageId, text: text.trim() || '附件', createdAt: Date.now() }],
       }))
     } catch (error) {
       notify(`无法发送消息：${messageOf(error)}`, 'error')

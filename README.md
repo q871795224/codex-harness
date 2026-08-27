@@ -8,9 +8,10 @@
 - 新建、恢复、搜索、重命名、归档 / 恢复 Codex 会话；历史直接由 App Server 读取，不迁移。
 - 每个会话有 `对话` 与 `轨迹` Tab。
 - 支持 App Server 原生插话、服务器队列、停止与审批卡片。
+- 输入框支持图片 / 文件、模型、推理强度、审批模式和上下文窗口；模型、Skills 与 MCP 默认项在设置中管理。
 - 本地 UI 状态只保存到 `~/.codex-harness/state.sqlite`，不复制会话正文或凭据。
 
-不在 V1：模型 / 沙箱选择器、任务与监控、内嵌终端、永久删除、插件运行时。
+不在 V1：内嵌终端、永久删除、外部 Harness 插件加载。
 
 ## 阶段 2
 
@@ -19,6 +20,7 @@
 - “轨迹”已作为首个内置插件通过 `conversation.tabs` slot 接入。
 - “临时 Agent”通过独立 child thread 支持后台运行与人工确认回传，运行索引不保存会话正文。
 - “SeaTalk Bridge”复用本机 companion，提供内存 Inbox、Codex 草稿、编辑预览和显式确认发送；凭据仍由 companion 管理。
+- “会话启动器”通过 `newThreadPanels` slot 在空白新会话中展示 Codex Radar 模型表，并将 YOLO、Auto-review 或 Manual 模式作为完整的审批 reviewer 与 sandbox 组合写入 App Server。
 
 ## 开发
 

@@ -13,6 +13,7 @@ import {
 } from '../domain/codex'
 import type { AgentRun, ThreadInspection } from '../agent-runs/types'
 import type { LocalConnectorHealth, LocalConnectorMessage, LocalConnectorSendInput } from '../local-connectors/types'
+import type { RadarModelTable } from '../codex-radar/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 
 interface PluginInstanceDto {
@@ -104,6 +105,16 @@ export const runtime = {
     return invoke<Workspace>('register_workspace', { path })
   },
 
+  async chooseComposerFiles(): Promise<string[]> {
+    const paths = await open({
+      directory: false,
+      multiple: true,
+      title: '添加图片或文件',
+    })
+    if (!paths) return []
+    return Array.isArray(paths) ? paths : [paths]
+  },
+
   mapThreadWorkspaces(paths: string[]): Promise<Record<string, Workspace | null>> {
     return invoke<Record<string, Workspace | null>>('map_thread_workspaces', { paths })
   },
@@ -188,6 +199,10 @@ export const runtime = {
 
   localConnectorSendMessage(baseUrl: string, input: LocalConnectorSendInput): Promise<{ ok: boolean; messageId?: string }> {
     return invoke<{ ok: boolean; messageId?: string }>('local_connector_send_message', { baseUrl, input })
+  },
+
+  codexRadarModelTable(): Promise<RadarModelTable> {
+    return invoke<RadarModelTable>('codex_radar_model_table')
   },
 
   async startCodexThread(workspaceRoot: string): Promise<string> {

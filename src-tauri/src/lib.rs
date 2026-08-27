@@ -1,10 +1,12 @@
 mod app_server;
+mod codex_radar;
 mod diagnostics;
 mod git_workspace;
 mod local_connector;
 mod store;
 
 use app_server::AppServerManager;
+use codex_radar::{CodexRadarClient, RadarModelTable};
 use diagnostics::DiagnosticLog;
 use local_connector::{
     ConnectorHealth, ConnectorMessage, LocalConnector, SendMessageInput, SendMessageResult,
@@ -25,6 +27,7 @@ struct AppState {
     app_server: Arc<AppServerManager>,
     diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
+    codex_radar: CodexRadarClient,
     store: HarnessStore,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
 }
@@ -68,6 +71,11 @@ async fn local_connector_send_message(
 }
 
 #[tauri::command]
+async fn codex_radar_model_table(state: State<'_, AppState>) -> Result<RadarModelTable, String> {
+    state.codex_radar.model_table().await
+}
+
+#[tauri::command]
 async fn app_server_request(
     state: State<'_, AppState>,
     method: String,
@@ -86,10 +94,7 @@ async fn app_server_respond(
 }
 
 #[tauri::command]
-fn record_client_diagnostic(
-    state: State<'_, AppState>,
-    diagnostic: ClientDiagnostic,
-) {
+fn record_client_diagnostic(state: State<'_, AppState>, diagnostic: ClientDiagnostic) {
     let error_code = diagnostic.error_code.filter(|value| {
         matches!(
             value.as_str(),
@@ -250,11 +255,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
-            let manager = Arc::new(AppServerManager::new(app.handle().clone(), diagnostics.clone()));
+            let manager = Arc::new(AppServerManager::new(
+                app.handle().clone(),
+                diagnostics.clone(),
+            ));
             app.manage(AppState {
                 app_server: manager,
                 diagnostics,
                 local_connector: LocalConnector::new(),
+                codex_radar: CodexRadarClient::new(),
                 store,
                 workspace_cache: Arc::new(Mutex::new(HashMap::new())),
             });
@@ -283,6 +292,7 @@ pub fn run() {
             local_connector_health,
             local_connector_list_messages,
             local_connector_send_message,
+            codex_radar_model_table,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错");

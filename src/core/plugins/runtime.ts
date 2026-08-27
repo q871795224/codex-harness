@@ -2,6 +2,7 @@ import type {
   ComposerActionContribution,
   ConversationTabContribution,
   HarnessPlugin,
+  NewThreadPanelContribution,
   PluginCommand,
   PluginInstanceContext,
   PluginInstanceRecord,
@@ -143,6 +144,7 @@ export class PluginHost {
   private readonly services = new ServiceRegistry()
   private readonly events = new EventBus()
   private readonly tabs = new ContributionRegistry<ConversationTabContribution>()
+  private readonly newThreadPanels = new ContributionRegistry<NewThreadPanelContribution>()
   private readonly composerActions = new ContributionRegistry<ComposerActionContribution>()
   private readonly commands = new CommandRegistry()
   private syncQueue: Promise<void> = Promise.resolve()
@@ -166,6 +168,10 @@ export class PluginHost {
 
   resolvedTabs(context: PluginViewContext): ResolvedContribution<ConversationTabContribution>[] {
     return resolveScopedContributions(this.tabs.list(), context)
+  }
+
+  resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[] {
+    return resolveScopedContributions(this.newThreadPanels.list(), context)
   }
 
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[] {
@@ -265,6 +271,9 @@ export class PluginHost {
         emit: <T,>(event: string, payload: T) => this.events.emit(event, payload),
       },
       slots: {
+        newThreadPanels: {
+          register: (contribution) => lifecycle.effect(this.newThreadPanels.register({ ...metadata, contribution })),
+        },
         conversationTabs: {
           register: (contribution) => lifecycle.effect(this.tabs.register({ ...metadata, contribution })),
         },

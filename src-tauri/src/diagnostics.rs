@@ -44,12 +44,8 @@ impl DiagnosticLog {
     }
 
     pub fn reveal(&self) -> Result<(), String> {
-        fs::create_dir_all(&self.directory).map_err(|error| {
-            format!(
-                "无法准备日志目录 {}: {error}",
-                self.directory.display()
-            )
-        })?;
+        fs::create_dir_all(&self.directory)
+            .map_err(|error| format!("无法准备日志目录 {}: {error}", self.directory.display()))?;
 
         #[cfg(target_os = "macos")]
         let mut command = std::process::Command::new("open");
@@ -58,16 +54,20 @@ impl DiagnosticLog {
         #[cfg(all(unix, not(target_os = "macos")))]
         let mut command = std::process::Command::new("xdg-open");
 
-        command.arg(&self.directory).spawn().map_err(|error| {
-            format!(
-                "无法打开日志目录 {}: {error}",
-                self.directory.display()
-            )
-        })?;
+        command
+            .arg(&self.directory)
+            .spawn()
+            .map_err(|error| format!("无法打开日志目录 {}: {error}", self.directory.display()))?;
         Ok(())
     }
 
-    fn record_inner(&self, level: &str, area: &str, event: &str, fields: Value) -> Result<(), String> {
+    fn record_inner(
+        &self,
+        level: &str,
+        area: &str,
+        event: &str,
+        fields: Value,
+    ) -> Result<(), String> {
         let _guard = self
             .write_lock
             .lock()
@@ -82,8 +82,8 @@ impl DiagnosticLog {
             "event": truncate(event, 96),
             "fields": sanitize_fields(fields),
         });
-        let line = serde_json::to_string(&entry)
-            .map_err(|error| format!("无法编码诊断日志: {error}"))?;
+        let line =
+            serde_json::to_string(&entry).map_err(|error| format!("无法编码诊断日志: {error}"))?;
         let mut options = OpenOptions::new();
         options.create(true).append(true);
         #[cfg(unix)]
@@ -105,13 +105,11 @@ impl DiagnosticLog {
 
         let previous = self.directory.join("harness.previous.jsonl");
         if previous.exists() {
-            fs::remove_file(&previous).map_err(|error| {
-                format!("无法轮转旧诊断日志 {}: {error}", previous.display())
-            })?;
+            fs::remove_file(&previous)
+                .map_err(|error| format!("无法轮转旧诊断日志 {}: {error}", previous.display()))?;
         }
-        fs::rename(path, &previous).map_err(|error| {
-            format!("无法轮转诊断日志 {}: {error}", path.display())
-        })
+        fs::rename(path, &previous)
+            .map_err(|error| format!("无法轮转诊断日志 {}: {error}", path.display()))
     }
 }
 
@@ -121,7 +119,10 @@ pub fn error_code(error: &str) -> &'static str {
         "no_rollout_found"
     } else if message.contains("timeout") || message.contains("超时") {
         "timeout"
-    } else if message.contains("connection") || message.contains("连接") || message.contains("socket") {
+    } else if message.contains("connection")
+        || message.contains("连接")
+        || message.contains("socket")
+    {
         "connection_failed"
     } else if message.contains("permission") || message.contains("权限") {
         "permission_denied"
@@ -146,7 +147,9 @@ fn sanitize_fields(value: Value) -> Value {
             }
             Value::Object(sanitized)
         }
-        Value::Array(values) => Value::Array(values.into_iter().take(16).map(sanitize_fields).collect()),
+        Value::Array(values) => {
+            Value::Array(values.into_iter().take(16).map(sanitize_fields).collect())
+        }
         Value::String(value) => Value::String(truncate(&value, MAX_FIELD_STRING_LEN)),
         value => value,
     }
@@ -242,8 +245,8 @@ mod tests {
             }),
         );
 
-        let contents = fs::read_to_string(directory.0.join("harness.jsonl"))
-            .expect("reads diagnostic log");
+        let contents =
+            fs::read_to_string(directory.0.join("harness.jsonl")).expect("reads diagnostic log");
         assert!(contents.contains("thread/resume"));
         assert!(contents.contains("thread-1"));
         assert!(!contents.contains("this must not be persisted"));

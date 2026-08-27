@@ -3,7 +3,8 @@ import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, Rota
 import { useAgentRunService } from './core/agent-runs/react'
 import { DEFAULT_FONT_SIZES } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
-import { PluginComposerAction, PluginHostProvider, PluginTabBoundary, usePluginHost } from './core/plugins/react'
+import type { CodexRadarService } from './core/codex-radar/types'
+import { PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer } from './features/conversation/Composer'
@@ -12,6 +13,7 @@ import { ConversationHeader, ConversationView } from './features/conversation/Co
 import { QueueDock } from './features/conversation/QueueDock'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
+import { useCodexCore } from './features/codex/useCodexCore'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 
 export default function App() {
@@ -24,6 +26,9 @@ export default function App() {
       listMessages: runtime.localConnectorListMessages,
       sendMessage: runtime.localConnectorSendMessage,
     } satisfies LocalConnectorService,
+    'harness.codexRadar': {
+      modelTable: runtime.codexRadarModelTable,
+    } satisfies CodexRadarService,
   }), [agentRuns])
 
   useEffect(() => {
@@ -52,6 +57,7 @@ export default function App() {
 
 function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const plugins = usePluginHost()
+  const codex = useCodexCore()
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -63,7 +69,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
     threadId: harness.selectedThreadId,
     workspaceRoot: workspace?.root ?? null,
   })
-  const composerActions = plugins.resolvedComposerActions({
+  const newThreadPanels = plugins.resolvedNewThreadPanels({
     threadId: harness.selectedThreadId,
     workspaceRoot: workspace?.root ?? null,
   })
@@ -174,6 +180,22 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                 loadingOlderTurns={Boolean(harness.busy.olderTurns)}
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
                 onLoadOlderTurns={() => void harness.loadOlderTurns()}
+                newThreadPanels={newThreadPanels.map((panel) => (
+                  <PluginNewThreadPanel
+                    key={`${panel.pluginId}:${panel.contribution.id}`}
+                    panel={panel}
+                    props={{
+                      threadId: harness.selectedThreadId,
+                      workspaceRoot: workspace?.root ?? null,
+                      models: codex.models,
+                      settings: codex.settingsForThread(harness.selectedThreadId),
+                      disabled: codex.loading || !harness.selectedThreadId || !canMutate,
+                      onSettingsChange: (patch) => harness.selectedThreadId
+                        ? codex.updateThreadSettings(harness.selectedThreadId, patch)
+                        : undefined,
+                    }}
+                  />
+                ))}
               />
             ) : selectedPluginTab ? (
               <PluginTabBoundary
@@ -205,17 +227,10 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   foreignActive={harness.currentForeignActive}
                   busy={Boolean(harness.busy.composer)}
                   contextUsage={harness.currentTokenUsage}
-                  pluginActions={composerActions.map((action) => (
-                    <PluginComposerAction
-                      key={`${action.pluginId}:${action.contribution.id}`}
-                      action={action}
-                      props={{
-                        threadId: harness.selectedThreadId,
-                        workspaceRoot: workspace?.root ?? null,
-                        disabled: harness.currentForeignActive || Boolean(harness.busy.composer),
-                      }}
-                    />
-                  ))}
+                  models={codex.models}
+                  settings={codex.settingsForThread(harness.selectedThreadId)}
+                  settingsDisabled={codex.loading}
+                  onSettingsChange={(patch) => harness.selectedThreadId ? codex.updateThreadSettings(harness.selectedThreadId, patch) : undefined}
                   onSend={harness.sendMessage}
                   onStop={harness.stopTurn}
                 />
@@ -235,6 +250,8 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           workspaces={harness.workspaces}
           threads={harness.threads}
           selectedThreadId={harness.selectedThreadId}
+          selectedWorkspaceRoot={(harness.selectedThreadId ? harness.threadRoots[harness.selectedThreadId] : null) ?? harness.selectedWorkspaceRoot}
+          codex={codex}
           onFontSize={harness.setFontSize}
           onResetFontSizes={harness.resetFontSizes}
           onClose={() => setSettingsOpen(false)}

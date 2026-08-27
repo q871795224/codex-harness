@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useState } from 'react'
-import { Bot, CircleHelp, ExternalLink, ListTodo, LoaderCircle, Play, RotateCcw, Square } from 'lucide-react'
+import { CircleHelp, ExternalLink, ListTodo, LoaderCircle, Play, RotateCcw, Square } from 'lucide-react'
 import type { AgentRun, AgentRunMode, AgentRunService } from '../../core/agent-runs/types'
 import type { HarnessPlugin, PluginInstanceRecord, PluginSettingsProps, PluginViewContext } from '../../extensions/types'
 
@@ -27,11 +27,6 @@ export const temporaryAgentPlugin: HarnessPlugin = {
       order: 30,
       icon: ListTodo,
       render: (props) => <TemporaryAgentTab service={service} instanceId={ctx.instanceId} defaultMode={defaultMode} context={props} />,
-    })
-    ctx.slots.composerActions.register({
-      id: 'temporary-agent',
-      order: 20,
-      render: (props) => <TemporaryAgentAction service={service} instanceId={ctx.instanceId} defaultMode={defaultMode} context={props} />,
     })
   },
 }
@@ -65,28 +60,6 @@ function TemporaryAgentTab({ service, instanceId, defaultMode, context }: {
           {runs.length === 0 ? <div className="agent-run-empty">还没有临时任务。</div> : runs.map((run) => <AgentRunCard key={run.runId} run={run} service={service} />)}
         </section>
       </div>
-    </div>
-  )
-}
-
-function TemporaryAgentAction({ service, instanceId, defaultMode, context }: {
-  service: AgentRunService
-  instanceId: string
-  defaultMode: AgentRunMode
-  context: PluginViewContext & { disabled: boolean }
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="plugin-composer-action">
-      <button type="button" className="composer-plugin-button" disabled={context.disabled || !context.workspaceRoot} onClick={() => setOpen((value) => !value)} title="启动临时 Agent">
-        <Bot size={15} />
-      </button>
-      {open && (
-        <div className="agent-launcher-popover">
-          <div className="agent-launcher-popover-head"><strong>启动临时 Agent</strong><button type="button" onClick={() => setOpen(false)}>关闭</button></div>
-          <AgentRunLauncher service={service} instanceId={instanceId} defaultMode={defaultMode} context={context} compact onStarted={() => setOpen(false)} />
-        </div>
-      )}
     </div>
   )
 }
