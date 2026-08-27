@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import {
   textInput,
   type AppServerEvent,
@@ -89,6 +91,14 @@ export const runtime = {
 
   openDiagnosticsDirectory(): Promise<void> {
     return invoke<void>('open_diagnostics_directory')
+  },
+
+  setWindowTheme(theme: 'light' | 'dark'): Promise<void> {
+    return getCurrentWindow().setTheme(theme)
+  },
+
+  openExternalUrl(url: string): Promise<void> {
+    return openUrl(url)
   },
 
   listWorkspaces(): Promise<Workspace[]> {

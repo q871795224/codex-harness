@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import { DEFAULT_FONT_SIZES } from './core/domain/codex'
@@ -61,6 +61,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [rawMode, setRawMode] = useState(false)
   const workspace = useMemo(
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
@@ -78,6 +79,10 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   useEffect(() => {
     if (tab !== 'chat' && !selectedPluginTab) setTab('chat')
   }, [selectedPluginTab, tab])
+
+  useEffect(() => {
+    void runtime.setWindowTheme(harness.appearance.theme).catch(() => undefined)
+  }, [harness.appearance.theme])
 
   if (harness.phase === 'loading') return <LaunchScreen label="正在连接本机 Codex App Server…" />
   if (harness.phase === 'error') {
@@ -145,9 +150,8 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
       />
       <main className="main-pane">
         {harness.currentThread ? (
-          <>
+          <Fragment key={harness.currentThread.id}>
             <ConversationHeader
-              key={harness.currentThread.id}
               thread={harness.currentThread}
               workspace={workspace}
               archived={harness.viewMode === 'archived'}
@@ -174,7 +178,6 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
 
             {tab === 'chat' ? (
               <ConversationView
-                key={harness.currentThread.id}
                 items={harness.currentDetail?.items ?? []}
                 approvals={currentApprovals}
                 workspace={workspace}
@@ -203,6 +206,8 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                     }}
                   />
                 ))}
+                rawMode={rawMode}
+                onRawModeToggle={() => setRawMode((current) => !current)}
               />
             ) : selectedPluginTab ? (
               <PluginTabBoundary
@@ -238,9 +243,13 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   sendShortcut={harness.keyboard.sendShortcut}
                   models={codex.models}
                   settings={codex.settingsForThread(harness.selectedThreadId)}
+                  rawMode={rawMode}
                   settingsDisabled={codex.loading}
                   onSettingsChange={(patch) => harness.selectedThreadId ? codex.updateThreadSettings(harness.selectedThreadId, patch) : undefined}
                   onSend={harness.sendMessage}
+                  onCommand={(command) => {
+                    if (command.name === 'raw') setRawMode((current) => !current)
+                  }}
                   onStop={harness.stopTurn}
                 />
                 <ConversationStats
@@ -250,7 +259,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                 />
               </div>
             )}
-          </>
+          </Fragment>
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread()} onWorkspace={() => void harness.chooseWorkspace()} />}
       </main>
       {settingsOpen && (

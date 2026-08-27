@@ -15,6 +15,7 @@ import {
   shouldCollapsePaste,
   type CollapsedPaste,
 } from './composerInput'
+import { parseComposerCommand, type ComposerCommand } from './composerCommands'
 
 interface ComposerProps {
   disabled: boolean
@@ -26,9 +27,11 @@ interface ComposerProps {
   sendShortcut: SendShortcut
   models: CodexModel[]
   settings: ThreadCodexSettings
+  rawMode: boolean
   settingsDisabled?: boolean
   onSettingsChange: (patch: Partial<ThreadCodexSettings>) => Promise<void> | void
   onSend: (input: UserInput[], mode: 'interject' | 'queue') => Promise<void> | void
+  onCommand: (command: ComposerCommand) => Promise<void> | void
   onStop: () => Promise<void> | void
 }
 
@@ -52,7 +55,7 @@ interface ComposerSuggestion {
   detail: string
 }
 
-export function Composer({ disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, models, settings, settingsDisabled, onSettingsChange, onSend, onStop }: ComposerProps) {
+export function Composer({ disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, models, settings, rawMode, settingsDisabled, onSettingsChange, onSend, onCommand, onStop }: ComposerProps) {
   const [text, setText] = useState('')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>([])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
@@ -171,7 +174,9 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
 
   const submit = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return
-    await onSend(inputs, mode)
+    const command = parseComposerCommand(expandedText, attachments.length > 0)
+    if (command) await onCommand(command)
+    else await onSend(inputs, mode)
     setText('')
     setCollapsedPastes([])
     setAttachments([])
@@ -344,6 +349,7 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
             )}
           </div>
           <div className="composer-actions">
+            {rawMode && <span className="composer-raw-mode" title="输入 /raw 返回渲染视图">RAW</span>}
             <div className="model-effort-control">
               <select value={settings.model} disabled={settingsLocked || models.length === 0} onChange={(event) => updateSettings({ model: event.target.value })} aria-label="模型" title={selectedModel?.description ?? '模型'}>
                 {models.map((model) => <option key={model.id} value={model.model}>{model.displayName}</option>)}

@@ -15,6 +15,7 @@
 - 新会话空白区的增强 UI 使用 `newThreadPanels` 插件 slot；插件通过宿主传入的类型化会话设置更新函数修改模型、推理强度、审批 reviewer 和 sandbox，不能自行连接 App Server。
 - Codex Radar 网络请求由 Rust 原生层的固定域名客户端完成并缓存，内置会话启动器插件只能通过 `harness.codexRadar` service 读取整理后的模型指标。
 - 图片使用 App Server 的 `localImage` 输入，普通文件使用结构化路径 mention；附件只保留在输入草稿和 Codex 会话中，不写入 Harness 状态库。
+- 输入框斜杠命令先由 `src/features/conversation/composerCommands.ts` 做精确匹配并在本地执行，不能发送到 App Server；消息中的 HTTP(S) 链接统一经 `src/core/runtime/bridge.ts` 调用系统浏览器打开，不能让 Harness WebView 导航离开应用。
 
 ## 本地状态与安全
 

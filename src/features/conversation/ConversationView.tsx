@@ -1,5 +1,6 @@
-import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
   Archive,
   ArchiveRestore,
@@ -8,6 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
   Command,
+  ExternalLink,
   FileCode2,
   FileText,
   GitBranch,
@@ -21,6 +23,7 @@ import type { ApprovalRequest, Thread, ThreadItemEntry, Workspace } from '../../
 import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
 import { groupTranscriptItems } from './transcript'
+import { runtime } from '../../core/runtime/bridge'
 
 interface ConversationHeaderProps {
   thread: Thread
@@ -60,7 +63,15 @@ export function ConversationHeader({ thread, workspace, archived, onRename, onAr
             }}
           />
         ) : (
-          <button className="thread-title-button" type="button" onClick={() => setEditingTitle(true)} title="重命名会话">
+          <button
+            className="thread-title-button"
+            type="button"
+            onClick={() => {
+              setTitle(threadTitle(thread))
+              setEditingTitle(true)
+            }}
+            title="重命名会话"
+          >
             <h1>{threadTitle(thread)}</h1>
             <Pencil size={15} />
           </button>
@@ -103,9 +114,11 @@ interface ConversationViewProps {
   onLoadOlderTurns: () => void
   onWorkspaceChange: (workspaceRoot: string) => void
   newThreadPanels?: ReactNode
+  rawMode: boolean
+  onRawModeToggle: () => void
 }
 
-export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onWorkspaceChange, newThreadPanels }: ConversationViewProps) {
+export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onWorkspaceChange, newThreadPanels, rawMode, onRawModeToggle }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
 
@@ -124,6 +137,13 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
     <section className="conversation-pane" aria-label="对话内容">
       <div className="conversation-scroll" ref={scrollRef}>
         <div className="message-column">
+          {rawMode && (
+            <div className="raw-mode-banner" role="status">
+              <Terminal size={13} />
+              <span><strong>RAW</strong> 原始 Markdown 文本</span>
+              <button type="button" onClick={onRawModeToggle}>退出</button>
+            </div>
+          )}
           {hasOlderTurns && (
             <button className="load-older-turns" type="button" onClick={onLoadOlderTurns} disabled={loadingOlderTurns}>
               {loadingOlderTurns ? '正在加载更早消息…' : '加载更早消息'}
@@ -153,12 +173,13 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
               {newThreadPanels}
             </div>
           )}
-          {groupTranscriptItems(items).map((row, index) => (
+          {(rawMode ? items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true })) : groupTranscriptItems(items)).map((row, index) => (
             <ThreadItemView
               key={`${row.entry.turnId}:${row.entry.item.id ?? index}`}
               entry={row.entry}
               agentText={row.agentText}
               showAgentLabel={row.showAgentLabel}
+              rawMode={rawMode}
             />
           ))}
           {approvals.map((request) => (
@@ -177,10 +198,12 @@ const ThreadItemView = memo(function ThreadItemView({
   entry,
   agentText,
   showAgentLabel = true,
+  rawMode,
 }: {
   entry: ThreadItemEntry
   agentText?: string
   showAgentLabel?: boolean
+  rawMode: boolean
 }) {
   const { item } = entry
   if (item.type === 'userMessage') {
@@ -204,7 +227,7 @@ const ThreadItemView = memo(function ThreadItemView({
     return (
       <article className="message agent-message">
         {showAgentLabel && <div className="message-label"><Bot size={15} />Codex</div>}
-        <div className="markdown-body"><ReactMarkdown>{agentText ?? item.text ?? ''}</ReactMarkdown></div>
+        <MessageBody text={agentText ?? item.text ?? ''} raw={rawMode} />
       </article>
     )
   }
@@ -212,7 +235,7 @@ const ThreadItemView = memo(function ThreadItemView({
     return (
       <article className="message plan-message">
         <div className="message-label"><Command size={14} />计划</div>
-        <div className="markdown-body"><ReactMarkdown>{item.text ?? ''}</ReactMarkdown></div>
+        <MessageBody text={item.text ?? ''} raw={rawMode} />
       </article>
     )
   }
@@ -222,6 +245,41 @@ const ThreadItemView = memo(function ThreadItemView({
   // Reasoning and internal raw response payloads intentionally do not enter the chat transcript.
   return null
 })
+
+function MessageBody({ text, raw }: { text: string; raw: boolean }) {
+  if (raw) return <pre className="raw-response">{text}</pre>
+  return (
+    <div className="markdown-body">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: MarkdownLink }}>{text}</ReactMarkdown>
+    </div>
+  )
+}
+
+function MarkdownLink({ href, children, ...props }: ComponentPropsWithoutRef<'a'>) {
+  if (!href || !isExternalWebUrl(href)) return <span className="unsupported-link" title={href}>{children}</span>
+  return (
+    <a
+      href={href}
+      {...props}
+      rel="noreferrer"
+      onClick={(event) => {
+        event.preventDefault()
+        void runtime.openExternalUrl(href).catch(() => undefined)
+      }}
+    >
+      {children}<ExternalLink className="external-link-icon" size={11} aria-hidden />
+    </a>
+  )
+}
+
+export function isExternalWebUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 function CommandItem({ item }: { item: ThreadItemEntry['item'] }) {
   const [open, setOpen] = useState(false)
