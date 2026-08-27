@@ -13,6 +13,7 @@
 * { box-sizing: border-box; }
 
 html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body.sidebar-resizing { cursor: col-resize; user-select: none; }
 
 button, input, textarea { font: inherit; }
 button { color: inherit; }
@@ -25,6 +26,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
   --h-conversation-font-offset: 0px;
   --h-settings-font-offset: 0px;
   --h-plugin-font-offset: 0px;
+  position: relative;
   display: flex;
   width: 100%;
   height: 100%;
@@ -36,8 +38,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .app-shell[data-flavor='dev'] { --flavor-glow-primary: 8, 151, 86; --flavor-glow-secondary: 154, 239, 188; }
 
 .sidebar {
+  position: relative;
   display: flex;
-  flex: 0 0 284px;
+  flex: 0 0 var(--sidebar-width, 284px);
+  width: var(--sidebar-width, 284px);
   min-width: 214px;
   height: 100%;
   flex-direction: column;
@@ -46,7 +50,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
   color: #24272e;
   -webkit-backdrop-filter: blur(16px) saturate(1.08);
   backdrop-filter: blur(16px) saturate(1.08);
+  transition: flex-basis .16s ease, width .16s ease;
 }
+.sidebar.resizing { transition: none; }
+.sidebar.sidebar-collapsed { flex: 0 0 0; width: 0; min-width: 0; overflow: hidden; padding: 0; border-right: 0; background: transparent; }
+.app-sidebar-toggle { position: absolute; z-index: 30; top: 50%; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid #d9dde5; border-radius: 50%; background: rgba(255, 255, 255, .96); color: #68717e; box-shadow: 0 3px 10px rgba(31, 39, 52, .13); cursor: pointer; transform: translate(-50%, -50%); transition: border-color .14s ease, background .14s ease, color .14s ease, box-shadow .14s ease, left .16s ease; }
+.app-sidebar-toggle:hover { border-color: #aeb9d7; background: #fff; color: #39404b; box-shadow: 0 4px 13px rgba(31, 39, 52, .18); }
+.sidebar-resize-handle { position: absolute; z-index: 15; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; touch-action: none; }
+.sidebar-resize-handle::after { position: absolute; top: 0; right: 3px; width: 1px; height: 100%; background: #8da0e9; content: ''; opacity: 0; transition: opacity .12s ease; }
+.sidebar-resize-handle:hover::after, .sidebar-resize-handle:focus-visible::after, .sidebar.resizing .sidebar-resize-handle::after { opacity: .75; }
 
 .brand-row { display: flex; align-items: center; height: 64px; padding: 0 17px; gap: 8px; }
 .brand-mark {
@@ -120,7 +132,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .archive-split { display: flex; min-width: 0; }
 .archive-split .archive-toggle { flex: 1; width: auto; border-radius: 7px 0 0 7px; }
 .archive-split .archive-toggle.solo { border-radius: 7px; }
-.archive-old-button { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; height: 32px; padding: 0 8px; border: 0; border-left: 1px solid #e1e4e9; border-radius: 0 7px 7px 0; background: transparent; color: #69717d; cursor: pointer; font-size: 10px; font-weight: 680; }
+.archive-old-button { display: grid; flex: 0 0 32px; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-left: 1px solid #e1e4e9; border-radius: 0 7px 7px 0; background: transparent; color: #69717d; cursor: pointer; }
 .archive-old-button:hover:not(:disabled) { background: #eceef1; color: #303740; }
 .archive-old-button:disabled { cursor: wait; opacity: .65; }
 
@@ -262,7 +274,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .settings-nav nav { display: grid; gap: 4px; margin-top: 28px; }
 .settings-nav nav button { display: flex; align-items: center; gap: 9px; width: 100%; height: 38px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #646b77; text-align: left; cursor: pointer; font-size: calc(15px + var(--h-settings-font-offset)); }
 .settings-nav nav button.selected { background: #e9edff; color: #435ab9; font-weight: 650; }
-.settings-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
+.settings-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; overflow: hidden; }
 .settings-panel-head { z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; padding: 23px 26px 19px; border-bottom: 1px solid #eceef1; background: #fff; }
 .settings-kicker { display: block; margin-bottom: 5px; color: #7584c8; font-size: calc(11px + var(--h-settings-font-offset)); font-weight: 720; letter-spacing: .12em; }
 .settings-dialog h2 { margin: 0; color: #20242c; font-size: calc(22px + var(--h-settings-font-offset)); font-weight: 680; letter-spacing: -.02em; }
@@ -284,6 +296,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .settings-reset-row button { justify-self: end; height: 32px; padding: 0 11px; border: 1px solid #d9dee8; border-radius: 7px; background: #fff; color: #5369c5; cursor: pointer; font-size: calc(13px + var(--h-settings-font-offset)); }
 .settings-reset-row button:hover:not(:disabled) { border-color: #aebcf0; background: #f4f6ff; }
 .settings-reset-row button:disabled { cursor: default; opacity: .45; }
+.settings-versions { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 67px; padding: 11px 26px; border-top: 1px solid #eceef1; background: #fbfcfd; }
+.settings-versions-copy { min-width: 0; }.settings-versions-title { display: block; color: #666e7a; font-size: calc(12px + var(--h-settings-font-offset)); font-weight: 680; }
+.settings-version-list { display: flex; flex-wrap: wrap; gap: 3px 13px; margin: 4px 0 0; }.settings-version-list > div { display: flex; gap: 4px; min-width: 0; }.settings-version-list dt, .settings-version-list dd { margin: 0; font-size: calc(11px + var(--h-settings-font-offset)); }.settings-version-list dt { color: #949aa5; }.settings-version-list dd { overflow: hidden; color: #4a5260; font-family: var(--h-font-mono); text-overflow: ellipsis; white-space: nowrap; }.settings-version-list dd.unavailable { color: #a0a6b0; font-family: var(--h-font-sans); }
+.settings-diagnostics-note { display: block; margin-top: 3px; color: #9aa0aa; font-size: calc(10px + var(--h-settings-font-offset)); }
+.settings-versions-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.settings-open-logs, .settings-versions-refresh { display: grid; place-items: center; height: 29px; padding: 0; border: 1px solid #dfe3e9; border-radius: 7px; background: #fff; color: #6475c3; cursor: pointer; }
+.settings-open-logs { grid-auto-flow: column; gap: 4px; padding: 0 8px; font-size: calc(11px + var(--h-settings-font-offset)); }
+.settings-versions-refresh { width: 29px; }
+.settings-open-logs:hover, .settings-versions-refresh:hover:not(:disabled) { border-color: #b9c5eb; background: #f4f6ff; }
+.settings-versions-refresh:disabled { cursor: wait; opacity: .6; }
 
 .plugin-settings { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 0; overflow: hidden; }
 .plugin-settings-error, .plugin-instance-error { padding: 10px 12px; border: 1px solid #efcccc; border-radius: 7px; background: #fff7f7; color: #a04f4f; font-size: calc(14px + var(--h-plugin-font-offset)); line-height: 1.45; }
@@ -396,6 +418,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 820px) {
-  .sidebar { flex-basis: 216px; }.brand-version, .thread-row time, .thread-path, .connection-state { display: none; }.tab-bar { padding: 0 18px; }.thread-header { padding: 9px 20px 4px; }.message-column, .trajectory-list, .input-column { width: calc(100% - 32px); }.thread-context { max-width: 390px; overflow: hidden; }.user-bubble { max-width: 90%; }
+  .brand-version, .thread-row time, .thread-path, .connection-state { display: none; }.tab-bar { padding: 0 18px; }.thread-header { padding: 9px 20px 4px; }.message-column, .trajectory-list, .input-column { width: calc(100% - 32px); }.thread-context { max-width: 390px; overflow: hidden; }.user-bubble { max-width: 90%; }
   .seatalk-grid { grid-template-columns: 1fr; }.seatalk-page { width: min(100% - 28px, 680px); }.seatalk-message-list { max-height: 360px; }
 }

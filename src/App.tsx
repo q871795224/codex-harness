@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { Bot, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import { DEFAULT_FONT_SIZES } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
@@ -25,6 +25,24 @@ export default function App() {
       sendMessage: runtime.localConnectorSendMessage,
     } satisfies LocalConnectorService,
   }), [agentRuns])
+
+  useEffect(() => {
+    const recordUnhandledError = () => {
+      void runtime.recordClientDiagnostic({
+        level: 'error',
+        area: 'frontend',
+        event: 'unhandled.error',
+        errorCode: 'unhandled_error',
+      }).catch(() => undefined)
+    }
+    window.addEventListener('error', recordUnhandledError)
+    window.addEventListener('unhandledrejection', recordUnhandledError)
+    return () => {
+      window.removeEventListener('error', recordUnhandledError)
+      window.removeEventListener('unhandledrejection', recordUnhandledError)
+    }
+  }, [])
+
   return (
     <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances} services={services}>
       <HarnessShell harness={harness} />
@@ -92,7 +110,10 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
         viewMode={harness.viewMode}
         navigationLayout={harness.navigation.layout}
         threadSort={harness.navigation.sort}
+        workspaceSort={harness.navigation.workspaceSort}
         manualThreadOrder={harness.navigation.manualThreadOrder}
+        sidebarWidth={harness.navigation.sidebarWidth}
+        sidebarCollapsed={harness.navigation.sidebarCollapsed}
         creatingThread={Boolean(harness.busy.createThread)}
         archivingOldThreads={Boolean(harness.busy.archiveOldThreads)}
         onSelectThread={(threadId) => void harness.selectThread(threadId)}
@@ -105,8 +126,15 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
         onViewMode={(mode) => void harness.setViewMode(mode)}
         onNavigationLayout={harness.setNavigationLayout}
         onThreadSort={harness.setThreadSort}
+        onWorkspaceSort={harness.setWorkspaceSort}
         onManualThreadOrder={harness.setManualThreadOrder}
+        onSidebarWidth={harness.setSidebarWidth}
         onOpenSettings={() => setSettingsOpen(true)}
+      />
+      <SidebarEdgeToggle
+        collapsed={harness.navigation.sidebarCollapsed}
+        sidebarWidth={harness.navigation.sidebarWidth}
+        onToggle={() => harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)}
       />
       <main className="main-pane">
         {harness.currentThread ? (
@@ -214,6 +242,29 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
       )}
       {harness.toast && <div className={`toast ${harness.toast.kind}`}>{harness.toast.message}</div>}
     </div>
+  )
+}
+
+function SidebarEdgeToggle({
+  collapsed,
+  sidebarWidth,
+  onToggle,
+}: {
+  collapsed: boolean
+  sidebarWidth: number
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="app-sidebar-toggle"
+      style={{ left: collapsed ? 18 : sidebarWidth }}
+      title={collapsed ? '展开侧边栏' : '收起侧边栏'}
+      aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
+      onClick={onToggle}
+    >
+      {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+    </button>
   )
 }
 

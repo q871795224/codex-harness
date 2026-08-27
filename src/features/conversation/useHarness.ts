@@ -20,8 +20,19 @@ import type {
   ThreadUiState,
   Turn,
   Workspace,
+  WorkspaceSort,
 } from '../../core/domain/codex'
-import { defaultFontSizePreferences, isActive, normalizeFontSize, normalizeFontSizePreferences, textInput, threadsOlderThan } from '../../core/domain/codex'
+import {
+  DEFAULT_SIDEBAR_WIDTH,
+  defaultFontSizePreferences,
+  emptyThreadDetail,
+  isActive,
+  normalizeFontSize,
+  normalizeFontSizePreferences,
+  normalizeSidebarWidth,
+  textInput,
+  threadsOlderThan,
+} from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 
 type ViewMode = 'active' | 'archived'
@@ -33,6 +44,9 @@ const defaultNavigationPreferences: NavigationPreferences = {
   layout: 'workspace',
   sort: 'recent',
   manualThreadOrder: [],
+  workspaceSort: 'stable',
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+  sidebarCollapsed: false,
 }
 
 const defaultAppearancePreferences: AppearancePreferences = {
@@ -89,6 +103,10 @@ function findActiveTurn(turns: Turn[]): string | null {
   return turns.find((turn) => turn.status === 'inProgress')?.id ?? null
 }
 
+function isMissingRollout(error: unknown): boolean {
+  return messageOf(error).toLowerCase().includes('no rollout found')
+}
+
 function upsertItem(items: ThreadItemEntry[], turnId: string, nextItem: ThreadItem): ThreadItemEntry[] {
   const id = typeof nextItem.id === 'string' ? nextItem.id : null
   if (!id) return [...items, { turnId, item: nextItem }]
@@ -124,6 +142,9 @@ function parseNavigationPreferences(raw: string | null): NavigationPreferences {
       manualThreadOrder: Array.isArray(value.manualThreadOrder)
         ? [...new Set(value.manualThreadOrder.filter((id): id is string => typeof id === 'string'))].slice(0, 500)
         : [],
+      workspaceSort: value.workspaceSort === 'recent' ? 'recent' : 'stable',
+      sidebarWidth: normalizeSidebarWidth(value.sidebarWidth),
+      sidebarCollapsed: value.sidebarCollapsed === true,
     }
   } catch {
     return defaultNavigationPreferences
@@ -198,6 +219,7 @@ export function useHarness() {
   const [busy, setBusy] = useState<Record<string, boolean>>({})
 
   const selectedThreadIdRef = useRef<string | null>(null)
+  const threadsRef = useRef<Thread[]>([])
   const pendingRestartRef = useRef<Record<string, PendingSteer[]>>({})
   const locallyStartingRef = useRef(new Set<string>())
   const activeTurnIdsRef = useRef<Record<string, string>>({})
@@ -205,6 +227,7 @@ export function useHarness() {
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
 
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
+  useEffect(() => { threadsRef.current = threads }, [threads])
   useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
   useEffect(() => { ownedActiveThreadsRef.current = ownedActiveThreads }, [ownedActiveThreads])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
@@ -227,6 +250,18 @@ export function useHarness() {
 
   const setThreadSort = useCallback((sort: ThreadSort) => {
     updateNavigation((current) => ({ ...current, sort }))
+  }, [updateNavigation])
+
+  const setWorkspaceSort = useCallback((workspaceSort: WorkspaceSort) => {
+    updateNavigation((current) => ({ ...current, workspaceSort }))
+  }, [updateNavigation])
+
+  const setSidebarWidth = useCallback((sidebarWidth: number) => {
+    updateNavigation((current) => ({ ...current, sidebarWidth: normalizeSidebarWidth(sidebarWidth) }))
+  }, [updateNavigation])
+
+  const setSidebarCollapsed = useCallback((sidebarCollapsed: boolean) => {
+    updateNavigation((current) => ({ ...current, sidebarCollapsed }))
   }, [updateNavigation])
 
   const setManualThreadOrder = useCallback((manualThreadOrder: string[]) => {
@@ -398,6 +433,13 @@ export function useHarness() {
       }
       await loadQueue(threadId)
     } catch (error) {
+      const thread = threadsRef.current.find((item) => item.id === threadId)
+      if (thread?.canAcceptDirectInput && isMissingRollout(error)) {
+        // `thread/start` creates a live, empty thread before its first turn is
+        // materialized as a rollout. It is still safe to compose into it.
+        setDetails((current) => ({ ...current, [threadId]: emptyThreadDetail(thread) }))
+        return
+      }
       notify(`无法恢复会话：${messageOf(error)}`, 'error')
     } finally {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
@@ -458,13 +500,18 @@ export function useHarness() {
       const response = await runtime.request<StartThreadResponse>('thread/start', { cwd: selectedWorkspaceRoot })
       upsertThread(response.thread)
       setThreadRoots((current) => ({ ...current, [response.thread.id]: selectedWorkspaceRoot }))
-      await selectThread(response.thread.id)
+      setSelectedThreadId(response.thread.id)
+      void runtime.setAppState('selectedThreadId', response.thread.id).catch(() => undefined)
+      markThreadRead(response.thread.id)
+      // Do not call `thread/resume` here. A newly started, empty thread has no
+      // persisted rollout yet, and App Server correctly rejects that request.
+      setDetails((current) => ({ ...current, [response.thread.id]: emptyThreadDetail(response.thread) }))
     } catch (error) {
       notify(`无法创建会话：${messageOf(error)}`, 'error')
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [notify, selectThread, selectedWorkspaceRoot, upsertThread])
+  }, [markThreadRead, notify, selectedWorkspaceRoot, upsertThread])
 
   const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
     setActiveTurnIds((current) => ({ ...current, [threadId]: turnId }))
@@ -990,7 +1037,10 @@ export function useHarness() {
     answerApproval,
     setNavigationLayout,
     setThreadSort,
+    setWorkspaceSort,
     setManualThreadOrder,
+    setSidebarWidth,
+    setSidebarCollapsed,
     setFontSize,
     resetFontSizes,
     setSelectedWorkspaceRoot,

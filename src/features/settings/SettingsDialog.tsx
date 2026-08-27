@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Blocks, CircleHelp, Minus, Palette, Plus, Power, Type, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Blocks, CircleHelp, FolderOpen, LoaderCircle, Minus, Palette, Plus, Power, RefreshCw, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
-import type { FontSize, FontSizeArea, FontSizePreferences, Thread, Workspace } from '../../core/domain/codex'
+import type { FontSize, FontSizeArea, FontSizePreferences, RuntimeVersions, Thread, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
+import { runtime } from '../../core/runtime/bridge'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 
 interface SettingsDialogProps {
@@ -26,7 +27,23 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
 
 export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadId, onFontSize, onResetFontSizes, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
+  const [versions, setVersions] = useState<RuntimeVersions | null>(null)
+  const [versionsLoading, setVersionsLoading] = useState(true)
+  const [versionsError, setVersionsError] = useState<string | null>(null)
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const heading = page === 'appearance' ? '外观' : '插件'
+
+  const loadVersions = useCallback(async () => {
+    setVersionsLoading(true)
+    setVersionsError(null)
+    try {
+      setVersions(await runtime.getRuntimeVersions())
+    } catch (error) {
+      setVersionsError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setVersionsLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -35,6 +52,19 @@ export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadI
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
+
+  useEffect(() => {
+    void loadVersions()
+  }, [loadVersions])
+
+  const openDiagnostics = useCallback(async () => {
+    setDiagnosticsError(null)
+    try {
+      await runtime.openDiagnosticsDirectory()
+    } catch (error) {
+      setDiagnosticsError(error instanceof Error ? error.message : String(error))
+    }
+  }, [])
 
   return (
     <div className="settings-backdrop" role="presentation" onMouseDown={onClose}>
@@ -68,9 +98,76 @@ export function SettingsDialog({ fontSizes, workspaces, threads, selectedThreadI
           ) : (
             <PluginSettings workspaces={workspaces} threads={threads} selectedThreadId={selectedThreadId} />
           )}
+          <SettingsVersions
+            versions={versions}
+            loading={versionsLoading}
+            error={versionsError}
+            onRefresh={() => void loadVersions()}
+            diagnosticsError={diagnosticsError}
+            onOpenDiagnostics={() => void openDiagnostics()}
+          />
         </div>
       </section>
     </div>
+  )
+}
+
+function SettingsVersions({
+  versions,
+  loading,
+  error,
+  onRefresh,
+  diagnosticsError,
+  onOpenDiagnostics,
+}: {
+  versions: RuntimeVersions | null
+  loading: boolean
+  error: string | null
+  onRefresh: () => void
+  diagnosticsError: string | null
+  onOpenDiagnostics: () => void
+}) {
+  const entries = [
+    ['Harness', versions?.harness ?? null],
+    ['App Server', versions?.appServer ?? null],
+    ['Codex CLI', versions?.codexCli ?? null],
+  ] as const
+
+  return (
+    <footer className="settings-versions" aria-label="版本信息">
+      <div className="settings-versions-copy">
+        <span className="settings-versions-title">版本信息</span>
+        <dl className="settings-version-list" title={error ?? undefined}>
+          {entries.map(([label, version]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd className={version ? undefined : 'unavailable'}>{version ? `v${version}` : loading ? '读取中…' : '未检测到'}</dd>
+            </div>
+          ))}
+        </dl>
+        <span className="settings-diagnostics-note">诊断日志不记录对话正文或凭证</span>
+      </div>
+      <div className="settings-versions-actions">
+        <button
+          className="settings-open-logs"
+          type="button"
+          title={diagnosticsError ? `无法打开日志目录：${diagnosticsError}` : '打开诊断日志目录'}
+          onClick={onOpenDiagnostics}
+        >
+          <FolderOpen size={15} />日志
+        </button>
+        <button
+          className="settings-versions-refresh"
+          type="button"
+          title={error ? `重新读取版本：${error}` : '重新读取版本'}
+          aria-label="重新读取版本"
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          {loading ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}
+        </button>
+      </div>
+    </footer>
   )
 }
 

@@ -1,7 +1,16 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { textInput, type AppServerEvent, type JsonObject, type Thread, type ThreadUiState, type Turn, type Workspace } from '../domain/codex'
+import {
+  textInput,
+  type AppServerEvent,
+  type JsonObject,
+  type RuntimeVersions,
+  type Thread,
+  type ThreadUiState,
+  type Turn,
+  type Workspace,
+} from '../domain/codex'
 import type { AgentRun, ThreadInspection } from '../agent-runs/types'
 import type { LocalConnectorHealth, LocalConnectorMessage, LocalConnectorSendInput } from '../local-connectors/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
@@ -17,13 +26,68 @@ interface PluginInstanceDto {
   updatedAt: number
 }
 
+type DiagnosticErrorCode =
+  | 'no_rollout_found'
+  | 'timeout'
+  | 'connection_failed'
+  | 'permission_denied'
+  | 'request_failed'
+  | 'unhandled_error'
+
+interface ClientDiagnostic {
+  level: 'error' | 'info'
+  area: string
+  event: string
+  method?: string
+  threadId?: string
+  errorCode?: DiagnosticErrorCode
+  durationMs?: number
+}
+
+function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  if (normalized.includes('no rollout found')) return 'no_rollout_found'
+  if (normalized.includes('timeout') || message.includes('超时')) return 'timeout'
+  if (normalized.includes('connection') || message.includes('连接') || normalized.includes('socket')) return 'connection_failed'
+  if (normalized.includes('permission') || message.includes('权限')) return 'permission_denied'
+  return 'request_failed'
+}
+
 export const runtime = {
-  request<T>(method: string, params: JsonObject = {}): Promise<T> {
-    return invoke<T>('app_server_request', { method, params })
+  async request<T>(method: string, params: JsonObject = {}): Promise<T> {
+    const started = performance.now()
+    try {
+      return await invoke<T>('app_server_request', { method, params })
+    } catch (error) {
+      void invoke<void>('record_client_diagnostic', {
+        diagnostic: {
+          level: 'error',
+          area: 'frontend',
+          event: 'app-server-request.failed',
+          method,
+          errorCode: diagnosticErrorCode(error),
+          durationMs: Math.round(performance.now() - started),
+        } satisfies ClientDiagnostic,
+      }).catch(() => undefined)
+      throw error
+    }
   },
 
   respond(id: string | number, result: JsonObject): Promise<void> {
     return invoke<void>('app_server_respond', { id, result })
+  },
+
+  getRuntimeVersions(): Promise<RuntimeVersions> {
+    return invoke<RuntimeVersions>('runtime_versions')
+  },
+
+  recordClientDiagnostic(diagnostic: ClientDiagnostic): Promise<void> {
+    return invoke<void>('record_client_diagnostic', { diagnostic })
+  },
+
+  openDiagnosticsDirectory(): Promise<void> {
+    return invoke<void>('open_diagnostics_directory')
   },
 
   listWorkspaces(): Promise<Workspace[]> {

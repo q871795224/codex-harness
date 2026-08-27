@@ -578,7 +578,7 @@ fn plugin_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginRun> {
     })
 }
 
-fn harness_data_dir() -> Result<PathBuf, String> {
+pub(crate) fn harness_data_dir() -> Result<PathBuf, String> {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| "找不到当前用户的 HOME 目录".to_string())?;

@@ -1,16 +1,17 @@
+use crate::diagnostics::{error_code, DiagnosticLog};
 use futures_util::{SinkExt, StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     env,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter};
 use tokio::{
@@ -25,6 +26,18 @@ use tokio_tungstenite::{client_async, tungstenite::Message};
 struct DaemonInfo {
     status: String,
     socket_path: Option<String>,
+    #[serde(default)]
+    app_server_version: Option<String>,
+    #[serde(default)]
+    managed_codex_version: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeVersions {
+    pub harness: String,
+    pub app_server: Option<String>,
+    pub codex_cli: Option<String>,
 }
 
 #[derive(Clone)]
@@ -36,22 +49,53 @@ struct Connection {
 
 pub struct AppServerManager {
     app: AppHandle,
+    diagnostics: Arc<DiagnosticLog>,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
 }
 
 impl AppServerManager {
-    pub fn new(app: AppHandle) -> Self {
+    pub fn new(app: AppHandle, diagnostics: Arc<DiagnosticLog>) -> Self {
         Self {
             app,
+            diagnostics,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
         }
     }
 
     pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
-        let connection = self.connection().await?;
-        self.send_request(&connection, method, params).await
+        let started = Instant::now();
+        self.diagnostics.record(
+            "info",
+            "app-server",
+            "request.started",
+            json!({ "method": &method }),
+        );
+        let result = match self.connection().await {
+            Ok(connection) => self.send_request(&connection, method.clone(), params).await,
+            Err(error) => Err(error),
+        };
+        let duration_ms = started.elapsed().as_millis() as u64;
+        match &result {
+            Ok(_) => self.diagnostics.record(
+                "info",
+                "app-server",
+                "request.completed",
+                json!({ "method": method, "durationMs": duration_ms }),
+            ),
+            Err(error) => self.diagnostics.record(
+                "error",
+                "app-server",
+                "request.failed",
+                json!({
+                    "method": method,
+                    "durationMs": duration_ms,
+                    "errorCode": error_code(error),
+                }),
+            ),
+        }
+        result
     }
 
     pub async fn respond(&self, id: Value, result: Value) -> Result<(), String> {
@@ -68,13 +112,46 @@ impl AppServerManager {
             }
         }
 
-        let socket_path = ensure_daemon()?;
-        let stream = UnixStream::connect(&socket_path)
-            .await
-            .map_err(|error| format!("无法连接 Codex App Server ({socket_path}): {error}"))?;
-        let (socket, _) = client_async("ws://localhost/", stream)
-            .await
-            .map_err(|error| format!("无法建立 Codex App Server WebSocket 连接: {error}"))?;
+        self.diagnostics
+            .record("info", "app-server", "connection.opening", json!({}));
+        let socket_path = match ensure_daemon() {
+            Ok(socket_path) => socket_path,
+            Err(error) => {
+                self.diagnostics.record(
+                    "error",
+                    "app-server",
+                    "connection.failed",
+                    json!({ "errorCode": error_code(&error) }),
+                );
+                return Err(error);
+            }
+        };
+        let stream = match UnixStream::connect(&socket_path).await {
+            Ok(stream) => stream,
+            Err(error) => {
+                let error = format!("无法连接 Codex App Server ({socket_path}): {error}");
+                self.diagnostics.record(
+                    "error",
+                    "app-server",
+                    "connection.failed",
+                    json!({ "errorCode": error_code(&error) }),
+                );
+                return Err(error);
+            }
+        };
+        let (socket, _) = match client_async("ws://localhost/", stream).await {
+            Ok(socket) => socket,
+            Err(error) => {
+                let error = format!("无法建立 Codex App Server WebSocket 连接: {error}");
+                self.diagnostics.record(
+                    "error",
+                    "app-server",
+                    "connection.failed",
+                    json!({ "errorCode": error_code(&error) }),
+                );
+                return Err(error);
+            }
+        };
         let connection = self.attach(socket);
 
         let initialize = json!({
@@ -93,6 +170,8 @@ impl AppServerManager {
         self.send_frame(&connection, json!({ "method": "initialized" }))
             .await?;
         *guard = Some(connection.clone());
+        self.diagnostics
+            .record("info", "app-server", "connection.opened", json!({}));
         Ok(connection)
     }
 
@@ -108,11 +187,19 @@ impl AppServerManager {
         let writer_alive = alive.clone();
         let reader_alive = alive.clone();
         let app = self.app.clone();
+        let writer_diagnostics = self.diagnostics.clone();
+        let reader_diagnostics = self.diagnostics.clone();
 
         tauri::async_runtime::spawn(async move {
             while let Some(frame) = outbound.recv().await {
                 if writer.send(Message::Text(frame.into())).await.is_err() {
                     writer_alive.store(false, Ordering::Relaxed);
+                    writer_diagnostics.record(
+                        "error",
+                        "app-server",
+                        "connection.writer_closed",
+                        json!({ "errorCode": "connection_failed" }),
+                    );
                     break;
                 }
             }
@@ -140,10 +227,28 @@ impl AppServerManager {
                                     let _ = sender.send(response);
                                 }
                             } else {
+                                let method = payload.get("method").and_then(Value::as_str);
+                                let thread_id = payload
+                                    .get("params")
+                                    .and_then(Value::as_object)
+                                    .and_then(|params| params.get("threadId"))
+                                    .and_then(Value::as_str);
+                                reader_diagnostics.record(
+                                    "info",
+                                    "app-server",
+                                    "notification.received",
+                                    json!({ "method": method, "threadId": thread_id }),
+                                );
                                 let _ = app.emit("app-server:event", payload);
                             }
                         }
                         Err(error) => {
+                            reader_diagnostics.record(
+                                "error",
+                                "app-server",
+                                "notification.invalid",
+                                json!({ "errorCode": error_code(&error.to_string()) }),
+                            );
                             let _ = app.emit(
                                 "app-server:transport",
                                 json!({
@@ -156,6 +261,12 @@ impl AppServerManager {
                     Ok(Message::Close(_)) => break,
                     Ok(_) => {}
                     Err(error) => {
+                        reader_diagnostics.record(
+                            "error",
+                            "app-server",
+                            "connection.disconnected",
+                            json!({ "errorCode": error_code(&error.to_string()) }),
+                        );
                         let _ = app.emit(
                             "app-server:transport",
                             json!({
@@ -169,6 +280,12 @@ impl AppServerManager {
             }
 
             reader_alive.store(false, Ordering::Relaxed);
+            reader_diagnostics.record(
+                "info",
+                "app-server",
+                "connection.closed",
+                json!({}),
+            );
             let mut waiters = reader_pending.lock().await;
             for (_, sender) in waiters.drain() {
                 let _ = sender.send(Err("Codex App Server 连接已关闭。请重试。".to_string()));
@@ -256,7 +373,23 @@ fn ensure_daemon() -> Result<String, String> {
     Err("Codex App Server 启动后没有暴露可用的本地 socket。".to_string())
 }
 
-fn daemon_info(codex: &PathBuf) -> Result<DaemonInfo, String> {
+pub fn runtime_versions() -> RuntimeVersions {
+    let codex = find_codex_binary().ok();
+    let app_server = codex.as_ref().and_then(|path| {
+        daemon_info(path)
+            .ok()
+            .and_then(|info| info.app_server_version.or(info.managed_codex_version))
+    });
+    let codex_cli = codex.as_ref().and_then(|path| cli_version(path).ok());
+
+    RuntimeVersions {
+        harness: env!("CARGO_PKG_VERSION").to_owned(),
+        app_server,
+        codex_cli,
+    }
+}
+
+fn daemon_info(codex: &Path) -> Result<DaemonInfo, String> {
     let output = Command::new(codex)
         .args(["app-server", "daemon", "version"])
         .output()
@@ -266,6 +399,22 @@ fn daemon_info(codex: &PathBuf) -> Result<DaemonInfo, String> {
     }
     serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("Codex App Server 返回了无效状态: {error}"))
+}
+
+fn cli_version(codex: &Path) -> Result<String, String> {
+    let output = Command::new(codex)
+        .arg("--version")
+        .output()
+        .map_err(|error| format!("无法读取 Codex CLI 版本: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    parse_cli_version(&String::from_utf8_lossy(&output.stdout))
+        .ok_or_else(|| "Codex CLI 未返回版本号。".to_string())
+}
+
+fn parse_cli_version(output: &str) -> Option<String> {
+    output.split_whitespace().last().map(ToOwned::to_owned)
 }
 
 fn find_codex_binary() -> Result<PathBuf, String> {
@@ -306,4 +455,30 @@ fn describe_error(error: &Value) -> String {
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_app_server_version_from_daemon_status() {
+        let info: DaemonInfo = serde_json::from_str(r#"{
+          "status": "running",
+          "socketPath": "/tmp/codex.sock",
+          "managedCodexVersion": "0.149.0",
+          "appServerVersion": "0.150.1"
+        }"#).expect("parses daemon response");
+
+        assert_eq!(info.status, "running");
+        assert_eq!(info.socket_path.as_deref(), Some("/tmp/codex.sock"));
+        assert_eq!(info.app_server_version.as_deref(), Some("0.150.1"));
+        assert_eq!(info.managed_codex_version.as_deref(), Some("0.149.0"));
+    }
+
+    #[test]
+    fn extracts_the_cli_version_from_its_standard_output() {
+        assert_eq!(parse_cli_version("codex-cli 0.150.1\n"), Some("0.150.1".to_string()));
+        assert_eq!(parse_cli_version("\n"), None);
+    }
 }

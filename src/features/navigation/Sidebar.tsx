@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import {
   Archive,
   ArchiveRestore,
@@ -7,6 +15,7 @@ import {
   ChevronsDown,
   ChevronsUp,
   CirclePlus,
+  Clock3,
   FolderGit2,
   GripVertical,
   LayoutList,
@@ -25,7 +34,9 @@ import type {
   ThreadSort,
   ThreadUiState,
   Workspace,
+  WorkspaceSort,
 } from '../../core/domain/codex'
+import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sortWorkspacesByRecentThread } from '../../core/domain/codex'
 import { relativeTime, truncate } from '../../core/domain/format'
 import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
 import harnessIcon from '../../../icon/codex-harness.svg'
@@ -39,7 +50,10 @@ interface SidebarProps {
   viewMode: 'active' | 'archived'
   navigationLayout: NavigationLayout
   threadSort: ThreadSort
+  workspaceSort: WorkspaceSort
   manualThreadOrder: string[]
+  sidebarWidth: number
+  sidebarCollapsed: boolean
   creatingThread: boolean
   archivingOldThreads: boolean
   onSelectThread: (threadId: string) => void
@@ -52,7 +66,9 @@ interface SidebarProps {
   onViewMode: (mode: 'active' | 'archived') => void
   onNavigationLayout: (layout: NavigationLayout) => void
   onThreadSort: (sort: ThreadSort) => void
+  onWorkspaceSort: (sort: WorkspaceSort) => void
   onManualThreadOrder: (order: string[]) => void
+  onSidebarWidth: (width: number) => void
   onOpenSettings: () => void
 }
 
@@ -65,7 +81,10 @@ export function Sidebar({
   viewMode,
   navigationLayout,
   threadSort,
+  workspaceSort,
   manualThreadOrder,
+  sidebarWidth,
+  sidebarCollapsed,
   creatingThread,
   archivingOldThreads,
   onSelectThread,
@@ -78,7 +97,9 @@ export function Sidebar({
   onViewMode,
   onNavigationLayout,
   onThreadSort,
+  onWorkspaceSort,
   onManualThreadOrder,
+  onSidebarWidth,
   onOpenSettings,
 }: SidebarProps) {
   const isDevelopmentFlavor = import.meta.env.MODE === 'dev'
@@ -87,8 +108,12 @@ export function Sidebar({
   const [highlightedWorkspaceRoot, setHighlightedWorkspaceRoot] = useState<string | null>(null)
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
   const [optionsOpen, setOptionsOpen] = useState(false)
+  const [resizing, setResizing] = useState(false)
+  const [previewWidth, setPreviewWidth] = useState<number | null>(null)
   const onSearchRef = useRef(onSearch)
   const searchStarted = useRef(false)
+  const resizeStart = useRef<{ clientX: number; width: number } | null>(null)
+  const resizedWidth = useRef<number | null>(null)
 
   useEffect(() => {
     onSearchRef.current = onSearch
@@ -114,28 +139,94 @@ export function Sidebar({
     return () => window.removeEventListener('pointerdown', clearWorkspaceHighlight)
   }, [])
 
+  useEffect(() => {
+    if (!resizing) return undefined
+
+    const resize = (event: PointerEvent) => {
+      const start = resizeStart.current
+      if (!start) return
+      const width = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, start.width + event.clientX - start.clientX))
+      resizedWidth.current = width
+      setPreviewWidth(width)
+    }
+    const finishResize = () => {
+      const width = resizedWidth.current
+      resizeStart.current = null
+      resizedWidth.current = null
+      setPreviewWidth(null)
+      setResizing(false)
+      if (width !== null) onSidebarWidth(width)
+    }
+
+    document.body.classList.add('sidebar-resizing')
+    window.addEventListener('pointermove', resize)
+    window.addEventListener('pointerup', finishResize)
+    window.addEventListener('pointercancel', finishResize)
+    return () => {
+      document.body.classList.remove('sidebar-resizing')
+      window.removeEventListener('pointermove', resize)
+      window.removeEventListener('pointerup', finishResize)
+      window.removeEventListener('pointercancel', finishResize)
+    }
+  }, [onSidebarWidth, resizing])
+
   const orderedThreads = useMemo(
     () => sortThreads(threads, threadSort, manualThreadOrder),
     [manualThreadOrder, threadSort, threads],
   )
 
+  const orderedWorkspaces = useMemo(
+    () => workspaceSort === 'recent'
+      ? sortWorkspacesByRecentThread(workspaces, threads, threadRoots)
+      : workspaces,
+    [threadRoots, threads, workspaceSort, workspaces],
+  )
+
   const grouped = useMemo(() => {
     const byRoot = new Map<string, Thread[]>()
     const unsorted: Thread[] = []
-    const roots = new Set(workspaces.map((workspace) => workspace.root))
+    const roots = new Set(orderedWorkspaces.map((workspace) => workspace.root))
     for (const thread of orderedThreads) {
       const root = threadRoots[thread.id]
       if (root && roots.has(root)) byRoot.set(root, [...(byRoot.get(root) ?? []), thread])
       else unsorted.push(thread)
     }
     return { byRoot, unsorted }
-  }, [orderedThreads, threadRoots, workspaces])
+  }, [orderedThreads, orderedWorkspaces, threadRoots])
 
-  const allWorkspacesExpanded = workspaces.length > 0 && workspaces.every((workspace) => expanded[workspace.root] ?? true)
+  const allWorkspacesExpanded = orderedWorkspaces.length > 0 && orderedWorkspaces.every((workspace) => expanded[workspace.root] ?? true)
 
   const toggleAllWorkspaces = () => {
     const nextValue = !allWorkspacesExpanded
-    setExpanded(Object.fromEntries(workspaces.map((workspace) => [workspace.root, nextValue])))
+    setExpanded(Object.fromEntries(orderedWorkspaces.map((workspace) => [workspace.root, nextValue])))
+  }
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    resizeStart.current = { clientX: event.clientX, width: sidebarWidth }
+    resizedWidth.current = sidebarWidth
+    setPreviewWidth(sidebarWidth)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setResizing(true)
+  }
+
+  const displayedSidebarWidth = previewWidth ?? sidebarWidth
+
+  const resizeWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 32 : 16
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      onSidebarWidth(sidebarWidth - step)
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      onSidebarWidth(sidebarWidth + step)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      onSidebarWidth(MIN_SIDEBAR_WIDTH)
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      onSidebarWidth(MAX_SIDEBAR_WIDTH)
+    }
   }
 
   const reorderThread = (draggedThreadId: string, targetThreadId: string) => {
@@ -169,8 +260,16 @@ export function Sidebar({
     />
   )
 
+  if (sidebarCollapsed) {
+    return <aside className="sidebar sidebar-collapsed" aria-label="已收起的工作区与会话" />
+  }
+
   return (
-    <aside className="sidebar" aria-label="工作区与会话">
+    <aside
+      className={`sidebar ${resizing ? 'resizing' : ''}`}
+      aria-label="工作区与会话"
+      style={{ '--sidebar-width': `${displayedSidebarWidth}px` } as CSSProperties}
+    >
       <div className="brand-row">
         <img className="brand-mark" src={isDevelopmentFlavor ? harnessDevIcon : harnessIcon} alt="" />
         <span className="brand-name">codex <strong>HARNESS</strong></span>
@@ -195,9 +294,9 @@ export function Sidebar({
 
       <div className="sidebar-scroll">
         <div className="sidebar-section-heading">
-          <span>{navigationLayout === 'workspace' ? '工作区' : '会话'}</span>
+          <span>{navigationLayout === 'workspace' ? workspaceSort === 'recent' ? '最近工作区' : '工作区' : '会话'}</span>
           <div className="heading-actions">
-            {navigationLayout === 'workspace' && workspaces.length > 0 && (
+            {navigationLayout === 'workspace' && orderedWorkspaces.length > 0 && (
               <button
                 type="button"
                 title={allWorkspacesExpanded ? '折叠全部工作区' : '展开全部工作区'}
@@ -221,7 +320,19 @@ export function Sidebar({
                 <button type="button" className={navigationLayout === 'list' ? 'selected' : ''} onClick={() => { onNavigationLayout('list'); setOptionsOpen(false) }}>
                   <LayoutList size={15} />单列表
                 </button>
-                <p>排序</p>
+                {navigationLayout === 'workspace' && (
+                  <>
+                    <p>工作区</p>
+                    <button type="button" className={workspaceSort === 'stable' ? 'selected' : ''} onClick={() => { onWorkspaceSort('stable'); setOptionsOpen(false) }}>
+                      <ListTree size={15} />固定顺序
+                    </button>
+                    <button type="button" className={workspaceSort === 'recent' ? 'selected' : ''} onClick={() => { onWorkspaceSort('recent'); setOptionsOpen(false) }}>
+                      <Clock3 size={15} />最近会话
+                    </button>
+                    {workspaceSort === 'recent' && <small>按每个工作区最新会话的时间排列。</small>}
+                  </>
+                )}
+                <p>会话排序</p>
                 <button type="button" className={threadSort === 'recent' ? 'selected' : ''} onClick={() => { onThreadSort('recent'); setOptionsOpen(false) }}>
                   最近更新
                 </button>
@@ -253,7 +364,7 @@ export function Sidebar({
           </section>
         ) : (
           <>
-            {workspaces.map((workspace) => {
+            {orderedWorkspaces.map((workspace) => {
               const isExpanded = expanded[workspace.root] ?? true
               const workspaceThreads = grouped.byRoot.get(workspace.root) ?? []
               return (
@@ -307,12 +418,12 @@ export function Sidebar({
             <button
               type="button"
               className="archive-old-button"
-              title="一键归档 3 天前的所有会话"
-              aria-label="一键归档 3 天前的所有会话"
+              title="归档 3 天前会话"
+              aria-label="归档 3 天前会话"
               onClick={onArchiveOldThreads}
               disabled={archivingOldThreads}
             >
-              {archivingOldThreads ? <LoaderCircle className="spin" size={15} /> : <><Archive size={15} /><span>3 天+</span></>}
+              {archivingOldThreads ? <LoaderCircle className="spin" size={15} /> : <Archive size={15} />}
             </button>
           )}
         </div>
@@ -321,6 +432,18 @@ export function Sidebar({
           设置
         </button>
       </div>
+      <div
+        className="sidebar-resize-handle"
+        role="separator"
+        aria-label="调整侧边栏宽度"
+        aria-orientation="vertical"
+        aria-valuemin={MIN_SIDEBAR_WIDTH}
+        aria-valuemax={MAX_SIDEBAR_WIDTH}
+        aria-valuenow={displayedSidebarWidth}
+        tabIndex={0}
+        onPointerDown={startResize}
+        onKeyDown={resizeWithKeyboard}
+      />
     </aside>
   )
 }

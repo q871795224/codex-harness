@@ -9,11 +9,24 @@ export interface Workspace {
 
 export type NavigationLayout = 'workspace' | 'list'
 export type ThreadSort = 'recent' | 'manual'
+export type WorkspaceSort = 'stable' | 'recent'
 
 export interface NavigationPreferences {
   layout: NavigationLayout
   sort: ThreadSort
   manualThreadOrder: string[]
+  workspaceSort: WorkspaceSort
+  sidebarWidth: number
+  sidebarCollapsed: boolean
+}
+
+export const MIN_SIDEBAR_WIDTH = 214
+export const DEFAULT_SIDEBAR_WIDTH = 284
+export const MAX_SIDEBAR_WIDTH = 480
+
+export function normalizeSidebarWidth(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_SIDEBAR_WIDTH
+  return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(value)))
 }
 
 export const MIN_FONT_SIZE = 13
@@ -96,6 +109,12 @@ export interface Thread {
   turns?: Turn[]
 }
 
+export interface RuntimeVersions {
+  harness: string
+  appServer: string | null
+  codexCli: string | null
+}
+
 export interface Turn {
   id: string
   items: ThreadItem[]
@@ -161,6 +180,17 @@ export interface ThreadDetail {
   foreignActive: boolean
 }
 
+export function emptyThreadDetail(thread: Thread): ThreadDetail {
+  return {
+    thread,
+    turns: [],
+    items: [],
+    nextTurnsCursor: null,
+    activeTurnId: null,
+    foreignActive: false,
+  }
+}
+
 export type Badge = 'working' | 'approval' | 'success' | 'error' | null
 
 export interface ThreadUiState {
@@ -221,4 +251,28 @@ export function isActive(status: ThreadStatus): boolean {
 
 export function threadsOlderThan(threads: Thread[], cutoff: number): Thread[] {
   return threads.filter((thread) => (thread.recencyAt ?? thread.updatedAt) < cutoff)
+}
+
+export function sortWorkspacesByRecentThread(
+  workspaces: Workspace[],
+  threads: Thread[],
+  threadRoots: Record<string, string | null>,
+): Workspace[] {
+  const workspaceRoots = new Set(workspaces.map((workspace) => workspace.root))
+  const latestByRoot = new Map<string, number>()
+  const stableIndex = new Map(workspaces.map((workspace, index) => [workspace.root, index]))
+
+  for (const thread of threads) {
+    const root = threadRoots[thread.id]
+    if (!root || !workspaceRoots.has(root)) continue
+    const recency = thread.recencyAt ?? thread.updatedAt
+    if (recency > (latestByRoot.get(root) ?? Number.NEGATIVE_INFINITY)) latestByRoot.set(root, recency)
+  }
+
+  return [...workspaces].sort((left, right) => {
+    const leftRecency = latestByRoot.get(left.root) ?? Number.NEGATIVE_INFINITY
+    const rightRecency = latestByRoot.get(right.root) ?? Number.NEGATIVE_INFINITY
+    if (leftRecency !== rightRecency) return rightRecency - leftRecency
+    return (stableIndex.get(left.root) ?? 0) - (stableIndex.get(right.root) ?? 0)
+  })
 }

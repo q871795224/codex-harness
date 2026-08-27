@@ -4,15 +4,19 @@ import {
   DEFAULT_FONT_SIZES,
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
+  emptyThreadDetail,
   isActive,
   itemText,
   normalizeFontSize,
   normalizeFontSizePreferences,
+  normalizeSidebarWidth,
   queueText,
+  sortWorkspacesByRecentThread,
   textInput,
   threadTitle,
   threadsOlderThan,
   type Thread,
+  type Workspace,
 } from './codex'
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
@@ -31,6 +35,15 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
   }
 }
 
+function makeWorkspace(root: string): Workspace {
+  return {
+    root,
+    name: root.split('/').at(-1) ?? root,
+    createdAt: 0,
+    lastOpenedAt: 0,
+  }
+}
+
 describe('threadTitle', () => {
   it('prefers a non-empty user supplied name', () => {
     expect(threadTitle(makeThread({ name: '  修复登录问题  ' }))).toBe('修复登录问题')
@@ -39,6 +52,20 @@ describe('threadTitle', () => {
   it('falls back to preview and then the new-thread label', () => {
     expect(threadTitle(makeThread({ name: ' ', preview: '首次请求' }))).toBe('首次请求')
     expect(threadTitle(makeThread({ name: null, preview: '  ' }))).toBe('新会话')
+  })
+})
+
+describe('emptyThreadDetail', () => {
+  it('creates a usable blank detail for a just-started thread', () => {
+    const thread = makeThread({ id: 'new-thread', status: { type: 'idle' } })
+    expect(emptyThreadDetail(thread)).toEqual({
+      thread,
+      turns: [],
+      items: [],
+      nextTurnsCursor: null,
+      activeTurnId: null,
+      foreignActive: false,
+    })
   })
 })
 
@@ -54,6 +81,15 @@ describe('normalizeFontSize', () => {
     expect(normalizeFontSize('standard')).toBe(DEFAULT_FONT_SIZE)
     expect(normalizeFontSize('large')).toBe(16)
     expect(normalizeFontSize('unexpected')).toBe(DEFAULT_FONT_SIZE)
+  })
+})
+
+describe('normalizeSidebarWidth', () => {
+  it('uses the default for invalid values and clamps valid widths', () => {
+    expect(normalizeSidebarWidth(undefined)).toBe(284)
+    expect(normalizeSidebarWidth(120)).toBe(214)
+    expect(normalizeSidebarWidth(500)).toBe(480)
+    expect(normalizeSidebarWidth(284.7)).toBe(285)
   })
 })
 
@@ -105,5 +141,39 @@ describe('threadsOlderThan', () => {
 
     expect(threadsOlderThan([oldByRecency, oldByUpdate, atCutoff], cutoff).map((thread) => thread.id))
       .toEqual(['old-by-recency', 'old-by-update'])
+  })
+})
+
+describe('sortWorkspacesByRecentThread', () => {
+  it('orders a recent-workspace view by each workspace’s newest session', () => {
+    const alpha = makeWorkspace('/work/alpha')
+    const beta = makeWorkspace('/work/beta')
+    const gamma = makeWorkspace('/work/gamma')
+    const threads = [
+      makeThread({ id: 'alpha-old', updatedAt: 10, recencyAt: 10 }),
+      makeThread({ id: 'alpha-new', updatedAt: 30, recencyAt: 30 }),
+      makeThread({ id: 'beta', updatedAt: 20, recencyAt: null }),
+    ]
+
+    expect(sortWorkspacesByRecentThread(
+      [alpha, beta, gamma],
+      threads,
+      { 'alpha-old': alpha.root, 'alpha-new': alpha.root, beta: beta.root },
+    ).map((workspace) => workspace.root)).toEqual([alpha.root, beta.root, gamma.root])
+  })
+
+  it('keeps the saved workspace order when recency is tied or unavailable', () => {
+    const alpha = makeWorkspace('/work/alpha')
+    const beta = makeWorkspace('/work/beta')
+    const threads = [
+      makeThread({ id: 'alpha', updatedAt: 20, recencyAt: null }),
+      makeThread({ id: 'beta', updatedAt: 20, recencyAt: 20 }),
+    ]
+
+    expect(sortWorkspacesByRecentThread(
+      [beta, alpha],
+      threads,
+      { alpha: alpha.root, beta: beta.root },
+    ).map((workspace) => workspace.root)).toEqual([beta.root, alpha.root])
   })
 })

@@ -1,13 +1,16 @@
 mod app_server;
+mod diagnostics;
 mod git_workspace;
 mod local_connector;
 mod store;
 
 use app_server::AppServerManager;
+use diagnostics::DiagnosticLog;
 use local_connector::{
     ConnectorHealth, ConnectorMessage, LocalConnector, SendMessageInput, SendMessageResult,
 };
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -20,9 +23,22 @@ use tauri::{Manager, State};
 
 struct AppState {
     app_server: Arc<AppServerManager>,
+    diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
     store: HarnessStore,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClientDiagnostic {
+    level: String,
+    area: String,
+    event: String,
+    method: Option<String>,
+    thread_id: Option<String>,
+    error_code: Option<String>,
+    duration_ms: Option<u64>,
 }
 
 #[tauri::command]
@@ -67,6 +83,45 @@ async fn app_server_respond(
     result: Value,
 ) -> Result<(), String> {
     state.app_server.respond(id, result).await
+}
+
+#[tauri::command]
+fn record_client_diagnostic(
+    state: State<'_, AppState>,
+    diagnostic: ClientDiagnostic,
+) {
+    let error_code = diagnostic.error_code.filter(|value| {
+        matches!(
+            value.as_str(),
+            "no_rollout_found"
+                | "timeout"
+                | "connection_failed"
+                | "permission_denied"
+                | "request_failed"
+                | "unhandled_error"
+        )
+    });
+    state.diagnostics.record(
+        &diagnostic.level,
+        &diagnostic.area,
+        &diagnostic.event,
+        json!({
+            "method": diagnostic.method,
+            "threadId": diagnostic.thread_id,
+            "errorCode": error_code,
+            "durationMs": diagnostic.duration_ms,
+        }),
+    );
+}
+
+#[tauri::command]
+fn open_diagnostics_directory(state: State<'_, AppState>) -> Result<(), String> {
+    state.diagnostics.reveal()
+}
+
+#[tauri::command]
+fn runtime_versions() -> app_server::RuntimeVersions {
+    app_server::runtime_versions()
 }
 
 #[tauri::command]
@@ -185,12 +240,20 @@ fn upsert_plugin_run(
 
 pub fn run() {
     let store = HarnessStore::open().expect("无法初始化 Codex Harness 本地状态库");
+    let diagnostics = Arc::new(DiagnosticLog::open().expect("无法初始化 Codex Harness 诊断日志"));
+    diagnostics.record(
+        "info",
+        "runtime",
+        "application.started",
+        json!({ "harnessVersion": env!("CARGO_PKG_VERSION") }),
+    );
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
-            let manager = Arc::new(AppServerManager::new(app.handle().clone()));
+            let manager = Arc::new(AppServerManager::new(app.handle().clone(), diagnostics.clone()));
             app.manage(AppState {
                 app_server: manager,
+                diagnostics,
                 local_connector: LocalConnector::new(),
                 store,
                 workspace_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -200,6 +263,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_server_request,
             app_server_respond,
+            record_client_diagnostic,
+            open_diagnostics_directory,
+            runtime_versions,
             list_workspaces,
             register_workspace,
             map_thread_workspaces,
