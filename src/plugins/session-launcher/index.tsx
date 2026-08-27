@@ -20,13 +20,15 @@ interface PickerRow {
   defaultCursor: boolean
 }
 
+const yoloInitializedThreads = new Set<string>()
+
 export const sessionLauncherPlugin: HarnessPlugin = {
   manifest: {
     schemaVersion: 1,
     id: 'builtin.session-launcher',
     name: '会话启动器',
     description: '在新会话中按 Codex Radar 指标选择模型与推理强度，并切换 YOLO、Auto-review 或 Manual 模式。',
-    version: '1.0.0',
+    version: '1.0.1',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
     permissions: ['network:codexradar.com'],
@@ -51,7 +53,7 @@ export const sessionLauncherDefaultInstance: PluginInstanceRecord = {
   updatedAt: 0,
 }
 
-function SessionLauncher({ radar, models, settings, disabled, onSettingsChange }: NewThreadPanelProps & { radar: CodexRadarService }) {
+function SessionLauncher({ radar, threadId, models, settings, disabled, onSettingsChange }: NewThreadPanelProps & { radar: CodexRadarService }) {
   const [remoteRows, setRemoteRows] = useState<PickerRow[] | null>(null)
   const [fetchedAt, setFetchedAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -59,7 +61,7 @@ function SessionLauncher({ radar, models, settings, disabled, onSettingsChange }
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const rows = useMemo(() => availableRows(remoteRows, models, settings), [models, remoteRows, settings])
-  const mode = launchMode(settings)
+  const mode = threadId && !yoloInitializedThreads.has(threadId) ? 'yolo' : launchMode(settings)
 
   const load = async () => {
     setLoading(true)
@@ -78,6 +80,14 @@ function SessionLauncher({ radar, models, settings, disabled, onSettingsChange }
 
   useEffect(() => { void load() }, [])
 
+  useEffect(() => {
+    if (!threadId || disabled || yoloInitializedThreads.has(threadId)) return
+    yoloInitializedThreads.add(threadId)
+    if (launchMode(settings) !== 'yolo') {
+      void Promise.resolve(onSettingsChange(modePatch('yolo'))).catch((nextError) => setSettingsError(messageOf(nextError)))
+    }
+  }, [disabled, onSettingsChange, settings, threadId])
+
   const apply = async (patch: Partial<ThreadCodexSettings>) => {
     if (disabled || saving) return
     setSaving(true)
@@ -94,10 +104,7 @@ function SessionLauncher({ radar, models, settings, disabled, onSettingsChange }
   return (
     <section className="session-launcher" aria-label="Codex Radar 会话配置">
       <header className="session-launcher-head">
-        <div>
-          <span><Sparkles size={13} /> CODEX RADAR{fetchedAt ? ` · cache ${cacheMinutes(fetchedAt)}m` : ''}</span>
-          <h3>选择这次会话的运行方式</h3>
-        </div>
+        <span><Sparkles size={14} /> CODEX RADAR{fetchedAt ? ` · cache ${cacheMinutes(fetchedAt)}m` : ''}</span>
         <button type="button" onClick={() => void load()} disabled={loading} title="刷新 Radar 数据" aria-label="刷新 Radar 数据">
           <RefreshCw className={loading ? 'spin' : ''} size={14} />
         </button>
@@ -144,7 +151,7 @@ function ModeButton({ mode, selected, disabled, onSelect }: { mode: LaunchMode; 
 }
 
 function Metric({ value, best, tone }: { value: string; best: boolean; tone: string }) {
-  return <td><span className={best ? `radar-best ${tone}` : ''}>{value}{best && '★'}</span></td>
+  return <td><span className={best ? `radar-best ${tone}` : ''}>{value}{best && <b aria-label="最佳指标">★</b>}</span></td>
 }
 
 export function modePatch(mode: LaunchMode): Partial<ThreadCodexSettings> {
@@ -202,9 +209,9 @@ function groupLabel(group: PickerRow['group']): string {
 }
 
 function modelLabel(model: string): string {
-  if (model === 'gpt-5.6-sol') return 'Sol'
-  if (model === 'gpt-5.6-terra') return 'Terra'
-  if (model === 'gpt-5.6-luna') return 'Luna'
+  if (model === 'gpt-5.6-sol') return '5.6 Sol'
+  if (model === 'gpt-5.6-terra') return '5.6 Terra'
+  if (model === 'gpt-5.6-luna') return '5.6 Luna'
   if (model === 'gpt-5.5') return '5.5'
   return model
 }

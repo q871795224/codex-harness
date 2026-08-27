@@ -514,6 +514,25 @@ export function useHarness() {
     }
   }, [markThreadRead, notify, selectedWorkspaceRoot, upsertThread])
 
+  const changeThreadWorkspace = useCallback(async (threadId: string, workspaceRoot: string) => {
+    if (!workspaceRoot || threadRoots[threadId] === workspaceRoot) return
+    setBusy((current) => ({ ...current, threadWorkspace: true }))
+    try {
+      await runtime.request('thread/settings/update', { threadId, cwd: workspaceRoot })
+      setThreadRoots((current) => ({ ...current, [threadId]: workspaceRoot }))
+      setSelectedWorkspaceRoot(workspaceRoot)
+      updateThread(threadId, (thread) => ({ ...thread, cwd: workspaceRoot }))
+      updateDetail(threadId, (detail) => ({
+        ...detail,
+        thread: { ...detail.thread, cwd: workspaceRoot },
+      }))
+    } catch (error) {
+      notify(`无法切换工作区：${messageOf(error)}`, 'error')
+    } finally {
+      setBusy((current) => ({ ...current, threadWorkspace: false }))
+    }
+  }, [notify, threadRoots, updateDetail, updateThread])
+
   const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
     setActiveTurnIds((current) => ({ ...current, [threadId]: turnId }))
     setOwnedActiveThreads((current) => ({ ...current, [threadId]: owned }))
@@ -1049,6 +1068,7 @@ export function useHarness() {
     setFontSize,
     resetFontSizes,
     setSelectedWorkspaceRoot,
+    changeThreadWorkspace,
     setViewMode: async (mode: ViewMode) => {
       setViewMode(mode)
       try {

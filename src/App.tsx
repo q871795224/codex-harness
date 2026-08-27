@@ -176,10 +176,15 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                 items={harness.currentDetail?.items ?? []}
                 approvals={currentApprovals}
                 workspace={workspace}
+                workspaces={harness.workspaces}
+                workspaceChanging={Boolean(harness.busy.threadWorkspace)}
                 hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
                 loadingOlderTurns={Boolean(harness.busy.olderTurns)}
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
                 onLoadOlderTurns={() => void harness.loadOlderTurns()}
+                onWorkspaceChange={(workspaceRoot) => harness.selectedThreadId
+                  ? void harness.changeThreadWorkspace(harness.selectedThreadId, workspaceRoot)
+                  : undefined}
                 newThreadPanels={newThreadPanels.map((panel) => (
                   <PluginNewThreadPanel
                     key={`${panel.pluginId}:${panel.contribution.id}`}

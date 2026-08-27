@@ -87,14 +87,17 @@ interface ConversationViewProps {
   items: ThreadItemEntry[]
   approvals: ApprovalRequest[]
   workspace: Workspace | null
+  workspaces: Workspace[]
+  workspaceChanging: boolean
   hasOlderTurns: boolean
   loadingOlderTurns: boolean
   onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
   onLoadOlderTurns: () => void
+  onWorkspaceChange: (workspaceRoot: string) => void
   newThreadPanels?: ReactNode
 }
 
-export function ConversationView({ items, approvals, workspace, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, newThreadPanels }: ConversationViewProps) {
+export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onWorkspaceChange, newThreadPanels }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -113,9 +116,23 @@ export function ConversationView({ items, approvals, workspace, hasOlderTurns, l
           {items.length === 0 && (
             <div className="fresh-thread-wrap">
               <div className="fresh-thread">
-                <div className="fresh-thread-mark"><Bot size={24} /></div>
-                <h2>从这里开始</h2>
-                <p>这是一条新的 Codex 会话。消息会在 <strong>{workspace?.name ?? '当前工作区'}</strong> 中运行。</p>
+                <div className="fresh-thread-mark"><Bot size={18} /></div>
+                <p>
+                  在
+                  <span className="fresh-workspace-select">
+                    <select
+                      value={workspace?.root ?? ''}
+                      aria-label="切换新会话工作区"
+                      disabled={workspaces.length < 2 || workspaceChanging}
+                      onChange={(event) => onWorkspaceChange(event.target.value)}
+                    >
+                      {!workspace && <option value="">当前工作区</option>}
+                      {workspaces.map((candidate) => <option key={candidate.root} value={candidate.root}>{candidate.name}</option>)}
+                    </select>
+                    <ChevronDown size={14} aria-hidden />
+                  </span>
+                  开启一段新的 Codex 会话吧。
+                </p>
               </div>
               {newThreadPanels}
             </div>

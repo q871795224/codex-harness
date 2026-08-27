@@ -57,6 +57,15 @@ pnpm tauri build
 
 随后用 `pnpm tauri dev` 验证创建/恢复会话、消息发送、审批和工作区选择等核心流程。
 
+### 版本发布流程
+
+1. 发布前先检查工作树与 diff，确认没有夹带无关改动；同步修改 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 中的版本号，变更过的内置插件同时更新自身 manifest 版本。
+2. 使用目标版本依次执行 `pnpm test`、`pnpm build`、`(cd src-tauri && cargo test)`、`pnpm tauri build`，再运行 `pnpm tauri dev` 做核心流程 smoke test。任一环节失败都不能提交、打 tag 或发布。
+3. 校验 macOS App 的 `CFBundleShortVersionString` 与目标版本一致后提交 release commit；创建 annotated tag，tag message 必须概括该版本的实际改动，不能只写版本号。
+4. 将构建出的稳定版 `Codex Harness.app` 安装到 `~/Applications`，旧版本先移入废纸篓或可恢复备份；启动安装后的 App，确认版本、daemon 连接和初始化请求正常。
+5. 将 release commit 与 tag push 到远端；正式发布还需将 App 压缩为版本化 zip、计算 SHA-256，并创建 GitHub Release，release notes 应列出主要改动、安装方式和校验值。
+6. 最后核对远端 main、tag peeled commit、GitHub Release asset、本机安装版本与本地 HEAD 一致，并确保工作树干净。
+
 ## 改动原则
 
 - 保持 TypeScript 与 Rust 的 IPC 参数和返回值一致；接口变更应同时更新两侧。
