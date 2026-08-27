@@ -17,6 +17,7 @@ import {
   sortWorkspacesByRecentThread,
   textInput,
   threadTitle,
+  withInitialThreadPreview,
   threadsOlderThan,
   touchThreadActivity,
   type Thread,
@@ -56,6 +57,18 @@ describe('threadTitle', () => {
   it('falls back to preview and then the new-thread label', () => {
     expect(threadTitle(makeThread({ name: ' ', preview: '首次请求' }))).toBe('首次请求')
     expect(threadTitle(makeThread({ name: null, preview: '  ' }))).toBe('新会话')
+  })
+})
+
+describe('withInitialThreadPreview', () => {
+  it('fills only an empty preview from the first user text', () => {
+    const empty = makeThread({ name: '手动标题', preview: '' })
+    expect(withInitialThreadPreview(empty, '  修复\n登录问题  ')).toEqual({
+      ...empty,
+      preview: '修复 登录问题',
+    })
+    expect(withInitialThreadPreview(makeThread({ preview: '已有预览' }), '新消息').preview).toBe('已有预览')
+    expect(withInitialThreadPreview(empty, '   ')).toBe(empty)
   })
 })
 

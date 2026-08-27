@@ -141,6 +141,10 @@ export function hasSkillMarker(text: string, name: string): boolean {
   return new RegExp(`(^|\\s)\\$${escaped}(?=\\s|$)`).test(text)
 }
 
+export function insertComposerPrompt(current: string, prompt: string): string {
+  return current.trim() ? `${prompt.trim()}\n\n${current}` : prompt.trim()
+}
+
 export function absoluteMentionPath(root: string, path: string): string {
   if (/^(?:\/|[A-Za-z]:[\\/])/.test(path)) return path
   return `${root.replace(/[\\/]$/, '')}/${path.replace(/^[\\/]/, '')}`

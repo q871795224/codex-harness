@@ -5,6 +5,7 @@ import {
   activeComposerTrigger,
   expandCollapsedPastes,
   hasSkillMarker,
+  insertComposerPrompt,
   insertCollapsedPaste,
   matchesSendShortcut,
   pastedCharacterCount,
@@ -54,6 +55,12 @@ describe('structured references', () => {
     expect(hasSkillMarker('$tdd-extra 修复测试', 'tdd')).toBe(false)
     expect(absoluteMentionPath('/repo', 'src/App.tsx')).toBe('/repo/src/App.tsx')
     expect(absoluteMentionPath('/repo', '/tmp/file.txt')).toBe('/tmp/file.txt')
+  })
+
+  it('inserts a skill prompt without discarding an existing draft', () => {
+    expect(insertComposerPrompt('', '$plan-delegate 交给 Luna')).toBe('$plan-delegate 交给 Luna')
+    expect(insertComposerPrompt('保留这段补充', '$plan-delegate 交给 Luna'))
+      .toBe('$plan-delegate 交给 Luna\n\n保留这段补充')
   })
 })
 

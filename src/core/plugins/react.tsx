@@ -177,7 +177,11 @@ export function PluginComposerAction({ action, props }: {
   action: ResolvedContribution<ComposerActionContribution>
   props: ComposerActionProps
 }) {
-  return action.contribution.render(props)
+  return (
+    <PluginRenderBoundary pluginId={action.pluginId} instanceId={action.instanceId} label="输入框操作">
+      {action.contribution.render(props)}
+    </PluginRenderBoundary>
+  )
 }
 
 export function PluginNewThreadPanel({ panel, props }: {

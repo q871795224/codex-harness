@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronRight,
   Command,
-  ExternalLink,
   FileCode2,
   FileText,
   GitBranch,
@@ -256,7 +255,8 @@ function MessageBody({ text, raw }: { text: string; raw: boolean }) {
 }
 
 function MarkdownLink({ href, children, ...props }: ComponentPropsWithoutRef<'a'>) {
-  if (!href || !isExternalWebUrl(href)) return <span className="unsupported-link" title={href}>{children}</span>
+  if (!href || !isExternalWebUrl(href)) return <span className="local-link" title={href}>{href || children}</span>
+  const showDestination = markdownLinkLabel(children) !== href
   return (
     <a
       href={href}
@@ -267,9 +267,15 @@ function MarkdownLink({ href, children, ...props }: ComponentPropsWithoutRef<'a'
         void runtime.openExternalUrl(href).catch(() => undefined)
       }}
     >
-      {children}<ExternalLink className="external-link-icon" size={11} aria-hidden />
+      {children}{showDestination && <span className="link-destination"> ({href})</span>}
     </a>
   )
+}
+
+function markdownLinkLabel(children: ComponentPropsWithoutRef<'a'>['children']): string {
+  if (typeof children === 'string' || typeof children === 'number') return String(children)
+  if (Array.isArray(children)) return children.map(markdownLinkLabel).join('')
+  return ''
 }
 
 export function isExternalWebUrl(value: string): boolean {

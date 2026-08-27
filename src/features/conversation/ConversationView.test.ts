@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isExternalWebUrl, titleEditorKeyAction } from './ConversationView'
+import { resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread } from './useHarness'
 
 describe('titleEditorKeyAction', () => {
   it('does not finish editing while an IME composition is active', () => {
@@ -23,5 +24,27 @@ describe('markdown links', () => {
     expect(isExternalWebUrl('http://localhost:1420')).toBe(true)
     expect(isExternalWebUrl('/workspace/readme.md')).toBe(false)
     expect(isExternalWebUrl('javascript:alert(1)')).toBe(false)
+  })
+})
+
+describe('new thread workspace', () => {
+  it('inherits the workspace of the open thread', () => {
+    expect(resolveNewThreadWorkspaceRoot('thread-1', { 'thread-1': '/repo/current' }, '/repo/sidebar')).toBe('/repo/current')
+  })
+
+  it('falls back to the selected workspace without an open thread mapping', () => {
+    expect(resolveNewThreadWorkspaceRoot('thread-1', {}, '/repo/sidebar')).toBe('/repo/sidebar')
+    expect(resolveNewThreadWorkspaceRoot(null, {}, '/repo/sidebar')).toBe('/repo/sidebar')
+  })
+})
+
+describe('new thread draft lifecycle', () => {
+  it('keeps an unstarted thread when its composer has content', () => {
+    expect(shouldDiscardDraftThread(true, true)).toBe(false)
+  })
+
+  it('discards only an unstarted thread with an empty composer', () => {
+    expect(shouldDiscardDraftThread(true, false)).toBe(true)
+    expect(shouldDiscardDraftThread(false, false)).toBe(false)
   })
 })

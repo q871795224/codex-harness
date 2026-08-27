@@ -39,6 +39,7 @@ import {
   textInput,
   touchThreadActivity,
   threadsOlderThan,
+  withInitialThreadPreview,
 } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import {
@@ -256,7 +257,8 @@ export function useHarness() {
   const threadsRef = useRef<Thread[]>([])
   const pendingRestartRef = useRef<Record<string, PendingSteer[]>>({})
   const locallyStartingRef = useRef(new Set<string>())
-  const emptyDraftThreadIdsRef = useRef(new Set<string>())
+  const unstartedDraftThreadIdsRef = useRef(new Set<string>())
+  const draftContentThreadIdsRef = useRef(new Set<string>())
   const activeTurnIdsRef = useRef<Record<string, string>>({})
   const ownedActiveThreadsRef = useRef<Record<string, boolean>>({})
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
@@ -460,7 +462,11 @@ export function useHarness() {
   }, [notify])
 
   const discardEmptyDraftThread = useCallback((threadId: string | null) => {
-    if (!threadId || !emptyDraftThreadIdsRef.current.delete(threadId)) return
+    if (!threadId || !shouldDiscardDraftThread(
+      unstartedDraftThreadIdsRef.current.has(threadId),
+      draftContentThreadIdsRef.current.has(threadId),
+    )) return
+    unstartedDraftThreadIdsRef.current.delete(threadId)
     setThreads((current) => current.filter((thread) => thread.id !== threadId))
     setDetails((current) => {
       const next = { ...current }
@@ -477,6 +483,12 @@ export function useHarness() {
       void refreshThreads()
     })
   }, [notify, refreshThreads])
+
+  const setThreadDraftContent = useCallback((threadId: string, hasContent: boolean) => {
+    if (!unstartedDraftThreadIdsRef.current.has(threadId)) return
+    if (hasContent) draftContentThreadIdsRef.current.add(threadId)
+    else draftContentThreadIdsRef.current.delete(threadId)
+  }, [])
 
   const selectThread = useCallback(async (threadId: string) => {
     const previousThreadId = selectedThreadIdRef.current
@@ -575,17 +587,18 @@ export function useHarness() {
   }, [notify, refreshThreads])
 
   const createThread = useCallback(async () => {
-    if (!selectedWorkspaceRoot) {
+    const workspaceRoot = resolveNewThreadWorkspaceRoot(selectedThreadIdRef.current, threadRoots, selectedWorkspaceRoot)
+    if (!workspaceRoot) {
       notify('请先在左侧选择一个 Git 主工作区。', 'error')
       return
     }
     setBusy((current) => ({ ...current, createThread: true }))
     try {
-      const response = await runtime.request<StartThreadResponse>('thread/start', { cwd: selectedWorkspaceRoot })
+      const response = await runtime.request<StartThreadResponse>('thread/start', { cwd: workspaceRoot })
       const previousThreadId = selectedThreadIdRef.current
-      emptyDraftThreadIdsRef.current.add(response.thread.id)
+      unstartedDraftThreadIdsRef.current.add(response.thread.id)
       upsertThread(response.thread)
-      setThreadRoots((current) => ({ ...current, [response.thread.id]: selectedWorkspaceRoot }))
+      setThreadRoots((current) => ({ ...current, [response.thread.id]: workspaceRoot }))
       selectedThreadIdRef.current = response.thread.id
       setSelectedThreadId(response.thread.id)
       if (previousThreadId !== response.thread.id) discardEmptyDraftThread(previousThreadId)
@@ -599,7 +612,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [discardEmptyDraftThread, markThreadRead, notify, selectedWorkspaceRoot, upsertThread])
+  }, [discardEmptyDraftThread, markThreadRead, notify, selectedWorkspaceRoot, threadRoots, upsertThread])
 
   const changeThreadWorkspace = useCallback(async (threadId: string, workspaceRoot: string) => {
     if (!workspaceRoot || threadRoots[threadId] === workspaceRoot) return
@@ -631,7 +644,8 @@ export function useHarness() {
   }, [commitTurnOwnership, persistBadge, updateDetail, updateThread])
 
   const startTurn = useCallback(async (threadId: string, text: string | null, inputs?: UserInput[]) => {
-    emptyDraftThreadIdsRef.current.delete(threadId)
+    unstartedDraftThreadIdsRef.current.delete(threadId)
+    draftContentThreadIdsRef.current.delete(threadId)
     locallyStartingRef.current.add(threadId)
     try {
       const response = await runtime.request<StartTurnResponse>('turn/start', {
@@ -663,6 +677,13 @@ export function useHarness() {
     try {
       if (!activeTurnId) {
         await startTurn(threadId, null, input)
+        if (text.trim()) {
+          updateThread(threadId, (thread) => withInitialThreadPreview(thread, text))
+          updateDetail(threadId, (detail) => ({
+            ...detail,
+            thread: withInitialThreadPreview(detail.thread, text),
+          }))
+        }
         return
       }
 
@@ -692,7 +713,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, composer: false }))
     }
-  }, [loadQueue, notify, startTurn])
+  }, [loadQueue, notify, startTurn, updateDetail, updateThread])
 
   const stopTurn = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -1052,7 +1073,8 @@ export function useHarness() {
     if (method === 'thread/archived' || method === 'thread/deleted' || method === 'thread/unarchived') {
       const threadId = eventThreadId(params)
       if (threadId) {
-        emptyDraftThreadIdsRef.current.delete(threadId)
+        unstartedDraftThreadIdsRef.current.delete(threadId)
+        draftContentThreadIdsRef.current.delete(threadId)
         setThreads((current) => current.filter((thread) => thread.id !== threadId))
       }
     }
@@ -1146,6 +1168,7 @@ export function useHarness() {
     loadOlderTurns,
     chooseWorkspace,
     createThread,
+    setThreadDraftContent,
     startTurnInThread: (threadId: string, prompt: string) => startTurn(threadId, prompt),
     sendMessage,
     stopTurn,
@@ -1193,6 +1216,18 @@ export function useHarness() {
       }
     },
   }
+}
+
+export function resolveNewThreadWorkspaceRoot(
+  selectedThreadId: string | null,
+  threadRoots: Record<string, string | null>,
+  fallbackWorkspaceRoot: string | null,
+): string | null {
+  return (selectedThreadId ? threadRoots[selectedThreadId] : null) ?? fallbackWorkspaceRoot
+}
+
+export function shouldDiscardDraftThread(unstarted: boolean, hasContent: boolean): boolean {
+  return unstarted && !hasContent
 }
 
 function isApprovalRequest(method: string): boolean {

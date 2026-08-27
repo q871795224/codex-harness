@@ -321,6 +321,12 @@ export function threadTitle(thread: Thread): string {
   return thread.name?.trim() || thread.preview?.trim() || '新会话'
 }
 
+export function withInitialThreadPreview(thread: Thread, text: string): Thread {
+  if (thread.preview.trim()) return thread
+  const preview = text.replace(/\s+/g, ' ').trim()
+  return preview ? { ...thread, preview } : thread
+}
+
 export function isActive(status: ThreadStatus): boolean {
   return status.type === 'active'
 }

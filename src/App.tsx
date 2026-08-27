@@ -4,10 +4,10 @@ import { useAgentRunService } from './core/agent-runs/react'
 import { DEFAULT_FONT_SIZES } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
 import type { CodexRadarService } from './core/codex-radar/types'
-import { PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
+import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
-import { Composer } from './features/conversation/Composer'
+import { Composer, type ComposerDraft } from './features/conversation/Composer'
 import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
@@ -62,6 +62,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const [tab, setTab] = useState('chat')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [rawMode, setRawMode] = useState(false)
+  const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
   const workspace = useMemo(
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
@@ -71,6 +72,10 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
     workspaceRoot: workspace?.root ?? null,
   })
   const newThreadPanels = plugins.resolvedNewThreadPanels({
+    threadId: harness.selectedThreadId,
+    workspaceRoot: workspace?.root ?? null,
+  })
+  const composerActions = plugins.resolvedComposerActions({
     threadId: harness.selectedThreadId,
     workspaceRoot: workspace?.root ?? null,
   })
@@ -113,6 +118,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
         '--h-plugin-font-offset': `${harness.appearance.fontSizes.plugins - DEFAULT_FONT_SIZES.plugins}px`,
       } as CSSProperties}
     >
+      <div className="native-titlebar-drag-region" data-tauri-drag-region />
       <Sidebar
         workspaces={harness.workspaces}
         threads={harness.threads}
@@ -220,7 +226,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
               />
             ) : null}
 
-            {harness.viewMode === 'active' && tab === 'chat' && (
+            {harness.viewMode === 'active' && (
               <div className="input-column">
                 <QueueDock
                   queue={currentQueue}
@@ -234,6 +240,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   onStart={() => void harness.startQueue()}
                 />
                 <Composer
+                  initialDraft={composerDrafts[harness.currentThread.id]}
                   disabled={harness.currentForeignActive || Boolean(harness.busy.composer)}
                   working={harness.isCurrentWorking}
                   foreignActive={harness.currentForeignActive}
@@ -251,6 +258,22 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                     if (command.name === 'raw') setRawMode((current) => !current)
                   }}
                   onStop={harness.stopTurn}
+                  actions={(api) => composerActions.map((action) => (
+                    <PluginComposerAction
+                      key={`${action.pluginId}:${action.contribution.id}`}
+                      action={action}
+                      props={{
+                        threadId: harness.selectedThreadId,
+                        workspaceRoot: workspace?.root ?? null,
+                        ...api,
+                      }}
+                    />
+                  ))}
+                  onDraftChange={(draft, hasContent) => {
+                    const threadId = harness.currentThread!.id
+                    setComposerDrafts((current) => ({ ...current, [threadId]: draft }))
+                    harness.setThreadDraftContent(threadId, hasContent)
+                  }}
                 />
                 <ConversationStats
                   turns={harness.currentDetail?.turns ?? []}

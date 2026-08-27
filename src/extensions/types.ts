@@ -55,6 +55,7 @@ export interface ConversationTabContribution {
 
 export interface ComposerActionProps extends PluginViewContext {
   disabled: boolean
+  insertSkillPrompt(skillName: string, prompt: string): Promise<boolean>
 }
 
 export interface ComposerActionContribution {

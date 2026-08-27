@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, FileText, Image, Plus, Send, Sparkles, Square, X } from 'lucide-react'
 import type { ApprovalPolicy, CodexModel, CodexSkill, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
@@ -9,6 +9,7 @@ import {
   expandCollapsedPastes,
   hasSkillMarker,
   insertCollapsedPaste,
+  insertComposerPrompt,
   matchesSendShortcut,
   reconcileCollapsedPastes,
   replaceComposerTrigger,
@@ -18,6 +19,7 @@ import {
 import { parseComposerCommand, type ComposerCommand } from './composerCommands'
 
 interface ComposerProps {
+  initialDraft?: ComposerDraft
   disabled: boolean
   working: boolean
   foreignActive: boolean
@@ -33,12 +35,26 @@ interface ComposerProps {
   onSend: (input: UserInput[], mode: 'interject' | 'queue') => Promise<void> | void
   onCommand: (command: ComposerCommand) => Promise<void> | void
   onStop: () => Promise<void> | void
+  onDraftChange?: (draft: ComposerDraft, hasContent: boolean) => void
+  actions?: (api: ComposerActionApi) => ReactNode
 }
 
-interface ComposerAttachment {
+export interface ComposerActionApi {
+  disabled: boolean
+  insertSkillPrompt(skillName: string, prompt: string): Promise<boolean>
+}
+
+export interface ComposerAttachment {
   path: string
   name: string
   kind: 'image' | 'file' | 'skill'
+}
+
+export interface ComposerDraft {
+  text: string
+  collapsedPastes: CollapsedPaste[]
+  attachments: ComposerAttachment[]
+  mode: 'interject' | 'queue'
 }
 
 interface FuzzyFileSearchResult {
@@ -55,11 +71,11 @@ interface ComposerSuggestion {
   detail: string
 }
 
-export function Composer({ disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, models, settings, rawMode, settingsDisabled, onSettingsChange, onSend, onCommand, onStop }: ComposerProps) {
-  const [text, setText] = useState('')
-  const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>([])
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
-  const [mode, setMode] = useState<'interject' | 'queue'>('interject')
+export function Composer({ initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, models, settings, rawMode, settingsDisabled, onSettingsChange, onSend, onCommand, onStop, onDraftChange, actions }: ComposerProps) {
+  const [text, setText] = useState(initialDraft?.text ?? '')
+  const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
+  const [mode, setMode] = useState<'interject' | 'queue'>(initialDraft?.mode ?? 'interject')
   const [modeOpen, setModeOpen] = useState(false)
   const [attachmentBusy, setAttachmentBusy] = useState(false)
   const [cursor, setCursor] = useState<number | null>(0)
@@ -68,9 +84,11 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
   const [loadedSkillsRoot, setLoadedSkillsRoot] = useState<string | null>(null)
   const [suggestionBusy, setSuggestionBusy] = useState(false)
   const [suggestionError, setSuggestionError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [highlightedSuggestion, setHighlightedSuggestion] = useState(0)
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const onDraftChangeRef = useRef(onDraftChange)
   const selectedModel = models.find((model) => model.model === settings.model) ?? models[0] ?? null
   const imageUnsupported = attachments.some((item) => item.kind === 'image') && selectedModel !== null && !selectedModel.inputModalities.includes('image')
   const expandedText = useMemo(() => expandCollapsedPastes(text, collapsedPastes), [collapsedPastes, text])
@@ -99,6 +117,12 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
       .map((skill) => ({ kind: 'skill', name: skill.name, path: skill.path, detail: skill.description }))
   }, [fileMatches, skills, suggestionsDismissed, trigger])
   const suggestionsOpen = Boolean(trigger && !suggestionsDismissed)
+
+  useEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
+
+  useEffect(() => {
+    onDraftChangeRef.current?.({ text, collapsedPastes, attachments, mode }, hasContent)
+  }, [attachments, collapsedPastes, hasContent, mode, text])
 
   useEffect(() => { ref.current?.focus() }, [disabled])
 
@@ -217,6 +241,43 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
     }
   }
 
+  const insertSkillPrompt = async (skillName: string, prompt: string): Promise<boolean> => {
+    if (!workspaceRoot) {
+      setActionError('当前会话没有 workspace，无法加载 Skill。')
+      return false
+    }
+    setActionError(null)
+    try {
+      const result = await runtime.request<{ data: Array<{ skills: CodexSkill[] }> }>('skills/list', { cwds: [workspaceRoot] })
+      const skill = result.data.flatMap((entry) => entry.skills)
+        .find((candidate) => candidate.enabled && candidate.name === skillName)
+      if (!skill) {
+        setActionError(`Skill ${skillName} 未启用或不可用。`)
+        return false
+      }
+      const nextText = insertComposerPrompt(text, prompt)
+      const offset = text.trim() ? prompt.trim().length + 2 : 0
+      setCollapsedPastes((current) => current.map((paste) => ({
+        ...paste,
+        start: paste.start + offset,
+        end: paste.end + offset,
+      })))
+      setText(nextText)
+      setCursor(nextText.length)
+      setAttachments((current) => current.some((item) => item.kind === 'skill' && item.name === skill.name)
+        ? current
+        : [...current, { kind: 'skill', name: skill.name, path: skill.path }])
+      requestAnimationFrame(() => {
+        ref.current?.focus()
+        ref.current?.setSelectionRange(nextText.length, nextText.length)
+      })
+      return true
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
+      return false
+    }
+  }
+
   // App Server does not accept model/effort overrides on turn/steer. Keep the
   // controls stable until the active turn ends so their meaning stays truthful.
   const settingsLocked = disabled || busy || settingsDisabled || working
@@ -246,6 +307,7 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
           placeholder={foreignActive ? '等待其他客户端完成当前轮' : '给 Codex 发送消息'}
           onChange={(event) => {
             const nextText = event.target.value
+            setActionError(null)
             setCollapsedPastes((current) => reconcileCollapsedPastes(text, nextText, current))
             setText(nextText)
             setCursor(event.target.selectionStart)
@@ -328,9 +390,11 @@ export function Composer({ disabled, working, foreignActive, busy, contextUsage,
           </div>
         )}
         {imageUnsupported && <div className="composer-inline-error">当前模型不支持图片输入，请更换模型或移除图片。</div>}
+        {actionError && <div className="composer-inline-error">{actionError}</div>}
         <div className="composer-footer">
           <div className="composer-left-actions">
             <button type="button" className="composer-icon-button" disabled={disabled || busy || attachmentBusy} onClick={() => void addFiles()} title="添加图片或文件" aria-label="添加图片或文件"><Plus size={17} /></button>
+            {actions?.({ disabled: disabled || busy, insertSkillPrompt })}
             <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
               <option value="on-request">On request</option>
               <option value="untrusted">Untrusted</option>
