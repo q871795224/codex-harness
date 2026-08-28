@@ -175,8 +175,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .thread-title-editor { width: min(660px, 67vw); height: 29px; padding: 1px 4px; border: 1px solid #aebcf4; border-radius: 6px; outline: 0; color: #252731; font-size: 17px; font-weight: 650; letter-spacing: -.025em; }
 .thread-context { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: #727985; font-size: 10px; }
 .thread-context span { display: inline-flex; align-items: center; gap: 4px; }
-.thread-context span + span::before { width: 2px; height: 2px; margin-right: 4px; border-radius: 50%; background: #c6c9ce; content: ''; }
-.thread-path { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-context > * + *::before { display: inline-block; width: 2px; height: 2px; margin-right: 4px; border-radius: 50%; background: #c6c9ce; content: ''; vertical-align: middle; }
+.thread-path { max-width: 360px; overflow: hidden; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-overflow: ellipsis; white-space: nowrap; }
+.thread-path:hover:not(:disabled) { color: #435dcd; text-decoration: underline; text-underline-offset: 2px; }
+.thread-path:disabled { cursor: default; }
 .header-action { display: flex; align-items: center; gap: 5px; height: 29px; margin-top: 1px; padding: 0 8px; border: 1px solid #e3e5e9; border-radius: 7px; background: #fff; color: #565d68; cursor: pointer; font-size: 12px; opacity: 0; pointer-events: none; transition: border-color .14s ease, color .14s ease, opacity .14s ease; }
 .thread-header:hover .header-action, .thread-header:focus-within .header-action { opacity: 1; pointer-events: auto; }
 .header-action:hover { border-color: #cdd0d6; color: #292e37; }

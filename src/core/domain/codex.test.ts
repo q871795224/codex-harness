@@ -13,6 +13,8 @@ import {
   normalizeSidebarWidth,
   normalizeTheme,
   queueText,
+  parseGeneratedThreadTitle,
+  rebaseSandboxPolicy,
   sortThreads,
   sortWorkspacesByRecentThread,
   textInput,
@@ -43,7 +45,10 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
 function makeWorkspace(root: string): Workspace {
   return {
     root,
+    checkoutRoot: root,
     name: root.split('/').at(-1) ?? root,
+    branch: null,
+    sha: null,
     createdAt: 0,
     lastOpenedAt: 0,
   }
@@ -82,7 +87,34 @@ describe('emptyThreadDetail', () => {
       nextTurnsCursor: null,
       activeTurnId: null,
       foreignActive: false,
+      runtimeWorkspaceRoots: ['/workspace'],
+      sandbox: null,
+      activePermissionProfile: null,
+      model: null,
     })
+  })
+})
+
+describe('thread runtime context', () => {
+  it('rebases workspace write access without losing unrelated extra roots', () => {
+    expect(rebaseSandboxPolicy({
+      type: 'workspaceWrite',
+      writableRoots: ['/repo/old', '/shared'],
+      networkAccess: true,
+      excludeTmpdirEnvVar: false,
+      excludeSlashTmp: false,
+    }, '/repo/old', '/repo/worktree')).toEqual({
+      type: 'workspaceWrite',
+      writableRoots: ['/repo/worktree', '/shared'],
+      networkAccess: true,
+      excludeTmpdirEnvVar: false,
+      excludeSlashTmp: false,
+    })
+  })
+
+  it('normalizes a generated title to one safe line', () => {
+    expect(parseGeneratedThreadTitle('## “修复 worktree 权限。”\n额外说明')).toBe('修复 worktree 权限')
+    expect(parseGeneratedThreadTitle('   ')).toBeNull()
   })
 })
 

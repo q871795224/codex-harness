@@ -160,9 +160,17 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
               thread={harness.currentThread}
               workspace={workspace}
               archived={harness.viewMode === 'archived'}
+              workspaceChanging={Boolean(harness.busy.threadWorkspace)}
+              canChangeWorkspace={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
               onRename={(name) => void harness.renameThread(harness.currentThread!.id, name)}
               onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
               onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
+              onChooseWorkspace={() => {
+                const threadId = harness.currentThread!.id
+                void harness.chooseWorkspace().then((selected) => selected
+                  ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
+                  : undefined)
+              }}
             />
             <div className="tab-bar">
               <div className="thread-tabs">
@@ -198,7 +206,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                 onChooseWorkspace={() => {
                   const threadId = harness.selectedThreadId
                   void harness.chooseWorkspace().then((selected) => selected && threadId
-                    ? harness.changeThreadWorkspace(threadId, selected.root)
+                    ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
                     : undefined)
                 }}
                 newThreadPanels={newThreadPanels.map((panel) => (

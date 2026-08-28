@@ -2,7 +2,10 @@ export type JsonObject = Record<string, unknown>
 
 export interface Workspace {
   root: string
+  checkoutRoot: string
   name: string
+  branch: string | null
+  sha: string | null
   createdAt: number
   lastOpenedAt: number
 }
@@ -135,6 +138,23 @@ export type ApprovalPolicy = 'untrusted' | 'on-request' | 'never'
 export type ApprovalsReviewer = 'user' | 'auto_review'
 export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
+export type SandboxPolicy =
+  | { type: 'dangerFullAccess' }
+  | { type: 'readOnly'; networkAccess: boolean }
+  | { type: 'externalSandbox'; networkAccess: unknown }
+  | {
+    type: 'workspaceWrite'
+    writableRoots: string[]
+    networkAccess: boolean
+    excludeTmpdirEnvVar: boolean
+    excludeSlashTmp: boolean
+  }
+
+export interface ActivePermissionProfile {
+  id: string
+  extends: string | null
+}
+
 export interface ThreadCodexSettings {
   model: string
   effort: string
@@ -251,9 +271,16 @@ export interface ThreadDetail {
   nextTurnsCursor: string | null
   activeTurnId: string | null
   foreignActive: boolean
+  runtimeWorkspaceRoots: string[]
+  sandbox: SandboxPolicy | null
+  activePermissionProfile: ActivePermissionProfile | null
+  model: string | null
 }
 
-export function emptyThreadDetail(thread: Thread): ThreadDetail {
+export function emptyThreadDetail(
+  thread: Thread,
+  runtime: Partial<Pick<ThreadDetail, 'runtimeWorkspaceRoots' | 'sandbox' | 'activePermissionProfile' | 'model'>> = {},
+): ThreadDetail {
   return {
     thread,
     turns: [],
@@ -261,7 +288,27 @@ export function emptyThreadDetail(thread: Thread): ThreadDetail {
     nextTurnsCursor: null,
     activeTurnId: null,
     foreignActive: false,
+    runtimeWorkspaceRoots: runtime.runtimeWorkspaceRoots ?? [thread.cwd],
+    sandbox: runtime.sandbox ?? null,
+    activePermissionProfile: runtime.activePermissionProfile ?? null,
+    model: runtime.model ?? null,
   }
+}
+
+export function rebaseSandboxPolicy(policy: SandboxPolicy | null, previousCwd: string, nextCwd: string): SandboxPolicy | null {
+  if (!policy || policy.type !== 'workspaceWrite') return policy
+  const writableRoots = policy.writableRoots.filter((root) => root !== previousCwd && root !== nextCwd)
+  return { ...policy, writableRoots: [nextCwd, ...writableRoots] }
+}
+
+export function parseGeneratedThreadTitle(value: string): string | null {
+  const title = value
+    .trim()
+    .split(/\r?\n/, 1)[0]
+    .replace(/^\s*(?:[-*#]+\s*)/, '')
+    .replace(/^["'`“‘]+|["'`”’。.!！?？]+$/g, '')
+    .trim()
+  return title ? [...title].slice(0, 80).join('') : null
 }
 
 export type Badge = 'working' | 'approval' | 'success' | 'error' | null

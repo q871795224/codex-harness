@@ -3,6 +3,7 @@ import type {
   AppServerEvent,
   AppearancePreferences,
   ApprovalRequest,
+  ActivePermissionProfile,
   Badge,
   FontSize,
   FontSizeArea,
@@ -25,17 +26,21 @@ import type {
   Workspace,
   WorkspaceSort,
   SendShortcut,
+  SandboxPolicy,
 } from '../../core/domain/codex'
 import {
   DEFAULT_SIDEBAR_WIDTH,
   defaultFontSizePreferences,
   emptyThreadDetail,
   isActive,
+  itemText,
   normalizeFontSize,
   normalizeFontSizePreferences,
   normalizeSendShortcut,
   normalizeSidebarWidth,
   normalizeTheme,
+  parseGeneratedThreadTitle,
+  rebaseSandboxPolicy,
   textInput,
   touchThreadActivity,
   threadsOlderThan,
@@ -79,6 +84,10 @@ const defaultKeyboardPreferences: KeyboardPreferences = {
 interface ResumeResponse {
   thread: Thread
   initialTurnsPage?: { data: Turn[]; nextCursor: string | null } | null
+  runtimeWorkspaceRoots: string[]
+  sandbox: SandboxPolicy
+  activePermissionProfile: ActivePermissionProfile | null
+  model: string
 }
 
 interface ThreadListResponse {
@@ -101,7 +110,21 @@ interface StartTurnResponse {
 
 interface StartThreadResponse {
   thread: Thread
+  runtimeWorkspaceRoots: string[]
+  sandbox: SandboxPolicy
+  activePermissionProfile: ActivePermissionProfile | null
+  model: string
 }
+
+interface TitleGenerator {
+  targetThreadId: string
+  text: string
+}
+
+const THREAD_TITLE_INSTRUCTIONS = `Generate a concise, single-line task title of at most 80 characters and under five words where possible.
+Start with an imperative verb. Capitalize only the first word unless the user's language, proper nouns, acronyms, or code terms require otherwise.
+Preserve ticket references exactly. Write in the user's language. Do not use quotes, Markdown, or trailing punctuation.
+Return only the title. Do not answer the user's request.`
 
 interface HookToast {
   kind: 'error' | 'info'
@@ -262,10 +285,14 @@ export function useHarness() {
   const activeTurnIdsRef = useRef<Record<string, string>>({})
   const ownedActiveThreadsRef = useRef<Record<string, boolean>>({})
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
+  const detailsRef = useRef<Record<string, ThreadDetail>>({})
+  const generatingTitlesRef = useRef(new Set<string>())
+  const titleGeneratorsRef = useRef(new Map<string, TitleGenerator>())
 
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
   useEffect(() => { threadsRef.current = threads }, [threads])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
+  useEffect(() => { detailsRef.current = details }, [details])
 
   const commitTurnOwnership = useCallback((next: ActiveTurnOwnership) => {
     activeTurnIdsRef.current = next.activeTurnIds
@@ -499,8 +526,10 @@ export function useHarness() {
     markThreadRead(threadId)
     setBusy((current) => ({ ...current, [`load:${threadId}`]: true }))
     try {
+      const listedThread = threadsRef.current.find((thread) => thread.id === threadId)
       const response = await runtime.request<ResumeResponse>('thread/resume', {
         threadId,
+        ...(listedThread ? { cwd: listedThread.cwd, runtimeWorkspaceRoots: [listedThread.cwd] } : {}),
         // Match the CLI's bounded history strategy: hydrate only the newest
         // page first, then let the user explicitly ask for older history.
         initialTurnsPage: { limit: 5, sortDirection: 'desc', itemsView: 'full' },
@@ -524,6 +553,10 @@ export function useHarness() {
           nextTurnsCursor: response.initialTurnsPage?.nextCursor ?? null,
           activeTurnId,
           foreignActive: activeTurnId !== null && !owned,
+          runtimeWorkspaceRoots: response.runtimeWorkspaceRoots,
+          sandbox: response.sandbox,
+          activePermissionProfile: response.activePermissionProfile,
+          model: response.model,
         },
       }))
       upsertThread(response.thread)
@@ -589,18 +622,21 @@ export function useHarness() {
   }, [notify, refreshThreads])
 
   const createThread = useCallback(async () => {
-    const workspaceRoot = resolveNewThreadWorkspaceRoot(selectedThreadIdRef.current, threadRoots, selectedWorkspaceRoot)
+    const workspaceRoot = resolveNewThreadWorkspaceRoot(selectedThreadIdRef.current, threadsRef.current, selectedWorkspaceRoot)
     if (!workspaceRoot) {
       notify('请先在左侧选择一个 Git 主工作区。', 'error')
       return
     }
     setBusy((current) => ({ ...current, createThread: true }))
     try {
-      const response = await runtime.request<StartThreadResponse>('thread/start', { cwd: workspaceRoot })
+      const response = await runtime.request<StartThreadResponse>('thread/start', {
+        cwd: workspaceRoot,
+        runtimeWorkspaceRoots: [workspaceRoot],
+      })
       const previousThreadId = selectedThreadIdRef.current
       unstartedDraftThreadIdsRef.current.add(response.thread.id)
       upsertThread(response.thread)
-      setThreadRoots((current) => ({ ...current, [response.thread.id]: workspaceRoot }))
+      void mapThreadRoots([response.thread])
       selectedThreadIdRef.current = response.thread.id
       setSelectedThreadId(response.thread.id)
       if (previousThreadId !== response.thread.id) discardEmptyDraftThread(previousThreadId)
@@ -608,32 +644,65 @@ export function useHarness() {
       markThreadRead(response.thread.id)
       // Do not call `thread/resume` here. A newly started, empty thread has no
       // persisted rollout yet, and App Server correctly rejects that request.
-      setDetails((current) => ({ ...current, [response.thread.id]: emptyThreadDetail(response.thread) }))
+      setDetails((current) => ({
+        ...current,
+        [response.thread.id]: emptyThreadDetail(response.thread, {
+          runtimeWorkspaceRoots: response.runtimeWorkspaceRoots,
+          sandbox: response.sandbox,
+          activePermissionProfile: response.activePermissionProfile,
+          model: response.model,
+        }),
+      }))
     } catch (error) {
       notify(`无法创建会话：${messageOf(error)}`, 'error')
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [discardEmptyDraftThread, markThreadRead, notify, selectedWorkspaceRoot, threadRoots, upsertThread])
+  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, selectedWorkspaceRoot, upsertThread])
 
-  const changeThreadWorkspace = useCallback(async (threadId: string, workspaceRoot: string) => {
-    if (!workspaceRoot || threadRoots[threadId] === workspaceRoot) return
+  const changeThreadWorkspace = useCallback(async (threadId: string, checkoutRoot: string) => {
+    const currentThread = threadsRef.current.find((thread) => thread.id === threadId)
+    if (!checkoutRoot || !currentThread || currentThread.cwd === checkoutRoot) return
+    if (activeTurnIdsRef.current[threadId]) {
+      notify('请先停止或等待当前轮完成，再切换工作目录。', 'error')
+      return
+    }
     setBusy((current) => ({ ...current, threadWorkspace: true }))
     try {
-      await runtime.request('thread/settings/update', { threadId, cwd: workspaceRoot })
-      setThreadRoots((current) => ({ ...current, [threadId]: workspaceRoot }))
-      setSelectedWorkspaceRoot(workspaceRoot)
-      updateThread(threadId, (thread) => ({ ...thread, cwd: workspaceRoot }))
+      const mapped = await runtime.mapThreadWorkspaces([checkoutRoot])
+      const workspace = mapped[checkoutRoot]
+      if (!workspace) throw new Error('所选目录不是可用的 Git checkout。')
+      const nextCwd = workspace.checkoutRoot
+      const detail = detailsRef.current[threadId]
+      const overrides = threadPermissionOverrides(detail, currentThread.cwd, nextCwd)
+      await runtime.request('thread/settings/update', { threadId, cwd: nextCwd, ...overrides })
+      await runtime.request('thread/metadata/update', {
+        threadId,
+        gitInfo: { branch: workspace.branch, sha: workspace.sha },
+      }).catch(() => undefined)
+      setThreadRoots((current) => ({ ...current, [threadId]: workspace.root }))
+      setSelectedWorkspaceRoot(workspace.root)
+      updateThread(threadId, (thread) => ({
+        ...thread,
+        cwd: nextCwd,
+        gitInfo: { ...thread.gitInfo, branch: workspace.branch, sha: workspace.sha },
+      }))
       updateDetail(threadId, (detail) => ({
         ...detail,
-        thread: { ...detail.thread, cwd: workspaceRoot },
+        thread: {
+          ...detail.thread,
+          cwd: nextCwd,
+          gitInfo: { ...detail.thread.gitInfo, branch: workspace.branch, sha: workspace.sha },
+        },
+        runtimeWorkspaceRoots: [nextCwd],
+        sandbox: rebaseSandboxPolicy(detail.sandbox, currentThread.cwd, nextCwd),
       }))
     } catch (error) {
       notify(`无法切换工作区：${messageOf(error)}`, 'error')
     } finally {
       setBusy((current) => ({ ...current, threadWorkspace: false }))
     }
-  }, [notify, threadRoots, updateDetail, updateThread])
+  }, [notify, updateDetail, updateThread])
 
   const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
     commitTurnOwnership(activateTurn({
@@ -650,10 +719,13 @@ export function useHarness() {
     draftContentThreadIdsRef.current.delete(threadId)
     locallyStartingRef.current.add(threadId)
     try {
+      const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+      const detail = detailsRef.current[threadId]
       const response = await runtime.request<StartTurnResponse>('turn/start', {
         threadId,
         clientUserMessageId: newClientId(),
         input: inputs ?? (text ? [textInput(text)] : []),
+        ...(thread ? threadTurnContext(detail, thread.cwd) : {}),
       })
       setActiveTurn(threadId, response.turn.id, true)
       return response.turn.id
@@ -904,10 +976,77 @@ export function useHarness() {
     }
   }, [notify, persistBadge])
 
+  const maybeGenerateThreadTitle = useCallback(async (threadId: string, turn: Turn) => {
+    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+    if (!thread || thread.name || turn.status !== 'completed' || generatingTitlesRef.current.has(threadId)) return
+    const prompt = threadTitlePrompt(turn)
+    if (!prompt) return
+
+    generatingTitlesRef.current.add(threadId)
+    let generatorThreadId: string | null = null
+    try {
+      const response = await runtime.request<StartThreadResponse>('thread/start', {
+        cwd: thread.cwd,
+        runtimeWorkspaceRoots: [thread.cwd],
+        model: detailsRef.current[threadId]?.model ?? undefined,
+        approvalPolicy: 'never',
+        sandbox: 'read-only',
+        developerInstructions: THREAD_TITLE_INSTRUCTIONS,
+        ephemeral: true,
+      })
+      generatorThreadId = response.thread.id
+      titleGeneratorsRef.current.set(response.thread.id, { targetThreadId: threadId, text: '' })
+      await runtime.request<StartTurnResponse>('turn/start', {
+        threadId: response.thread.id,
+        clientUserMessageId: newClientId(),
+        input: [textInput(prompt)],
+        cwd: thread.cwd,
+        runtimeWorkspaceRoots: [thread.cwd],
+        approvalPolicy: 'never',
+        sandboxPolicy: { type: 'readOnly', networkAccess: false },
+      })
+    } catch {
+      if (generatorThreadId) titleGeneratorsRef.current.delete(generatorThreadId)
+      generatingTitlesRef.current.delete(threadId)
+    }
+  }, [])
+
+  const handleTitleGeneratorEvent = useCallback((method: string, params: JsonObject): boolean => {
+    const generatorThreadId = eventThreadId(params)
+    if (!generatorThreadId) return false
+    const generator = titleGeneratorsRef.current.get(generatorThreadId)
+    if (!generator) return false
+
+    if (method === 'item/agentMessage/delta' && typeof params.delta === 'string') {
+      generator.text += params.delta
+    } else if (method === 'item/completed') {
+      const item = toThreadItem(params.item)
+      if (item?.type === 'agentMessage') generator.text = itemText(item) || generator.text
+    } else if (method === 'turn/completed') {
+      const turn = params.turn as Turn | undefined
+      const fallback = turn?.items.find((item) => item.type === 'agentMessage')
+      const title = parseGeneratedThreadTitle(generator.text || (fallback ? itemText(fallback) : ''))
+      titleGeneratorsRef.current.delete(generatorThreadId)
+      generatingTitlesRef.current.delete(generator.targetThreadId)
+      const target = threadsRef.current.find((thread) => thread.id === generator.targetThreadId)
+      if (title && target && !target.name) {
+        void runtime.request('thread/name/set', { threadId: target.id, name: title }).then(() => {
+          updateThread(target.id, (thread) => thread.name ? thread : { ...thread, name: title })
+          updateDetail(target.id, (detail) => detail.thread.name
+            ? detail
+            : { ...detail, thread: { ...detail.thread, name: title } })
+        }).catch(() => undefined)
+      }
+    }
+    return true
+  }, [updateDetail, updateThread])
+
   const handleEvent = useCallback((event: AppServerEvent) => {
     const method = event.method
     const params = event.params ?? {}
     if (!method) return
+
+    if (handleTitleGeneratorEvent(method, params)) return
 
     if (event.id !== undefined && isApprovalRequest(method)) {
       const threadId = eventThreadId(params)
@@ -921,9 +1060,32 @@ export function useHarness() {
 
     if (method === 'thread/started') {
       const thread = params.thread as Thread | undefined
-      if (thread) {
+      if (thread && !thread.ephemeral) {
         upsertThread(thread)
         void mapThreadRoots([thread])
+      }
+      return
+    }
+
+    if (method === 'thread/settings/updated') {
+      const threadId = eventThreadId(params)
+      const settings = params.threadSettings as JsonObject | undefined
+      const cwd = typeof settings?.cwd === 'string' ? settings.cwd : null
+      if (threadId && cwd) {
+        const sandbox = settings?.sandboxPolicy as SandboxPolicy | undefined
+        const profile = (settings?.activePermissionProfile ?? null) as ActivePermissionProfile | null
+        const model = typeof settings?.model === 'string' ? settings.model : null
+        updateThread(threadId, (thread) => ({ ...thread, cwd }))
+        updateDetail(threadId, (detail) => ({
+          ...detail,
+          thread: { ...detail.thread, cwd },
+          runtimeWorkspaceRoots: [cwd],
+          sandbox: sandbox ?? detail.sandbox,
+          activePermissionProfile: profile,
+          model: model ?? detail.model,
+        }))
+        const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+        if (thread) void mapThreadRoots([{ ...thread, cwd }])
       }
       return
     }
@@ -1041,6 +1203,7 @@ export function useHarness() {
         updateThread(threadId, (thread) => touchThreadActivity({ ...thread, status: { type: 'idle' } }))
         const badge: Badge = turn.status === 'failed' ? 'error' : selectedThreadIdRef.current === threadId ? null : 'success'
         persistBadge(threadId, badge)
+        void maybeGenerateThreadTitle(threadId, turn)
 
         const restarts = pendingRestartRef.current[threadId]
         if (restarts?.length) {
@@ -1080,7 +1243,7 @@ export function useHarness() {
         setThreads((current) => current.filter((thread) => thread.id !== threadId))
       }
     }
-  }, [commitTurnOwnership, loadQueue, mapThreadRoots, notify, persistBadge, setActiveTurn, startTurn, updateDetail, updateThread, upsertThread])
+  }, [commitTurnOwnership, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, maybeGenerateThreadTitle, notify, persistBadge, setActiveTurn, startTurn, updateDetail, updateThread, upsertThread])
 
   useEffect(() => {
     let disposed = false
@@ -1222,10 +1385,40 @@ export function useHarness() {
 
 export function resolveNewThreadWorkspaceRoot(
   selectedThreadId: string | null,
-  threadRoots: Record<string, string | null>,
+  threads: Thread[],
   fallbackWorkspaceRoot: string | null,
 ): string | null {
-  return (selectedThreadId ? threadRoots[selectedThreadId] : null) ?? fallbackWorkspaceRoot
+  return (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId)?.cwd : null) ?? fallbackWorkspaceRoot
+}
+
+export function threadTurnContext(detail: ThreadDetail | undefined, cwd: string): JsonObject {
+  return {
+    cwd,
+    runtimeWorkspaceRoots: [cwd],
+    ...threadPermissionOverrides(detail, detail?.thread.cwd ?? cwd, cwd),
+  }
+}
+
+export function threadPermissionOverrides(
+  detail: ThreadDetail | undefined,
+  previousCwd: string,
+  nextCwd: string,
+): JsonObject {
+  if (detail?.activePermissionProfile) return { permissions: detail.activePermissionProfile.id }
+  if (!detail?.sandbox) return {}
+  if (detail.sandbox.type === 'externalSandbox' && previousCwd !== nextCwd) {
+    throw new Error('当前会话由外部 sandbox 管理，不能在原会话中扩大可写目录；请在目标目录新建会话。')
+  }
+  return { sandboxPolicy: rebaseSandboxPolicy(detail.sandbox, previousCwd, nextCwd) }
+}
+
+export function threadTitlePrompt(turn: Turn): string | null {
+  const messages = turn.items
+    .filter((item) => item.type === 'userMessage' || item.type === 'agentMessage')
+    .map((item) => `${item.type === 'userMessage' ? 'User' : 'Assistant'}: ${itemText(item).trim()}`)
+    .filter((message) => !message.endsWith(':'))
+  if (!messages.some((message) => message.startsWith('User:'))) return null
+  return `Generate a title for this conversation:\n\n${messages.join('\n\n').slice(0, 8_000)}`
 }
 
 export function shouldDiscardDraftThread(unstarted: boolean, hasContent: boolean): boolean {

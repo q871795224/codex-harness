@@ -12,7 +12,10 @@ use std::{
 #[serde(rename_all = "camelCase")]
 pub struct Workspace {
     pub root: String,
+    pub checkout_root: String,
     pub name: String,
+    pub branch: Option<String>,
+    pub sha: Option<String>,
     pub created_at: i64,
     pub last_opened_at: i64,
 }
@@ -192,7 +195,10 @@ impl HarnessStore {
             .map_err(|error| format!("无法保存工作区: {error}"))?;
         Ok(Workspace {
             root: root.to_owned(),
+            checkout_root: root.to_owned(),
             name: name.to_owned(),
+            branch: None,
+            sha: None,
             created_at: now,
             last_opened_at: now,
         })
@@ -209,8 +215,11 @@ impl HarnessStore {
         let rows = statement
             .query_map([], |row| {
                 Ok(Workspace {
-                    root: row.get(0)?,
+                    root: row.get::<_, String>(0)?,
+                    checkout_root: row.get(0)?,
                     name: row.get(1)?,
+                    branch: None,
+                    sha: None,
                     created_at: row.get(2)?,
                     last_opened_at: row.get(3)?,
                 })

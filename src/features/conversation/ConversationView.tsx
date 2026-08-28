@@ -28,12 +28,15 @@ interface ConversationHeaderProps {
   thread: Thread
   workspace: Workspace | null
   archived: boolean
+  workspaceChanging: boolean
+  canChangeWorkspace: boolean
   onRename: (name: string) => void
   onArchive: () => void
   onUnarchive: () => void
+  onChooseWorkspace: () => void
 }
 
-export function ConversationHeader({ thread, workspace, archived, onRename, onArchive, onUnarchive }: ConversationHeaderProps) {
+export function ConversationHeader({ thread, workspace, archived, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onChooseWorkspace }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -78,7 +81,15 @@ export function ConversationHeader({ thread, workspace, archived, onRename, onAr
         <div className="thread-context">
           <span><GitBranch size={13} />{workspace?.name ?? '未分组'}</span>
           {thread.gitInfo?.branch && <span>{thread.gitInfo.branch}</span>}
-          <span className="thread-path" title={thread.cwd}>{thread.cwd}</span>
+          <button
+            type="button"
+            className="thread-path"
+            title={`${thread.cwd}\n点击切换 checkout 或 worktree`}
+            disabled={!canChangeWorkspace || workspaceChanging}
+            onClick={onChooseWorkspace}
+          >
+            {workspaceChanging ? '正在切换…' : thread.cwd}
+          </button>
         </div>
       </div>
       <button

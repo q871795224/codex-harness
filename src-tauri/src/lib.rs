@@ -136,10 +136,13 @@ fn list_workspaces(state: State<'_, AppState>) -> Result<Vec<Workspace>, String>
 
 #[tauri::command]
 fn register_workspace(state: State<'_, AppState>, path: String) -> Result<Workspace, String> {
-    let workspace = git_workspace::resolve_main_workspace(&path)?;
-    state
+    let mut workspace = git_workspace::resolve_workspace(&path)?;
+    let stored = state
         .store
-        .upsert_workspace(&workspace.root, &workspace.name)
+        .upsert_workspace(&workspace.root, &workspace.name)?;
+    workspace.created_at = stored.created_at;
+    workspace.last_opened_at = stored.last_opened_at;
+    Ok(workspace)
 }
 
 #[tauri::command]
@@ -156,7 +159,7 @@ async fn map_thread_workspaces(
         for path in paths {
             let workspace = cache
                 .entry(path.clone())
-                .or_insert_with(|| git_workspace::resolve_main_workspace(&path).ok())
+                .or_insert_with(|| git_workspace::resolve_workspace(&path).ok())
                 .clone();
             mapped.insert(path, workspace);
         }

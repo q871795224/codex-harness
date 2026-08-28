@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
+import { version as harnessVersion } from '../../../package.json'
 import {
   Archive,
   ArchiveRestore,
@@ -285,7 +286,7 @@ export function Sidebar({
       <div className="brand-row">
         <img className="brand-mark" src={isDevelopmentFlavor ? harnessDevIcon : harnessIcon} alt="" />
         <span className="brand-name">codex <strong>HARNESS</strong></span>
-        <span className="brand-version">{isDevelopmentFlavor ? 'DEV' : 'v1'}</span>
+        <span className="brand-version">{isDevelopmentFlavor ? `DEV · v${harnessVersion}` : `v${harnessVersion}`}</span>
       </div>
 
       <button className="new-chat-button" type="button" onClick={onNewThread} disabled={creatingThread}>
