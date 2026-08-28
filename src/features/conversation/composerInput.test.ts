@@ -30,6 +30,7 @@ describe('activeComposerTrigger', () => {
   it('finds file and skill triggers at the cursor', () => {
     expect(activeComposerTrigger('检查 @src/App', 11)).toEqual({ kind: 'file', query: 'src/App', start: 3, end: 11 })
     expect(activeComposerTrigger('$tdd 修复', 4)).toEqual({ kind: 'skill', query: 'tdd', start: 0, end: 4 })
+    expect(activeComposerTrigger('/model gpt-5', 12)).toEqual({ kind: 'command', query: 'model gpt-5', start: 0, end: 12 })
   })
 
   it('ignores completed markers and embedded email-like text', () => {

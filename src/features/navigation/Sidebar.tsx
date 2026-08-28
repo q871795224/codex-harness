@@ -40,6 +40,7 @@ import { relativeTime, truncate } from '../../core/domain/format'
 import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
 import harnessIcon from '../../../icon/codex-harness.svg'
 import { resolveThreadBadge } from './threadBadge'
+import { visibleThreadOrder, visibleThreads } from './visibleThreads'
 
 interface SidebarProps {
   workspaces: Workspace[]
@@ -69,6 +70,7 @@ interface SidebarProps {
   onManualThreadOrder: (order: string[]) => void
   onSidebarWidth: (width: number) => void
   onOpenSettings: () => void
+  onVisibleThreadOrder: (threadIds: string[]) => void
 }
 
 export function Sidebar({
@@ -99,6 +101,7 @@ export function Sidebar({
   onManualThreadOrder,
   onSidebarWidth,
   onOpenSettings,
+  onVisibleThreadOrder,
 }: SidebarProps) {
   const isDevelopmentFlavor = import.meta.env.MODE === 'dev'
   const [query, setQuery] = useState('')
@@ -200,6 +203,17 @@ export function Sidebar({
   }, [orderedThreads, orderedWorkspaces, threadRoots])
 
   const allWorkspacesExpanded = orderedWorkspaces.length > 0 && orderedWorkspaces.every((workspace) => expanded[workspace.root] ?? true)
+  const visibleThreadIds = useMemo(() => visibleThreadOrder({
+    layout: navigationLayout,
+    orderedThreads,
+    orderedWorkspaceRoots: orderedWorkspaces.map((workspace) => workspace.root),
+    groupedByRoot: grouped.byRoot,
+    unsorted: grouped.unsorted,
+    expanded,
+    visibleCounts,
+  }), [expanded, grouped, navigationLayout, orderedThreads, orderedWorkspaces, visibleCounts])
+
+  useEffect(() => onVisibleThreadOrder(visibleThreadIds), [onVisibleThreadOrder, visibleThreadIds])
 
   const toggleAllWorkspaces = () => {
     const nextValue = !allWorkspacesExpanded
@@ -268,7 +282,7 @@ export function Sidebar({
       onReorder={reorderThread}
       onShowMore={() => setVisibleCounts((current) => ({
         ...current,
-        [groupKey]: (current[groupKey] ?? initialVisibleCount(items)) + 5,
+        [groupKey]: visibleThreads(items, current[groupKey]).length + 5,
       }))}
     />
   )
@@ -491,12 +505,10 @@ function ThreadList({
   onShowMore: () => void
 }) {
   if (threads.length === 0) return <p className="empty-thread-list">暂无会话</p>
-  const defaultCount = initialVisibleCount(threads)
-  const shown = Math.min(threads.length, Math.max(defaultCount, visibleCount ?? defaultCount))
-  const visibleThreads = threads.slice(0, shown)
+  const shownThreads = visibleThreads(threads, visibleCount)
   return (
     <div className="thread-list" data-workspace-group={groupKey}>
-      {visibleThreads.map((thread) => {
+      {shownThreads.map((thread) => {
         const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null)
         return (
           <button
@@ -524,20 +536,13 @@ function ThreadList({
           </button>
         )
       })}
-      {shown < threads.length && (
+      {shownThreads.length < threads.length && (
         <button className="show-more-sessions" type="button" onClick={onShowMore}>
-          显示更多（+{Math.min(5, threads.length - shown)}）
+          显示更多（+{Math.min(5, threads.length - shownThreads.length)}）
         </button>
       )}
     </div>
   )
-}
-
-function initialVisibleCount(threads: Thread[]): number {
-  if (threads.length <= 5) return threads.length
-  const cutoff = Date.now() / 1_000 - 3 * 24 * 60 * 60
-  const recentCount = threads.filter((thread) => (thread.recencyAt ?? thread.updatedAt) >= cutoff).length
-  return Math.max(3, Math.min(5, recentCount))
 }
 
 export function StatusDot({ badge }: { badge: Badge }) {

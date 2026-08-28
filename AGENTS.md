@@ -34,11 +34,12 @@ pnpm test:watch
 pnpm build
 pnpm build:dev
 (cd src-tauri && cargo test)
-pnpm tauri build
+pnpm tauri:build
 pnpm tauri:build:dev
 ```
 
-- `pnpm tauri dev` / `pnpm tauri build` 是蓝色稳定版；`pnpm tauri:dev` / `pnpm tauri:build:dev` 是绿色开发版。
+- `pnpm tauri dev` / `pnpm tauri:build` 是蓝色稳定版；`pnpm tauri:dev` / `pnpm tauri:build:dev` 是绿色开发版。
+- 两个 flavor 的打包脚本均固定使用 `universal-apple-darwin`，产出同时支持 Apple 芯片与 Intel Mac 的 Universal App。
 - 两个 flavor 有独立的 macOS Bundle ID，可同时运行；它们有意共享 `~/.codex-harness`、Codex 配置和会话历史。
 
 ## 测试与发布
@@ -53,7 +54,7 @@ pnpm tauri:build:dev
 pnpm test
 pnpm build
 (cd src-tauri && cargo test)
-pnpm tauri build
+pnpm tauri:build
 ```
 
 随后用 `pnpm tauri dev` 验证创建/恢复会话、消息发送、审批和工作区选择等核心流程。
@@ -61,7 +62,7 @@ pnpm tauri build
 ### 版本发布流程
 
 1. 发布前先检查工作树与 diff，确认没有夹带无关改动；同步修改 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 中的版本号，变更过的内置插件同时更新自身 manifest 版本。
-2. 使用目标版本依次执行 `pnpm test`、`pnpm build`、`(cd src-tauri && cargo test)`、`pnpm tauri build`，再运行 `pnpm tauri dev` 做核心流程 smoke test。任一环节失败都不能提交、打 tag 或发布。
+2. 使用目标版本依次执行 `pnpm test`、`pnpm build`、`(cd src-tauri && cargo test)`、`pnpm tauri:build`，再运行 `pnpm tauri dev` 做核心流程 smoke test。任一环节失败都不能提交、打 tag 或发布。
 3. 校验 macOS App 的 `CFBundleShortVersionString` 与目标版本一致后提交 release commit；创建 annotated tag，tag message 必须概括该版本的实际改动，不能只写版本号。
 4. 将构建出的稳定版 `Codex Harness.app` 安装到 `~/Applications`，旧版本先移入废纸篓或可恢复备份；启动安装后的 App，确认版本、daemon 连接和初始化请求正常。
 5. 将 release commit 与 tag push 到远端；正式发布还需将 App 压缩为版本化 zip、计算 SHA-256，并创建 GitHub Release，release notes 应列出主要改动、安装方式和校验值。

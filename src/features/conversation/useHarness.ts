@@ -10,6 +10,7 @@ import type {
   FontSizeArea,
   JsonObject,
   KeyboardPreferences,
+  HarnessActionId,
   NavigationLayout,
   NavigationPreferences,
   PendingSteer,
@@ -52,7 +53,8 @@ import {
   withInitialThreadPreview,
 } from '../../core/domain/codex'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
-import { runtime } from '../../core/runtime/bridge'
+import { diagnosticErrorCode, runtime, type ClientDiagnostic } from '../../core/runtime/bridge'
+import { defaultHarnessActionShortcuts, normalizeHarnessActionShortcuts } from '../actions/harnessActions'
 import {
   activateTurn,
   completeTurn,
@@ -87,6 +89,7 @@ const defaultAppearancePreferences: AppearancePreferences = {
 const defaultKeyboardPreferences: KeyboardPreferences = {
   sendShortcut: 'mod-enter',
   followUpMode: 'queue',
+  actionShortcuts: defaultHarnessActionShortcuts,
 }
 
 interface ResumeResponse {
@@ -126,7 +129,9 @@ interface StartThreadResponse {
 
 interface TitleGenerator {
   targetThreadId: string
+  attemptId: string
   text: string
+  startedAt: number
 }
 
 interface HookToast {
@@ -150,6 +155,16 @@ function newClientId(): string {
 
 function findActiveTurn(turns: Turn[]): string | null {
   return turns.find((turn) => turn.status === 'inProgress')?.id ?? null
+}
+
+export function isFirstUserTurn(detail: ThreadDetail | undefined): boolean {
+  if (!detail) return false
+  return !detail.items.some((entry) => entry.item.type === 'userMessage')
+    && !detail.turns.some((turn) => turn.items.some((item) => item.type === 'userMessage'))
+}
+
+function recordTitleDiagnostic(diagnostic: Omit<ClientDiagnostic, 'area'>): void {
+  void runtime.recordClientDiagnostic({ area: 'thread-title', ...diagnostic }).catch(() => undefined)
 }
 
 function isMissingRollout(error: unknown): boolean {
@@ -220,6 +235,7 @@ function parseKeyboardPreferences(raw: string | null): KeyboardPreferences {
     return {
       sendShortcut: normalizeSendShortcut(value.sendShortcut),
       followUpMode: normalizeFollowUpMode(value.followUpMode),
+      actionShortcuts: normalizeHarnessActionShortcuts(value.actionShortcuts),
     }
   } catch {
     return defaultKeyboardPreferences
@@ -308,6 +324,7 @@ export function useHarness() {
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
   const detailsRef = useRef<Record<string, ThreadDetail>>({})
   const generatingTitlesRef = useRef(new Set<string>())
+  const attemptedTitleThreadsRef = useRef(new Set<string>())
   const titleGeneratorsRef = useRef(new Map<string, TitleGenerator>())
   const threadTitleGenerationRef = useRef(threadTitleGeneration)
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
@@ -405,6 +422,22 @@ export function useHarness() {
   const setFollowUpMode = useCallback((followUpMode: FollowUpMode) => {
     setKeyboard((current) => {
       const next = { ...current, followUpMode: normalizeFollowUpMode(followUpMode) }
+      void runtime.setAppState(KEYBOARD_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
+    })
+  }, [])
+
+  const setActionShortcut = useCallback((actionId: HarnessActionId, shortcut: string) => {
+    setKeyboard((current) => {
+      const next = { ...current, actionShortcuts: { ...current.actionShortcuts, [actionId]: shortcut } }
+      void runtime.setAppState(KEYBOARD_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
+    })
+  }, [])
+
+  const resetActionShortcuts = useCallback(() => {
+    setKeyboard((current) => {
+      const next = { ...current, actionShortcuts: { ...defaultHarnessActionShortcuts } }
       void runtime.setAppState(KEYBOARD_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
       return next
     })
@@ -770,6 +803,144 @@ export function useHarness() {
     persistBadge(threadId, 'working')
   }, [commitTurnOwnership, persistBadge, updateDetail, updateThread])
 
+  const maybeGenerateThreadTitle = useCallback(async (threadId: string, userText: string) => {
+    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+    if (!thread) {
+      recordTitleDiagnostic({
+        level: 'info',
+        event: 'generation.skipped',
+        threadId,
+        stage: 'preflight',
+        reason: 'thread_not_found',
+        trigger: 'first-user-input',
+      })
+      return
+    }
+    if (thread.name?.trim()) {
+      recordTitleDiagnostic({
+        level: 'info',
+        event: 'generation.skipped',
+        threadId,
+        stage: 'preflight',
+        reason: 'already_named',
+        trigger: 'first-user-input',
+      })
+      return
+    }
+    const prompt = threadTitlePrompt(userText)
+    if (!prompt) {
+      recordTitleDiagnostic({
+        level: 'info',
+        event: 'generation.skipped',
+        threadId,
+        stage: 'preflight',
+        reason: 'empty_user_input',
+        trigger: 'first-user-input',
+      })
+      return
+    }
+    if (attemptedTitleThreadsRef.current.has(threadId)) {
+      recordTitleDiagnostic({
+        level: 'info',
+        event: 'generation.skipped',
+        threadId,
+        stage: 'preflight',
+        reason: generatingTitlesRef.current.has(threadId) ? 'in_flight' : 'already_attempted',
+        trigger: 'first-user-input',
+      })
+      return
+    }
+
+    attemptedTitleThreadsRef.current.add(threadId)
+    generatingTitlesRef.current.add(threadId)
+    const attemptId = newClientId()
+    const settings = threadTitleGenerationRef.current
+    const startedAt = performance.now()
+    recordTitleDiagnostic({
+      level: 'info',
+      event: 'generation.started',
+      threadId,
+      attemptId,
+      stage: 'thread/start',
+      trigger: 'first-user-input',
+      model: settings.model,
+      effort: settings.effort,
+      sourceChars: userText.length,
+    })
+
+    let generatorThreadId: string | null = null
+    let stage = 'thread/start'
+    try {
+      const response = await runtime.request<StartThreadResponse>('thread/start', {
+        cwd: thread.cwd,
+        runtimeWorkspaceRoots: [thread.cwd],
+        model: settings.model,
+        approvalPolicy: 'never',
+        sandbox: 'read-only',
+        developerInstructions: settings.prompt,
+        ephemeral: true,
+      })
+      generatorThreadId = response.thread.id
+      titleGeneratorsRef.current.set(response.thread.id, {
+        targetThreadId: threadId,
+        attemptId,
+        text: '',
+        startedAt,
+      })
+      recordTitleDiagnostic({
+        level: 'info',
+        event: 'generator.started',
+        method: 'thread/start',
+        threadId,
+        generatorThreadId,
+        attemptId,
+        stage,
+        model: settings.model,
+        effort: settings.effort,
+      })
+
+      stage = 'turn/start'
+      await runtime.request<StartTurnResponse>('turn/start', {
+        threadId: response.thread.id,
+        clientUserMessageId: newClientId(),
+        input: [textInput(prompt)],
+        cwd: thread.cwd,
+        runtimeWorkspaceRoots: [thread.cwd],
+        approvalPolicy: 'never',
+        sandboxPolicy: { type: 'readOnly', networkAccess: false },
+        effort: settings.effort,
+      })
+      recordTitleDiagnostic({
+        level: 'info',
+        event: 'generator.turn_started',
+        method: 'turn/start',
+        threadId,
+        generatorThreadId,
+        attemptId,
+        stage,
+        model: settings.model,
+        effort: settings.effort,
+      })
+    } catch (error) {
+      if (generatorThreadId) titleGeneratorsRef.current.delete(generatorThreadId)
+      generatingTitlesRef.current.delete(threadId)
+      recordTitleDiagnostic({
+        level: 'error',
+        event: 'generation.failed',
+        method: stage,
+        threadId,
+        generatorThreadId: generatorThreadId ?? undefined,
+        attemptId,
+        stage,
+        trigger: 'first-user-input',
+        model: settings.model,
+        effort: settings.effort,
+        errorCode: diagnosticErrorCode(error),
+        durationMs: Math.round(performance.now() - startedAt),
+      })
+    }
+  }, [])
+
   const startTurn = useCallback(async (threadId: string, text: string | null, inputs?: UserInput[]) => {
     unstartedDraftThreadIdsRef.current.delete(threadId)
     draftContentThreadIdsRef.current.delete(threadId)
@@ -798,6 +969,10 @@ export function useHarness() {
       .map((item) => item.text)
       .join('\n')
     const activeTurnId = activeTurnIdsRef.current[threadId]
+    const shouldEvaluateTitle = !activeTurnId && (
+      unstartedDraftThreadIdsRef.current.has(threadId)
+      || isFirstUserTurn(detailsRef.current[threadId])
+    )
     const owned = ownedActiveThreadsRef.current[threadId] === true
     if (activeTurnId && !owned) {
       notify('该会话正由其他客户端运行；请等待当前轮结束。', 'error')
@@ -814,6 +989,7 @@ export function useHarness() {
             thread: withInitialThreadPreview(detail.thread, text),
           }))
         }
+        if (shouldEvaluateTitle) void maybeGenerateThreadTitle(threadId, text)
         return
       }
 
@@ -843,7 +1019,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, composer: false }))
     }
-  }, [loadQueue, notify, startTurn, updateDetail, updateThread])
+  }, [loadQueue, maybeGenerateThreadTitle, notify, startTurn, updateDetail, updateThread])
 
   const stopTurn = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -1032,43 +1208,6 @@ export function useHarness() {
     }
   }, [notify, persistBadge])
 
-  const maybeGenerateThreadTitle = useCallback(async (threadId: string, turn: Turn) => {
-    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
-    if (!thread || thread.name || turn.status !== 'completed' || generatingTitlesRef.current.has(threadId)) return
-    const prompt = threadTitlePrompt(turn)
-    if (!prompt) return
-
-    generatingTitlesRef.current.add(threadId)
-    let generatorThreadId: string | null = null
-    const settings = threadTitleGenerationRef.current
-    try {
-      const response = await runtime.request<StartThreadResponse>('thread/start', {
-        cwd: thread.cwd,
-        runtimeWorkspaceRoots: [thread.cwd],
-        model: settings.model,
-        approvalPolicy: 'never',
-        sandbox: 'read-only',
-        developerInstructions: settings.prompt,
-        ephemeral: true,
-      })
-      generatorThreadId = response.thread.id
-      titleGeneratorsRef.current.set(response.thread.id, { targetThreadId: threadId, text: '' })
-      await runtime.request<StartTurnResponse>('turn/start', {
-        threadId: response.thread.id,
-        clientUserMessageId: newClientId(),
-        input: [textInput(prompt)],
-        cwd: thread.cwd,
-        runtimeWorkspaceRoots: [thread.cwd],
-        approvalPolicy: 'never',
-        sandboxPolicy: { type: 'readOnly', networkAccess: false },
-        effort: settings.effort,
-      })
-    } catch {
-      if (generatorThreadId) titleGeneratorsRef.current.delete(generatorThreadId)
-      generatingTitlesRef.current.delete(threadId)
-    }
-  }, [])
-
   const handleTitleGeneratorEvent = useCallback((method: string, params: JsonObject): boolean => {
     const generatorThreadId = eventThreadId(params)
     if (!generatorThreadId) return false
@@ -1083,18 +1222,93 @@ export function useHarness() {
     } else if (method === 'turn/completed') {
       const turn = params.turn as Turn | undefined
       const fallback = turn?.items.find((item) => item.type === 'agentMessage')
-      const title = parseGeneratedThreadTitle(generator.text || (fallback ? itemText(fallback) : ''))
+      const generatedText = generator.text || (fallback ? itemText(fallback) : '')
+      const title = parseGeneratedThreadTitle(generatedText)
+      recordTitleDiagnostic({
+        level: 'info',
+        event: 'generation.completed',
+        method: 'turn/completed',
+        threadId: generator.targetThreadId,
+        generatorThreadId,
+        attemptId: generator.attemptId,
+        stage: 'turn/completed',
+        generatedChars: generatedText.length,
+        accepted: Boolean(title),
+        status: turn?.status,
+        durationMs: Math.round(performance.now() - generator.startedAt),
+      })
       titleGeneratorsRef.current.delete(generatorThreadId)
       generatingTitlesRef.current.delete(generator.targetThreadId)
       const target = threadsRef.current.find((thread) => thread.id === generator.targetThreadId)
-      if (title && target && !target.name) {
-        void runtime.request('thread/name/set', { threadId: target.id, name: title }).then(() => {
-          updateThread(target.id, (thread) => thread.name ? thread : { ...thread, name: title })
-          updateDetail(target.id, (detail) => detail.thread.name
-            ? detail
-            : { ...detail, thread: { ...detail.thread, name: title } })
-        }).catch(() => undefined)
+      if (!title) {
+        recordTitleDiagnostic({
+          level: 'info',
+          event: 'name_set.skipped',
+          method: 'thread/name/set',
+          threadId: generator.targetThreadId,
+          generatorThreadId,
+          attemptId: generator.attemptId,
+          stage: 'thread/name/set',
+          reason: 'empty_generated_title',
+        })
+        return true
       }
+      if (!target) {
+        recordTitleDiagnostic({
+          level: 'info',
+          event: 'name_set.skipped',
+          method: 'thread/name/set',
+          threadId: generator.targetThreadId,
+          generatorThreadId,
+          attemptId: generator.attemptId,
+          stage: 'thread/name/set',
+          reason: 'thread_not_found',
+        })
+        return true
+      }
+      if (target.name?.trim()) {
+        recordTitleDiagnostic({
+          level: 'info',
+          event: 'name_set.skipped',
+          method: 'thread/name/set',
+          threadId: target.id,
+          generatorThreadId,
+          attemptId: generator.attemptId,
+          stage: 'thread/name/set',
+          reason: 'already_named',
+        })
+        return true
+      }
+      const nameSetStartedAt = performance.now()
+      void runtime.request('thread/name/set', { threadId: target.id, name: title }).then(() => {
+        updateThread(target.id, (thread) => thread.name?.trim() ? thread : { ...thread, name: title })
+        updateDetail(target.id, (detail) => detail.thread.name?.trim()
+          ? detail
+          : { ...detail, thread: { ...detail.thread, name: title } })
+        recordTitleDiagnostic({
+          level: 'info',
+          event: 'name_set.completed',
+          method: 'thread/name/set',
+          threadId: target.id,
+          generatorThreadId,
+          attemptId: generator.attemptId,
+          stage: 'thread/name/set',
+          accepted: true,
+          durationMs: Math.round(performance.now() - nameSetStartedAt),
+        })
+      }).catch((error) => {
+        recordTitleDiagnostic({
+          level: 'error',
+          event: 'name_set.failed',
+          method: 'thread/name/set',
+          threadId: target.id,
+          generatorThreadId,
+          attemptId: generator.attemptId,
+          stage: 'thread/name/set',
+          errorCode: diagnosticErrorCode(error),
+          durationMs: Math.round(performance.now() - nameSetStartedAt),
+        })
+      })
     }
     return true
   }, [updateDetail, updateThread])
@@ -1262,7 +1476,6 @@ export function useHarness() {
         updateThread(threadId, (thread) => touchThreadActivity({ ...thread, status: { type: 'idle' } }))
         const badge: Badge = turn.status === 'failed' ? 'error' : selectedThreadIdRef.current === threadId ? null : 'success'
         persistBadge(threadId, badge)
-        void maybeGenerateThreadTitle(threadId, turn)
         if (completedThread && !completedThread.ephemeral) {
           const completedEvent: TurnCompletedEvent = {
             threadId,
@@ -1311,7 +1524,7 @@ export function useHarness() {
         setThreads((current) => current.filter((thread) => thread.id !== threadId))
       }
     }
-  }, [commitTurnOwnership, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, maybeGenerateThreadTitle, notify, persistBadge, setActiveTurn, startTurn, updateDetail, updateThread, upsertThread])
+  }, [commitTurnOwnership, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, notify, persistBadge, setActiveTurn, startTurn, updateDetail, updateThread, upsertThread])
 
   useEffect(() => {
     let disposed = false
@@ -1432,6 +1645,8 @@ export function useHarness() {
     setTheme,
     setSendShortcut,
     setFollowUpMode,
+    setActionShortcut,
+    resetActionShortcuts,
     setThreadTitleGeneration,
     setSelectedWorkspaceRoot,
     changeThreadWorkspace,
@@ -1489,13 +1704,10 @@ export function threadPermissionOverrides(
   return { sandboxPolicy: rebaseSandboxPolicy(detail.sandbox, previousCwd, nextCwd) }
 }
 
-export function threadTitlePrompt(turn: Turn): string | null {
-  const messages = turn.items
-    .filter((item) => item.type === 'userMessage' || item.type === 'agentMessage')
-    .map((item) => `${item.type === 'userMessage' ? 'User' : 'Assistant'}: ${itemText(item).trim()}`)
-    .filter((message) => !message.endsWith(':'))
-  if (!messages.some((message) => message.startsWith('User:'))) return null
-  return `Generate a title for this conversation:\n\n${messages.join('\n\n').slice(0, 8_000)}`
+export function threadTitlePrompt(userText: string): string | null {
+  const text = userText.trim()
+  if (!text) return null
+  return `Generate a title for this user's request:\n\nUser: ${text.slice(0, 8_000)}`
 }
 
 export function shouldDiscardDraftThread(unstarted: boolean, hasContent: boolean): boolean {

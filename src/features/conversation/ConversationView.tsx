@@ -121,6 +121,7 @@ interface ConversationViewProps {
   workspaces: Workspace[]
   workspaceChanging: boolean
   initialScrollTop: number | null
+  scrollToLatestRequest: number
   hasOlderTurns: boolean
   loadingOlderTurns: boolean
   onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
@@ -133,25 +134,44 @@ interface ConversationViewProps {
   onRawModeToggle: () => void
 }
 
-export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, onRawModeToggle }: ConversationViewProps) {
+export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, onRawModeToggle }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
+  const followingLatest = useRef(initialScrollTop === null)
+  const handledScrollRequest = useRef(scrollToLatestRequest)
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
     if (!scroll || initiallyPositioned.current) return
-    if (initialScrollTop === null && items.length === 0) return
     scroll.scrollTop = initialScrollTop ?? scroll.scrollHeight
+    followingLatest.current = initialScrollTop === null || isNearConversationBottom(scroll)
     initiallyPositioned.current = true
   }, [initialScrollTop, items.length])
 
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll || handledScrollRequest.current === scrollToLatestRequest) return
+    handledScrollRequest.current = scrollToLatestRequest
+    followingLatest.current = true
+    scroll.scrollTop = scroll.scrollHeight
+  }, [scrollToLatestRequest])
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    if (scroll && initiallyPositioned.current && followingLatest.current) scroll.scrollTop = scroll.scrollHeight
+  })
+
   const scrollToBottom = () => {
+    followingLatest.current = true
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
 
   return (
     <section className="conversation-pane" aria-label="对话内容">
-      <div className="conversation-scroll" ref={scrollRef} onScroll={(event) => onScrollPosition(event.currentTarget.scrollTop)}>
+      <div className="conversation-scroll" ref={scrollRef} onScroll={(event) => {
+        followingLatest.current = isNearConversationBottom(event.currentTarget)
+        onScrollPosition(event.currentTarget.scrollTop)
+      }}>
         <div className="message-column">
           {rawMode && (
             <div className="raw-mode-banner" role="status">
@@ -212,6 +232,10 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
       </button>
     </section>
   )
+}
+
+export function isNearConversationBottom(scroll: Pick<HTMLElement, 'scrollTop' | 'clientHeight' | 'scrollHeight'>): boolean {
+  return scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop <= 48
 }
 
 export const CHOOSE_WORKSPACE_VALUE = '__choose_workspace__'

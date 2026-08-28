@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Thread, Turn } from '../../core/domain/codex'
-import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, titleEditorKeyAction } from './ConversationView'
-import { parseThreadTitleGenerationSettings, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
+import type { Thread, ThreadDetail } from '../../core/domain/codex'
+import { textInput } from '../../core/domain/codex'
+import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, titleEditorKeyAction } from './ConversationView'
+import { isFirstUserTurn, parseThreadTitleGenerationSettings, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
 
 function makeThread(cwd: string): Thread {
   return {
@@ -32,6 +33,13 @@ describe('markdown links', () => {
     expect(isExternalWebUrl('http://localhost:1420')).toBe(true)
     expect(isExternalWebUrl('/workspace/readme.md')).toBe(false)
     expect(isExternalWebUrl('javascript:alert(1)')).toBe(false)
+  })
+})
+
+describe('conversation scrolling', () => {
+  it('keeps following content only while the viewport is near the bottom', () => {
+    expect(isNearConversationBottom({ scrollTop: 452, clientHeight: 500, scrollHeight: 1_000 })).toBe(true)
+    expect(isNearConversationBottom({ scrollTop: 400, clientHeight: 500, scrollHeight: 1_000 })).toBe(false)
   })
 })
 
@@ -79,16 +87,33 @@ describe('thread runtime workspace', () => {
 })
 
 describe('generated thread title prompt', () => {
-  it('includes the completed user and assistant exchange', () => {
-    const turn: Turn = {
-      id: 'turn-1', status: 'completed', error: null, startedAt: 1, completedAt: 2, durationMs: 1,
-      items: [
-        { id: 'user-1', type: 'userMessage', content: [{ type: 'text', text: '修复 workspace', text_elements: [] }] },
-        { id: 'assistant-1', type: 'agentMessage', text: '已经定位问题。' },
-      ],
-    }
-    expect(threadTitlePrompt(turn)).toContain('User: 修复 workspace')
-    expect(threadTitlePrompt(turn)).toContain('Assistant: 已经定位问题。')
+  it('uses only the first user input', () => {
+    const prompt = threadTitlePrompt('  修复 workspace\n权限问题  ')
+    expect(prompt).toContain('User: 修复 workspace\n权限问题')
+    expect(prompt).not.toContain('Assistant:')
+    expect(threadTitlePrompt('   ')).toBeNull()
+  })
+})
+
+describe('thread title trigger', () => {
+  it('only treats a detail without user messages as a new conversation', () => {
+    const detail = {
+      thread: makeThread('/repo/current'),
+      turns: [],
+      items: [],
+      nextTurnsCursor: null,
+      activeTurnId: null,
+      foreignActive: false,
+      runtimeWorkspaceRoots: ['/repo/current'],
+      sandbox: null,
+      activePermissionProfile: null,
+      model: null,
+    } satisfies ThreadDetail
+    expect(isFirstUserTurn(detail)).toBe(true)
+    expect(isFirstUserTurn({
+      ...detail,
+      items: [{ turnId: 'turn-1', item: { type: 'userMessage', content: [textInput('已有消息')] } }],
+    })).toBe(false)
   })
 })
 

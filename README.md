@@ -34,7 +34,7 @@ pnpm tauri dev
 构建未签名 macOS App：
 
 ```bash
-pnpm tauri build
+pnpm tauri:build
 ```
 
 开发版与稳定版使用相同的 Harness 本地状态和 Codex 历史，但有独立的 macOS App 身份，可同时运行。开发版使用绿色图标和主题：
@@ -44,7 +44,7 @@ pnpm tauri:dev
 pnpm tauri:build:dev
 ```
 
-稳定版保持蓝色图标和主题，继续使用默认的 `pnpm tauri dev` 与 `pnpm tauri build`。
+稳定版保持蓝色图标和主题，使用 `pnpm tauri dev` 开发，并通过 `pnpm tauri:build` 打包。两个 flavor 的打包产物都是同时支持 Apple 芯片与 Intel Mac 的 Universal App。
 
 如果 GUI 进程找不到 Codex CLI，可显式设置 `CODEX_HARNESS_CODEX_PATH` 为 `codex` 可执行文件路径。
 

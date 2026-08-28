@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import { DEFAULT_FONT_SIZES } from './core/domain/codex'
@@ -17,6 +17,8 @@ import { SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
+import { actionForShortcut, threadIndexForAction } from './features/actions/harnessActions'
+import type { HarnessActionId } from './core/domain/codex'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
@@ -81,6 +83,10 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [rawMode, setRawMode] = useState(false)
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
+  const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
+  const [composerFocusRequest, setComposerFocusRequest] = useState(0)
+  const [scrollToLatestRequest, setScrollToLatestRequest] = useState<{ threadId: string; sequence: number } | null>(null)
+  const scrollRequestSequence = useRef(0)
   const conversationScrollPositions = useRef<Record<string, number>>({})
   const workspace = useMemo(
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
@@ -121,6 +127,31 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   useEffect(() => {
     void runtime.setWindowTheme(harness.appearance.theme).catch(() => undefined)
   }, [harness.appearance.theme])
+
+  const runAction = useCallback((actionId: HarnessActionId) => {
+    const threadIndex = threadIndexForAction(actionId)
+    if (threadIndex !== null) {
+      const threadId = visibleThreadIds[threadIndex]
+      if (threadId) void harness.selectThread(threadId)
+      return
+    }
+    if (actionId === 'thread.new') void harness.createThread()
+    else if (actionId === 'sidebar.toggle') harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)
+    else if (actionId === 'composer.focus') setComposerFocusRequest((current) => current + 1)
+  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.setSidebarCollapsed, visibleThreadIds])
+
+  useEffect(() => {
+    if (settingsOpen) return undefined
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return
+      const actionId = actionForShortcut(event, harness.keyboard.actionShortcuts)
+      if (!actionId) return
+      event.preventDefault()
+      runAction(actionId)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [harness.keyboard.actionShortcuts, runAction, settingsOpen])
 
   const previewConversationTabDrop = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
     event.preventDefault()
@@ -201,6 +232,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
         onManualThreadOrder={harness.setManualThreadOrder}
         onSidebarWidth={harness.setSidebarWidth}
         onOpenSettings={() => setSettingsOpen(true)}
+        onVisibleThreadOrder={setVisibleThreadIds}
       />
       <SidebarEdgeToggle
         collapsed={harness.navigation.sidebarCollapsed}
@@ -272,6 +304,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                 workspaces={harness.workspaces}
                 workspaceChanging={Boolean(harness.busy.threadWorkspace)}
                 initialScrollTop={conversationScrollPositions.current[harness.currentThread.id] ?? null}
+                scrollToLatestRequest={scrollToLatestRequest?.threadId === harness.currentThread.id ? scrollToLatestRequest.sequence : 0}
                 hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
                 loadingOlderTurns={Boolean(harness.busy.olderTurns)}
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
@@ -330,6 +363,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   onStart={() => void harness.startQueue()}
                 />
                 <Composer
+                  key={harness.currentThread.id}
                   initialDraft={composerDrafts[harness.currentThread.id]}
                   disabled={harness.currentForeignActive || Boolean(harness.busy.composer)}
                   working={harness.isCurrentWorking}
@@ -338,6 +372,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   contextUsage={harness.currentTokenUsage}
                   workspaceRoot={harness.currentThread?.cwd ?? workspace?.root ?? null}
                   sendShortcut={harness.keyboard.sendShortcut}
+                  focusRequest={composerFocusRequest}
                   models={codex.models}
                   settings={codex.settingsForThread(harness.selectedThreadId)}
                   rawMode={rawMode}
@@ -345,9 +380,18 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   settingsDisabled={codex.loading}
                   onSettingsChange={(patch) => harness.selectedThreadId ? codex.updateThreadSettings(harness.selectedThreadId, patch) : undefined}
                   onFollowUpModeChange={harness.setFollowUpMode}
-                  onSend={harness.sendMessage}
+                  onSend={(input, mode) => {
+                    const threadId = harness.currentThread!.id
+                    scrollRequestSequence.current += 1
+                    setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
+                    return harness.sendMessage(input, mode)
+                  }}
                   onCommand={(command) => {
                     if (command.name === 'raw') setRawMode((current) => !current)
+                    else if (command.name === 'new') runAction('thread.new')
+                    else if (command.name === 'model' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { model: command.model })
+                    else if (command.name === 'reasoning' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { effort: command.effort })
+                    else if (command.name === 'permissions' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { approvalPolicy: command.approvalPolicy })
                   }}
                   onStop={harness.stopTurn}
                   actions={(api) => composerActions.map((action) => (
@@ -383,6 +427,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           fontSizes={harness.appearance.fontSizes}
           sendShortcut={harness.keyboard.sendShortcut}
           followUpMode={harness.keyboard.followUpMode}
+          actionShortcuts={harness.keyboard.actionShortcuts}
           workspaces={harness.workspaces}
           threads={harness.threads}
           selectedThreadId={harness.selectedThreadId}
@@ -394,8 +439,13 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           onResetFontSizes={harness.resetFontSizes}
           onSendShortcut={harness.setSendShortcut}
           onFollowUpMode={harness.setFollowUpMode}
+          onActionShortcut={harness.setActionShortcut}
+          onResetActionShortcuts={harness.resetActionShortcuts}
           onThreadTitleGeneration={harness.setThreadTitleGeneration}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false)
+            setComposerFocusRequest((current) => current + 1)
+          }}
         />
       )}
       {harness.toast && <div className={`toast ${harness.toast.kind}`}>{harness.toast.message}</div>}

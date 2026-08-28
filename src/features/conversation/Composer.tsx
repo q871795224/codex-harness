@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, FileText, Image, Plus, Send, Sparkles, Square, X } from 'lucide-react'
+import { ChevronDown, FileText, Image, Plus, Send, Sparkles, Square, Terminal, X } from 'lucide-react'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
@@ -28,6 +28,7 @@ interface ComposerProps {
   contextUsage: ThreadTokenUsage | null
   workspaceRoot: string | null
   sendShortcut: SendShortcut
+  focusRequest: number
   models: CodexModel[]
   settings: ThreadCodexSettings
   rawMode: boolean
@@ -67,13 +68,15 @@ interface FuzzyFileSearchResult {
 }
 
 interface ComposerSuggestion {
-  kind: 'file' | 'skill'
+  kind: 'file' | 'skill' | 'command'
   name: string
-  path: string
+  path?: string
   detail: string
+  replacement?: string
+  complete?: boolean
 }
 
-export function Composer({ initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, models, settings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, actions }: ComposerProps) {
+export function Composer({ initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, models, settings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, actions }: ComposerProps) {
   const [text, setText] = useState(initialDraft?.text ?? '')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
@@ -111,21 +114,23 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
           detail: match.path,
         }))
     }
+    if (trigger.kind === 'command') return attachments.length > 0 ? [] : commandSuggestions(trigger.query, models, selectedModel)
     const query = trigger.query.toLocaleLowerCase()
     return skills
       .filter((skill) => skill.enabled && (!query || skill.name.toLocaleLowerCase().includes(query) || skill.description.toLocaleLowerCase().includes(query)))
       .slice(0, 8)
       .map((skill) => ({ kind: 'skill', name: skill.name, path: skill.path, detail: skill.description }))
-  }, [fileMatches, skills, suggestionsDismissed, trigger])
-  const suggestionsOpen = Boolean(trigger && !suggestionsDismissed)
+  }, [attachments.length, fileMatches, models, selectedModel, skills, suggestionsDismissed, trigger])
+  const suggestionsOpen = Boolean(trigger && !suggestionsDismissed && !(trigger.kind === 'command' && attachments.length > 0))
 
-  useEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
+  useLayoutEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     onDraftChangeRef.current?.({ text, collapsedPastes, attachments }, hasContent)
   }, [attachments, collapsedPastes, hasContent, text])
 
   useEffect(() => { ref.current?.focus() }, [disabled])
+  useEffect(() => { ref.current?.focus() }, [focusRequest])
 
   useEffect(() => {
     if (!working) setModeOpen(false)
@@ -204,7 +209,21 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
   const submit = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return
     const command = parseComposerCommand(expandedText, attachments.length > 0)
-    if (command) await onCommand(command)
+    if (command) {
+      if (settingsLocked && ['model', 'reasoning', 'permissions'].includes(command.name)) {
+        setActionError('请等待当前回合结束后再修改会话设置。')
+        return
+      }
+      if (command.name === 'model' && !models.some((model) => model.model === command.model)) {
+        setActionError(`当前 App Server 不支持模型 ${command.model}。`)
+        return
+      }
+      if (command.name === 'reasoning' && !selectedModel?.supportedReasoningEfforts.some((effort) => effort.reasoningEffort === command.effort)) {
+        setActionError(`当前模型不支持推理强度 ${command.effort}。`)
+        return
+      }
+      await onCommand(command)
+    }
     else await onSend(inputs, followUpMode)
     setText('')
     setCollapsedPastes([])
@@ -218,16 +237,16 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
 
   const chooseSuggestion = (suggestion: ComposerSuggestion) => {
     if (!trigger) return
-    const replacement = suggestion.kind === 'skill' ? `$${suggestion.name}` : ''
+    const replacement = suggestion.kind === 'skill' ? `$${suggestion.name}` : suggestion.kind === 'command' ? suggestion.replacement ?? `/${suggestion.name}` : ''
     const next = replaceComposerTrigger(text, trigger, replacement)
     setCollapsedPastes((current) => reconcileCollapsedPastes(text, next.text, current))
     setText(next.text)
     setCursor(next.cursor)
-    setAttachments((current) => current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
+    setAttachments((current) => suggestion.kind === 'command' || current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
       ? current
-      : [...current, { kind: suggestion.kind, name: suggestion.name, path: suggestion.path }])
+      : [...current, { kind: suggestion.kind, name: suggestion.name, path: suggestion.path! }])
     setFileMatches([])
-    setSuggestionsDismissed(false)
+    setSuggestionsDismissed(suggestion.kind === 'command' && Boolean(suggestion.complete))
     requestAnimationFrame(() => {
       ref.current?.focus()
       ref.current?.setSelectionRange(next.cursor, next.cursor)
@@ -347,9 +366,14 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
                 return
               }
               if (event.key === 'Enter' || event.key === 'Tab') {
-                event.preventDefault()
-                chooseSuggestion(suggestions[highlightedSuggestion] ?? suggestions[0])
-                return
+                const suggestion = suggestions[highlightedSuggestion] ?? suggestions[0]
+                if (event.key === 'Enter' && suggestion.kind === 'command' && suggestion.complete && text.trim() === suggestion.replacement) {
+                  // Let the normal send path execute an already complete local command.
+                } else {
+                  event.preventDefault()
+                  chooseSuggestion(suggestion)
+                  return
+                }
               }
             }
             if (suggestionsOpen && event.key === 'Escape') {
@@ -374,11 +398,11 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
           wrap="soft"
         />
         {suggestionsOpen && (
-          <div className="composer-suggestions" role="listbox" aria-label={triggerKind === 'file' ? '文件建议' : '技能建议'}>
-            <div className="composer-suggestions-label">{triggerKind === 'file' ? '@ 文件' : '$ Skill'}</div>
+          <div className="composer-suggestions" role="listbox" aria-label={triggerKind === 'file' ? '文件建议' : triggerKind === 'skill' ? '技能建议' : '命令建议'}>
+            <div className="composer-suggestions-label">{triggerKind === 'file' ? '@ 文件' : triggerKind === 'skill' ? '$ Skill' : '/ 命令'}</div>
             {suggestions.map((suggestion, index) => (
               <button
-                key={`${suggestion.kind}:${suggestion.path}`}
+                key={`${suggestion.kind}:${suggestion.path ?? suggestion.replacement ?? suggestion.name}`}
                 type="button"
                 role="option"
                 aria-selected={index === highlightedSuggestion}
@@ -386,7 +410,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => chooseSuggestion(suggestion)}
               >
-                {suggestion.kind === 'skill' ? <Sparkles size={14} /> : <FileText size={14} />}
+                {suggestion.kind === 'skill' ? <Sparkles size={14} /> : suggestion.kind === 'command' ? <Terminal size={14} /> : <FileText size={14} />}
                 <span><strong>{suggestion.name}</strong><small>{suggestion.detail}</small></span>
               </button>
             ))}
@@ -444,6 +468,42 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
       </div>
     </div>
   )
+}
+
+function commandSuggestions(query: string, models: CodexModel[], selectedModel: CodexModel | null): ComposerSuggestion[] {
+  const separator = query.indexOf(' ')
+  if (separator < 0) {
+    const normalized = query.toLocaleLowerCase()
+    return [
+      { name: 'new', detail: '新建会话', complete: true },
+      { name: 'model', detail: '选择当前会话模型', complete: false },
+      { name: 'reasoning', detail: '选择推理强度', complete: false },
+      { name: 'permissions', detail: '选择审批策略', complete: false },
+      { name: 'raw', detail: '切换原始 Markdown 显示', complete: true },
+    ].filter((command) => command.name.includes(normalized)).map((command) => ({
+      kind: 'command',
+      name: command.name,
+      detail: command.detail,
+      replacement: `/${command.name}${command.complete ? '' : ' '}`,
+      complete: command.complete,
+    }))
+  }
+
+  const name = query.slice(0, separator)
+  const argument = query.slice(separator + 1).trim().toLocaleLowerCase()
+  if (name === 'model') return models
+    .filter((model) => !argument || model.model.toLocaleLowerCase().includes(argument) || model.displayName.toLocaleLowerCase().includes(argument))
+    .map((model) => ({ kind: 'command', name: model.displayName, detail: model.description, replacement: `/model ${model.model}`, complete: true }))
+  if (name === 'reasoning') return (selectedModel?.supportedReasoningEfforts ?? [])
+    .filter((effort) => !argument || effort.reasoningEffort.toLocaleLowerCase().includes(argument))
+    .map((effort) => ({ kind: 'command', name: effort.reasoningEffort, detail: effort.description, replacement: `/reasoning ${effort.reasoningEffort}`, complete: true }))
+  if (name === 'permissions') return [
+    { value: 'on-request', label: 'On request' },
+    { value: 'untrusted', label: 'Untrusted' },
+    { value: 'never', label: 'Never' },
+  ].filter((policy) => !argument || policy.value.includes(argument) || policy.label.toLocaleLowerCase().includes(argument))
+    .map((policy) => ({ kind: 'command', name: policy.label, detail: `审批策略：${policy.value}`, replacement: `/permissions ${policy.value}`, complete: true }))
+  return []
 }
 
 function attachmentFromPath(path: string): ComposerAttachment {

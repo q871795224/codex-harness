@@ -64,7 +64,7 @@ describe('notifications plugin', () => {
     expect(listeners.click).toBeUndefined()
   })
 
-  it('fails activation when notification permission is denied', async () => {
+  it('fails activation when notification permission is unavailable', async () => {
     const host = new PluginHost([notificationsPlugin], {
       storage: () => storage,
       services: {

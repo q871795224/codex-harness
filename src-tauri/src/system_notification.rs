@@ -34,22 +34,20 @@ fn parse_notification_identifier(identifier: &str) -> Option<NotificationTarget>
 }
 
 #[cfg(target_os = "macos")]
+#[allow(deprecated)]
 mod macos {
     use super::{
         notification_identifier, parse_notification_identifier, SystemNotificationClick,
         SystemNotificationInput,
     };
-    use block2::RcBlock;
     use objc2::rc::Retained;
-    use objc2::runtime::{Bool, ProtocolObject};
+    use objc2::runtime::ProtocolObject;
     use objc2::{define_class, msg_send, AnyThread};
-    use objc2_foundation::{NSError, NSObject, NSObjectProtocol, NSString};
-    use objc2_user_notifications::{
-        UNAuthorizationOptions, UNMutableNotificationContent, UNNotification,
-        UNNotificationPresentationOptions, UNNotificationRequest, UNNotificationResponse,
-        UNUserNotificationCenter, UNUserNotificationCenterDelegate,
+    use objc2_foundation::{
+        NSObject, NSObjectProtocol, NSString, NSUserNotification, NSUserNotificationCenter,
+        NSUserNotificationCenterDelegate,
     };
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::OnceLock;
     use tauri::{Emitter, Manager};
 
     static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
@@ -63,30 +61,21 @@ mod macos {
         // SAFETY: NSObjectProtocol has no additional safety requirements.
         unsafe impl NSObjectProtocol for NotificationDelegate {}
 
-        // SAFETY: The method signatures match UNUserNotificationCenterDelegate.
-        unsafe impl UNUserNotificationCenterDelegate for NotificationDelegate {
-            #[unsafe(method(userNotificationCenter:willPresentNotification:withCompletionHandler:))]
-            fn will_present(
+        // SAFETY: The method signatures match NSUserNotificationCenterDelegate.
+        unsafe impl NSUserNotificationCenterDelegate for NotificationDelegate {
+            #[unsafe(method(userNotificationCenter:didActivateNotification:))]
+            fn did_activate(
                 &self,
-                _center: &UNUserNotificationCenter,
-                _notification: &UNNotification,
-                completion_handler: &block2::DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
+                _center: &NSUserNotificationCenter,
+                notification: &NSUserNotification,
             ) {
-                completion_handler.call((UNNotificationPresentationOptions::Banner
-                    | UNNotificationPresentationOptions::List,));
-            }
-
-            #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
-            fn did_receive_response(
-                &self,
-                _center: &UNUserNotificationCenter,
-                response: &UNNotificationResponse,
-                completion_handler: &block2::DynBlock<dyn Fn()>,
-            ) {
-                let identifier = response.notification().request().identifier().to_string();
-                if let (Some(target), Some(app)) =
-                    (parse_notification_identifier(&identifier), APP_HANDLE.get())
-                {
+                let identifier = notification.identifier().map(|value| value.to_string());
+                if let (Some(target), Some(app)) = (
+                    identifier
+                        .as_deref()
+                        .and_then(parse_notification_identifier),
+                    APP_HANDLE.get(),
+                ) {
                     let _ = app.show();
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
@@ -100,7 +89,15 @@ mod macos {
                         },
                     );
                 }
-                completion_handler.call(());
+            }
+
+            #[unsafe(method(userNotificationCenter:shouldPresentNotification:))]
+            fn should_present(
+                &self,
+                _center: &NSUserNotificationCenter,
+                _notification: &NSUserNotification,
+            ) -> bool {
+                true
             }
         }
     );
@@ -118,10 +115,10 @@ mod macos {
             return;
         }
         let _ = APP_HANDLE.set(app.clone());
-        let center = UNUserNotificationCenter::currentNotificationCenter();
+        let center = NSUserNotificationCenter::defaultUserNotificationCenter();
         let delegate = NotificationDelegate::new();
-        center.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-        // UNUserNotificationCenter.delegate is weak. The delegate must live for the process lifetime.
+        // SAFETY: The delegate is leaked below and therefore outlives the notification center.
+        unsafe { center.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
         std::mem::forget(delegate);
     }
 
@@ -129,82 +126,19 @@ mod macos {
         if tauri::is_dev() {
             return Err("macOS 系统通知只能在打包后的 App 中启用".to_string());
         }
-        let receiver = {
-            let center = UNUserNotificationCenter::currentNotificationCenter();
-            let (sender, receiver) = tokio::sync::oneshot::channel();
-            let sender = Arc::new(Mutex::new(Some(sender)));
-            let block: RcBlock<dyn Fn(Bool, *mut NSError)> =
-                RcBlock::new(move |granted: Bool, error: *mut NSError| {
-                    let result = if error.is_null() {
-                        Ok(granted.as_bool())
-                    } else {
-                        // SAFETY: NSError is valid for the duration of this completion callback.
-                        let message = unsafe { error.as_ref() }
-                            .map(|error| error.localizedDescription().to_string())
-                            .unwrap_or_else(|| "未知错误".to_string());
-                        Err(format!("无法申请 macOS 通知权限: {message}"))
-                    };
-                    if let Some(sender) = sender
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .take()
-                    {
-                        let _ = sender.send(result);
-                    }
-                });
-            center.requestAuthorizationWithOptions_completionHandler(
-                UNAuthorizationOptions::Alert,
-                &block,
-            );
-            receiver
-        };
-        receiver
-            .await
-            .map_err(|_| "macOS 通知权限请求未返回结果".to_string())?
+        Ok(true)
     }
 
     pub async fn send(input: SystemNotificationInput) -> Result<(), String> {
         if tauri::is_dev() {
             return Err("macOS 系统通知只能在打包后的 App 中启用".to_string());
         }
-        let receiver = {
-            let center = UNUserNotificationCenter::currentNotificationCenter();
-            let content = UNMutableNotificationContent::new();
-            content.setTitle(&NSString::from_str(&input.title));
-            content.setThreadIdentifier(&NSString::from_str(&input.thread_id));
-            let identifier = NSString::from_str(&notification_identifier(&input)?);
-            let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
-                &identifier,
-                &content,
-                None,
-            );
-
-            let (sender, receiver) = tokio::sync::oneshot::channel();
-            let sender = Arc::new(Mutex::new(Some(sender)));
-            let block: RcBlock<dyn Fn(*mut NSError)> = RcBlock::new(move |error: *mut NSError| {
-                let result = if error.is_null() {
-                    Ok(())
-                } else {
-                    // SAFETY: NSError is valid for the duration of this completion callback.
-                    let message = unsafe { error.as_ref() }
-                        .map(|error| error.localizedDescription().to_string())
-                        .unwrap_or_else(|| "未知错误".to_string());
-                    Err(format!("无法发送 macOS 通知: {message}"))
-                };
-                if let Some(sender) = sender
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .take()
-                {
-                    let _ = sender.send(result);
-                }
-            });
-            center.addNotificationRequest_withCompletionHandler(&request, Some(&block));
-            receiver
-        };
-        receiver
-            .await
-            .map_err(|_| "macOS 通知发送请求未返回结果".to_string())?
+        let notification = NSUserNotification::init(NSUserNotification::alloc());
+        notification.setTitle(Some(&NSString::from_str(&input.title)));
+        notification.setIdentifier(Some(&NSString::from_str(&notification_identifier(&input)?)));
+        NSUserNotificationCenter::defaultUserNotificationCenter()
+            .deliverNotification(&notification);
+        Ok(())
     }
 }
 

@@ -16,7 +16,7 @@ export interface CollapsedPasteEdit {
 }
 
 export interface ActiveComposerTrigger {
-  kind: 'file' | 'skill'
+  kind: 'file' | 'skill' | 'command'
   query: string
   start: number
   end: number
@@ -118,6 +118,11 @@ export function expandCollapsedPastes(text: string, pastes: CollapsedPaste[]): s
 export function activeComposerTrigger(text: string, cursor: number | null): ActiveComposerTrigger | null {
   if (cursor === null || cursor < 0) return null
   const beforeCursor = text.slice(0, cursor)
+  const command = beforeCursor.match(/^\s*\/([^\n]*)$/)
+  if (command) {
+    const start = beforeCursor.indexOf('/')
+    return { kind: 'command', query: command[1], start, end: cursor }
+  }
   const match = beforeCursor.match(/(?:^|\s)([@$])([^\s@$]*)$/)
   if (!match || match.index === undefined) return null
   const triggerOffset = match[0].lastIndexOf(match[1])

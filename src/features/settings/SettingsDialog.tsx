@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Blocks, BrainCircuit, CircleHelp, FolderOpen, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
-import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
+import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, HarnessActionId, HarnessActionShortcuts, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 import type { useCodexCore } from '../codex/useCodexCore'
+import { conflictingAction, formatShortcut, harnessActionDefinitions, shortcutFromEvent } from '../actions/harnessActions'
 
 interface SettingsDialogProps {
   theme: Theme
   fontSizes: FontSizePreferences
   sendShortcut: SendShortcut
   followUpMode: FollowUpMode
+  actionShortcuts: HarnessActionShortcuts
   workspaces: Workspace[]
   threads: Thread[]
   selectedThreadId: string | null
@@ -23,6 +25,8 @@ interface SettingsDialogProps {
   onResetFontSizes: () => void
   onSendShortcut: (shortcut: SendShortcut) => void
   onFollowUpMode: (mode: FollowUpMode) => void
+  onActionShortcut: (actionId: HarnessActionId, shortcut: string) => void
+  onResetActionShortcuts: () => void
   onThreadTitleGeneration: (settings: ThreadTitleGenerationSettings) => void
   onClose: () => void
 }
@@ -36,7 +40,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, workspaces, threads, selectedThreadId, selectedWorkspaceRoot, codex, threadTitleGeneration, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onThreadTitleGeneration, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, workspaces, threads, selectedThreadId, selectedWorkspaceRoot, codex, threadTitleGeneration, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -44,7 +48,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, w
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const pageMeta: Record<SettingsPage, { heading: string; kicker: string }> = {
     appearance: { heading: '外观', kicker: 'APPEARANCE' },
-    keyboard: { heading: '输入', kicker: 'COMPOSER' },
+    keyboard: { heading: '快捷键', kicker: 'KEYBOARD' },
     models: { heading: '模型', kicker: 'CODEX' },
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
     skills: { heading: '技能', kicker: 'CODEX' },
@@ -98,7 +102,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, w
               <Palette size={16} />外观
             </button>
             <button type="button" className={page === 'keyboard' ? 'selected' : ''} aria-current={page === 'keyboard' ? 'page' : undefined} onClick={() => setPage('keyboard')}>
-              <Keyboard size={16} />输入
+              <Keyboard size={16} />快捷键
             </button>
             <button type="button" className={page === 'models' ? 'selected' : ''} aria-current={page === 'models' ? 'page' : undefined} onClick={() => setPage('models')}>
               <BrainCircuit size={16} />模型
@@ -128,7 +132,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, w
           </header>
 
           {page === 'appearance' && <AppearanceSettings theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
-          {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} />}
+          {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
           {page === 'models' && <ModelsSettings codex={codex} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
@@ -403,36 +407,94 @@ function AppearanceSettings({ theme, fontSizes, onTheme, onFontSize, onResetFont
   )
 }
 
-function KeyboardSettings({ sendShortcut, followUpMode, onSendShortcut, onFollowUpMode }: {
+function KeyboardSettings({ sendShortcut, followUpMode, actionShortcuts, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts }: {
   sendShortcut: SendShortcut
   followUpMode: FollowUpMode
+  actionShortcuts: HarnessActionShortcuts
   onSendShortcut: (shortcut: SendShortcut) => void
   onFollowUpMode: (mode: FollowUpMode) => void
+  onActionShortcut: (actionId: HarnessActionId, shortcut: string) => void
+  onResetActionShortcuts: () => void
 }) {
   return (
-    <section className="settings-section" aria-labelledby="send-shortcut-title">
-      <div className="settings-section-title">
-        <Keyboard size={17} />
-        <div><h3 id="send-shortcut-title">输入与发送</h3><p>设置发送快捷键和 Codex 运行时处理后续消息的默认方式。</p></div>
-      </div>
-      <div className="settings-row-list">
-        <label className="settings-row">
-          <span>发送快捷键</span>
-          <select value={sendShortcut} onChange={(event) => onSendShortcut(event.target.value as SendShortcut)}>
-            <option value="mod-enter">⌘ / Ctrl + Enter</option>
-            <option value="enter">Enter</option>
-          </select>
-        </label>
-        <label className="settings-row">
-          <span>后续消息默认行为</span>
-          <select value={followUpMode} onChange={(event) => onFollowUpMode(event.target.value as FollowUpMode)}>
-            <option value="queue">排队</option>
-            <option value="interject">插话</option>
-          </select>
-        </label>
-        <div className="settings-shortcut-note">{sendShortcut === 'enter' ? 'Shift + Enter 换行' : 'Enter 换行'}</div>
-      </div>
-    </section>
+    <div className="settings-stack keyboard-settings">
+      <section className="settings-section" aria-labelledby="action-shortcut-title">
+        <div className="settings-section-title">
+          <Keyboard size={17} />
+          <div><h3 id="action-shortcut-title">应用操作</h3><p>点击快捷键后直接按下新的组合键；数字会话按侧栏当前可见顺序切换。</p></div>
+        </div>
+        <div className="settings-row-list">
+          {harnessActionDefinitions.map((action) => (
+            <ShortcutRecorder key={action.id} action={action} shortcuts={actionShortcuts} onChange={onActionShortcut} />
+          ))}
+          <div className="settings-row settings-reset-row"><span>全部应用快捷键</span><button type="button" onClick={onResetActionShortcuts}>恢复默认</button></div>
+        </div>
+      </section>
+      <section className="settings-section" aria-labelledby="send-shortcut-title">
+        <div className="settings-section-title">
+          <Keyboard size={17} />
+          <div><h3 id="send-shortcut-title">输入与发送</h3><p>设置发送快捷键和 Codex 运行时处理后续消息的默认方式。</p></div>
+        </div>
+        <div className="settings-row-list">
+          <label className="settings-row">
+            <span>发送快捷键</span>
+            <select value={sendShortcut} onChange={(event) => onSendShortcut(event.target.value as SendShortcut)}>
+              <option value="mod-enter">⌘ / Ctrl + Enter</option>
+              <option value="enter">Enter</option>
+            </select>
+          </label>
+          <label className="settings-row">
+            <span>后续消息默认行为</span>
+            <select value={followUpMode} onChange={(event) => onFollowUpMode(event.target.value as FollowUpMode)}>
+              <option value="queue">排队</option>
+              <option value="interject">插话</option>
+            </select>
+          </label>
+          <div className="settings-shortcut-note">{sendShortcut === 'enter' ? 'Shift + Enter 换行' : 'Enter 换行'}</div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ShortcutRecorder({ action, shortcuts, onChange }: {
+  action: { id: HarnessActionId; label: string }
+  shortcuts: HarnessActionShortcuts
+  onChange: (actionId: HarnessActionId, shortcut: string) => void
+}) {
+  const [recording, setRecording] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <div className="settings-row shortcut-setting-row">
+      <span>{action.label}{error && <small>{error}</small>}</span>
+      <button
+        type="button"
+        className={recording ? 'recording' : ''}
+        onClick={() => { setRecording(true); setError(null) }}
+        onBlur={() => setRecording(false)}
+        onKeyDown={(event) => {
+          if (!recording) return
+          event.preventDefault()
+          event.stopPropagation()
+          const shortcut = shortcutFromEvent(event)
+          if (!shortcut) {
+            setError('请使用组合键或 Esc')
+            return
+          }
+          const conflict = conflictingAction(shortcuts, action.id, shortcut)
+          if (conflict) {
+            const label = harnessActionDefinitions.find(({ id }) => id === conflict)?.label ?? conflict
+            setError(`与“${label}”冲突`)
+            return
+          }
+          onChange(action.id, shortcut)
+          setRecording(false)
+          setError(null)
+        }}
+      >
+        {recording ? '请按快捷键…' : formatShortcut(shortcuts[action.id])}
+      </button>
+    </div>
   )
 }
 

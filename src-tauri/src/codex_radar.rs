@@ -150,12 +150,7 @@ fn build_model_table(
                 && entry.get("effort").and_then(Value::as_str) == Some("max")
         })
         .ok_or_else(|| "Codex Radar 缺少简单任务模型".to_string())?;
-    candidates.push(candidate(
-        simple,
-        "simple",
-        "average_price_usd",
-        "average_minutes",
-    )?);
+    let simple = candidate(simple, "simple", "average_price_usd", "average_minutes")?;
     let mut references = points
         .iter()
         .filter(|entry| supported_reference(entry))
@@ -163,6 +158,7 @@ fn build_model_table(
         .collect::<Result<Vec<_>, _>>()?;
     references.sort_by(|left, right| right.iq.partial_cmp(&left.iq).unwrap_or(Ordering::Equal));
     candidates.extend(references.into_iter().take(3));
+    candidates.push(simple);
     if candidates.len() != 6 {
         return Err("Codex Radar 模型指标不完整".to_string());
     }
@@ -285,6 +281,21 @@ mod tests {
         ]});
         let table = build_model_table(&insights, &efficiency, 42).unwrap();
         assert_eq!(table.rows.len(), 6);
+        assert_eq!(
+            table
+                .rows
+                .iter()
+                .map(|row| row.group.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "hard",
+                "hard",
+                "reference",
+                "reference",
+                "reference",
+                "simple"
+            ]
+        );
         let simple = table.rows.iter().find(|row| row.group == "simple").unwrap();
         assert_eq!(
             (simple.model.as_str(), simple.effort.as_str()),

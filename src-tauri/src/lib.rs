@@ -43,6 +43,17 @@ struct ClientDiagnostic {
     thread_id: Option<String>,
     error_code: Option<String>,
     duration_ms: Option<u64>,
+    attempt_id: Option<String>,
+    stage: Option<String>,
+    generator_thread_id: Option<String>,
+    trigger: Option<String>,
+    model: Option<String>,
+    effort: Option<String>,
+    reason: Option<String>,
+    source_chars: Option<u64>,
+    generated_chars: Option<u64>,
+    accepted: Option<bool>,
+    status: Option<String>,
 }
 
 #[tauri::command]
@@ -128,6 +139,17 @@ fn record_client_diagnostic(state: State<'_, AppState>, diagnostic: ClientDiagno
             "threadId": diagnostic.thread_id,
             "errorCode": error_code,
             "durationMs": diagnostic.duration_ms,
+            "attemptId": diagnostic.attempt_id,
+            "stage": diagnostic.stage,
+            "generatorThreadId": diagnostic.generator_thread_id,
+            "trigger": diagnostic.trigger,
+            "model": diagnostic.model,
+            "effort": diagnostic.effort,
+            "reason": diagnostic.reason,
+            "sourceChars": diagnostic.source_chars,
+            "generatedChars": diagnostic.generated_chars,
+            "accepted": diagnostic.accepted,
+            "status": diagnostic.status,
         }),
     );
 }

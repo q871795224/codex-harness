@@ -30,7 +30,7 @@ interface PluginInstanceDto {
   updatedAt: number
 }
 
-type DiagnosticErrorCode =
+export type DiagnosticErrorCode =
   | 'no_rollout_found'
   | 'timeout'
   | 'connection_failed'
@@ -38,7 +38,7 @@ type DiagnosticErrorCode =
   | 'request_failed'
   | 'unhandled_error'
 
-interface ClientDiagnostic {
+export interface ClientDiagnostic {
   level: 'error' | 'info'
   area: string
   event: string
@@ -46,9 +46,20 @@ interface ClientDiagnostic {
   threadId?: string
   errorCode?: DiagnosticErrorCode
   durationMs?: number
+  attemptId?: string
+  stage?: string
+  generatorThreadId?: string
+  trigger?: string
+  model?: string
+  effort?: string
+  reason?: string
+  sourceChars?: number
+  generatedChars?: number
+  accepted?: boolean
+  status?: string
 }
 
-function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
+export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
   const message = error instanceof Error ? error.message : String(error)
   const normalized = message.toLowerCase()
   if (normalized.includes('no rollout found')) return 'no_rollout_found'
