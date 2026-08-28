@@ -61,6 +61,16 @@ describe('scoped contributions', () => {
 
     expect(resolved.map((entry) => entry.instanceId)).toEqual(['tasks', 'workspace'])
   })
+
+  it('keeps distinct contributions from global and workspace instances', () => {
+    const contribution = (id: string) => ({ id, label: id, run: () => undefined })
+    const resolved = resolveScopedContributions([
+      { pluginId: 'quick-agent', instanceId: 'global', scope: { kind: 'global' }, contribution: contribution('global-job') },
+      { pluginId: 'quick-agent', instanceId: 'workspace', scope: { kind: 'workspace', workspaceRoot: '/repo' }, contribution: contribution('workspace-job') },
+    ], { threadId: 'thread-1', workspaceRoot: '/repo' })
+
+    expect(resolved.map((entry) => entry.contribution.id)).toEqual(['global-job', 'workspace-job'])
+  })
 })
 
 describe('plugin host lifecycle', () => {
@@ -71,6 +81,7 @@ describe('plugin host lifecycle', () => {
       ctx.effect(() => { calls.push('second') })
       ctx.slots.conversationTabs.register({ id: 'tab', label: 'Tab', render: () => null })
       ctx.slots.newThreadPanels.register({ id: 'launcher', render: () => null })
+      ctx.slots.quickActions.register({ id: 'ship', label: 'Ship', run: () => undefined })
     })
     const bad = plugin('plugin-b', () => { throw new Error('boom') })
     const host = new PluginHost([good, bad], { storage: () => storage })
@@ -84,11 +95,13 @@ describe('plugin host lifecycle', () => {
     expect(host.status('instance-2')).toEqual({ phase: 'failed', error: 'boom' })
     expect(host.resolvedTabs({ threadId: null, workspaceRoot: null })).toHaveLength(1)
     expect(host.resolvedNewThreadPanels({ threadId: null, workspaceRoot: null })).toHaveLength(1)
+    expect(host.resolvedQuickActions({ threadId: null, workspaceRoot: null })).toHaveLength(1)
 
     await host.syncInstances([])
     expect(calls).toEqual(['second', 'first'])
     expect(host.resolvedTabs({ threadId: null, workspaceRoot: null })).toHaveLength(0)
     expect(host.resolvedNewThreadPanels({ threadId: null, workspaceRoot: null })).toHaveLength(0)
+    expect(host.resolvedQuickActions({ threadId: null, workspaceRoot: null })).toHaveLength(0)
   })
 
   it('reactivates an instance when its config changes', async () => {

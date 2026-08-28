@@ -50,6 +50,7 @@ export class AgentRunCoordinator implements AgentRunService {
     try {
       const childThreadId = await this.transport.startThread(input.workspaceRoot)
       run = await this.persist({ ...run, childThreadId, updatedAt: Date.now() })
+      if (input.settings) await this.transport.configureThread(childThreadId, input.settings)
       const turnId = await this.transport.startTurn(childThreadId, prompt)
       return await this.persist({ ...run, turnId, status: 'running', updatedAt: Date.now() })
     } catch (error) {

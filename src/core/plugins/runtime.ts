@@ -10,6 +10,7 @@ import type {
   PluginScope,
   PluginStorage,
   PluginViewContext,
+  QuickActionContribution,
 } from '../../extensions/types'
 
 type Disposer = () => void | Promise<void>
@@ -146,6 +147,7 @@ export class PluginHost {
   private readonly tabs = new ContributionRegistry<ConversationTabContribution>()
   private readonly newThreadPanels = new ContributionRegistry<NewThreadPanelContribution>()
   private readonly composerActions = new ContributionRegistry<ComposerActionContribution>()
+  private readonly quickActions = new ContributionRegistry<QuickActionContribution>()
   private readonly commands = new CommandRegistry()
   private syncQueue: Promise<void> = Promise.resolve()
 
@@ -176,6 +178,10 @@ export class PluginHost {
 
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[] {
     return resolveScopedContributions(this.composerActions.list(), context)
+  }
+
+  resolvedQuickActions(context: PluginViewContext): ResolvedContribution<QuickActionContribution>[] {
+    return resolveScopedContributions(this.quickActions.list(), context)
   }
 
   syncInstances(instances: PluginInstanceRecord[]): Promise<void> {
@@ -279,6 +285,9 @@ export class PluginHost {
         },
         composerActions: {
           register: (contribution) => lifecycle.effect(this.composerActions.register({ ...metadata, contribution })),
+        },
+        quickActions: {
+          register: (contribution) => lifecycle.effect(this.quickActions.register({ ...metadata, contribution })),
         },
       },
       commands: {
