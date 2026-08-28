@@ -62,6 +62,10 @@ pnpm tauri:build
 
 ### 版本发布流程
 
+版本号一旦用于 release commit、构建发布或创建同名 tag，后续改动不得继续沿用该版本，也不得通过 amend release commit 或移动 tag 把新改动补入已发布版本。开始后续改动时必须先按 SemVer 递增版本号：修订号（patch）和次版本号（minor）可直接递增；主版本号（major）必须先取得用户明确确认。
+
+版本号递增只表示进入新版本开发，不代表获得发布授权。普通改动完成后不得自动进入发布流程；只有用户明确授权发布后，才可执行 release commit、创建或推送 tag、安装或替换本地稳定版、上传发布产物或创建 GitHub Release。测试、开发构建和 smoke test 可作为改动验证执行，不构成发布授权。
+
 1. 发布前先检查工作树与 diff，确认没有夹带无关改动；同步修改 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 中的版本号，变更过的内置插件同时更新自身 manifest 版本。
 2. 使用目标版本依次执行 `pnpm test`、`pnpm build`、`(cd src-tauri && cargo test)`、`pnpm tauri:build`，再运行 `pnpm tauri dev` 做核心流程 smoke test。任一环节失败都不能提交、打 tag 或发布。
 3. 校验 macOS App 的 `CFBundleShortVersionString` 与目标版本一致后提交 release commit；创建 annotated tag，tag message 必须概括该版本的实际改动，不能只写版本号。

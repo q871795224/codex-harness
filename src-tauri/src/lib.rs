@@ -88,15 +88,62 @@ async fn codex_radar_model_table(state: State<'_, AppState>) -> Result<RadarMode
 }
 
 #[tauri::command]
-async fn request_system_notification_permission() -> Result<bool, String> {
-    system_notification::request_permission().await
+async fn request_system_notification_permission(
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let result = system_notification::request_permission().await;
+    match &result {
+        Ok(granted) => state.diagnostics.record(
+            if *granted { "info" } else { "warn" },
+            "system-notification",
+            if *granted {
+                "permission.granted"
+            } else {
+                "permission.denied"
+            },
+            json!({}),
+        ),
+        Err(error) => state.diagnostics.record(
+            "error",
+            "system-notification",
+            "permission.failed",
+            json!({
+                "errorCode": diagnostics::error_code(error),
+                "reason": error,
+            }),
+        ),
+    }
+    result
 }
 
 #[tauri::command]
 async fn send_system_notification(
+    state: State<'_, AppState>,
     input: system_notification::SystemNotificationInput,
 ) -> Result<(), String> {
-    system_notification::send(input).await
+    let thread_id = input.thread_id().to_string();
+    let turn_id = input.turn_id().to_string();
+    let result = system_notification::send(input).await;
+    match &result {
+        Ok(()) => state.diagnostics.record(
+            "info",
+            "system-notification",
+            "delivery.scheduled",
+            json!({ "threadId": thread_id, "turnId": turn_id }),
+        ),
+        Err(error) => state.diagnostics.record(
+            "error",
+            "system-notification",
+            "delivery.failed",
+            json!({
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "errorCode": diagnostics::error_code(error),
+                "reason": error,
+            }),
+        ),
+    }
+    result
 }
 
 #[tauri::command]

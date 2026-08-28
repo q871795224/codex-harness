@@ -8,7 +8,7 @@ export const notificationsPlugin: HarnessPlugin = {
     id: 'builtin.notifications',
     name: '系统通知',
     description: 'Codex 完成一次完整回复后发送 macOS 系统通知。',
-    version: '1.0.1',
+    version: '1.0.2',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global'],
     permissions: ['system:notifications'],
@@ -23,7 +23,7 @@ export const notificationsPlugin: HarnessPlugin = {
         threadId: event.threadId,
         turnId: event.turnId,
         title: event.title,
-      }).catch(() => undefined)
+      }).catch((error) => console.error('[plugin:builtin.notifications] macOS 通知发送失败', error))
     }))
     ctx.effect(await notifications.onClick((event) => {
       void conversations.openThread(event.threadId).catch(() => undefined)

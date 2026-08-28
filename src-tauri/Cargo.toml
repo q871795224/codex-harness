@@ -1,6 +1,6 @@
 [package]
 name = "codex-harness"
-version = "0.4.3"
+version = "0.4.5"
 description = "A local rich client for Codex App Server"
 authors = ["Codex Harness"]
 edition = "2021"
@@ -26,5 +26,7 @@ tokio = { version = "1", features = ["net", "sync", "time"] }
 tokio-tungstenite = "0.26"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSObject", "NSString", "NSUserNotification"] }
+objc2-foundation = "0.3"
+objc2-user-notifications = "0.3"

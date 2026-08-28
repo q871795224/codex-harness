@@ -81,4 +81,36 @@ describe('notifications plugin', () => {
 
     expect(host.status(notificationsDefaultInstance.instanceId)).toEqual({ phase: 'failed', error: 'macOS 通知权限未开启' })
   })
+
+  it('reports notification delivery failures instead of silently swallowing them', async () => {
+    let completed: ((event: TurnCompletedEvent) => void) | undefined
+    const error = new Error('delivery rejected')
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const host = new PluginHost([notificationsPlugin], {
+      storage: () => storage,
+      services: {
+        'harness.conversations': {
+          onTurnCompleted(listener) {
+            completed = listener
+            return () => { completed = undefined }
+          },
+          openThread: async () => undefined,
+        } satisfies ConversationService,
+        'harness.systemNotifications': {
+          requestPermission: async () => true,
+          send: async () => { throw error },
+          onClick: async () => () => undefined,
+        } satisfies SystemNotificationService,
+      },
+    })
+
+    await host.syncInstances([notificationsDefaultInstance])
+    completed?.({ threadId: 'thread-1', turnId: 'turn-1', title: '测试通知', status: 'completed' })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(consoleError).toHaveBeenCalledWith('[plugin:builtin.notifications] macOS 通知发送失败', error)
+    consoleError.mockRestore()
+    await host.dispose()
+  })
 })
