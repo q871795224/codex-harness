@@ -104,7 +104,7 @@ impl HarnessStore {
                 root.display()
             )
         })?;
-        let connection = Connection::open(root.join("state.sqlite"))
+        let mut connection = Connection::open(root.join("state.sqlite"))
             .map_err(|error| format!("无法打开 Codex Harness 本地状态库: {error}"))?;
         connection
             .execute_batch(
@@ -136,8 +136,7 @@ impl HarnessStore {
               enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
               config_json TEXT NOT NULL,
               created_at INTEGER NOT NULL,
-              updated_at INTEGER NOT NULL,
-              UNIQUE(plugin_id, scope_kind, scope_key)
+              updated_at INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS plugin_state (
               instance_id TEXT NOT NULL,
@@ -169,6 +168,7 @@ impl HarnessStore {
             "#,
             )
             .map_err(|error| format!("无法初始化 Codex Harness 本地状态库: {error}"))?;
+        migrate_plugin_instances_allow_multiple_per_scope(&mut connection)?;
 
         Ok(Self {
             connection: Mutex::new(connection),
@@ -527,6 +527,60 @@ fn normalized_scope_key(scope_kind: &str, scope_key: Option<&str>) -> Result<Str
     }
 }
 
+fn migrate_plugin_instances_allow_multiple_per_scope(
+    connection: &mut Connection,
+) -> Result<(), String> {
+    let schema: String = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'plugin_instances'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("无法读取插件实例表结构: {error}"))?;
+    let normalized_schema: String = schema
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .flat_map(char::to_uppercase)
+        .collect();
+    if !normalized_schema.contains("UNIQUE(PLUGIN_ID,SCOPE_KIND,SCOPE_KEY)") {
+        return Ok(());
+    }
+
+    connection
+        .pragma_update(None, "foreign_keys", false)
+        .map_err(|error| format!("无法暂停插件实例外键检查: {error}"))?;
+    let migration_result = (|| -> rusqlite::Result<()> {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            r#"
+            CREATE TABLE plugin_instances_new (
+              instance_id TEXT PRIMARY KEY NOT NULL,
+              plugin_id TEXT NOT NULL,
+              scope_kind TEXT NOT NULL CHECK(scope_kind IN ('global', 'workspace', 'thread')),
+              scope_key TEXT NOT NULL DEFAULT '',
+              enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+              config_json TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+            INSERT INTO plugin_instances_new (
+              instance_id, plugin_id, scope_kind, scope_key, enabled, config_json, created_at, updated_at
+            )
+            SELECT instance_id, plugin_id, scope_kind, scope_key, enabled, config_json, created_at, updated_at
+            FROM plugin_instances;
+            DROP TABLE plugin_instances;
+            ALTER TABLE plugin_instances_new RENAME TO plugin_instances;
+            "#,
+        )?;
+        transaction.commit()
+    })();
+    let foreign_keys_result = connection.pragma_update(None, "foreign_keys", true);
+
+    migration_result.map_err(|error| format!("无法迁移插件实例表: {error}"))?;
+    foreign_keys_result.map_err(|error| format!("无法恢复插件实例外键检查: {error}"))?;
+    Ok(())
+}
+
 fn plugin_instance_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginInstance> {
     let raw_scope_key: String = row.get(3)?;
     let raw_config: String = row.get(5)?;
@@ -744,6 +798,99 @@ mod tests {
             reloaded
                 .get_plugin_state(&input.instance_id, "selection")
                 .expect("state was deleted with instance"),
+            None
+        );
+    }
+
+    #[test]
+    fn persists_multiple_plugin_instances_in_the_same_scope() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+
+        for instance_id in ["quick-agent-1", "quick-agent-2"] {
+            store
+                .upsert_plugin_instance(&PluginInstanceInput {
+                    instance_id: instance_id.to_string(),
+                    plugin_id: "builtin.quick-agent".to_string(),
+                    scope_kind: "global".to_string(),
+                    scope_key: None,
+                    enabled: true,
+                    config: serde_json::json!({"jobs": []}),
+                })
+                .expect("stores another instance in the same scope");
+        }
+
+        assert_eq!(
+            store
+                .list_plugin_instances()
+                .expect("lists instances")
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn migrates_legacy_plugin_scope_constraint_without_losing_state() {
+        let directory = TestDir::new();
+        fs::create_dir_all(&directory.0).expect("creates legacy store directory");
+        let legacy =
+            Connection::open(directory.0.join("state.sqlite")).expect("opens legacy store");
+        legacy
+            .execute_batch(
+                r#"
+                PRAGMA foreign_keys = ON;
+                CREATE TABLE plugin_instances (
+                  instance_id TEXT PRIMARY KEY NOT NULL,
+                  plugin_id TEXT NOT NULL,
+                  scope_kind TEXT NOT NULL CHECK(scope_kind IN ('global', 'workspace', 'thread')),
+                  scope_key TEXT NOT NULL DEFAULT '',
+                  enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+                  config_json TEXT NOT NULL,
+                  created_at INTEGER NOT NULL,
+                  updated_at INTEGER NOT NULL,
+                  UNIQUE(plugin_id, scope_kind, scope_key)
+                );
+                CREATE TABLE plugin_state (
+                  instance_id TEXT NOT NULL,
+                  state_key TEXT NOT NULL,
+                  value_json TEXT NOT NULL,
+                  updated_at INTEGER NOT NULL,
+                  PRIMARY KEY(instance_id, state_key),
+                  FOREIGN KEY(instance_id) REFERENCES plugin_instances(instance_id) ON DELETE CASCADE
+                );
+                INSERT INTO plugin_instances VALUES (
+                  'quick-agent-1', 'builtin.quick-agent', 'global', '', 1, '{"jobs":[]}', 10, 20
+                );
+                INSERT INTO plugin_state VALUES ('quick-agent-1', 'selection', '{"row":3}', 20);
+                "#,
+            )
+            .expect("creates legacy schema and data");
+        drop(legacy);
+
+        let store = HarnessStore::open_at(directory.0.clone()).expect("migrates legacy store");
+        assert_eq!(
+            store
+                .get_plugin_state("quick-agent-1", "selection")
+                .expect("keeps plugin state"),
+            Some(serde_json::json!({"row": 3}))
+        );
+        store
+            .upsert_plugin_instance(&PluginInstanceInput {
+                instance_id: "quick-agent-2".to_string(),
+                plugin_id: "builtin.quick-agent".to_string(),
+                scope_kind: "global".to_string(),
+                scope_key: None,
+                enabled: true,
+                config: serde_json::json!({"jobs": []}),
+            })
+            .expect("stores another instance after migration");
+        store
+            .delete_plugin_instance("quick-agent-1")
+            .expect("deletes migrated instance");
+        assert_eq!(
+            store
+                .get_plugin_state("quick-agent-1", "selection")
+                .expect("checks cascade after migration"),
             None
         );
     }
