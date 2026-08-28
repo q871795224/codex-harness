@@ -14,9 +14,6 @@ interface SettingsDialogProps {
   sendShortcut: SendShortcut
   followUpMode: FollowUpMode
   actionShortcuts: HarnessActionShortcuts
-  workspaces: Workspace[]
-  threads: Thread[]
-  selectedThreadId: string | null
   selectedWorkspaceRoot: string | null
   codex: ReturnType<typeof useCodexCore>
   threadTitleGeneration: ThreadTitleGenerationSettings
@@ -28,10 +25,20 @@ interface SettingsDialogProps {
   onActionShortcut: (actionId: HarnessActionId, shortcut: string) => void
   onResetActionShortcuts: () => void
   onThreadTitleGeneration: (settings: ThreadTitleGenerationSettings) => void
+  onOpenPlugins: () => void
   onClose: () => void
 }
 
-type SettingsPage = 'appearance' | 'keyboard' | 'models' | 'thread-title' | 'skills' | 'mcp' | 'plugins'
+interface PluginSettingsDialogProps {
+  workspaces: Workspace[]
+  threads: Thread[]
+  selectedThreadId: string | null
+  models: ReturnType<typeof useCodexCore>['models']
+  onOpenSettings: () => void
+  onClose: () => void
+}
+
+type SettingsPage = 'appearance' | 'keyboard' | 'models' | 'thread-title' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -40,7 +47,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, workspaces, threads, selectedThreadId, selectedWorkspaceRoot, codex, threadTitleGeneration, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, threadTitleGeneration, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onOpenPlugins, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -53,7 +60,6 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
     skills: { heading: '技能', kicker: 'CODEX' },
     mcp: { heading: 'MCP', kicker: 'CODEX' },
-    plugins: { heading: '插件', kicker: 'EXTENSIONS' },
   }
 
   const loadVersions = useCallback(async () => {
@@ -93,10 +99,10 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
     <div className="settings-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
         <aside className="settings-nav" aria-label="设置菜单">
-          <div className="settings-nav-brand">
+          <button type="button" className="settings-nav-brand settings-surface-switch" onClick={onOpenPlugins} title="切换到插件">
             <span className="settings-kicker">HARNESS</span>
             <h2>设置</h2>
-          </div>
+          </button>
           <nav>
             <button type="button" className={page === 'appearance' ? 'selected' : ''} aria-current={page === 'appearance' ? 'page' : undefined} onClick={() => setPage('appearance')}>
               <Palette size={16} />外观
@@ -116,9 +122,6 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
             <button type="button" className={page === 'mcp' ? 'selected' : ''} aria-current={page === 'mcp' ? 'page' : undefined} onClick={() => setPage('mcp')}>
               <Server size={16} />MCP
             </button>
-            <button type="button" className={page === 'plugins' ? 'selected' : ''} aria-current={page === 'plugins' ? 'page' : undefined} onClick={() => setPage('plugins')}>
-              <Blocks size={16} />插件
-            </button>
           </nav>
         </aside>
 
@@ -137,7 +140,6 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
           {page === 'mcp' && <McpSettings codex={codex} />}
-          {page === 'plugins' && <PluginSettings workspaces={workspaces} threads={threads} selectedThreadId={selectedThreadId} models={codex.models} />}
           <SettingsVersions
             versions={versions}
             loading={versionsLoading}
@@ -147,6 +149,31 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
             onOpenDiagnostics={() => void openDiagnostics()}
           />
         </div>
+      </section>
+    </div>
+  )
+}
+
+export function PluginSettingsDialog({ workspaces, threads, selectedThreadId, models, onOpenSettings, onClose }: PluginSettingsDialogProps) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  return (
+    <div className="settings-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="settings-dialog plugin-dialog" role="dialog" aria-modal="true" aria-labelledby="plugin-settings-title" onMouseDown={(event) => event.stopPropagation()}>
+        <PluginSettings
+          workspaces={workspaces}
+          threads={threads}
+          selectedThreadId={selectedThreadId}
+          models={models}
+          onOpenSettings={onOpenSettings}
+          onClose={onClose}
+        />
       </section>
     </div>
   )
@@ -508,7 +535,7 @@ function FontSizeStepper({ label, value, onChange }: { label: string; value: Fon
   )
 }
 
-function PluginSettings({ workspaces, threads, selectedThreadId, models }: { workspaces: Workspace[]; threads: Thread[]; selectedThreadId: string | null; models: ReturnType<typeof useCodexCore>['models'] }) {
+function PluginSettings({ workspaces, threads, selectedThreadId, models, onOpenSettings, onClose }: PluginSettingsDialogProps) {
   const plugins = usePluginHost()
   const [selectedPluginId, setSelectedPluginId] = useState(() => plugins.definitions[0]?.manifest.id ?? '')
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
@@ -533,6 +560,10 @@ function PluginSettings({ workspaces, threads, selectedThreadId, models }: { wor
   return (
     <section className="plugin-settings" aria-label="Harness 插件">
       <aside className="plugin-catalog">
+        <button type="button" className="settings-nav-brand settings-surface-switch plugin-surface-switch" onClick={onOpenSettings} title="切换到设置">
+          <span className="settings-kicker">HARNESS</span>
+          <h2>插件</h2>
+        </button>
         <div className="plugin-catalog-intro">
           <span>插件 <em>{plugins.definitions.length}</em></span>
         </div>
@@ -556,20 +587,26 @@ function PluginSettings({ workspaces, threads, selectedThreadId, models }: { wor
           ))}
         </nav>
       </aside>
-      <div className="plugin-detail-scroll">
-        {plugins.error && <div className="plugin-settings-error">{plugins.error}</div>}
-        {!plugins.loading && selectedDefinition && selectedInstance ? (
-          <PluginInstanceDetail
-            definition={selectedDefinition}
-            instance={selectedInstance}
-            workspaces={workspaces}
-            threads={threads}
-            selectedThreadId={selectedThreadId}
-            models={models}
-          />
-        ) : !plugins.loading && selectedDefinition ? (
-          <div className="plugin-detail-empty"><Blocks size={20} /><strong>{selectedDefinition.manifest.name}</strong><p>暂无实例，点击 + 新增。</p></div>
-        ) : null}
+      <div className="plugin-dialog-panel">
+        <header className="settings-panel-head">
+          <div><span className="settings-kicker">EXTENSIONS</span><h2 id="plugin-settings-title">插件配置</h2></div>
+          <button type="button" className="settings-close" onClick={onClose} aria-label="关闭插件"><X size={18} /></button>
+        </header>
+        <div className="plugin-detail-scroll">
+          {plugins.error && <div className="plugin-settings-error">{plugins.error}</div>}
+          {!plugins.loading && selectedDefinition && selectedInstance ? (
+            <PluginInstanceDetail
+              definition={selectedDefinition}
+              instance={selectedInstance}
+              workspaces={workspaces}
+              threads={threads}
+              selectedThreadId={selectedThreadId}
+              models={models}
+            />
+          ) : !plugins.loading && selectedDefinition ? (
+            <div className="plugin-detail-empty"><Blocks size={20} /><strong>{selectedDefinition.manifest.name}</strong><p>暂无实例，点击 + 新增。</p></div>
+          ) : null}
+        </div>
       </div>
     </section>
   )

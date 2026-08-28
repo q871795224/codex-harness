@@ -11,6 +11,7 @@ import { version as harnessVersion } from '../../../package.json'
 import {
   Archive,
   ArchiveRestore,
+  Blocks,
   ChevronDown,
   ChevronRight,
   ChevronsDown,
@@ -70,6 +71,7 @@ interface SidebarProps {
   onManualThreadOrder: (order: string[]) => void
   onSidebarWidth: (width: number) => void
   onOpenSettings: () => void
+  onOpenPlugins: () => void
   onVisibleThreadOrder: (threadIds: string[]) => void
 }
 
@@ -101,6 +103,7 @@ export function Sidebar({
   onManualThreadOrder,
   onSidebarWidth,
   onOpenSettings,
+  onOpenPlugins,
   onVisibleThreadOrder,
 }: SidebarProps) {
   const isDevelopmentFlavor = import.meta.env.MODE === 'dev'
@@ -462,10 +465,15 @@ export function Sidebar({
             </button>
           )}
         </div>
-        <button type="button" className="settings-toggle" onClick={onOpenSettings}>
-          <Settings2 size={16} />
-          设置
-        </button>
+        <div className="settings-split">
+          <button type="button" className="settings-toggle" onClick={onOpenSettings}>
+            <Settings2 size={16} />
+            设置
+          </button>
+          <button type="button" className="plugins-toggle" onClick={onOpenPlugins} title="插件" aria-label="打开插件">
+            <Blocks size={16} />
+          </button>
+        </div>
       </div>
       <div
         className="sidebar-resize-handle"

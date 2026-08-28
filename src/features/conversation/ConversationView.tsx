@@ -131,14 +131,16 @@ interface ConversationViewProps {
   onChooseWorkspace: () => void
   newThreadPanels?: ReactNode
   rawMode: boolean
+  working: boolean
   onRawModeToggle: () => void
 }
 
-export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, onRawModeToggle }: ConversationViewProps) {
+export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, working, onRawModeToggle }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
   const handledScrollRequest = useRef(scrollToLatestRequest)
+  const observedContentHeight = useRef(0)
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
@@ -158,7 +160,11 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
-    if (scroll && initiallyPositioned.current && followingLatest.current) scroll.scrollTop = scroll.scrollHeight
+    if (!scroll || !initiallyPositioned.current) return
+    if (followingLatest.current && observedContentHeight.current !== scroll.scrollHeight) {
+      scroll.scrollTop = scroll.scrollHeight
+    }
+    observedContentHeight.current = scroll.scrollHeight
   })
 
   const scrollToBottom = () => {
@@ -168,6 +174,7 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
 
   return (
     <section className="conversation-pane" aria-label="对话内容">
+      {working && <div className="conversation-working-line" aria-hidden><span /></div>}
       <div className="conversation-scroll" ref={scrollRef} onScroll={(event) => {
         followingLatest.current = isNearConversationBottom(event.currentTarget)
         onScrollPosition(event.currentTarget.scrollTop)

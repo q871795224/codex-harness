@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { ThreadItemEntry, ThreadTokenUsage, Turn } from '../../core/domain/codex'
 import { formatDuration } from '../../core/domain/format'
 
@@ -5,6 +6,25 @@ interface ConversationStatsProps {
   turns: Turn[]
   items: ThreadItemEntry[]
   tokenUsage: ThreadTokenUsage | null
+}
+
+export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
+  const [fallbackStartedAt] = useState(Date.now)
+  const [now, setNow] = useState(Date.now)
+  const startedAtMs = startedAt ? startedAt * 1_000 : fallbackStartedAt
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="working-status" aria-label={`会话正在工作，已运行 ${formatWorkingElapsed(now - startedAtMs)}`}>
+      <span className="working-status-dot" />
+      <span className="working-status-label">Working</span>
+      <span>({formatWorkingElapsed(now - startedAtMs)})</span>
+    </div>
+  )
 }
 
 const toolItemTypes = new Set(['commandExecution', 'mcpToolCall', 'dynamicToolCall', 'fileChange'])
@@ -42,4 +62,10 @@ function formatTokens(value: number): string {
   if (value < 100_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}K`
   if (value < 1_000_000) return `${Math.round(value / 1_000)}K`
   return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+}
+
+export function formatWorkingElapsed(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000))
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
 }

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
+import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
 import type { CodexRadarService } from './core/codex-radar/types'
@@ -11,10 +12,10 @@ import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
-import { ConversationStats } from './features/conversation/ConversationStats'
+import { ConversationStats, WorkingStatus } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
-import { SettingsDialog } from './features/settings/SettingsDialog'
+import { PluginSettingsDialog, SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
@@ -67,12 +68,12 @@ export default function App() {
 
   return (
     <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances} services={services}>
-      <HarnessShell harness={harness} />
+      <HarnessShell harness={harness} agentRuns={agentRuns} />
     </PluginHostProvider>
   )
 }
 
-function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
+function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHarness>; agentRuns: AgentRunService }) {
   const plugins = usePluginHost()
   const codex = useCodexCore()
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
@@ -82,6 +83,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const [draggedTab, setDraggedTab] = useState<string | null>(null)
   const [tabDrop, setTabDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [pluginsOpen, setPluginsOpen] = useState(false)
   const [rawMode, setRawMode] = useState(false)
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
@@ -146,7 +148,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.setSidebarCollapsed, visibleThreadIds])
 
   useEffect(() => {
-    if (settingsOpen) return undefined
+    if (settingsOpen || pluginsOpen) return undefined
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return
       const actionId = actionForShortcut(event, harness.keyboard.actionShortcuts)
@@ -156,7 +158,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [harness.keyboard.actionShortcuts, runAction, settingsOpen])
+  }, [harness.keyboard.actionShortcuts, pluginsOpen, runAction, settingsOpen])
 
   const previewConversationTabDrop = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
     event.preventDefault()
@@ -194,6 +196,9 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const currentQueue = harness.selectedThreadId ? harness.queues[harness.selectedThreadId] ?? [] : []
   const currentSteers = harness.selectedThreadId ? harness.pendingSteers[harness.selectedThreadId] ?? [] : []
   const currentApprovals = harness.selectedThreadId ? harness.approvals[harness.selectedThreadId] ?? [] : []
+  const currentActiveTurn = harness.activeTurnId
+    ? harness.currentDetail?.turns.find((turn) => turn.id === harness.activeTurnId) ?? null
+    : null
   const canMutate = !harness.currentForeignActive
 
   return (
@@ -237,7 +242,8 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
         onWorkspaceSort={harness.setWorkspaceSort}
         onManualThreadOrder={harness.setManualThreadOrder}
         onSidebarWidth={harness.setSidebarWidth}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
+        onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
         onVisibleThreadOrder={setVisibleThreadIds}
       />
       <SidebarEdgeToggle
@@ -342,6 +348,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   />
                 ))}
                 rawMode={rawMode}
+                working={harness.isCurrentWorking}
                 onRawModeToggle={() => setRawMode((current) => !current)}
               />
             ) : selectedPluginTab ? (
@@ -422,6 +429,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   items={harness.currentDetail?.items ?? []}
                   tokenUsage={harness.currentTokenUsage}
                 />
+                {harness.isCurrentWorking && <WorkingStatus startedAt={currentActiveTurn?.startedAt ?? null} />}
               </div>
             )}
           </Fragment>
@@ -430,6 +438,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
       {harness.currentThread && harness.viewMode === 'active' && (
         <QuickActionPanel
           actions={quickActions}
+          agentRuns={agentRuns}
           context={{
             threadId: harness.selectedThreadId,
             workspaceRoot: workspace?.root ?? null,
@@ -445,9 +454,6 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           sendShortcut={harness.keyboard.sendShortcut}
           followUpMode={harness.keyboard.followUpMode}
           actionShortcuts={harness.keyboard.actionShortcuts}
-          workspaces={harness.workspaces}
-          threads={harness.threads}
-          selectedThreadId={harness.selectedThreadId}
           selectedWorkspaceRoot={(harness.selectedThreadId ? harness.threadRoots[harness.selectedThreadId] : null) ?? harness.selectedWorkspaceRoot}
           codex={codex}
           threadTitleGeneration={harness.threadTitleGeneration}
@@ -459,8 +465,22 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           onActionShortcut={harness.setActionShortcut}
           onResetActionShortcuts={harness.resetActionShortcuts}
           onThreadTitleGeneration={harness.setThreadTitleGeneration}
+          onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
           onClose={() => {
             setSettingsOpen(false)
+            setComposerFocusRequest((current) => current + 1)
+          }}
+        />
+      )}
+      {pluginsOpen && (
+        <PluginSettingsDialog
+          workspaces={harness.workspaces}
+          threads={harness.threads}
+          selectedThreadId={harness.selectedThreadId}
+          models={codex.models}
+          onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
+          onClose={() => {
+            setPluginsOpen(false)
             setComposerFocusRequest((current) => current + 1)
           }}
         />

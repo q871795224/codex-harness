@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { Bot, ChevronDown, ChevronRight, LoaderCircle, Play } from 'lucide-react'
+import { useState, useSyncExternalStore } from 'react'
+import { Bot, Check, ChevronDown, ChevronRight, CircleAlert, LoaderCircle, Play } from 'lucide-react'
+import type { AgentRun, AgentRunService } from '../agent-runs/types'
 import type { QuickActionProps } from '../../extensions/types'
 import type { ResolvedContribution } from './runtime'
 import type { QuickActionContribution } from '../../extensions/types'
@@ -7,23 +8,25 @@ import type { QuickActionContribution } from '../../extensions/types'
 interface QuickActionPanelProps {
   actions: ResolvedContribution<QuickActionContribution>[]
   context: QuickActionProps
+  agentRuns: AgentRunService
 }
 
-export function QuickActionPanel({ actions, context }: QuickActionPanelProps) {
+export function QuickActionPanel({ actions, context, agentRuns }: QuickActionPanelProps) {
   const [open, setOpen] = useState(false)
-  const [runningId, setRunningId] = useState<string | null>(null)
+  const [startingId, setStartingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const runs = useSyncExternalStore(agentRuns.subscribe, agentRuns.snapshot)
   if (actions.length === 0) return null
 
   const run = async (action: ResolvedContribution<QuickActionContribution>) => {
-    setRunningId(action.contribution.id)
+    setStartingId(action.contribution.id)
     setError(null)
     try {
       await action.contribution.run(context)
     } catch (nextError) {
       setError(messageOf(nextError))
     } finally {
-      setRunningId(null)
+      setStartingId(null)
     }
   }
 
@@ -39,16 +42,25 @@ export function QuickActionPanel({ actions, context }: QuickActionPanelProps) {
           </header>
           <div className="quick-action-list">
             {actions.map((action) => {
-              const running = runningId === action.contribution.id
+              const latestRun = latestRunForAction(runs, action)
+              const status = quickActionRunStatus(latestRun, startingId === action.contribution.id)
+              const running = status === 'running'
+              const accessibleLabel = `${action.contribution.label} · ${quickActionStatusLabel(status)}`
               return (
                 <button
                   key={`${action.pluginId}:${action.contribution.id}`}
                   type="button"
-                  disabled={context.disabled || runningId !== null}
+                  disabled={context.disabled || startingId !== null || running}
                   onClick={() => void run(action)}
-                  title={action.contribution.label}
+                  title={accessibleLabel}
+                  aria-label={accessibleLabel}
                 >
-                  <span className="quick-action-play">{running ? <LoaderCircle className="spin" size={14} /> : <Play size={13} fill="currentColor" />}</span>
+                  <span className={`quick-action-play ${status}`}>
+                    {status === 'running' ? <LoaderCircle className="spin" size={14} />
+                      : status === 'completed' ? <Check size={14} />
+                        : status === 'failed' ? <CircleAlert size={14} />
+                          : <Play size={13} fill="currentColor" />}
+                  </span>
                   <strong>{action.contribution.label}</strong>
                 </button>
               )
@@ -75,4 +87,25 @@ export function QuickActionPanel({ actions, context }: QuickActionPanelProps) {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function latestRunForAction(
+  runs: AgentRun[],
+  action: ResolvedContribution<QuickActionContribution>,
+): AgentRun | undefined {
+  return runs.find((run) => run.instanceId === action.instanceId && run.title === action.contribution.label)
+}
+
+export function quickActionRunStatus(run: AgentRun | undefined, starting: boolean): 'idle' | 'running' | 'completed' | 'failed' {
+  if (starting || run?.status === 'starting' || run?.status === 'running' || run?.status === 'waitingApproval') return 'running'
+  if (run?.status === 'completed') return 'completed'
+  if (run?.status === 'failed' || run?.status === 'cancelled') return 'failed'
+  return 'idle'
+}
+
+function quickActionStatusLabel(status: 'idle' | 'running' | 'completed' | 'failed'): string {
+  if (status === 'running') return '运行中'
+  if (status === 'completed') return '已完成'
+  if (status === 'failed') return '失败'
+  return '可运行'
 }

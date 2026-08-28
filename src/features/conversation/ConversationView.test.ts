@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, titleEditorKeyAction } from './ConversationView'
+import { formatWorkingElapsed } from './ConversationStats'
 import { isFirstUserTurn, parseThreadTitleGenerationSettings, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
 
 function makeThread(cwd: string): Thread {
@@ -40,6 +41,13 @@ describe('conversation scrolling', () => {
   it('keeps following content only while the viewport is near the bottom', () => {
     expect(isNearConversationBottom({ scrollTop: 452, clientHeight: 500, scrollHeight: 1_000 })).toBe(true)
     expect(isNearConversationBottom({ scrollTop: 400, clientHeight: 500, scrollHeight: 1_000 })).toBe(false)
+  })
+})
+
+describe('working status', () => {
+  it('formats elapsed time as a stable minute clock', () => {
+    expect(formatWorkingElapsed(0)).toBe('0:00')
+    expect(formatWorkingElapsed(65_900)).toBe('1:05')
   })
 })
 

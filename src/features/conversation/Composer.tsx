@@ -91,6 +91,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
   const [actionError, setActionError] = useState<string | null>(null)
   const [highlightedSuggestion, setHighlightedSuggestion] = useState(0)
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
+  const [composing, setComposing] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const onDraftChangeRef = useRef(onDraftChange)
   const selectedModel = models.find((model) => model.model === settings.model) ?? models[0] ?? null
@@ -138,13 +139,13 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
 
   useLayoutEffect(() => {
     const textarea = ref.current
-    if (!textarea) return
+    if (!textarea || composing) return
     const maximumHeight = 124
     textarea.style.height = '0px'
     const nextHeight = Math.min(textarea.scrollHeight, maximumHeight)
     textarea.style.height = `${Math.max(28, nextHeight)}px`
     textarea.style.overflowY = textarea.scrollHeight > maximumHeight ? 'auto' : 'hidden'
-  }, [text])
+  }, [composing, text])
 
   useEffect(() => {
     setSkills([])
@@ -339,6 +340,8 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
             setSuggestionsDismissed(false)
             setAttachments((current) => current.filter((item) => item.kind !== 'skill' || hasSkillMarker(nextText, item.name)))
           }}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
           onPaste={(event) => {
             const content = event.clipboardData.getData('text/plain')
             if (!shouldCollapsePaste(content)) return
