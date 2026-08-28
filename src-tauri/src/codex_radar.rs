@@ -143,6 +143,19 @@ fn build_model_table(
         .get("points")
         .and_then(Value::as_array)
         .ok_or_else(|| "Codex Radar 缺少效率数据".to_string())?;
+    let simple = points
+        .iter()
+        .find(|entry| {
+            entry.get("model").and_then(Value::as_str) == Some("gpt-5.6-luna")
+                && entry.get("effort").and_then(Value::as_str) == Some("max")
+        })
+        .ok_or_else(|| "Codex Radar 缺少简单任务模型".to_string())?;
+    candidates.push(candidate(
+        simple,
+        "simple",
+        "average_price_usd",
+        "average_minutes",
+    )?);
     let mut references = points
         .iter()
         .filter(|entry| supported_reference(entry))
@@ -150,7 +163,7 @@ fn build_model_table(
         .collect::<Result<Vec<_>, _>>()?;
     references.sort_by(|left, right| right.iq.partial_cmp(&left.iq).unwrap_or(Ordering::Equal));
     candidates.extend(references.into_iter().take(3));
-    if candidates.len() != 5 {
+    if candidates.len() != 6 {
         return Err("Codex Radar 模型指标不完整".to_string());
     }
 
@@ -267,10 +280,20 @@ mod tests {
             {"model":"gpt-5.6-sol","effort":"high","iq":93.0,"average_price_usd":4.0,"average_minutes":20.0},
             {"model":"gpt-5.6-sol","effort":"medium","iq":90.0,"average_price_usd":2.9,"average_minutes":16.0},
             {"model":"gpt-5.6-terra","effort":"max","iq":95.0,"average_price_usd":2.0,"average_minutes":18.0},
+            {"model":"gpt-5.6-luna","effort":"max","iq":96.0,"average_price_usd":0.48,"average_minutes":34.0},
             {"model":"gpt-5.6-luna","effort":"xhigh","iq":94.0,"average_price_usd":0.3,"average_minutes":33.0}
         ]});
         let table = build_model_table(&insights, &efficiency, 42).unwrap();
-        assert_eq!(table.rows.len(), 5);
+        assert_eq!(table.rows.len(), 6);
+        let simple = table.rows.iter().find(|row| row.group == "simple").unwrap();
+        assert_eq!(
+            (simple.model.as_str(), simple.effort.as_str()),
+            ("gpt-5.6-luna", "max")
+        );
+        assert_eq!(
+            (simple.iq, simple.price, simple.minutes),
+            (96.0, 0.48, 34.0)
+        );
         assert_eq!(
             table.rows.iter().find(|row| row.automatic).unwrap().effort,
             "max"

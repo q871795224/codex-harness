@@ -479,7 +479,7 @@ dependencies = [
 
 [[package]]
 name = "codex-harness"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "block2",
  "futures-util",

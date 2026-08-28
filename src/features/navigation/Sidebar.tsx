@@ -18,7 +18,6 @@ import {
   CirclePlus,
   Clock3,
   FolderGit2,
-  GripVertical,
   LayoutList,
   ListTree,
   LoaderCircle,
@@ -519,7 +518,6 @@ function ThreadList({
             }}
             title={thread.name || thread.preview || '新会话'}
           >
-            {manualSort && <GripVertical className="thread-drag-handle" size={14} aria-hidden />}
             <StatusDot badge={badge} />
             <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
             <time>{isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
@@ -544,6 +542,6 @@ function initialVisibleCount(threads: Thread[]): number {
 
 export function StatusDot({ badge }: { badge: Badge }) {
   if (!badge) return <span className="status-dot empty" aria-hidden />
-  if (badge === 'working') return <span className="status-dot working" aria-label="运行中" />
+  if (badge === 'working') return <svg className="status-dot working" viewBox="0 0 12 12" aria-label="运行中"><circle cx="6" cy="6" r="4.5" /></svg>
   return <span className={`status-dot ${badge}`} aria-label={badge === 'approval' ? '等待审批' : badge === 'error' ? '发生错误' : '有新回复'} />
 }

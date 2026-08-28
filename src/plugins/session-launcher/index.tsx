@@ -7,7 +7,7 @@ import type { HarnessPlugin, NewThreadPanelProps, PluginInstanceRecord } from '.
 type LaunchMode = 'yolo' | 'auto-review' | 'manual'
 
 interface PickerRow {
-  group: 'hard' | 'reference' | 'fallback'
+  group: 'hard' | 'simple' | 'reference' | 'fallback'
   model: string
   effort: string
   iq: number | null
@@ -28,7 +28,7 @@ export const sessionLauncherPlugin: HarnessPlugin = {
     id: 'builtin.session-launcher',
     name: '会话启动器',
     description: '在新会话中按 Codex Radar 指标选择模型与推理强度，并切换 YOLO、Auto-review 或 Manual 模式。',
-    version: '1.0.1',
+    version: '1.0.2',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
     permissions: ['network:codexradar.com'],
@@ -204,6 +204,7 @@ function cacheMinutes(fetchedAt: number): number {
 
 function groupLabel(group: PickerRow['group']): string {
   if (group === 'hard') return '复杂任务'
+  if (group === 'simple') return '简单任务'
   if (group === 'reference') return '参考模型'
   return 'FALLBACK'
 }

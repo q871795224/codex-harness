@@ -1,5 +1,5 @@
 export interface RadarModelRow {
-  group: 'hard' | 'reference'
+  group: 'hard' | 'simple' | 'reference'
   model: string
   effort: string
   iq: number
