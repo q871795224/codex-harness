@@ -7,6 +7,7 @@ import type { CodexRadarService } from './core/codex-radar/types'
 import type { ConversationService } from './core/conversations/types'
 import type { SystemNotificationService } from './core/notifications/types'
 import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
+import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
@@ -101,6 +102,10 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
     workspaceRoot: workspace?.root ?? null,
   })
   const composerActions = plugins.resolvedComposerActions({
+    threadId: harness.selectedThreadId,
+    workspaceRoot: workspace?.root ?? null,
+  })
+  const quickActions = plugins.resolvedQuickActions({
     threadId: harness.selectedThreadId,
     workspaceRoot: workspace?.root ?? null,
   })
@@ -421,6 +426,17 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           </Fragment>
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread()} onWorkspace={() => void harness.chooseWorkspace()} />}
       </main>
+      {harness.currentThread && harness.viewMode === 'active' && (
+        <QuickActionPanel
+          actions={quickActions}
+          context={{
+            threadId: harness.selectedThreadId,
+            workspaceRoot: workspace?.root ?? null,
+            checkoutRoot: harness.currentThread.cwd,
+            disabled: harness.currentForeignActive,
+          }}
+        />
+      )}
       {settingsOpen && (
         <SettingsDialog
           theme={harness.appearance.theme}

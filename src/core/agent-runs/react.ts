@@ -17,6 +17,14 @@ export function useAgentRunService(
       listRuns: () => runtime.listPluginRuns(),
       saveRun: (run) => runtime.upsertPluginRun(run),
       startThread: (workspaceRoot) => runtime.startCodexThread(workspaceRoot),
+      configureThread: (threadId, settings) => runtime.request('thread/settings/update', {
+        threadId,
+        model: settings.model,
+        effort: settings.effort,
+        approvalPolicy: settings.approvalPolicy,
+        approvalsReviewer: settings.approvalsReviewer,
+        sandboxPolicy: sandboxPolicy(settings.sandboxMode),
+      }),
       startTurn: (threadId, prompt) => startTurnRef.current(threadId, prompt),
       interruptTurn: (threadId, turnId) => runtime.interruptCodexTurn(threadId, turnId),
       inspectThread: (threadId) => runtime.inspectCodexThread(threadId),
@@ -34,4 +42,16 @@ export function useAgentRunService(
   }, [service])
 
   return service
+}
+
+function sandboxPolicy(mode: 'danger-full-access' | 'read-only' | 'workspace-write') {
+  if (mode === 'danger-full-access') return { type: 'dangerFullAccess' }
+  if (mode === 'read-only') return { type: 'readOnly', networkAccess: false }
+  return {
+    type: 'workspaceWrite',
+    writableRoots: [],
+    networkAccess: false,
+    excludeTmpdirEnvVar: false,
+    excludeSlashTmp: false,
+  }
 }

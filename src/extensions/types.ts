@@ -64,6 +64,20 @@ export interface ComposerActionContribution {
   render(props: ComposerActionProps): ReactNode
 }
 
+export interface QuickActionProps extends PluginViewContext {
+  checkoutRoot: string | null
+  disabled: boolean
+}
+
+export interface QuickActionContribution {
+  id: string
+  label: string
+  description?: string
+  meta?: string
+  order?: number
+  run(props: QuickActionProps): void | Promise<void>
+}
+
 export interface NewThreadPanelProps extends PluginViewContext {
   models: CodexModel[]
   settings: ThreadCodexSettings
@@ -79,6 +93,7 @@ export interface NewThreadPanelContribution {
 
 export interface PluginSettingsProps {
   instance: PluginInstanceRecord
+  models: CodexModel[]
   saveConfig(config: Record<string, unknown>): Promise<void>
 }
 
@@ -107,6 +122,9 @@ export interface PluginSlotAccess {
   }
   composerActions: {
     register(contribution: ComposerActionContribution): void
+  }
+  quickActions: {
+    register(contribution: QuickActionContribution): void
   }
 }
 

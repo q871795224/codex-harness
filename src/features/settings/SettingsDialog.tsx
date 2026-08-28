@@ -137,7 +137,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
           {page === 'mcp' && <McpSettings codex={codex} />}
-          {page === 'plugins' && <PluginSettings workspaces={workspaces} threads={threads} selectedThreadId={selectedThreadId} />}
+          {page === 'plugins' && <PluginSettings workspaces={workspaces} threads={threads} selectedThreadId={selectedThreadId} models={codex.models} />}
           <SettingsVersions
             versions={versions}
             loading={versionsLoading}
@@ -508,7 +508,7 @@ function FontSizeStepper({ label, value, onChange }: { label: string; value: Fon
   )
 }
 
-function PluginSettings({ workspaces, threads, selectedThreadId }: { workspaces: Workspace[]; threads: Thread[]; selectedThreadId: string | null }) {
+function PluginSettings({ workspaces, threads, selectedThreadId, models }: { workspaces: Workspace[]; threads: Thread[]; selectedThreadId: string | null; models: ReturnType<typeof useCodexCore>['models'] }) {
   const plugins = usePluginHost()
   const [selectedPluginId, setSelectedPluginId] = useState(() => plugins.definitions[0]?.manifest.id ?? '')
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
@@ -565,6 +565,7 @@ function PluginSettings({ workspaces, threads, selectedThreadId }: { workspaces:
             workspaces={workspaces}
             threads={threads}
             selectedThreadId={selectedThreadId}
+            models={models}
           />
         ) : !plugins.loading && selectedDefinition ? (
           <div className="plugin-detail-empty"><Blocks size={20} /><strong>{selectedDefinition.manifest.name}</strong><p>暂无实例，点击 + 新增。</p></div>
@@ -639,12 +640,13 @@ function PluginDefinitionNav({ definition, instances, selected, selectedInstance
   )
 }
 
-function PluginInstanceDetail({ definition, instance, workspaces, threads, selectedThreadId }: {
+function PluginInstanceDetail({ definition, instance, workspaces, threads, selectedThreadId, models }: {
   definition: HarnessPlugin
   instance: PluginInstanceRecord
   workspaces: Workspace[]
   threads: Thread[]
   selectedThreadId: string | null
+  models: ReturnType<typeof useCodexCore>['models']
 }) {
   const plugins = usePluginHost()
   const status = plugins.status(instance.instanceId)
@@ -703,7 +705,7 @@ function PluginInstanceDetail({ definition, instance, workspaces, threads, selec
 
         {status.phase === 'failed' && <div className="plugin-instance-error">{status.error}</div>}
         {Settings ? (
-          <Settings instance={instance} saveConfig={(config) => plugins.upsertInstance({ ...instance, config, updatedAt: Date.now() })} />
+          <Settings instance={instance} models={models} saveConfig={(config) => plugins.upsertInstance({ ...instance, config, updatedAt: Date.now() })} />
         ) : null}
       </div>
     </article>

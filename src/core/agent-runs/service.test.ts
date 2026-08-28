@@ -15,6 +15,7 @@ class FakeTransport implements AgentRunTransport {
     return saved
   }
   async startThread() { return 'child-1' }
+  async configureThread() {}
   async startTurn(threadId: string, prompt: string) {
     this.startedPrompts.push({ threadId, prompt })
     return `turn-${this.startedPrompts.length}`
@@ -40,6 +41,30 @@ describe('AgentRunCoordinator', () => {
     expect(run.childThreadId).toBe('child-1')
     expect(transport.startedPrompts).toEqual([{ threadId: 'child-1', prompt: '查询当前发布状态并总结' }])
     expect(JSON.stringify(transport.runs)).not.toContain('prompt')
+  })
+
+  it('configures the child thread before starting its turn', async () => {
+    const calls: string[] = []
+    const transport = new FakeTransport()
+    transport.configureThread = async () => { calls.push('configure') }
+    transport.startTurn = async () => { calls.push('turn'); return 'turn-1' }
+    const service = new AgentRunCoordinator(transport, () => undefined)
+
+    await service.start({
+      instanceId: 'quick-agent',
+      mode: 'detached',
+      workspaceRoot: '/repo',
+      prompt: '发布当前分支',
+      settings: {
+        model: 'gpt-5.6-luna',
+        effort: 'max',
+        approvalPolicy: 'never',
+        approvalsReviewer: 'user',
+        sandboxMode: 'danger-full-access',
+      },
+    })
+
+    expect(calls).toEqual(['configure', 'turn'])
   })
 
   it('tracks completion and returns delegated results to the parent once', async () => {

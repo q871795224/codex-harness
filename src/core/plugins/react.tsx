@@ -11,6 +11,7 @@ import type {
   PluginInstanceRecord,
   PluginInstanceStatus,
   PluginViewContext,
+  QuickActionContribution,
 } from '../../extensions/types'
 import { defaultPluginInstancesToSeed, removedDefaultPluginInstanceIds } from './defaults'
 import { PluginHost, type ResolvedContribution } from './runtime'
@@ -26,6 +27,7 @@ interface PluginHostContextValue {
   resolvedTabs(context: PluginViewContext): ResolvedContribution<ConversationTabContribution>[]
   resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[]
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[]
+  resolvedQuickActions(context: PluginViewContext): ResolvedContribution<QuickActionContribution>[]
   upsertInstance(instance: PluginInstanceRecord): Promise<void>
   deleteInstance(instanceId: string): Promise<void>
 }
@@ -101,6 +103,7 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     resolvedTabs: (context) => host.resolvedTabs(context),
     resolvedNewThreadPanels: (context) => host.resolvedNewThreadPanels(context),
     resolvedComposerActions: (context) => host.resolvedComposerActions(context),
+    resolvedQuickActions: (context) => host.resolvedQuickActions(context),
     upsertInstance: async (instance) => {
       try {
         const saved = await runtime.upsertPluginInstance({ ...instance, updatedAt: Date.now() })
