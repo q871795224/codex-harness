@@ -16,6 +16,7 @@ import {
 import type { AgentRun, ThreadInspection } from '../agent-runs/types'
 import type { LocalConnectorHealth, LocalConnectorMessage, LocalConnectorSendInput } from '../local-connectors/types'
 import type { RadarModelTable } from '../codex-radar/types'
+import type { SystemNotificationClick, SystemNotificationInput } from '../notifications/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 
 interface PluginInstanceDto {
@@ -213,6 +214,18 @@ export const runtime = {
 
   codexRadarModelTable(): Promise<RadarModelTable> {
     return invoke<RadarModelTable>('codex_radar_model_table')
+  },
+
+  requestSystemNotificationPermission(): Promise<boolean> {
+    return invoke<boolean>('request_system_notification_permission')
+  },
+
+  sendSystemNotification(input: SystemNotificationInput): Promise<void> {
+    return invoke<void>('send_system_notification', { input })
+  },
+
+  async listenSystemNotificationClicks(handler: (event: SystemNotificationClick) => void): Promise<() => void> {
+    return listen<SystemNotificationClick>('system-notification:clicked', (event) => handler(event.payload))
   },
 
   async startCodexThread(workspaceRoot: string): Promise<string> {

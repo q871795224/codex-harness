@@ -4,6 +4,8 @@ import { useAgentRunService } from './core/agent-runs/react'
 import { DEFAULT_FONT_SIZES } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
 import type { CodexRadarService } from './core/codex-radar/types'
+import type { ConversationService } from './core/conversations/types'
+import type { SystemNotificationService } from './core/notifications/types'
 import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
@@ -32,7 +34,16 @@ export default function App() {
     'harness.codexRadar': {
       modelTable: runtime.codexRadarModelTable,
     } satisfies CodexRadarService,
-  }), [agentRuns])
+    'harness.conversations': {
+      onTurnCompleted: harness.onTurnCompleted,
+      openThread: harness.openThread,
+    } satisfies ConversationService,
+    'harness.systemNotifications': {
+      requestPermission: runtime.requestSystemNotificationPermission,
+      send: runtime.sendSystemNotification,
+      onClick: runtime.listenSystemNotificationClicks,
+    } satisfies SystemNotificationService,
+  }), [agentRuns, harness.onTurnCompleted, harness.openThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {

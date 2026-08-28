@@ -4,6 +4,7 @@ mod diagnostics;
 mod git_workspace;
 mod local_connector;
 mod store;
+mod system_notification;
 
 use app_server::AppServerManager;
 use codex_radar::{CodexRadarClient, RadarModelTable};
@@ -73,6 +74,18 @@ async fn local_connector_send_message(
 #[tauri::command]
 async fn codex_radar_model_table(state: State<'_, AppState>) -> Result<RadarModelTable, String> {
     state.codex_radar.model_table().await
+}
+
+#[tauri::command]
+async fn request_system_notification_permission() -> Result<bool, String> {
+    system_notification::request_permission().await
+}
+
+#[tauri::command]
+async fn send_system_notification(
+    input: system_notification::SystemNotificationInput,
+) -> Result<(), String> {
+    system_notification::send(input).await
 }
 
 #[tauri::command]
@@ -259,6 +272,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
+            system_notification::install(app.handle());
             let manager = Arc::new(AppServerManager::new(
                 app.handle().clone(),
                 diagnostics.clone(),
@@ -297,6 +311,8 @@ pub fn run() {
             local_connector_list_messages,
             local_connector_send_message,
             codex_radar_model_table,
+            request_system_notification_permission,
+            send_system_notification,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错");

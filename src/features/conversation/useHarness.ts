@@ -46,10 +46,12 @@ import {
   parseGeneratedThreadTitle,
   rebaseSandboxPolicy,
   textInput,
+  threadTitle,
   touchThreadActivity,
   threadsOlderThan,
   withInitialThreadPreview,
 } from '../../core/domain/codex'
+import type { TurnCompletedEvent } from '../../core/conversations/types'
 import { runtime } from '../../core/runtime/bridge'
 import {
   activateTurn,
@@ -308,12 +310,18 @@ export function useHarness() {
   const generatingTitlesRef = useRef(new Set<string>())
   const titleGeneratorsRef = useRef(new Map<string, TitleGenerator>())
   const threadTitleGenerationRef = useRef(threadTitleGeneration)
+  const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
 
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
   useEffect(() => { threadsRef.current = threads }, [threads])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => { detailsRef.current = details }, [details])
   useEffect(() => { threadTitleGenerationRef.current = threadTitleGeneration }, [threadTitleGeneration])
+
+  const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
+    turnCompletedListenersRef.current.add(listener)
+    return () => { turnCompletedListenersRef.current.delete(listener) }
+  }, [])
 
   const commitTurnOwnership = useCallback((next: ActiveTurnOwnership) => {
     activeTurnIdsRef.current = next.activeTurnIds
@@ -611,6 +619,17 @@ export function useHarness() {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
     }
   }, [commitTurnOwnership, discardEmptyDraftThread, loadQueue, markThreadRead, notify, upsertThread])
+
+  const openThread = useCallback(async (threadId: string) => {
+    const activeThreads = await refreshThreads('active')
+    if (activeThreads.some((thread) => thread.id === threadId)) {
+      setViewMode('active')
+    } else {
+      const archivedThreads = await refreshThreads('archived')
+      setViewMode(archivedThreads.some((thread) => thread.id === threadId) ? 'archived' : 'active')
+    }
+    await selectThread(threadId)
+  }, [refreshThreads, selectThread])
 
   const loadOlderTurns = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -1228,6 +1247,7 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       const turn = params.turn as Turn | undefined
       if (threadId && turn) {
+        const completedThread = threadsRef.current.find((thread) => thread.id === threadId)
         updateDetail(threadId, (detail) => ({
           ...detail,
           turns: upsertTurn(detail.turns, turn),
@@ -1243,6 +1263,15 @@ export function useHarness() {
         const badge: Badge = turn.status === 'failed' ? 'error' : selectedThreadIdRef.current === threadId ? null : 'success'
         persistBadge(threadId, badge)
         void maybeGenerateThreadTitle(threadId, turn)
+        if (completedThread && !completedThread.ephemeral) {
+          const completedEvent: TurnCompletedEvent = {
+            threadId,
+            turnId: turn.id,
+            title: threadTitle(completedThread),
+            status: turn.status,
+          }
+          for (const listener of turnCompletedListenersRef.current) listener(completedEvent)
+        }
 
         const restarts = pendingRestartRef.current[threadId]
         if (restarts?.length) {
@@ -1374,6 +1403,8 @@ export function useHarness() {
     currentForeignActive,
     isCurrentWorking: Boolean(activeTurnId),
     selectThread,
+    openThread,
+    onTurnCompleted,
     loadOlderTurns,
     chooseWorkspace,
     createThread,
