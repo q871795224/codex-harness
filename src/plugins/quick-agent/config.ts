@@ -1,4 +1,5 @@
 import type { ThreadCodexSettings } from '../../core/domain/codex'
+import type { PluginInstanceRecord } from '../../extensions/types'
 
 export type QuickAgentRunMode = 'yolo' | 'auto-review' | 'manual'
 
@@ -22,6 +23,30 @@ export const DEFAULT_QUICK_AGENT_JOB: QuickAgentJob = {
   model: 'gpt-5.6-luna',
   effort: 'max',
   mode: 'yolo',
+}
+
+export function newQuickAgentJob(): QuickAgentJob {
+  return {
+    id: crypto.randomUUID(),
+    name: '新 Job',
+    prompt: '',
+    model: 'gpt-5.6-luna',
+    effort: 'max',
+    mode: 'yolo',
+  }
+}
+
+export function migrateQuickAgentInstances(instances: PluginInstanceRecord[]): PluginInstanceRecord[] {
+  return instances.flatMap((instance) => {
+    const jobs = readQuickAgentConfig(instance.config).jobs
+    if (jobs.length <= 1) return [instance]
+    return jobs.map((job, index) => ({
+      ...instance,
+      instanceId: index === 0 ? instance.instanceId : `${instance.instanceId}:job:${job.id}`,
+      config: { jobs: [job] },
+      createdAt: instance.createdAt + index,
+    }))
+  })
 }
 
 export function readQuickAgentConfig(value: Readonly<Record<string, unknown>>): QuickAgentConfig {

@@ -15,6 +15,7 @@ import {
   normalizeTheme,
   queueText,
   parseGeneratedThreadTitle,
+  parseThreadCreditUsage,
   rebaseSandboxPolicy,
   sortThreads,
   sortWorkspacesByRecentThread,
@@ -119,6 +120,19 @@ describe('thread runtime context', () => {
   })
 })
 
+describe('thread credit usage', () => {
+  it('reads numeric and serialized micro-credit values from account usage', () => {
+    expect(parseThreadCreditUsage({
+      threadUsage: { estimatedUsageCreditsMicros: '1250000', estimatedUsageUsdMicros: 42000 },
+    })).toEqual({ creditsMicros: 1_250_000, usdMicros: 42_000 })
+  })
+
+  it('returns null when thread usage is unavailable', () => {
+    expect(parseThreadCreditUsage({ summary: {} })).toBeNull()
+    expect(parseThreadCreditUsage({ threadUsage: { estimatedUsageCreditsMicros: 'invalid' } })).toBeNull()
+  })
+})
+
 describe('normalizeFontSize', () => {
   it('keeps a whole-pixel value within the supported range', () => {
     expect(normalizeFontSize(16.4)).toBe(16)
@@ -206,12 +220,12 @@ describe('isActive', () => {
 })
 
 describe('thread list activity', () => {
-  it('moves active threads ahead of newer idle threads in recent and manual modes', () => {
+  it('pins active threads only in recent mode and respects explicit manual order', () => {
     const active = makeThread({ id: 'active', updatedAt: 10, recencyAt: 10, status: { type: 'active', activeFlags: [] } })
     const idle = makeThread({ id: 'idle', updatedAt: 20, recencyAt: 20 })
 
     expect(sortThreads([idle, active], 'recent', []).map((thread) => thread.id)).toEqual(['active', 'idle'])
-    expect(sortThreads([idle, active], 'manual', ['idle', 'active']).map((thread) => thread.id)).toEqual(['active', 'idle'])
+    expect(sortThreads([idle, active], 'manual', ['idle', 'active']).map((thread) => thread.id)).toEqual(['idle', 'active'])
   })
 
   it('updates both server timestamps when local turn activity arrives', () => {

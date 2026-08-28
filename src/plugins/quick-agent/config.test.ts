@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { readQuickAgentConfig, settingsForMode, type QuickAgentJob } from './config'
+import { migrateQuickAgentInstances, readQuickAgentConfig, settingsForMode, type QuickAgentJob } from './config'
+import type { PluginInstanceRecord } from '../../extensions/types'
 
 const job = (overrides: Partial<QuickAgentJob> = {}): QuickAgentJob => ({
   id: 'job-1',
@@ -21,6 +22,27 @@ describe('quick agent config', () => {
     const value = { ...job() } as Record<string, unknown>
     delete value.mode
     expect(readQuickAgentConfig({ jobs: [value] }).jobs[0].mode).toBe('yolo')
+  })
+
+  it('keeps the first job available for one-job plugin instances', () => {
+    expect(readQuickAgentConfig({ jobs: [job(), job({ id: 'job-2', name: '检查' })] }).jobs[0]).toEqual(job())
+  })
+
+  it('splits legacy multi-job config into independently scoped instances', () => {
+    const instance: PluginInstanceRecord = {
+      instanceId: 'quick-agent',
+      pluginId: 'builtin.quick-agent',
+      scope: { kind: 'workspace', workspaceRoot: '/repo' },
+      enabled: true,
+      config: { jobs: [job(), job({ id: 'job-2', name: '检查' })] },
+      createdAt: 10,
+      updatedAt: 20,
+    }
+    const migrated = migrateQuickAgentInstances([instance])
+    expect(migrated).toHaveLength(2)
+    expect(migrated.map((item) => item.scope)).toEqual([instance.scope, instance.scope])
+    expect(migrated.map((item) => readQuickAgentConfig(item.config).jobs[0].id)).toEqual(['job-1', 'job-2'])
+    expect(migrateQuickAgentInstances(migrated)).toEqual(migrated)
   })
 
   it('maps each run mode to isolated thread settings', () => {

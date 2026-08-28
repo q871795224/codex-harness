@@ -64,12 +64,20 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     const load = async () => {
       try {
         const stored = await runtime.listPluginInstances()
-        const next = [...stored]
+        let next = [...stored]
         const removedDefaultInstanceIds = removedDefaultPluginInstanceIds(
           await runtime.getAppState(REMOVED_DEFAULT_PLUGIN_INSTANCE_IDS_KEY),
         )
         for (const fallback of defaultPluginInstancesToSeed(stored, defaultInstances, removedDefaultInstanceIds)) {
           next.push(await runtime.upsertPluginInstance(fallback))
+        }
+        for (const definition of definitions) {
+          if (!definition.migrateInstances) continue
+          const current = next.filter((instance) => instance.pluginId === definition.manifest.id)
+          const migrated = definition.migrateInstances(current)
+          if (JSON.stringify(current) === JSON.stringify(migrated)) continue
+          const saved = await Promise.all(migrated.map((instance) => runtime.upsertPluginInstance(instance)))
+          next = [...next.filter((instance) => instance.pluginId !== definition.manifest.id), ...saved]
         }
         if (!disposed) {
           setInstances(next)
@@ -83,7 +91,7 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     }
     void load()
     return () => { disposed = true }
-  }, [defaultInstances])
+  }, [defaultInstances, definitions])
 
   useEffect(() => {
     if (loading) return

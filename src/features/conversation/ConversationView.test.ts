@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
-import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, titleEditorKeyAction } from './ConversationView'
+import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, titleEditorKeyAction } from './ConversationView'
 import { formatWorkingElapsed } from './ConversationStats'
 import { isFirstUserTurn, parseThreadTitleGenerationSettings, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
 
@@ -48,6 +48,17 @@ describe('working status', () => {
   it('formats elapsed time as a stable minute clock', () => {
     expect(formatWorkingElapsed(0)).toBe('0:00')
     expect(formatWorkingElapsed(65_900)).toBe('1:05')
+  })
+
+  it('attaches to the latest Codex message in the active turn', () => {
+    const rows = [
+      { entry: { turnId: 'turn-1', item: { type: 'agentMessage' } } },
+      { entry: { turnId: 'turn-2', item: { type: 'userMessage' } } },
+      { entry: { turnId: 'turn-2', item: { type: 'agentMessage' } } },
+      { entry: { turnId: 'turn-2', item: { type: 'agentMessage' } } },
+    ]
+    expect(latestAgentMessageIndex(rows, 'turn-2')).toBe(3)
+    expect(latestAgentMessageIndex(rows, 'turn-3')).toBe(-1)
   })
 })
 

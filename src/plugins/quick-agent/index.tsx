@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bot, Plus, Save, Trash2 } from 'lucide-react'
+import { Bot, Save } from 'lucide-react'
 import type { AgentRunService } from '../../core/agent-runs/types'
 import type { CodexModel } from '../../core/domain/codex'
 import type { HarnessPlugin, PluginInstanceRecord, PluginSettingsProps } from '../../extensions/types'
 import {
   DEFAULT_QUICK_AGENT_JOB,
+  migrateQuickAgentInstances,
+  newQuickAgentJob,
   readQuickAgentConfig,
   settingsForMode,
   type QuickAgentJob,
@@ -17,32 +19,35 @@ export const quickAgentPlugin: HarnessPlugin = {
     id: 'builtin.quick-agent',
     name: '快捷 Agent',
     description: '在独立会话中使用预设模型和权限执行固定 Job。',
-    version: '1.0.1',
+    version: '1.0.2',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace'],
   },
+  allowMultipleInstancesPerScope: true,
+  createInstanceConfig: () => ({ jobs: [newQuickAgentJob()] }),
+  instanceLabel: (instance) => readQuickAgentConfig(instance.config).jobs[0]?.name ?? '新 Job',
+  migrateInstances: migrateQuickAgentInstances,
   settings: QuickAgentSettings,
   activate(ctx) {
     const agentRuns = ctx.services.get<AgentRunService>('harness.agentRuns')
-    const { jobs } = readQuickAgentConfig(ctx.config)
-    for (const [index, job] of jobs.entries()) {
-      ctx.slots.quickActions.register({
-        id: job.id,
-        label: job.name,
-        order: index,
-        async run({ checkoutRoot }) {
-          if (!checkoutRoot) throw new Error('请先打开一个具有工作目录的会话。')
-          await agentRuns.start({
-            instanceId: ctx.instanceId,
-            title: job.name,
-            mode: 'detached',
-            workspaceRoot: checkoutRoot,
-            prompt: job.prompt,
-            settings: settingsForMode(job),
-          })
-        },
-      })
-    }
+    const job = readQuickAgentConfig(ctx.config).jobs[0]
+    if (!job) return
+    ctx.slots.quickActions.register({
+      id: job.id,
+      label: job.name,
+      async run({ checkoutRoot, threadId }) {
+        if (!checkoutRoot) throw new Error('请先打开一个具有工作目录的会话。')
+        await agentRuns.start({
+          instanceId: ctx.instanceId,
+          title: job.name,
+          mode: 'detached',
+          workspaceRoot: checkoutRoot,
+          parentThreadId: threadId,
+          prompt: job.prompt,
+          settings: settingsForMode(job),
+        })
+      },
+    })
   },
 }
 
@@ -57,29 +62,18 @@ export const quickAgentDefaultInstance: PluginInstanceRecord = {
 }
 
 function QuickAgentSettings({ instance, models, saveConfig }: PluginSettingsProps) {
-  const [jobs, setJobs] = useState(() => readQuickAgentConfig(instance.config).jobs)
+  const [job, setJob] = useState(() => readQuickAgentConfig(instance.config).jobs[0] ?? newQuickAgentJob())
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    setJobs(readQuickAgentConfig(instance.config).jobs)
+    setJob(readQuickAgentConfig(instance.config).jobs[0] ?? newQuickAgentJob())
     setMessage(null)
   }, [instance.config, instance.instanceId])
 
-  const valid = jobs.every((job) => job.name.trim() && job.prompt.trim() && job.model && job.effort)
-  const addJob = () => {
-    setJobs((current) => [...current, {
-      id: crypto.randomUUID(),
-      name: '新 Job',
-      prompt: '',
-      model: 'gpt-5.6-luna',
-      effort: 'max',
-      mode: 'yolo',
-    }])
-    setMessage(null)
-  }
-  const updateJob = (id: string, patch: Partial<QuickAgentJob>) => {
-    setJobs((current) => current.map((job) => job.id === id ? { ...job, ...patch } : job))
+  const valid = Boolean(job.name.trim() && job.prompt.trim() && job.model && job.effort)
+  const updateJob = (patch: Partial<QuickAgentJob>) => {
+    setJob((current) => ({ ...current, ...patch }))
     setMessage(null)
   }
   const save = async () => {
@@ -87,7 +81,7 @@ function QuickAgentSettings({ instance, models, saveConfig }: PluginSettingsProp
     setSaving(true)
     setMessage(null)
     try {
-      await saveConfig({ jobs: jobs.map((job) => ({ ...job, name: job.name.trim(), prompt: job.prompt.trim() })) })
+      await saveConfig({ jobs: [{ ...job, name: job.name.trim(), prompt: job.prompt.trim() }] })
       setMessage('已保存')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error))
@@ -99,20 +93,9 @@ function QuickAgentSettings({ instance, models, saveConfig }: PluginSettingsProp
   return (
     <div className="quick-agent-settings">
       <div className="quick-agent-settings-intro">
-        <span><Bot size={15} />每个 Job 都会在当前 checkout 中启动独立会话。</span>
-        <button type="button" onClick={addJob}><Plus size={14} />新增 Job</button>
+        <span><Bot size={15} />当前实例对应一个 Job；使用左侧 + 新增具有独立归属的 Job。</span>
       </div>
-      {jobs.length === 0 && <div className="quick-agent-settings-empty">这个实例还没有 Job。</div>}
-      {jobs.map((job, index) => (
-        <JobEditor
-          key={job.id}
-          job={job}
-          index={index}
-          models={models}
-          onChange={(patch) => updateJob(job.id, patch)}
-          onRemove={() => setJobs((current) => current.filter((candidate) => candidate.id !== job.id))}
-        />
-      ))}
+      <JobEditor job={job} models={models} onChange={updateJob} />
       <div className="quick-agent-settings-save">
         <button type="button" disabled={!valid || saving} onClick={() => void save()}><Save size={14} />{saving ? '保存中…' : '保存 Job'}</button>
         {message && <span>{message}</span>}
@@ -121,12 +104,10 @@ function QuickAgentSettings({ instance, models, saveConfig }: PluginSettingsProp
   )
 }
 
-function JobEditor({ job, index, models, onChange, onRemove }: {
+function JobEditor({ job, models, onChange }: {
   job: QuickAgentJob
-  index: number
   models: CodexModel[]
   onChange(patch: Partial<QuickAgentJob>): void
-  onRemove(): void
 }) {
   const selectedModel = models.find((candidate) => candidate.model === job.model)
   const modelOptions = useMemo(
@@ -135,7 +116,7 @@ function JobEditor({ job, index, models, onChange, onRemove }: {
   )
   return (
     <article className="quick-agent-job-editor">
-      <header><span>JOB {String(index + 1).padStart(2, '0')}</span><button type="button" onClick={onRemove} title="删除 Job"><Trash2 size={14} /></button></header>
+      <header><span>JOB</span></header>
       <label><span>名称</span><input value={job.name} onChange={(event) => onChange({ name: event.target.value })} placeholder="例如：提交、推送并创建 MR" /></label>
       <label className="quick-agent-prompt"><span>Prompt</span><textarea value={job.prompt} onChange={(event) => onChange({ prompt: event.target.value })} rows={4} placeholder="写入发送给独立 Agent 的完整任务说明" /></label>
       <div className="quick-agent-job-options">

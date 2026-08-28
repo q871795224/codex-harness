@@ -1,8 +1,8 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
-import { DEFAULT_FONT_SIZES } from './core/domain/codex'
+import { DEFAULT_FONT_SIZES, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
 import type { CodexRadarService } from './core/codex-radar/types'
 import type { ConversationService } from './core/conversations/types'
@@ -12,7 +12,7 @@ import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
-import { ConversationStats, WorkingStatus } from './features/conversation/ConversationStats'
+import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
 import { PluginSettingsDialog, SettingsDialog } from './features/settings/SettingsDialog'
@@ -20,7 +20,6 @@ import { useHarness } from './features/conversation/useHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
 import { actionForShortcut, threadIndexForAction } from './features/actions/harnessActions'
-import type { HarnessActionId } from './core/domain/codex'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
@@ -82,15 +81,20 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
   const tabOrderRef = useRef<string[]>([])
   const [draggedTab, setDraggedTab] = useState<string | null>(null)
   const [tabDrop, setTabDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
+  const tabDragRef = useRef<{ id: string; pointerId: number; startX: number; startY: number; moved: boolean; preview: string[] | null } | null>(null)
+  const suppressTabClickRef = useRef(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pluginsOpen, setPluginsOpen] = useState(false)
   const [rawMode, setRawMode] = useState(false)
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
+  const [threadCreditUsages, setThreadCreditUsages] = useState<Record<string, ThreadCreditUsage>>({})
+  const [quickActionBottom, setQuickActionBottom] = useState<number | undefined>(undefined)
   const [scrollToLatestRequest, setScrollToLatestRequest] = useState<{ threadId: string; sequence: number } | null>(null)
   const scrollRequestSequence = useRef(0)
   const conversationScrollPositions = useRef<Record<string, number>>({})
+  const inputColumnRef = useRef<HTMLDivElement>(null)
   const workspace = useMemo(
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
@@ -116,6 +120,38 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
     ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
   )
+  const latestTurn = harness.currentDetail?.turns.at(-1) ?? null
+
+  useEffect(() => {
+    const threadId = harness.selectedThreadId
+    if (!threadId) return undefined
+    let disposed = false
+    void runtime.readThreadCreditUsage(threadId)
+      .then((usage) => {
+        if (!disposed && usage) setThreadCreditUsages((current) => ({ ...current, [threadId]: usage }))
+      })
+      .catch(() => undefined)
+    return () => { disposed = true }
+  }, [harness.selectedThreadId, latestTurn?.completedAt, latestTurn?.id])
+
+  useLayoutEffect(() => {
+    const column = inputColumnRef.current
+    const card = column?.querySelector<HTMLElement>('[data-composer-card]')
+    if (!column || !card) {
+      setQuickActionBottom(undefined)
+      return undefined
+    }
+    const update = () => setQuickActionBottom(Math.max(0, Math.round(window.innerHeight - card.getBoundingClientRect().bottom)))
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(column)
+    observer.observe(card)
+    window.addEventListener('resize', update)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [harness.selectedThreadId, harness.viewMode])
 
   useEffect(() => {
     void runtime.getAppState(CONVERSATION_TAB_ORDER_KEY)
@@ -160,23 +196,39 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [harness.keyboard.actionShortcuts, pluginsOpen, runAction, settingsOpen])
 
-  const previewConversationTabDrop = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
-    event.preventDefault()
-    const draggedId = event.dataTransfer.getData('text/plain') || draggedTab
-    if (!draggedId || draggedId === targetId) return
-    const bounds = event.currentTarget.getBoundingClientRect()
+  const previewConversationTabDrop = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = tabDragRef.current
+    if (!drag) return
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return
+    if (!drag.moved) {
+      drag.moved = true
+      setDraggedTab(drag.id)
+    }
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-conversation-tab-id]')
+    const targetId = target?.dataset.conversationTabId
+    if (!target || !targetId || drag.id === targetId) return
+    const bounds = target.getBoundingClientRect()
     const edge = event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after'
     if (tabDrop?.id === targetId && tabDrop.edge === edge) return
-    const next = reorderConversationTabs(orderedTabIds, tabOrder, draggedId, targetId, edge)
-    tabOrderRef.current = next
+    const base = drag.preview ?? orderedTabIds
+    const next = reorderConversationTabs(base, drag.preview ?? tabOrder, drag.id, targetId, edge)
+    drag.preview = next
     setTabOrder(next)
     setTabDrop({ id: targetId, edge })
   }
 
-  const finishConversationTabDrag = () => {
-    if (draggedTab) {
-      void runtime.setAppState(CONVERSATION_TAB_ORDER_KEY, JSON.stringify(tabOrderRef.current)).catch(() => undefined)
+  const finishConversationTabDrag = (event: ReactPointerEvent<HTMLButtonElement>, commit: boolean) => {
+    const drag = tabDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (drag.moved) {
+      suppressTabClickRef.current = true
+      window.setTimeout(() => { suppressTabClickRef.current = false }, 0)
+      const next = commit && drag.preview ? drag.preview : tabOrderRef.current
+      tabOrderRef.current = next
+      setTabOrder(next)
+      if (commit && drag.preview) void runtime.setAppState(CONVERSATION_TAB_ORDER_KEY, JSON.stringify(next)).catch(() => undefined)
     }
+    tabDragRef.current = null
     setDraggedTab(null)
     setTabDrop(null)
   }
@@ -283,21 +335,21 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                     <button
                       key={tabId}
                       type="button"
-                      draggable
+                      data-conversation-tab-id={tabId}
                       className={`${tab === tabId ? 'active' : ''}${draggedTab === tabId ? ' dragging' : ''}${tabDrop?.id === tabId && draggedTab !== tabId ? ` drop-${tabDrop.edge}` : ''}`}
-                      onClick={() => setTab(tabId)}
-                      onDragStart={(event) => {
-                        event.dataTransfer.effectAllowed = 'move'
-                        event.dataTransfer.setData('text/plain', tabId)
+                      onClick={(event) => {
+                        if (suppressTabClickRef.current) event.preventDefault()
+                        else setTab(tabId)
+                      }}
+                      onPointerDown={(event) => {
+                        if (event.button !== 0) return
                         tabOrderRef.current = tabOrder
-                        setDraggedTab(tabId)
+                        tabDragRef.current = { id: tabId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false, preview: null }
+                        event.currentTarget.setPointerCapture(event.pointerId)
                       }}
-                      onDragOver={(event) => {
-                        event.dataTransfer.dropEffect = 'move'
-                        previewConversationTabDrop(event, tabId)
-                      }}
-                      onDrop={(event) => event.preventDefault()}
-                      onDragEnd={finishConversationTabDrag}
+                      onPointerMove={previewConversationTabDrop}
+                      onPointerUp={(event) => finishConversationTabDrag(event, true)}
+                      onPointerCancel={(event) => finishConversationTabDrag(event, false)}
                       title={`拖动调整“${label}”的位置`}
                     >
                       <Icon size={15} />{label}
@@ -349,6 +401,8 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                 ))}
                 rawMode={rawMode}
                 working={harness.isCurrentWorking}
+                workingTurnId={currentActiveTurn?.id ?? null}
+                workingStartedAt={currentActiveTurn?.startedAt ?? null}
                 onRawModeToggle={() => setRawMode((current) => !current)}
               />
             ) : selectedPluginTab ? (
@@ -363,7 +417,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
             ) : null}
 
             {harness.viewMode === 'active' && (
-              <div className="input-column">
+              <div className="input-column" ref={inputColumnRef}>
                 <QueueDock
                   queue={currentQueue}
                   pendingSteers={currentSteers}
@@ -426,10 +480,9 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                 />
                 <ConversationStats
                   turns={harness.currentDetail?.turns ?? []}
-                  items={harness.currentDetail?.items ?? []}
                   tokenUsage={harness.currentTokenUsage}
+                  creditUsage={harness.selectedThreadId ? threadCreditUsages[harness.selectedThreadId] ?? null : null}
                 />
-                {harness.isCurrentWorking && <WorkingStatus startedAt={currentActiveTurn?.startedAt ?? null} />}
               </div>
             )}
           </Fragment>
@@ -439,6 +492,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
         <QuickActionPanel
           actions={quickActions}
           agentRuns={agentRuns}
+          anchorBottom={quickActionBottom}
           context={{
             threadId: harness.selectedThreadId,
             workspaceRoot: workspace?.root ?? null,

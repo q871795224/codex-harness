@@ -9,10 +9,12 @@ import {
   type JsonObject,
   type RuntimeVersions,
   type Thread,
+  type ThreadCreditUsage,
   type ThreadUiState,
   type Turn,
   type Workspace,
 } from '../domain/codex'
+import { parseThreadCreditUsage } from '../domain/codex'
 import type { AgentRun, ThreadInspection } from '../agent-runs/types'
 import type { LocalConnectorHealth, LocalConnectorMessage, LocalConnectorSendInput } from '../local-connectors/types'
 import type { RadarModelTable } from '../codex-radar/types'
@@ -87,6 +89,11 @@ export const runtime = {
       }).catch(() => undefined)
       throw error
     }
+  },
+
+  async readThreadCreditUsage(threadId: string): Promise<ThreadCreditUsage | null> {
+    const response = await this.request<unknown>('account/usage/read', { threadId })
+    return parseThreadCreditUsage(response)
   },
 
   respond(id: string | number, result: JsonObject): Promise<void> {

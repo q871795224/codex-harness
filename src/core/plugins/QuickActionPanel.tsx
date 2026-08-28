@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Bot, Check, ChevronDown, ChevronRight, CircleAlert, LoaderCircle, Play } from 'lucide-react'
 import type { AgentRun, AgentRunService } from '../agent-runs/types'
 import type { QuickActionProps } from '../../extensions/types'
@@ -9,13 +9,23 @@ interface QuickActionPanelProps {
   actions: ResolvedContribution<QuickActionContribution>[]
   context: QuickActionProps
   agentRuns: AgentRunService
+  anchorBottom?: number
 }
 
-export function QuickActionPanel({ actions, context, agentRuns }: QuickActionPanelProps) {
+export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: QuickActionPanelProps) {
   const [open, setOpen] = useState(false)
   const [startingId, setStartingId] = useState<string | null>(null)
+  const [expandedInstanceId, setExpandedInstanceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const runs = useSyncExternalStore(agentRuns.subscribe, agentRuns.snapshot)
+  const hasActiveRuns = runs.some(isActiveRun)
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    if (!open || !hasActiveRuns) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [hasActiveRuns, open])
   if (actions.length === 0) return null
 
   const run = async (action: ResolvedContribution<QuickActionContribution>) => {
@@ -31,7 +41,7 @@ export function QuickActionPanel({ actions, context, agentRuns }: QuickActionPan
   }
 
   return (
-    <div className={`quick-action-dock${open ? ' open' : ''}`}>
+    <div className={`quick-action-dock${open ? ' open' : ''}`} style={anchorBottom === undefined ? undefined : { bottom: anchorBottom }}>
       {open ? (
         <section className="quick-action-panel" aria-label="快捷 Agent">
           <header>
@@ -42,27 +52,61 @@ export function QuickActionPanel({ actions, context, agentRuns }: QuickActionPan
           </header>
           <div className="quick-action-list">
             {actions.map((action) => {
-              const latestRun = latestRunForAction(runs, action)
-              const status = quickActionRunStatus(latestRun, startingId === action.contribution.id)
-              const running = status === 'running'
-              const accessibleLabel = `${action.contribution.label} · ${quickActionStatusLabel(status)}`
+              const actionRuns = runsForQuickAction(runs, action.instanceId, context.threadId)
+              const activeCount = actionRuns.filter(isActiveRun).length
+              const status = quickActionRunsStatus(actionRuns, startingId === action.contribution.id)
+              const expanded = expandedInstanceId === action.instanceId
+              const accessibleLabel = `${action.contribution.label} · ${activeCount > 0 ? `运行中 ${activeCount}` : quickActionStatusLabel(status)}`
               return (
-                <button
-                  key={`${action.pluginId}:${action.contribution.id}`}
-                  type="button"
-                  disabled={context.disabled || startingId !== null || running}
-                  onClick={() => void run(action)}
-                  title={accessibleLabel}
-                  aria-label={accessibleLabel}
-                >
-                  <span className={`quick-action-play ${status}`}>
-                    {status === 'running' ? <LoaderCircle className="spin" size={14} />
-                      : status === 'completed' ? <Check size={14} />
-                        : status === 'failed' ? <CircleAlert size={14} />
-                          : <Play size={13} fill="currentColor" />}
-                  </span>
-                  <strong>{action.contribution.label}</strong>
-                </button>
+                <div className="quick-action-entry" key={`${action.pluginId}:${action.contribution.id}`}>
+                  <div className="quick-action-row">
+                    <button
+                      className="quick-action-launch"
+                      type="button"
+                      disabled={context.disabled || startingId !== null}
+                      onClick={() => void run(action)}
+                      title={accessibleLabel}
+                      aria-label={`启动 ${action.contribution.label}`}
+                    >
+                      <span className={`quick-action-play ${status}`}>
+                        {status === 'running' ? <LoaderCircle className="spin" size={14} />
+                          : status === 'completed' ? <Check size={14} />
+                            : status === 'failed' ? <CircleAlert size={14} />
+                              : <Play size={13} fill="currentColor" />}
+                      </span>
+                      <strong>{action.contribution.label}</strong>
+                    </button>
+                    {actionRuns.length > 0 && (
+                      <button
+                        className={`quick-action-runs-toggle${activeCount > 0 ? ' active' : ''}`}
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-label={`${action.contribution.label}，${activeCount > 0 ? `${activeCount} 个运行中任务` : `${actionRuns.length} 条运行记录`}`}
+                        onClick={() => setExpandedInstanceId(expanded ? null : action.instanceId)}
+                      >
+                        <span>{activeCount > 0 ? `运行中 ${activeCount}` : `记录 ${actionRuns.length}`}</span>
+                        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      </button>
+                    )}
+                  </div>
+                  {expanded && (
+                    <div className="quick-action-runs">
+                      {actionRuns.map((run, index) => (
+                        <button
+                          key={run.runId}
+                          type="button"
+                          disabled={!run.childThreadId}
+                          onClick={() => run.childThreadId && agentRuns.openThread(run.childThreadId)}
+                          title={run.childThreadId ? '打开独立会话' : '独立会话正在创建'}
+                        >
+                          <span>#{actionRuns.length - index}</span>
+                          <strong>{quickActionRunLabel(run.status)}</strong>
+                          {isActiveRun(run) && <small>{formatElapsed(now - run.createdAt)}</small>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>
@@ -89,11 +133,14 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function latestRunForAction(
-  runs: AgentRun[],
-  action: ResolvedContribution<QuickActionContribution>,
-): AgentRun | undefined {
-  return runs.find((run) => run.instanceId === action.instanceId && run.title === action.contribution.label)
+export function runsForQuickAction(runs: AgentRun[], instanceId: string, parentThreadId: string | null): AgentRun[] {
+  if (!parentThreadId) return []
+  return runs.filter((run) => run.instanceId === instanceId && run.parentThreadId === parentThreadId)
+}
+
+export function quickActionRunsStatus(runs: AgentRun[], starting: boolean): 'idle' | 'running' | 'completed' | 'failed' {
+  if (starting || runs.some(isActiveRun)) return 'running'
+  return quickActionRunStatus(runs[0], false)
 }
 
 export function quickActionRunStatus(run: AgentRun | undefined, starting: boolean): 'idle' | 'running' | 'completed' | 'failed' {
@@ -108,4 +155,22 @@ function quickActionStatusLabel(status: 'idle' | 'running' | 'completed' | 'fail
   if (status === 'completed') return '已完成'
   if (status === 'failed') return '失败'
   return '可运行'
+}
+
+function quickActionRunLabel(status: AgentRun['status']): string {
+  if (status === 'starting') return '启动中'
+  if (status === 'running') return '运行中'
+  if (status === 'waitingApproval') return '等待审批'
+  if (status === 'completed') return '已完成'
+  if (status === 'cancelled') return '已取消'
+  return '失败'
+}
+
+function isActiveRun(run: AgentRun): boolean {
+  return run.status === 'starting' || run.status === 'running' || run.status === 'waitingApproval'
+}
+
+function formatElapsed(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000))
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }

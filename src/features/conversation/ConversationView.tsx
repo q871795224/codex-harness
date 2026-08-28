@@ -25,6 +25,7 @@ import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
 import { groupTranscriptItems } from './transcript'
 import { runtime } from '../../core/runtime/bridge'
+import { WorkingStatus } from './ConversationStats'
 
 interface ConversationHeaderProps {
   thread: Thread
@@ -132,10 +133,12 @@ interface ConversationViewProps {
   newThreadPanels?: ReactNode
   rawMode: boolean
   working: boolean
+  workingTurnId: string | null
+  workingStartedAt: number | null
   onRawModeToggle: () => void
 }
 
-export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, working, onRawModeToggle }: ConversationViewProps) {
+export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -171,6 +174,10 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
     followingLatest.current = true
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
+  const transcriptRows = rawMode
+    ? items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
+    : groupTranscriptItems(items)
+  const workingMessageIndex = working ? latestAgentMessageIndex(transcriptRows, workingTurnId) : -1
 
   return (
     <section className="conversation-pane" aria-label="对话内容">
@@ -220,15 +227,22 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
               {newThreadPanels}
             </div>
           )}
-          {(rawMode ? items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true })) : groupTranscriptItems(items)).map((row, index) => (
+          {transcriptRows.map((row, index) => (
             <ThreadItemView
               key={`${row.entry.turnId}:${row.entry.item.id ?? index}`}
               entry={row.entry}
               agentText={row.agentText}
               showAgentLabel={row.showAgentLabel}
               rawMode={rawMode}
+              workingStartedAt={index === workingMessageIndex ? workingStartedAt : undefined}
             />
           ))}
+          {working && workingMessageIndex < 0 && (
+            <article className="message agent-message working-message">
+              <div className="message-label"><Bot size={15} />Codex</div>
+              <WorkingStatus startedAt={workingStartedAt} />
+            </article>
+          )}
           {approvals.map((request) => (
             <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
           ))}
@@ -245,6 +259,15 @@ export function isNearConversationBottom(scroll: Pick<HTMLElement, 'scrollTop' |
   return scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop <= 48
 }
 
+export function latestAgentMessageIndex(rows: Array<{ entry: ThreadItemEntry }>, turnId: string | null): number {
+  if (!turnId) return -1
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index]
+    if (row.entry.turnId === turnId && row.entry.item.type === 'agentMessage') return index
+  }
+  return -1
+}
+
 export const CHOOSE_WORKSPACE_VALUE = '__choose_workspace__'
 
 export function isChooseWorkspaceSelection(value: string): boolean {
@@ -256,11 +279,13 @@ const ThreadItemView = memo(function ThreadItemView({
   agentText,
   showAgentLabel = true,
   rawMode,
+  workingStartedAt,
 }: {
   entry: ThreadItemEntry
   agentText?: string
   showAgentLabel?: boolean
   rawMode: boolean
+  workingStartedAt?: number | null
 }) {
   const { item } = entry
   if (item.type === 'userMessage') {
@@ -285,6 +310,7 @@ const ThreadItemView = memo(function ThreadItemView({
       <article className="message agent-message">
         {showAgentLabel && <div className="message-label"><Bot size={15} />Codex</div>}
         <MessageBody text={agentText ?? item.text ?? ''} raw={rawMode} />
+        {workingStartedAt !== undefined && <WorkingStatus startedAt={workingStartedAt} />}
       </article>
     )
   }

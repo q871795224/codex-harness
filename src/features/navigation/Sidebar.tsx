@@ -115,11 +115,16 @@ export function Sidebar({
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [resizing, setResizing] = useState(false)
   const [previewWidth, setPreviewWidth] = useState<number | null>(null)
+  const [dragPreviewOrder, setDragPreviewOrder] = useState<string[] | null>(null)
+  const [draggedThreadId, setDraggedThreadId] = useState<string | null>(null)
+  const [threadDrop, setThreadDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const onSearchRef = useRef(onSearch)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchStarted = useRef(false)
   const resizeStart = useRef<{ clientX: number; width: number } | null>(null)
   const resizedWidth = useRef<number | null>(null)
+  const threadDrag = useRef<{ id: string; groupKey: string; pointerId: number; startX: number; startY: number; moved: boolean; preview: string[] | null } | null>(null)
+  const suppressThreadClick = useRef(false)
 
   useEffect(() => {
     onSearchRef.current = onSearch
@@ -182,8 +187,8 @@ export function Sidebar({
   }, [onSidebarWidth, resizing])
 
   const orderedThreads = useMemo(
-    () => sortThreads(threads, threadSort, manualThreadOrder),
-    [manualThreadOrder, threadSort, threads],
+    () => sortThreads(threads, threadSort, dragPreviewOrder ?? manualThreadOrder),
+    [dragPreviewOrder, manualThreadOrder, threadSort, threads],
   )
 
   const orderedWorkspaces = useMemo(
@@ -259,18 +264,49 @@ export function Sidebar({
     }
   }
 
-  const reorderThread = (draggedThreadId: string, targetThreadId: string) => {
-    if (threadSort !== 'manual' || draggedThreadId === targetThreadId) return
-    const orderedIds = orderedThreads.map((thread) => thread.id)
-    const from = orderedIds.indexOf(draggedThreadId)
-    const to = orderedIds.indexOf(targetThreadId)
-    if (from < 0 || to < 0) return
-    orderedIds.splice(from, 1)
-    orderedIds.splice(to, 0, draggedThreadId)
-    const visibleIds = new Set(orderedIds)
-    // A search can show a subset. Keep the saved relative order of threads that are not
-    // currently present in the App Server page instead of silently losing them.
-    onManualThreadOrder([...orderedIds, ...manualThreadOrder.filter((id) => !visibleIds.has(id))])
+  const startThreadDrag = (event: ReactPointerEvent<HTMLButtonElement>, threadId: string, groupKey: string) => {
+    if (threadSort !== 'manual' || event.button !== 0) return
+    threadDrag.current = { id: threadId, groupKey, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false, preview: null }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const previewThreadDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = threadDrag.current
+    if (!drag) return
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return
+    if (!drag.moved) {
+      drag.moved = true
+      setDraggedThreadId(drag.id)
+    }
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-thread-sort-id]')
+    const targetId = target?.dataset.threadSortId
+    const targetGroup = target?.closest<HTMLElement>('[data-workspace-group]')?.dataset.workspaceGroup
+    if (!target || !targetId || targetGroup !== drag.groupKey || targetId === drag.id) return
+    const bounds = target.getBoundingClientRect()
+    const edge = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after'
+    if (threadDrop?.id === targetId && threadDrop.edge === edge) return
+    const base = drag.preview ?? orderedThreads.map((thread) => thread.id)
+    const next = reorderThreadIds(base, drag.id, targetId, edge)
+    drag.preview = next
+    setDragPreviewOrder(next)
+    setThreadDrop({ id: targetId, edge })
+  }
+
+  const finishThreadDrag = (event: ReactPointerEvent<HTMLButtonElement>, commit: boolean) => {
+    const drag = threadDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (drag.moved) {
+      suppressThreadClick.current = true
+      window.setTimeout(() => { suppressThreadClick.current = false }, 0)
+      if (commit && drag.preview) {
+        const visibleIds = new Set(drag.preview)
+        onManualThreadOrder([...drag.preview, ...manualThreadOrder.filter((id) => !visibleIds.has(id))])
+      }
+    }
+    threadDrag.current = null
+    setDragPreviewOrder(null)
+    setDraggedThreadId(null)
+    setThreadDrop(null)
   }
 
   const renderThreadList = (items: Thread[], groupKey: string) => (
@@ -282,7 +318,12 @@ export function Sidebar({
       groupKey={groupKey}
       visibleCount={visibleCounts[groupKey]}
       manualSort={threadSort === 'manual'}
-      onReorder={reorderThread}
+      draggedThreadId={draggedThreadId}
+      threadDrop={threadDrop}
+      onPointerStart={startThreadDrag}
+      onPointerMove={previewThreadDrag}
+      onPointerFinish={finishThreadDrag}
+      suppressClick={() => suppressThreadClick.current}
       onShowMore={() => setVisibleCounts((current) => ({
         ...current,
         [groupKey]: visibleThreads(items, current[groupKey]).length + 5,
@@ -499,7 +540,12 @@ function ThreadList({
   groupKey,
   visibleCount,
   manualSort,
-  onReorder,
+  draggedThreadId,
+  threadDrop,
+  onPointerStart,
+  onPointerMove,
+  onPointerFinish,
+  suppressClick,
   onShowMore,
 }: {
   threads: Thread[]
@@ -509,7 +555,12 @@ function ThreadList({
   groupKey: string
   visibleCount: number | undefined
   manualSort: boolean
-  onReorder: (draggedThreadId: string, targetThreadId: string) => void
+  draggedThreadId: string | null
+  threadDrop: { id: string; edge: 'before' | 'after' } | null
+  onPointerStart: (event: ReactPointerEvent<HTMLButtonElement>, threadId: string, groupKey: string) => void
+  onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void
+  onPointerFinish: (event: ReactPointerEvent<HTMLButtonElement>, commit: boolean) => void
+  suppressClick: () => boolean
   onShowMore: () => void
 }) {
   if (threads.length === 0) return <p className="empty-thread-list">暂无会话</p>
@@ -522,20 +573,16 @@ function ThreadList({
           <button
             key={thread.id}
             type="button"
-            draggable={manualSort}
-            className={`thread-row ${selectedThreadId === thread.id ? 'selected' : ''} ${manualSort ? 'manual-sort' : ''}`}
-            onClick={() => onSelect(thread.id)}
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = 'move'
-              event.dataTransfer.setData('text/plain', thread.id)
+            data-thread-sort-id={thread.id}
+            className={`thread-row ${selectedThreadId === thread.id ? 'selected' : ''} ${manualSort ? 'manual-sort' : ''}${draggedThreadId === thread.id ? ' dragging' : ''}${threadDrop?.id === thread.id && draggedThreadId !== thread.id ? ` drop-${threadDrop.edge}` : ''}`}
+            onClick={(event) => {
+              if (suppressClick()) event.preventDefault()
+              else onSelect(thread.id)
             }}
-            onDragOver={(event) => {
-              if (manualSort) event.preventDefault()
-            }}
-            onDrop={(event) => {
-              event.preventDefault()
-              onReorder(event.dataTransfer.getData('text/plain'), thread.id)
-            }}
+            onPointerDown={(event) => onPointerStart(event, thread.id, groupKey)}
+            onPointerMove={onPointerMove}
+            onPointerUp={(event) => onPointerFinish(event, true)}
+            onPointerCancel={(event) => onPointerFinish(event, false)}
             title={thread.name || thread.preview || '新会话'}
           >
             <StatusDot badge={badge} />
@@ -551,6 +598,16 @@ function ThreadList({
       )}
     </div>
   )
+}
+
+export function reorderThreadIds(ids: string[], draggedId: string, targetId: string, edge: 'before' | 'after'): string[] {
+  const next = [...ids]
+  const from = next.indexOf(draggedId)
+  if (from < 0 || !next.includes(targetId) || draggedId === targetId) return ids
+  next.splice(from, 1)
+  const target = next.indexOf(targetId)
+  next.splice(target + (edge === 'after' ? 1 : 0), 0, draggedId)
+  return next
 }
 
 export function StatusDot({ badge }: { badge: Badge }) {

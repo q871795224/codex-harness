@@ -154,6 +154,10 @@ export interface PluginInstanceContext {
 
 export interface HarnessPlugin {
   manifest: PluginManifest
+  allowMultipleInstancesPerScope?: boolean
+  createInstanceConfig?(): Record<string, unknown>
+  instanceLabel?(instance: PluginInstanceRecord): string | null
+  migrateInstances?(instances: PluginInstanceRecord[]): PluginInstanceRecord[]
   settings?: ComponentType<PluginSettingsProps>
   activate(ctx: PluginInstanceContext): void | (() => void | Promise<void>) | Promise<void | (() => void | Promise<void>)>
 }

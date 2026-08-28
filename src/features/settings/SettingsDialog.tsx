@@ -640,7 +640,7 @@ function PluginDefinitionNav({ definition, instances, selected, selectedInstance
       pluginId: definition.manifest.id,
       scope: availableScope,
       enabled: true,
-      config: {},
+      config: definition.createInstanceConfig?.() ?? {},
       createdAt: now,
       updatedAt: now,
     }
@@ -669,7 +669,7 @@ function PluginDefinitionNav({ definition, instances, selected, selectedInstance
         {instances.map((instance) => (
           <button key={instance.instanceId} type="button" className={instance.instanceId === selectedInstanceId ? 'selected' : ''} aria-current={instance.instanceId === selectedInstanceId ? 'page' : undefined} onClick={() => onSelectInstance(instance.instanceId)}>
             <span className={`plugin-status-dot ${plugins.status(instance.instanceId).phase}`} />
-            <span>{scopeSummary(instance.scope, workspaces, threads)}</span>
+            <span>{instanceSummary(definition, instance, workspaces, threads)}</span>
           </button>
         ))}
       </div>}
@@ -708,8 +708,8 @@ function PluginInstanceDetail({ definition, instance, workspaces, threads, selec
           <div className="plugin-detail-status"><span className={`plugin-status ${status.phase}`}><span />{statusLabel(status.phase)}</span></div>
         </div>
         <div className="plugin-instance-actions">
-          <button type="button" className={instance.enabled ? 'enabled' : ''} onClick={() => void persist({ ...instance, enabled: !instance.enabled, updatedAt: Date.now() })} title={instance.enabled ? '停用当前实例' : '启用当前实例'}>
-            <Power size={13} />{instance.enabled ? '已启用' : '已停用'}
+          <button type="button" className={instance.enabled ? 'enabled' : 'disabled'} onClick={() => void persist({ ...instance, enabled: !instance.enabled, updatedAt: Date.now() })} title={instance.enabled ? '停用当前实例' : '启动当前实例'}>
+            <Power size={13} />{instance.enabled ? '已启动' : '未启动'}
           </button>
         </div>
       </header>
@@ -757,9 +757,9 @@ function nextAvailableScope(
   selectedThreadId: string | null,
 ): PluginScope | null {
   const used = new Set(instances.map((instance) => scopeIdentity(instance.scope)))
-  if (definition.manifest.supportedScopes.includes('global') && !used.has('global')) return { kind: 'global' }
+  if (definition.manifest.supportedScopes.includes('global') && (definition.allowMultipleInstancesPerScope || !used.has('global'))) return { kind: 'global' }
   if (definition.manifest.supportedScopes.includes('workspace')) {
-    const workspace = workspaces.find((candidate) => !used.has(`workspace:${candidate.root}`))
+    const workspace = workspaces.find((candidate) => definition.allowMultipleInstancesPerScope || !used.has(`workspace:${candidate.root}`))
     if (workspace) return { kind: 'workspace', workspaceRoot: workspace.root }
   }
   if (definition.manifest.supportedScopes.includes('thread')) {
@@ -770,6 +770,12 @@ function nextAvailableScope(
     if (thread) return { kind: 'thread', threadId: thread.id }
   }
   return null
+}
+
+function instanceSummary(definition: HarnessPlugin, instance: PluginInstanceRecord, workspaces: Workspace[], threads: Thread[]): string {
+  const label = definition.instanceLabel?.(instance)
+  const scope = scopeSummary(instance.scope, workspaces, threads)
+  return label ? `${scope} · ${label}` : scope
 }
 
 function scopeForKind(kind: PluginScopeKind, workspaces: Workspace[], threads: Thread[], selectedThreadId: string | null): PluginScope | null {

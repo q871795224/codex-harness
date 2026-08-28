@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { ThreadItemEntry, ThreadTokenUsage, Turn } from '../../core/domain/codex'
+import type { ThreadCreditUsage, ThreadTokenUsage, Turn } from '../../core/domain/codex'
 import { formatDuration } from '../../core/domain/format'
 
 interface ConversationStatsProps {
   turns: Turn[]
-  items: ThreadItemEntry[]
   tokenUsage: ThreadTokenUsage | null
+  creditUsage: ThreadCreditUsage | null
 }
 
 export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
@@ -27,34 +27,38 @@ export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
   )
 }
 
-const toolItemTypes = new Set(['commandExecution', 'mcpToolCall', 'dynamicToolCall', 'fileChange'])
+export function ConversationStats({ turns, tokenUsage, creditUsage }: ConversationStatsProps) {
+  const latestTurn = turns.at(-1) ?? null
+  const segments: Array<{ text: string; title?: string }> = []
 
-export function ConversationStats({ turns, items, tokenUsage }: ConversationStatsProps) {
-  const toolItems = items.filter((entry) => toolItemTypes.has(entry.item.type))
-  const toolDuration = toolItems.reduce((total, entry) => {
-    const duration = entry.item.durationMs
-    return total + (typeof duration === 'number' && Number.isFinite(duration) ? Math.max(0, duration) : 0)
-  }, 0)
-  const segments: string[] = []
-
-  if (turns.length > 0 || toolItems.length > 0) segments.push(`已加载 ${turns.length} 轮 · ${toolItems.length} 步`)
-  if (toolDuration > 0) segments.push(`工具调用 ${formatDuration(toolDuration)}`)
-
-  if (tokenUsage) {
-    const { inputTokens, cachedInputTokens, outputTokens } = tokenUsage.total
-    if (inputTokens > 0) segments.push(`缓存命中 ${Math.round(Math.min(1, cachedInputTokens / inputTokens) * 100)}%`)
-    if (inputTokens > 0 || outputTokens > 0) segments.push(`输入 ${formatTokens(inputTokens)} tok · 输出 ${formatTokens(outputTokens)} tok`)
+  if (tokenUsage && (tokenUsage.total.totalTokens > 0 || tokenUsage.last.totalTokens > 0)) {
+    segments.push({ text: `Tokens ${formatTokens(tokenUsage.total.totalTokens)} / ${formatTokens(tokenUsage.last.totalTokens)}` })
+  }
+  if (latestTurn?.durationMs !== null && latestTurn?.durationMs !== undefined) {
+    segments.push({ text: `本轮 ${formatDuration(latestTurn.durationMs)}` })
+  }
+  if (creditUsage) {
+    segments.push({
+      text: `${formatCredits(creditUsage.creditsMicros)} credits`,
+      title: creditUsage.usdMicros === null ? undefined : `$${formatUsd(creditUsage.usdMicros)} USD`,
+    })
   }
 
   if (segments.length === 0) return null
   return (
-    <div
-      className="conversation-stats"
-      title="统计仅使用 App Server 已公开且已加载的数据；历史 LLM 耗时、首 token 耗时和输出速率目前没有可靠字段。"
-    >
-      {segments.map((segment) => <span key={segment}>{segment}</span>)}
+    <div className="conversation-stats">
+      {segments.map((segment) => <span key={segment.text} title={segment.title}>{segment.text}</span>)}
     </div>
   )
+}
+
+function formatCredits(micros: number): string {
+  const credits = micros / 1_000_000
+  return credits.toLocaleString(undefined, { maximumFractionDigits: credits < 10 ? 3 : 2 })
+}
+
+function formatUsd(micros: number): string {
+  return (micros / 1_000_000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 }
 
 function formatTokens(value: number): string {

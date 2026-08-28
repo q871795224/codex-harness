@@ -284,6 +284,33 @@ export interface ThreadTokenUsage {
   modelContextWindow: number | null
 }
 
+export interface ThreadCreditUsage {
+  creditsMicros: number
+  usdMicros: number | null
+}
+
+export function parseThreadCreditUsage(value: unknown): ThreadCreditUsage | null {
+  if (!value || typeof value !== 'object') return null
+  const threadUsage = (value as JsonObject).threadUsage
+  if (!threadUsage || typeof threadUsage !== 'object') return null
+  const raw = threadUsage as JsonObject
+  const creditsMicros = finiteNumber(raw.estimatedUsageCreditsMicros)
+  if (creditsMicros === null) return null
+  return {
+    creditsMicros: Math.max(0, creditsMicros),
+    usdMicros: finiteNumber(raw.estimatedUsageUsdMicros),
+  }
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
 export interface QueuedSubmission {
   id: string
   input: UserInput[]
@@ -421,8 +448,6 @@ export function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: st
 
   const ranks = new Map(manualOrder.map((id, index) => [id, index]))
   return recentFirst.sort((left, right) => {
-    const activeDifference = Number(isActive(right.status)) - Number(isActive(left.status))
-    if (activeDifference !== 0) return activeDifference
     const leftRank = ranks.get(left.id)
     const rightRank = ranks.get(right.id)
     if (leftRank === undefined && rightRank === undefined) return 0
