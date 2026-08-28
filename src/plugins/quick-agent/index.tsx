@@ -6,7 +6,6 @@ import type { HarnessPlugin, PluginInstanceRecord, PluginSettingsProps } from '.
 import {
   DEFAULT_QUICK_AGENT_JOB,
   readQuickAgentConfig,
-  runModeLabel,
   settingsForMode,
   type QuickAgentJob,
   type QuickAgentRunMode,
@@ -18,7 +17,7 @@ export const quickAgentPlugin: HarnessPlugin = {
     id: 'builtin.quick-agent',
     name: '快捷 Agent',
     description: '在独立会话中使用预设模型和权限执行固定 Job。',
-    version: '1.0.0',
+    version: '1.0.1',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace'],
   },
@@ -30,8 +29,6 @@ export const quickAgentPlugin: HarnessPlugin = {
       ctx.slots.quickActions.register({
         id: job.id,
         label: job.name,
-        description: promptSummary(job.prompt),
-        meta: `${modelLabel(job.model)} · ${job.effort} · ${runModeLabel(job.mode)}`,
         order: index,
         async run({ checkoutRoot }) {
           if (!checkoutRoot) throw new Error('请先打开一个具有工作目录的会话。')
@@ -169,16 +166,4 @@ function effortOptions(model: CodexModel | undefined, current: string): string[]
 
 function fallbackModel(model: string): CodexModel {
   return { id: model, model, displayName: model, description: '', hidden: false, supportedReasoningEfforts: [], defaultReasoningEffort: 'max', inputModalities: [], isDefault: false }
-}
-
-function promptSummary(prompt: string): string {
-  const summary = prompt.replace(/\s+/g, ' ').trim()
-  return summary.length > 92 ? `${summary.slice(0, 91)}…` : summary
-}
-
-function modelLabel(model: string): string {
-  if (model === 'gpt-5.6-luna') return 'Luna'
-  if (model === 'gpt-5.6-terra') return 'Terra'
-  if (model === 'gpt-5.6-sol') return 'Sol'
-  return model
 }

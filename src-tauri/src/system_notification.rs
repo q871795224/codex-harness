@@ -82,7 +82,8 @@ mod macos {
                 _notification: &UNNotification,
                 completion_handler: &block2::DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
             ) {
-                completion_handler.call((UNNotificationPresentationOptions::Banner
+                #[allow(deprecated)]
+                completion_handler.call((UNNotificationPresentationOptions::Alert
                     | UNNotificationPresentationOptions::List,));
             }
 

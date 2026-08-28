@@ -206,6 +206,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
         '--h-conversation-font-offset': `${harness.appearance.fontSizes.conversation - DEFAULT_FONT_SIZES.conversation}px`,
         '--h-settings-font-offset': `${harness.appearance.fontSizes.settings - DEFAULT_FONT_SIZES.settings}px`,
         '--h-plugin-font-offset': `${harness.appearance.fontSizes.plugins - DEFAULT_FONT_SIZES.plugins}px`,
+        '--h-sidebar-width': `${harness.navigation.sidebarCollapsed ? 0 : harness.navigation.sidebarWidth}px`,
       } as CSSProperties}
     >
       <div className="native-titlebar-drag-region" data-tauri-drag-region />

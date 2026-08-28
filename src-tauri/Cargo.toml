@@ -1,6 +1,6 @@
 [package]
 name = "codex-harness"
-version = "0.4.5"
+version = "0.4.6"
 description = "A local rich client for Codex App Server"
 authors = ["Codex Harness"]
 edition = "2021"

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Bot, ChevronDown, LoaderCircle, Play } from 'lucide-react'
+import { useState } from 'react'
+import { Bot, ChevronDown, ChevronRight, LoaderCircle, Play } from 'lucide-react'
 import type { QuickActionProps } from '../../extensions/types'
 import type { ResolvedContribution } from './runtime'
 import type { QuickActionContribution } from '../../extensions/types'
@@ -13,24 +13,6 @@ export function QuickActionPanel({ actions, context }: QuickActionPanelProps) {
   const [open, setOpen] = useState(false)
   const [runningId, setRunningId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const rootRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return undefined
-    const close = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('mousedown', close)
-    window.addEventListener('keydown', closeOnEscape)
-    return () => {
-      window.removeEventListener('mousedown', close)
-      window.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [open])
-
   if (actions.length === 0) return null
 
   const run = async (action: ResolvedContribution<QuickActionContribution>) => {
@@ -38,7 +20,6 @@ export function QuickActionPanel({ actions, context }: QuickActionPanelProps) {
     setError(null)
     try {
       await action.contribution.run(context)
-      setOpen(false)
     } catch (nextError) {
       setError(messageOf(nextError))
     } finally {
@@ -47,12 +28,14 @@ export function QuickActionPanel({ actions, context }: QuickActionPanelProps) {
   }
 
   return (
-    <div ref={rootRef} className={`quick-action-dock${open ? ' open' : ''}`}>
-      {open && (
+    <div className={`quick-action-dock${open ? ' open' : ''}`}>
+      {open ? (
         <section className="quick-action-panel" aria-label="快捷 Agent">
           <header>
             <span><Bot size={15} />快捷 Agent</span>
-            <small>{actions.length} 个可用 Job</small>
+            <button type="button" aria-label="收起快捷 Agent" title="收起" onClick={() => setOpen(false)}>
+              <ChevronRight size={15} />
+            </button>
           </header>
           <div className="quick-action-list">
             {actions.map((action) => {
@@ -63,31 +46,29 @@ export function QuickActionPanel({ actions, context }: QuickActionPanelProps) {
                   type="button"
                   disabled={context.disabled || runningId !== null}
                   onClick={() => void run(action)}
+                  title={action.contribution.label}
                 >
                   <span className="quick-action-play">{running ? <LoaderCircle className="spin" size={14} /> : <Play size={13} fill="currentColor" />}</span>
-                  <span className="quick-action-copy">
-                    <strong>{action.contribution.label}</strong>
-                    {action.contribution.description && <small>{action.contribution.description}</small>}
-                  </span>
-                  {action.contribution.meta && <em>{action.contribution.meta}</em>}
+                  <strong>{action.contribution.label}</strong>
                 </button>
               )
             })}
           </div>
           {error && <div className="quick-action-error">{error}</div>}
         </section>
+      ) : (
+        <button
+          type="button"
+          className="quick-action-trigger"
+          aria-expanded={false}
+          aria-label="打开快捷 Agent"
+          title="快捷 Agent"
+          onClick={() => { setError(null); setOpen(true) }}
+        >
+          <Bot size={17} />
+          <ChevronDown size={13} />
+        </button>
       )}
-      <button
-        type="button"
-        className="quick-action-trigger"
-        aria-expanded={open}
-        aria-label="打开快捷 Agent"
-        title="快捷 Agent"
-        onClick={() => { setError(null); setOpen((current) => !current) }}
-      >
-        <Bot size={17} />
-        <ChevronDown size={13} />
-      </button>
     </div>
   )
 }
