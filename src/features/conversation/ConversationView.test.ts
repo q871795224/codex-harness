@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Thread, Turn } from '../../core/domain/codex'
 import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, titleEditorKeyAction } from './ConversationView'
-import { resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
+import { parseThreadTitleGenerationSettings, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
 
 function makeThread(cwd: string): Thread {
   return {
@@ -89,6 +89,22 @@ describe('generated thread title prompt', () => {
     }
     expect(threadTitlePrompt(turn)).toContain('User: 修复 workspace')
     expect(threadTitlePrompt(turn)).toContain('Assistant: 已经定位问题。')
+  })
+})
+
+describe('thread title generation settings', () => {
+  it('defaults to Luna low and preserves valid custom settings', () => {
+    expect(parseThreadTitleGenerationSettings(null)).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
+    expect(parseThreadTitleGenerationSettings(JSON.stringify({ model: 'custom', effort: 'high', prompt: 'Only a title' }))).toEqual({
+      model: 'custom', effort: 'high', prompt: 'Only a title',
+    })
+  })
+
+  it('falls back for empty or invalid values', () => {
+    expect(parseThreadTitleGenerationSettings('{broken')).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
+    expect(parseThreadTitleGenerationSettings(JSON.stringify({ model: '', effort: '', prompt: '' }))).toMatchObject({
+      model: 'gpt-5.6-luna', effort: 'low',
+    })
   })
 })
 

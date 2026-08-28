@@ -10,9 +10,21 @@ import {
   matchesSendShortcut,
   pastedCharacterCount,
   reconcileCollapsedPastes,
+  reasoningEffortTone,
   replaceComposerTrigger,
   shouldCollapsePaste,
 } from './composerInput'
+
+describe('reasoningEffortTone', () => {
+  it('maps supported and future effort names onto the visual scale', () => {
+    expect(reasoningEffortTone('low')).toBe('low')
+    expect(reasoningEffortTone('medium')).toBe('medium')
+    expect(reasoningEffortTone('high')).toBe('high')
+    expect(reasoningEffortTone('xhigh')).toBe('xhigh')
+    expect(reasoningEffortTone('max')).toBe('max')
+    expect(reasoningEffortTone('ultra')).toBe('ultra')
+  })
+})
 
 describe('activeComposerTrigger', () => {
   it('finds file and skill triggers at the cursor', () => {

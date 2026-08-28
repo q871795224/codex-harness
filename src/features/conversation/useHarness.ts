@@ -21,6 +21,7 @@ import type {
   ThreadTokenUsage,
   ThreadUiState,
   Theme,
+  ThreadTitleGenerationSettings,
   Turn,
   UserInput,
   Workspace,
@@ -30,6 +31,7 @@ import type {
 } from '../../core/domain/codex'
 import {
   DEFAULT_SIDEBAR_WIDTH,
+  DEFAULT_THREAD_TITLE_GENERATION,
   defaultFontSizePreferences,
   emptyThreadDetail,
   isActive,
@@ -62,6 +64,7 @@ type ViewMode = 'active' | 'archived'
 const NAVIGATION_PREFERENCES_KEY = 'navigationPreferences'
 const APPEARANCE_PREFERENCES_KEY = 'appearancePreferences'
 const KEYBOARD_PREFERENCES_KEY = 'keyboardPreferences'
+const THREAD_TITLE_GENERATION_KEY = 'threadTitleGeneration'
 
 const defaultNavigationPreferences: NavigationPreferences = {
   layout: 'workspace',
@@ -120,11 +123,6 @@ interface TitleGenerator {
   targetThreadId: string
   text: string
 }
-
-const THREAD_TITLE_INSTRUCTIONS = `Generate a concise, single-line task title of at most 80 characters and under five words where possible.
-Start with an imperative verb. Capitalize only the first word unless the user's language, proper nouns, acronyms, or code terms require otherwise.
-Preserve ticket references exactly. Write in the user's language. Do not use quotes, Markdown, or trailing punctuation.
-Return only the title. Do not answer the user's request.`
 
 interface HookToast {
   kind: 'error' | 'info'
@@ -220,6 +218,20 @@ function parseKeyboardPreferences(raw: string | null): KeyboardPreferences {
   }
 }
 
+export function parseThreadTitleGenerationSettings(raw: string | null): ThreadTitleGenerationSettings {
+  if (!raw) return DEFAULT_THREAD_TITLE_GENERATION
+  try {
+    const value = JSON.parse(raw) as Partial<ThreadTitleGenerationSettings>
+    return {
+      model: typeof value.model === 'string' && value.model.trim() ? value.model : DEFAULT_THREAD_TITLE_GENERATION.model,
+      effort: typeof value.effort === 'string' && value.effort.trim() ? value.effort : DEFAULT_THREAD_TITLE_GENERATION.effort,
+      prompt: typeof value.prompt === 'string' && value.prompt.trim() ? value.prompt : DEFAULT_THREAD_TITLE_GENERATION.prompt,
+    }
+  } catch {
+    return DEFAULT_THREAD_TITLE_GENERATION
+  }
+}
+
 function parseTokenUsage(value: unknown): ThreadTokenUsage | null {
   if (!value || typeof value !== 'object') return null
   const raw = value as JsonObject
@@ -265,6 +277,7 @@ export function useHarness() {
   const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
   const [appearance, setAppearance] = useState<AppearancePreferences>(defaultAppearancePreferences)
   const [keyboard, setKeyboard] = useState<KeyboardPreferences>(defaultKeyboardPreferences)
+  const [threadTitleGeneration, setThreadTitleGenerationState] = useState<ThreadTitleGenerationSettings>(DEFAULT_THREAD_TITLE_GENERATION)
   const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
   const [pendingSteers, setPendingSteers] = useState<Record<string, PendingSteer[]>>({})
@@ -288,11 +301,13 @@ export function useHarness() {
   const detailsRef = useRef<Record<string, ThreadDetail>>({})
   const generatingTitlesRef = useRef(new Set<string>())
   const titleGeneratorsRef = useRef(new Map<string, TitleGenerator>())
+  const threadTitleGenerationRef = useRef(threadTitleGeneration)
 
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
   useEffect(() => { threadsRef.current = threads }, [threads])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => { detailsRef.current = details }, [details])
+  useEffect(() => { threadTitleGenerationRef.current = threadTitleGeneration }, [threadTitleGeneration])
 
   const commitTurnOwnership = useCallback((next: ActiveTurnOwnership) => {
     activeTurnIdsRef.current = next.activeTurnIds
@@ -369,6 +384,12 @@ export function useHarness() {
     const next = { sendShortcut: normalizeSendShortcut(sendShortcut) }
     setKeyboard(next)
     void runtime.setAppState(KEYBOARD_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+  }, [])
+
+  const setThreadTitleGeneration = useCallback((next: ThreadTitleGenerationSettings) => {
+    threadTitleGenerationRef.current = next
+    setThreadTitleGenerationState(next)
+    void runtime.setAppState(THREAD_TITLE_GENERATION_KEY, JSON.stringify(next)).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -984,14 +1005,15 @@ export function useHarness() {
 
     generatingTitlesRef.current.add(threadId)
     let generatorThreadId: string | null = null
+    const settings = threadTitleGenerationRef.current
     try {
       const response = await runtime.request<StartThreadResponse>('thread/start', {
         cwd: thread.cwd,
         runtimeWorkspaceRoots: [thread.cwd],
-        model: detailsRef.current[threadId]?.model ?? undefined,
+        model: settings.model,
         approvalPolicy: 'never',
         sandbox: 'read-only',
-        developerInstructions: THREAD_TITLE_INSTRUCTIONS,
+        developerInstructions: settings.prompt,
         ephemeral: true,
       })
       generatorThreadId = response.thread.id
@@ -1004,6 +1026,7 @@ export function useHarness() {
         runtimeWorkspaceRoots: [thread.cwd],
         approvalPolicy: 'never',
         sandboxPolicy: { type: 'readOnly', networkAccess: false },
+        effort: settings.effort,
       })
     } catch {
       if (generatorThreadId) titleGeneratorsRef.current.delete(generatorThreadId)
@@ -1251,13 +1274,14 @@ export function useHarness() {
     let unlistenTransport: (() => void) | undefined
     const bootstrap = async () => {
       try {
-        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance, storedKeyboard] = await Promise.all([
+        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance, storedKeyboard, storedThreadTitleGeneration] = await Promise.all([
           runtime.listWorkspaces(),
           runtime.listThreadStates(),
           runtime.getAppState('selectedThreadId'),
           runtime.getAppState(NAVIGATION_PREFERENCES_KEY),
           runtime.getAppState(APPEARANCE_PREFERENCES_KEY),
           runtime.getAppState(KEYBOARD_PREFERENCES_KEY),
+          runtime.getAppState(THREAD_TITLE_GENERATION_KEY),
         ])
         if (disposed) return
         setWorkspaces(storedWorkspaces)
@@ -1265,6 +1289,9 @@ export function useHarness() {
         setNavigation(parseNavigationPreferences(storedNavigation))
         setAppearance(parseAppearancePreferences(storedAppearance))
         setKeyboard(parseKeyboardPreferences(storedKeyboard))
+        const parsedThreadTitleGeneration = parseThreadTitleGenerationSettings(storedThreadTitleGeneration)
+        threadTitleGenerationRef.current = parsedThreadTitleGeneration
+        setThreadTitleGenerationState(parsedThreadTitleGeneration)
         if (storedWorkspaces.length > 0) setSelectedWorkspaceRoot(storedWorkspaces[0].root)
         const loadedThreads = await refreshThreads('active')
         if (disposed) return
@@ -1315,6 +1342,7 @@ export function useHarness() {
     navigation,
     appearance,
     keyboard,
+    threadTitleGeneration,
     queues,
     approvals,
     pendingSteers,
@@ -1356,6 +1384,7 @@ export function useHarness() {
     resetFontSizes,
     setTheme,
     setSendShortcut,
+    setThreadTitleGeneration,
     setSelectedWorkspaceRoot,
     changeThreadWorkspace,
     setViewMode: async (mode: ViewMode) => {

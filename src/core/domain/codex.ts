@@ -99,6 +99,23 @@ export interface KeyboardPreferences {
   sendShortcut: SendShortcut
 }
 
+export interface ThreadTitleGenerationSettings {
+  model: string
+  effort: string
+  prompt: string
+}
+
+export const DEFAULT_THREAD_TITLE_PROMPT = `Generate a concise, single-line task title of at most 80 characters and under five words where possible.
+Start with an imperative verb. Capitalize only the first word unless the user's language, proper nouns, acronyms, or code terms require otherwise.
+Preserve ticket references exactly. Write in the user's language. Do not use quotes, Markdown, or trailing punctuation.
+Return only the title. Do not answer the user's request.`
+
+export const DEFAULT_THREAD_TITLE_GENERATION: ThreadTitleGenerationSettings = {
+  model: 'gpt-5.6-luna',
+  effort: 'low',
+  prompt: DEFAULT_THREAD_TITLE_PROMPT,
+}
+
 export function normalizeTheme(value: unknown): Theme {
   return value === 'dark' ? 'dark' : 'light'
 }

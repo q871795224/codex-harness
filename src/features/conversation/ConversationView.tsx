@@ -6,9 +6,11 @@ import {
   ArchiveRestore,
   ArrowDownToLine,
   Bot,
+  Check,
   ChevronDown,
   ChevronRight,
   Command,
+  Copy,
   FileCode2,
   FileText,
   GitBranch,
@@ -118,10 +120,12 @@ interface ConversationViewProps {
   workspace: Workspace | null
   workspaces: Workspace[]
   workspaceChanging: boolean
+  initialScrollTop: number | null
   hasOlderTurns: boolean
   loadingOlderTurns: boolean
   onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
   onLoadOlderTurns: () => void
+  onScrollPosition: (scrollTop: number) => void
   onWorkspaceChange: (workspaceRoot: string) => void
   onChooseWorkspace: () => void
   newThreadPanels?: ReactNode
@@ -129,16 +133,17 @@ interface ConversationViewProps {
   onRawModeToggle: () => void
 }
 
-export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, onRawModeToggle }: ConversationViewProps) {
+export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, onRawModeToggle }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
-    if (!scroll || initiallyPositioned.current || items.length === 0) return
-    scroll.scrollTop = scroll.scrollHeight
+    if (!scroll || initiallyPositioned.current) return
+    if (initialScrollTop === null && items.length === 0) return
+    scroll.scrollTop = initialScrollTop ?? scroll.scrollHeight
     initiallyPositioned.current = true
-  }, [items.length])
+  }, [initialScrollTop, items.length])
 
   const scrollToBottom = () => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -146,7 +151,7 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
 
   return (
     <section className="conversation-pane" aria-label="对话内容">
-      <div className="conversation-scroll" ref={scrollRef}>
+      <div className="conversation-scroll" ref={scrollRef} onScroll={(event) => onScrollPosition(event.currentTarget.scrollTop)}>
         <div className="message-column">
           {rawMode && (
             <div className="raw-mode-banner" role="status">
@@ -271,9 +276,53 @@ function MessageBody({ text, raw }: { text: string; raw: boolean }) {
   if (raw) return <pre className="raw-response">{text}</pre>
   return (
     <div className="markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: MarkdownLink }}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: MarkdownLink, pre: MarkdownCodeBlock }}>{text}</ReactMarkdown>
     </div>
   )
+}
+
+function MarkdownCodeBlock({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
+  const preRef = useRef<HTMLPreElement>(null)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  const copy = async () => {
+    const text = preRef.current?.textContent ?? ''
+    if (!text) return
+    try {
+      await writeClipboard(text.replace(/\n$/, ''))
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 1_500)
+    } catch {
+      setCopyState('failed')
+      window.setTimeout(() => setCopyState('idle'), 1_500)
+    }
+  }
+
+  return (
+    <div className="markdown-code-block">
+      <pre ref={preRef} {...props}>{children}</pre>
+      <button type="button" className={copyState} onClick={() => void copy()} aria-label="复制代码" title={copyState === 'failed' ? '复制失败' : '复制代码'}>
+        {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
+        {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '失败' : '复制'}
+      </button>
+    </div>
+  )
+}
+
+async function writeClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) throw new Error('clipboard unavailable')
 }
 
 function MarkdownLink({ href, children, ...props }: ComponentPropsWithoutRef<'a'>) {

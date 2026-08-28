@@ -32,6 +32,18 @@ export interface ComposerKeyEvent {
   keyCode: number
 }
 
+export type ReasoningEffortTone = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
+
+export function reasoningEffortTone(effort: string): ReasoningEffortTone {
+  const normalized = effort.toLowerCase()
+  if (normalized === 'ultra') return 'ultra'
+  if (normalized === 'max') return 'max'
+  if (normalized === 'xhigh') return 'xhigh'
+  if (normalized === 'high') return 'high'
+  if (normalized === 'medium') return 'medium'
+  return 'low'
+}
+
 export function pastedCharacterCount(content: string): number {
   return Array.from(content).length
 }

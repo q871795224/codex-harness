@@ -12,6 +12,7 @@ import {
   insertComposerPrompt,
   matchesSendShortcut,
   reconcileCollapsedPastes,
+  reasoningEffortTone,
   replaceComposerTrigger,
   shouldCollapsePaste,
   type CollapsedPaste,
@@ -418,7 +419,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
               <select value={settings.model} disabled={settingsLocked || models.length === 0} onChange={(event) => updateSettings({ model: event.target.value })} aria-label="模型" title={selectedModel?.description ?? '模型'}>
                 {models.map((model) => <option key={model.id} value={model.model}>{model.displayName}</option>)}
               </select>
-              <select value={settings.effort} disabled={settingsLocked || !selectedModel} onChange={(event) => updateSettings({ effort: event.target.value })} aria-label="推理强度" title="推理强度">
+              <select className="effort-select" data-effort={reasoningEffortTone(settings.effort)} value={settings.effort} disabled={settingsLocked || !selectedModel} onChange={(event) => updateSettings({ effort: event.target.value })} aria-label="推理强度" title={`推理强度：${settings.effort}`}>
                 {(selectedModel?.supportedReasoningEfforts ?? []).map((option) => <option key={option.reasoningEffort} value={option.reasoningEffort}>{option.reasoningEffort}</option>)}
               </select>
             </div>

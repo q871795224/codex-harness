@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import { DEFAULT_FONT_SIZES } from './core/domain/codex'
@@ -14,7 +14,10 @@ import { QueueDock } from './features/conversation/QueueDock'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
+import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
+
+const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 
 export default function App() {
   const harness = useHarness()
@@ -60,9 +63,13 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const codex = useCodexCore()
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
+  const [tabOrder, setTabOrder] = useState<string[]>([])
+  const [draggedTab, setDraggedTab] = useState<string | null>(null)
+  const [tabDrop, setTabDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [rawMode, setRawMode] = useState(false)
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
+  const conversationScrollPositions = useRef<Record<string, number>>({})
   const workspace = useMemo(
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
@@ -80,6 +87,16 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
     workspaceRoot: workspace?.root ?? null,
   })
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
+  const orderedTabIds = orderConversationTabs(
+    ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
+    tabOrder,
+  )
+
+  useEffect(() => {
+    void runtime.getAppState(CONVERSATION_TAB_ORDER_KEY)
+      .then((saved) => setTabOrder(parseConversationTabOrder(saved)))
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (tab !== 'chat' && !selectedPluginTab) setTab('chat')
@@ -88,6 +105,19 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   useEffect(() => {
     void runtime.setWindowTheme(harness.appearance.theme).catch(() => undefined)
   }, [harness.appearance.theme])
+
+  const dropConversationTab = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
+    event.preventDefault()
+    const draggedId = event.dataTransfer.getData('text/plain') || draggedTab
+    if (!draggedId) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const edge = event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after'
+    const next = reorderConversationTabs(orderedTabIds, tabOrder, draggedId, targetId, edge)
+    setTabOrder(next)
+    setDraggedTab(null)
+    setTabDrop(null)
+    void runtime.setAppState(CONVERSATION_TAB_ORDER_KEY, JSON.stringify(next)).catch(() => undefined)
+  }
 
   if (harness.phase === 'loading') return <LaunchScreen label="正在连接本机 Codex App Server…" />
   if (harness.phase === 'error') {
@@ -174,14 +204,36 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
             />
             <div className="tab-bar">
               <div className="thread-tabs">
-                <button type="button" className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}><MessageSquareText size={15} />对话</button>
-                {pluginTabs.map((entry) => {
-                  const contribution = entry.contribution
-                  const tabId = pluginTabKey(entry.pluginId, contribution.id)
-                  const Icon = contribution.icon
+                {orderedTabIds.map((tabId) => {
+                  const entry = tabId === 'chat'
+                    ? null
+                    : pluginTabs.find((candidate) => pluginTabKey(candidate.pluginId, candidate.contribution.id) === tabId)
+                  if (tabId !== 'chat' && !entry) return null
+                  const label = entry?.contribution.label ?? '对话'
+                  const Icon = entry?.contribution.icon ?? MessageSquareText
                   return (
-                    <button key={tabId} type="button" className={tab === tabId ? 'active' : ''} onClick={() => setTab(tabId)}>
-                      {Icon && <Icon size={15} />}{contribution.label}
+                    <button
+                      key={tabId}
+                      type="button"
+                      draggable
+                      className={`${tab === tabId ? 'active' : ''}${draggedTab === tabId ? ' dragging' : ''}${tabDrop?.id === tabId && draggedTab !== tabId ? ` drop-${tabDrop.edge}` : ''}`}
+                      onClick={() => setTab(tabId)}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData('text/plain', tabId)
+                        setDraggedTab(tabId)
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = 'move'
+                        const bounds = event.currentTarget.getBoundingClientRect()
+                        setTabDrop({ id: tabId, edge: event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after' })
+                      }}
+                      onDrop={(event) => dropConversationTab(event, tabId)}
+                      onDragEnd={() => { setDraggedTab(null); setTabDrop(null) }}
+                      title={`拖动调整“${label}”的位置`}
+                    >
+                      <Icon size={15} />{label}
                     </button>
                   )
                 })}
@@ -196,10 +248,12 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                 workspace={workspace}
                 workspaces={harness.workspaces}
                 workspaceChanging={Boolean(harness.busy.threadWorkspace)}
+                initialScrollTop={conversationScrollPositions.current[harness.currentThread.id] ?? null}
                 hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
                 loadingOlderTurns={Boolean(harness.busy.olderTurns)}
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
                 onLoadOlderTurns={() => void harness.loadOlderTurns()}
+                onScrollPosition={(scrollTop) => { conversationScrollPositions.current[harness.currentThread!.id] = scrollTop }}
                 onWorkspaceChange={(workspaceRoot) => harness.selectedThreadId
                   ? void harness.changeThreadWorkspace(harness.selectedThreadId, workspaceRoot)
                   : undefined}
@@ -308,10 +362,12 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           selectedThreadId={harness.selectedThreadId}
           selectedWorkspaceRoot={(harness.selectedThreadId ? harness.threadRoots[harness.selectedThreadId] : null) ?? harness.selectedWorkspaceRoot}
           codex={codex}
+          threadTitleGeneration={harness.threadTitleGeneration}
           onTheme={harness.setTheme}
           onFontSize={harness.setFontSize}
           onResetFontSizes={harness.resetFontSizes}
           onSendShortcut={harness.setSendShortcut}
+          onThreadTitleGeneration={harness.setThreadTitleGeneration}
           onClose={() => setSettingsOpen(false)}
         />
       )}
