@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isExternalWebUrl, titleEditorKeyAction } from './ConversationView'
+import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, titleEditorKeyAction } from './ConversationView'
 import { resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread } from './useHarness'
 
 describe('titleEditorKeyAction', () => {
@@ -28,6 +28,11 @@ describe('markdown links', () => {
 })
 
 describe('new thread workspace', () => {
+  it('routes only the directory option to the native picker', () => {
+    expect(isChooseWorkspaceSelection(CHOOSE_WORKSPACE_VALUE)).toBe(true)
+    expect(isChooseWorkspaceSelection('/repo/current')).toBe(false)
+  })
+
   it('inherits the workspace of the open thread', () => {
     expect(resolveNewThreadWorkspaceRoot('thread-1', { 'thread-1': '/repo/current' }, '/repo/sidebar')).toBe('/repo/current')
   })

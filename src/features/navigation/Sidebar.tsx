@@ -21,7 +21,6 @@ import {
   LayoutList,
   ListTree,
   LoaderCircle,
-  Plus,
   RefreshCw,
   Search,
   Settings2,
@@ -60,7 +59,6 @@ interface SidebarProps {
   onSelectWorkspace: (root: string) => void
   onArchiveOldThreads: () => void
   onNewThread: () => void
-  onChooseWorkspace: () => void
   onSearch: (term: string) => void
   onRefresh: () => void
   onViewMode: (mode: 'active' | 'archived') => void
@@ -91,7 +89,6 @@ export function Sidebar({
   onSelectWorkspace,
   onArchiveOldThreads,
   onNewThread,
-  onChooseWorkspace,
   onSearch,
   onRefresh,
   onViewMode,
@@ -104,6 +101,7 @@ export function Sidebar({
 }: SidebarProps) {
   const isDevelopmentFlavor = import.meta.env.MODE === 'dev'
   const [query, setQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [highlightedWorkspaceRoot, setHighlightedWorkspaceRoot] = useState<string | null>(null)
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
@@ -111,6 +109,7 @@ export function Sidebar({
   const [resizing, setResizing] = useState(false)
   const [previewWidth, setPreviewWidth] = useState<number | null>(null)
   const onSearchRef = useRef(onSearch)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const searchStarted = useRef(false)
   const resizeStart = useRef<{ clientX: number; width: number } | null>(null)
   const resizedWidth = useRef<number | null>(null)
@@ -118,6 +117,11 @@ export function Sidebar({
   useEffect(() => {
     onSearchRef.current = onSearch
   }, [onSearch])
+
+  useEffect(() => {
+    if (!searchOpen) return
+    searchInputRef.current?.focus()
+  }, [searchOpen])
 
   useEffect(() => {
     // Do not re-query after every sidebar re-render. The initial session list is already
@@ -211,6 +215,14 @@ export function Sidebar({
   }
 
   const displayedSidebarWidth = previewWidth ?? sidebarWidth
+  const sectionLabel = navigationLayout === 'workspace'
+    ? workspaceSort === 'recent' ? '最近工作区' : '工作区'
+    : '会话'
+
+  const closeSearch = () => {
+    setQuery('')
+    setSearchOpen(false)
+  }
 
   const resizeWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 32 : 16
@@ -281,20 +293,29 @@ export function Sidebar({
         新会话
       </button>
 
-      <div className="sidebar-search">
-        <Search size={16} />
-        <input
-          aria-label="搜索会话"
-          placeholder="搜索会话"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {query && <button type="button" onClick={() => setQuery('')} aria-label="清除搜索">×</button>}
-      </div>
-
       <div className="sidebar-scroll">
-        <div className="sidebar-section-heading">
-          <span>{navigationLayout === 'workspace' ? workspaceSort === 'recent' ? '最近工作区' : '工作区' : '会话'}</span>
+        <div className={`sidebar-section-heading ${searchOpen ? 'searching' : ''}`}>
+          {searchOpen ? (
+            <div className="sidebar-search">
+              <Search size={15} aria-hidden />
+              <input
+                ref={searchInputRef}
+                aria-label="搜索会话"
+                placeholder="搜索会话"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') closeSearch()
+                }}
+              />
+              <button type="button" onClick={closeSearch} aria-label="关闭搜索">×</button>
+            </div>
+          ) : (
+            <button className="sidebar-search-trigger" type="button" onClick={() => setSearchOpen(true)} aria-label={`搜索${sectionLabel}中的会话`}>
+              <Search size={15} aria-hidden />
+              <span>{sectionLabel}</span>
+            </button>
+          )}
           <div className="heading-actions">
             {navigationLayout === 'workspace' && orderedWorkspaces.length > 0 && (
               <button
@@ -310,7 +331,6 @@ export function Sidebar({
               <SlidersHorizontal size={15} />
             </button>
             <button type="button" title="刷新会话" onClick={onRefresh}><RefreshCw size={15} /></button>
-            <button type="button" title="添加 Git 工作区" onClick={onChooseWorkspace}><Plus size={17} /></button>
             {optionsOpen && (
               <div className="navigation-options" role="dialog" aria-label="会话视图与排序">
                 <p>视图</p>
@@ -346,11 +366,11 @@ export function Sidebar({
         </div>
 
         {workspaces.length === 0 && viewMode === 'active' && (
-          <button className="workspace-empty" type="button" onClick={onChooseWorkspace}>
+          <div className="workspace-empty static">
             <FolderGit2 size={18} />
-            <span>添加 Git 主工作区</span>
-            <small>Worktree 不会显示在此处</small>
-          </button>
+            <span>暂无 Git 主工作区</span>
+            <small>请从新会话中选择目录</small>
+          </div>
         )}
 
         {navigationLayout === 'list' ? (

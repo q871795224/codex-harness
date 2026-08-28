@@ -112,12 +112,13 @@ interface ConversationViewProps {
   onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
   onLoadOlderTurns: () => void
   onWorkspaceChange: (workspaceRoot: string) => void
+  onChooseWorkspace: () => void
   newThreadPanels?: ReactNode
   rawMode: boolean
   onRawModeToggle: () => void
 }
 
-export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onWorkspaceChange, newThreadPanels, rawMode, onRawModeToggle }: ConversationViewProps) {
+export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, onRawModeToggle }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
 
@@ -158,11 +159,15 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
                     <select
                       value={workspace?.root ?? ''}
                       aria-label="切换新会话工作区"
-                      disabled={workspaces.length < 2 || workspaceChanging}
-                      onChange={(event) => onWorkspaceChange(event.target.value)}
+                      disabled={workspaceChanging}
+                      onChange={(event) => {
+                        if (isChooseWorkspaceSelection(event.target.value)) onChooseWorkspace()
+                        else onWorkspaceChange(event.target.value)
+                      }}
                     >
                       {!workspace && <option value="">当前工作区</option>}
                       {workspaces.map((candidate) => <option key={candidate.root} value={candidate.root}>{candidate.name}</option>)}
+                      <option value={CHOOSE_WORKSPACE_VALUE}>… 选择其他目录</option>
                     </select>
                     <ChevronDown size={14} aria-hidden />
                   </span>
@@ -191,6 +196,12 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
       </button>
     </section>
   )
+}
+
+export const CHOOSE_WORKSPACE_VALUE = '__choose_workspace__'
+
+export function isChooseWorkspaceSelection(value: string): boolean {
+  return value === CHOOSE_WORKSPACE_VALUE
 }
 
 const ThreadItemView = memo(function ThreadItemView({

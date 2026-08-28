@@ -576,13 +576,15 @@ export function useHarness() {
   const chooseWorkspace = useCallback(async () => {
     try {
       const workspace = await runtime.chooseWorkspace()
-      if (!workspace) return
+      if (!workspace) return null
       setWorkspaces((current) => [workspace, ...current.filter((item) => item.root !== workspace.root)])
       setSelectedWorkspaceRoot(workspace.root)
       notify(`已添加 ${workspace.name}`)
       await refreshThreads()
+      return workspace
     } catch (error) {
       notify(messageOf(error), 'error')
+      return null
     }
   }, [notify, refreshThreads])
 

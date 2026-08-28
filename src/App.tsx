@@ -138,7 +138,6 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
         onArchiveOldThreads={() => void harness.archiveOldThreads()}
         onNewThread={() => void harness.createThread()}
-        onChooseWorkspace={() => void harness.chooseWorkspace()}
         onSearch={(term) => void harness.searchThreads(term)}
         onRefresh={() => void harness.refresh()}
         onViewMode={(mode) => void harness.setViewMode(mode)}
@@ -196,6 +195,12 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                 onWorkspaceChange={(workspaceRoot) => harness.selectedThreadId
                   ? void harness.changeThreadWorkspace(harness.selectedThreadId, workspaceRoot)
                   : undefined}
+                onChooseWorkspace={() => {
+                  const threadId = harness.selectedThreadId
+                  void harness.chooseWorkspace().then((selected) => selected && threadId
+                    ? harness.changeThreadWorkspace(threadId, selected.root)
+                    : undefined)
+                }}
                 newThreadPanels={newThreadPanels.map((panel) => (
                   <PluginNewThreadPanel
                     key={`${panel.pluginId}:${panel.contribution.id}`}

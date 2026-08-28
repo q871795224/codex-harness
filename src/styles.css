@@ -78,7 +78,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .new-chat-button:hover:not(:disabled) { border-color: #bfc4cc; background: #fdfdfd; }
 .new-chat-button:disabled { color: #9297a1; cursor: wait; }
 
-.sidebar-search { position: relative; display: flex; align-items: center; gap: 7px; height: 31px; margin: 0 13px 14px; padding: 0 9px; border: 1px solid #e4e6ea; border-radius: 8px; color: #999ea8; background: #fdfdfd; }
+.sidebar-search { position: relative; display: flex; flex: 1; align-items: center; gap: 7px; height: 29px; min-width: 0; padding: 0 7px; border: 1px solid #e4e6ea; border-radius: 7px; color: #999ea8; background: #fdfdfd; }
 .sidebar-search:focus-within { border-color: #bdc8f7; background: #fff; box-shadow: 0 0 0 3px rgba(105, 130, 245, .08); }
 .sidebar-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #343641; font-size: 13px; }
 .sidebar-search input::placeholder { color: #a9adb5; }
@@ -86,6 +86,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 
 .sidebar-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 7px 12px; scrollbar-width: thin; scrollbar-color: #d9dce1 transparent; }
 .sidebar-section-heading { display: flex; align-items: center; justify-content: space-between; height: 31px; padding: 0 6px; color: #707681; font-size: 13px; }
+.sidebar-section-heading.searching { padding: 0 2px; }
+.sidebar-search-trigger { display: flex; align-items: center; gap: 6px; height: 27px; min-width: 0; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: #707681; cursor: text; }
+.sidebar-search-trigger:hover { background: #e9ebef; color: #454953; }
+.sidebar-search-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-section-heading.searching .heading-actions { display: none; }
 .heading-actions { position: relative; display: flex; gap: 1px; }
 .heading-actions button { display: grid; place-items: center; width: 25px; height: 25px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #777d89; cursor: pointer; }
 .heading-actions button:hover { background: #e9ebef; color: #454953; }
@@ -99,6 +104,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .workspace-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; width: calc(100% - 4px); margin: 4px 2px; padding: 12px 10px; border: 1px dashed #d7dbe1; border-radius: 8px; background: transparent; color: #5d6370; text-align: left; cursor: pointer; font-size: 13px; }
 .workspace-empty:hover { border-color: #aab7ed; background: #f2f4ff; color: #3f51a6; }
 .workspace-empty small { width: 100%; padding-left: 24px; color: #a1a5ad; font-size: 10px; }
+.workspace-empty.static { cursor: default; }
+.workspace-empty.static:hover { border-color: #d7dbe1; background: transparent; color: #5d6370; }
 
 .workspace-group { margin-bottom: 5px; }
 .workspace-row { display: flex; align-items: center; gap: 6px; width: 100%; height: 31px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: #454b56; text-align: left; cursor: pointer; font-size: 13px; }
@@ -225,9 +232,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .fresh-thread p { margin: 0; font-size: 14px; line-height: 1.4; }
 .fresh-thread strong { color: #303641; font-weight: 680; }
 .fresh-workspace-select { position: relative; display: inline-flex; align-items: center; margin: 0 4px; vertical-align: -1px; }
-.fresh-workspace-select select { max-width: 260px; height: 26px; padding: 0 23px 0 7px; appearance: none; border: 1px solid transparent; border-radius: 6px; outline: 0; background: transparent; color: #344fb8; cursor: pointer; font: inherit; font-weight: 720; text-overflow: ellipsis; }
+.fresh-workspace-select select { max-width: 260px; height: 26px; padding: 0 23px; appearance: none; border: 1px solid transparent; border-radius: 6px; outline: 0; background: transparent; color: #344fb8; cursor: pointer; font: inherit; font-weight: 720; text-align: center; text-overflow: ellipsis; }
 .fresh-workspace-select select:hover:not(:disabled), .fresh-workspace-select select:focus-visible { border-color: #cbd3f0; background: #f5f7ff; }
-.fresh-workspace-select select:disabled { padding-right: 7px; color: #303641; cursor: default; opacity: 1; }
+.fresh-workspace-select select:disabled { padding: 0 7px; color: #303641; cursor: default; opacity: 1; }
 .fresh-workspace-select svg { position: absolute; right: 6px; color: #7181bd; pointer-events: none; }
 .fresh-workspace-select select:disabled + svg { display: none; }
 

@@ -394,7 +394,6 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
         <div className="composer-footer">
           <div className="composer-left-actions">
             <button type="button" className="composer-icon-button" disabled={disabled || busy || attachmentBusy} onClick={() => void addFiles()} title="添加图片或文件" aria-label="添加图片或文件"><Plus size={17} /></button>
-            {actions?.({ disabled: disabled || busy, insertSkillPrompt })}
             <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
               <option value="on-request">On request</option>
               <option value="untrusted">Untrusted</option>
@@ -414,6 +413,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
           </div>
           <div className="composer-actions">
             {rawMode && <span className="composer-raw-mode" title="输入 /raw 返回渲染视图">RAW</span>}
+            {actions?.({ disabled: disabled || busy, insertSkillPrompt })}
             <div className="model-effort-control">
               <select value={settings.model} disabled={settingsLocked || models.length === 0} onChange={(event) => updateSettings({ model: event.target.value })} aria-label="模型" title={selectedModel?.description ?? '模型'}>
                 {models.map((model) => <option key={model.id} value={model.model}>{model.displayName}</option>)}
