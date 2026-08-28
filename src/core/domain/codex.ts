@@ -94,9 +94,11 @@ export interface AppearancePreferences {
 
 export type Theme = 'light' | 'dark'
 export type SendShortcut = 'mod-enter' | 'enter'
+export type FollowUpMode = 'queue' | 'interject'
 
 export interface KeyboardPreferences {
   sendShortcut: SendShortcut
+  followUpMode: FollowUpMode
 }
 
 export interface ThreadTitleGenerationSettings {
@@ -122,6 +124,10 @@ export function normalizeTheme(value: unknown): Theme {
 
 export function normalizeSendShortcut(value: unknown): SendShortcut {
   return value === 'enter' ? 'enter' : 'mod-enter'
+}
+
+export function normalizeFollowUpMode(value: unknown): FollowUpMode {
+  return value === 'interject' ? 'interject' : 'queue'
 }
 
 export type ThreadStatus =

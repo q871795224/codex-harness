@@ -40,7 +40,7 @@ export function QueueDock({
     <section className="queue-dock" data-queue-dock>
       {pendingSteers.length > 0 && (
         <div className="steer-panel">
-          <div className="dock-label"><Send size={13} /> 插话</div>
+          <div className="dock-label"><Send size={13} /> 已插话</div>
           {pendingSteers.map((steer) => (
             <div className="steer-row" key={steer.clientUserMessageId}>
               <span>{steer.text}</span>

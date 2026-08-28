@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, FileText, Image, Plus, Send, Sparkles, Square, X } from 'lucide-react'
-import type { ApprovalPolicy, CodexModel, CodexSkill, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
+import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import {
@@ -31,8 +31,10 @@ interface ComposerProps {
   models: CodexModel[]
   settings: ThreadCodexSettings
   rawMode: boolean
+  followUpMode: FollowUpMode
   settingsDisabled?: boolean
   onSettingsChange: (patch: Partial<ThreadCodexSettings>) => Promise<void> | void
+  onFollowUpModeChange: (mode: FollowUpMode) => void
   onSend: (input: UserInput[], mode: 'interject' | 'queue') => Promise<void> | void
   onCommand: (command: ComposerCommand) => Promise<void> | void
   onStop: () => Promise<void> | void
@@ -55,7 +57,6 @@ export interface ComposerDraft {
   text: string
   collapsedPastes: CollapsedPaste[]
   attachments: ComposerAttachment[]
-  mode: 'interject' | 'queue'
 }
 
 interface FuzzyFileSearchResult {
@@ -72,11 +73,10 @@ interface ComposerSuggestion {
   detail: string
 }
 
-export function Composer({ initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, models, settings, rawMode, settingsDisabled, onSettingsChange, onSend, onCommand, onStop, onDraftChange, actions }: ComposerProps) {
+export function Composer({ initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, models, settings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, actions }: ComposerProps) {
   const [text, setText] = useState(initialDraft?.text ?? '')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
-  const [mode, setMode] = useState<'interject' | 'queue'>(initialDraft?.mode ?? 'interject')
   const [modeOpen, setModeOpen] = useState(false)
   const [attachmentBusy, setAttachmentBusy] = useState(false)
   const [cursor, setCursor] = useState<number | null>(0)
@@ -122,10 +122,14 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
   useEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
 
   useEffect(() => {
-    onDraftChangeRef.current?.({ text, collapsedPastes, attachments, mode }, hasContent)
-  }, [attachments, collapsedPastes, hasContent, mode, text])
+    onDraftChangeRef.current?.({ text, collapsedPastes, attachments }, hasContent)
+  }, [attachments, collapsedPastes, hasContent, text])
 
   useEffect(() => { ref.current?.focus() }, [disabled])
+
+  useEffect(() => {
+    if (!working) setModeOpen(false)
+  }, [working])
 
   useLayoutEffect(() => {
     const textarea = ref.current
@@ -201,15 +205,16 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
     if (!hasContent || disabled || busy || imageUnsupported) return
     const command = parseComposerCommand(expandedText, attachments.length > 0)
     if (command) await onCommand(command)
-    else await onSend(inputs, mode)
+    else await onSend(inputs, followUpMode)
     setText('')
     setCollapsedPastes([])
     setAttachments([])
     setFileMatches([])
     setCursor(0)
     setSuggestionsDismissed(false)
-    setMode('interject')
   }
+
+  const runPrimaryAction = () => working && !hasContent ? onStop() : submit()
 
   const chooseSuggestion = (suggestion: ComposerSuggestion) => {
     if (!trigger) return
@@ -400,17 +405,6 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
               <option value="untrusted">Untrusted</option>
               <option value="never">Never</option>
             </select>
-            {working && !foreignActive && (
-              <div className="send-mode-wrap">
-                <button type="button" className="send-mode" onClick={() => setModeOpen((open) => !open)}>{mode === 'interject' ? '插话' : '排队'}<ChevronDown size={14} /></button>
-                {modeOpen && (
-                  <div className="send-mode-menu">
-                    <button type="button" className={mode === 'interject' ? 'selected' : ''} onClick={() => { setMode('interject'); setModeOpen(false) }}><strong>插话</strong><small>下一次工具调用时注入</small></button>
-                    <button type="button" className={mode === 'queue' ? 'selected' : ''} onClick={() => { setMode('queue'); setModeOpen(false) }}><strong>排队</strong><small>保留为后续独立回合</small></button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
           <div className="composer-actions">
             {rawMode && <span className="composer-raw-mode" title="输入 /raw 返回渲染视图">RAW</span>}
@@ -423,9 +417,28 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
                 {(selectedModel?.supportedReasoningEfforts ?? []).map((option) => <option key={option.reasoningEffort} value={option.reasoningEffort}>{option.reasoningEffort}</option>)}
               </select>
             </div>
-            {working && !foreignActive && <button type="button" className="stop-button" onClick={() => void onStop()} title="停止当前轮"><Square size={13} /> 停止</button>}
             <ContextRing usage={contextUsage} />
-            <button type="button" className="send-button" disabled={disabled || busy || !hasContent || imageUnsupported} onClick={() => void submit()} title="发送消息"><Send size={17} /></button>
+            <div className="send-control">
+              <button
+                type="button"
+                className={`send-button${working && !hasContent ? ' stop' : ''}`}
+                disabled={disabled || busy || (!working && !hasContent) || (hasContent && imageUnsupported)}
+                onClick={() => void runPrimaryAction()}
+                title={working && !hasContent ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队' : '插话') : '发送消息'}
+                aria-label={working && !hasContent ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队消息' : '插话') : '发送消息'}
+              >
+                {working && !hasContent ? <Square size={13} fill="currentColor" /> : <Send size={17} />}
+              </button>
+              {working && !foreignActive && (
+                <button type="button" className="follow-up-toggle" disabled={busy} onClick={() => setModeOpen((open) => !open)} title={`默认：${followUpMode === 'queue' ? '排队' : '插话'}`} aria-label="选择后续消息默认行为"><ChevronDown size={13} /></button>
+              )}
+              {working && !foreignActive && modeOpen && (
+                <div className="follow-up-menu">
+                  <button type="button" className={followUpMode === 'queue' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('queue'); setModeOpen(false) }}><strong>默认排队</strong><small>当前回合完成后，开始新的回合</small></button>
+                  <button type="button" className={followUpMode === 'interject' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('interject'); setModeOpen(false) }}><strong>默认插话</strong><small>不停止当前回合，追加新的方向</small></button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

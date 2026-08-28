@@ -64,6 +64,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
   const [tabOrder, setTabOrder] = useState<string[]>([])
+  const tabOrderRef = useRef<string[]>([])
   const [draggedTab, setDraggedTab] = useState<string | null>(null)
   const [tabDrop, setTabDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -94,7 +95,11 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
 
   useEffect(() => {
     void runtime.getAppState(CONVERSATION_TAB_ORDER_KEY)
-      .then((saved) => setTabOrder(parseConversationTabOrder(saved)))
+      .then((saved) => {
+        const next = parseConversationTabOrder(saved)
+        tabOrderRef.current = next
+        setTabOrder(next)
+      })
       .catch(() => undefined)
   }, [])
 
@@ -106,17 +111,25 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
     void runtime.setWindowTheme(harness.appearance.theme).catch(() => undefined)
   }, [harness.appearance.theme])
 
-  const dropConversationTab = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
+  const previewConversationTabDrop = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
     event.preventDefault()
     const draggedId = event.dataTransfer.getData('text/plain') || draggedTab
-    if (!draggedId) return
+    if (!draggedId || draggedId === targetId) return
     const bounds = event.currentTarget.getBoundingClientRect()
     const edge = event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after'
+    if (tabDrop?.id === targetId && tabDrop.edge === edge) return
     const next = reorderConversationTabs(orderedTabIds, tabOrder, draggedId, targetId, edge)
+    tabOrderRef.current = next
     setTabOrder(next)
+    setTabDrop({ id: targetId, edge })
+  }
+
+  const finishConversationTabDrag = () => {
+    if (draggedTab) {
+      void runtime.setAppState(CONVERSATION_TAB_ORDER_KEY, JSON.stringify(tabOrderRef.current)).catch(() => undefined)
+    }
     setDraggedTab(null)
     setTabDrop(null)
-    void runtime.setAppState(CONVERSATION_TAB_ORDER_KEY, JSON.stringify(next)).catch(() => undefined)
   }
 
   if (harness.phase === 'loading') return <LaunchScreen label="正在连接本机 Codex App Server…" />
@@ -221,16 +234,15 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = 'move'
                         event.dataTransfer.setData('text/plain', tabId)
+                        tabOrderRef.current = tabOrder
                         setDraggedTab(tabId)
                       }}
                       onDragOver={(event) => {
-                        event.preventDefault()
                         event.dataTransfer.dropEffect = 'move'
-                        const bounds = event.currentTarget.getBoundingClientRect()
-                        setTabDrop({ id: tabId, edge: event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after' })
+                        previewConversationTabDrop(event, tabId)
                       }}
-                      onDrop={(event) => dropConversationTab(event, tabId)}
-                      onDragEnd={() => { setDraggedTab(null); setTabDrop(null) }}
+                      onDrop={(event) => event.preventDefault()}
+                      onDragEnd={finishConversationTabDrag}
                       title={`拖动调整“${label}”的位置`}
                     >
                       <Icon size={15} />{label}
@@ -311,15 +323,17 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
                   disabled={harness.currentForeignActive || Boolean(harness.busy.composer)}
                   working={harness.isCurrentWorking}
                   foreignActive={harness.currentForeignActive}
-                  busy={Boolean(harness.busy.composer)}
+                  busy={Boolean(harness.busy.composer || harness.busy.stop)}
                   contextUsage={harness.currentTokenUsage}
                   workspaceRoot={harness.currentThread?.cwd ?? workspace?.root ?? null}
                   sendShortcut={harness.keyboard.sendShortcut}
                   models={codex.models}
                   settings={codex.settingsForThread(harness.selectedThreadId)}
                   rawMode={rawMode}
+                  followUpMode={harness.keyboard.followUpMode}
                   settingsDisabled={codex.loading}
                   onSettingsChange={(patch) => harness.selectedThreadId ? codex.updateThreadSettings(harness.selectedThreadId, patch) : undefined}
+                  onFollowUpModeChange={harness.setFollowUpMode}
                   onSend={harness.sendMessage}
                   onCommand={(command) => {
                     if (command.name === 'raw') setRawMode((current) => !current)
@@ -357,6 +371,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           theme={harness.appearance.theme}
           fontSizes={harness.appearance.fontSizes}
           sendShortcut={harness.keyboard.sendShortcut}
+          followUpMode={harness.keyboard.followUpMode}
           workspaces={harness.workspaces}
           threads={harness.threads}
           selectedThreadId={harness.selectedThreadId}
@@ -367,6 +382,7 @@ function HarnessShell({ harness }: { harness: ReturnType<typeof useHarness> }) {
           onFontSize={harness.setFontSize}
           onResetFontSizes={harness.resetFontSizes}
           onSendShortcut={harness.setSendShortcut}
+          onFollowUpMode={harness.setFollowUpMode}
           onThreadTitleGeneration={harness.setThreadTitleGeneration}
           onClose={() => setSettingsOpen(false)}
         />

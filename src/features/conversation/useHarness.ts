@@ -5,6 +5,7 @@ import type {
   ApprovalRequest,
   ActivePermissionProfile,
   Badge,
+  FollowUpMode,
   FontSize,
   FontSizeArea,
   JsonObject,
@@ -38,6 +39,7 @@ import {
   itemText,
   normalizeFontSize,
   normalizeFontSizePreferences,
+  normalizeFollowUpMode,
   normalizeSendShortcut,
   normalizeSidebarWidth,
   normalizeTheme,
@@ -82,6 +84,7 @@ const defaultAppearancePreferences: AppearancePreferences = {
 
 const defaultKeyboardPreferences: KeyboardPreferences = {
   sendShortcut: 'mod-enter',
+  followUpMode: 'queue',
 }
 
 interface ResumeResponse {
@@ -212,7 +215,10 @@ function parseKeyboardPreferences(raw: string | null): KeyboardPreferences {
   if (!raw) return defaultKeyboardPreferences
   try {
     const value = JSON.parse(raw) as Partial<KeyboardPreferences>
-    return { sendShortcut: normalizeSendShortcut(value.sendShortcut) }
+    return {
+      sendShortcut: normalizeSendShortcut(value.sendShortcut),
+      followUpMode: normalizeFollowUpMode(value.followUpMode),
+    }
   } catch {
     return defaultKeyboardPreferences
   }
@@ -381,9 +387,19 @@ export function useHarness() {
   }, [])
 
   const setSendShortcut = useCallback((sendShortcut: SendShortcut) => {
-    const next = { sendShortcut: normalizeSendShortcut(sendShortcut) }
-    setKeyboard(next)
-    void runtime.setAppState(KEYBOARD_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+    setKeyboard((current) => {
+      const next = { ...current, sendShortcut: normalizeSendShortcut(sendShortcut) }
+      void runtime.setAppState(KEYBOARD_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
+    })
+  }, [])
+
+  const setFollowUpMode = useCallback((followUpMode: FollowUpMode) => {
+    setKeyboard((current) => {
+      const next = { ...current, followUpMode: normalizeFollowUpMode(followUpMode) }
+      void runtime.setAppState(KEYBOARD_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
+    })
   }, [])
 
   const setThreadTitleGeneration = useCallback((next: ThreadTitleGenerationSettings) => {
@@ -1384,6 +1400,7 @@ export function useHarness() {
     resetFontSizes,
     setTheme,
     setSendShortcut,
+    setFollowUpMode,
     setThreadTitleGeneration,
     setSelectedWorkspaceRoot,
     changeThreadWorkspace,

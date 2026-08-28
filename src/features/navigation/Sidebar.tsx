@@ -40,6 +40,7 @@ import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sortThreads, sortWorksp
 import { relativeTime, truncate } from '../../core/domain/format'
 import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
 import harnessIcon from '../../../icon/codex-harness.svg'
+import { resolveThreadBadge } from './threadBadge'
 
 interface SidebarProps {
   workspaces: Workspace[]
@@ -497,7 +498,7 @@ function ThreadList({
   return (
     <div className="thread-list" data-workspace-group={groupKey}>
       {visibleThreads.map((thread) => {
-        const badge = states[thread.id]?.badge ?? activityBadge(thread)
+        const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null)
         return (
           <button
             key={thread.id}
@@ -545,11 +546,4 @@ export function StatusDot({ badge }: { badge: Badge }) {
   if (!badge) return <span className="status-dot empty" aria-hidden />
   if (badge === 'working') return <span className="status-dot working" aria-label="运行中" />
   return <span className={`status-dot ${badge}`} aria-label={badge === 'approval' ? '等待审批' : badge === 'error' ? '发生错误' : '有新回复'} />
-}
-
-function activityBadge(thread: Thread): Badge {
-  if (thread.status.type === 'systemError') return 'error'
-  if (thread.status.type === 'active' && thread.status.activeFlags.includes('waitingOnApproval')) return 'approval'
-  if (thread.status.type === 'active') return 'working'
-  return null
 }

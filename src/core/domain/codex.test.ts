@@ -9,6 +9,7 @@ import {
   itemText,
   normalizeFontSize,
   normalizeFontSizePreferences,
+  normalizeFollowUpMode,
   normalizeSendShortcut,
   normalizeSidebarWidth,
   normalizeTheme,
@@ -169,6 +170,9 @@ describe('display and keyboard preferences', () => {
     expect(normalizeTheme('system')).toBe('light')
     expect(normalizeSendShortcut('enter')).toBe('enter')
     expect(normalizeSendShortcut('shift-enter')).toBe('mod-enter')
+    expect(normalizeFollowUpMode('interject')).toBe('interject')
+    expect(normalizeFollowUpMode('queue')).toBe('queue')
+    expect(normalizeFollowUpMode('unknown')).toBe('queue')
   })
 })
 

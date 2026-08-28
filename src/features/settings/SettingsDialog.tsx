@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Blocks, BrainCircuit, CircleHelp, FolderOpen, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
-import type { CodexSkill, FontSize, FontSizeArea, FontSizePreferences, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
+import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
@@ -11,6 +11,7 @@ interface SettingsDialogProps {
   theme: Theme
   fontSizes: FontSizePreferences
   sendShortcut: SendShortcut
+  followUpMode: FollowUpMode
   workspaces: Workspace[]
   threads: Thread[]
   selectedThreadId: string | null
@@ -21,6 +22,7 @@ interface SettingsDialogProps {
   onFontSize: (area: FontSizeArea, fontSize: FontSize) => void
   onResetFontSizes: () => void
   onSendShortcut: (shortcut: SendShortcut) => void
+  onFollowUpMode: (mode: FollowUpMode) => void
   onThreadTitleGeneration: (settings: ThreadTitleGenerationSettings) => void
   onClose: () => void
 }
@@ -34,7 +36,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ theme, fontSizes, sendShortcut, workspaces, threads, selectedThreadId, selectedWorkspaceRoot, codex, threadTitleGeneration, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onThreadTitleGeneration, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, workspaces, threads, selectedThreadId, selectedWorkspaceRoot, codex, threadTitleGeneration, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onThreadTitleGeneration, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -42,7 +44,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, workspaces, thr
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const pageMeta: Record<SettingsPage, { heading: string; kicker: string }> = {
     appearance: { heading: '外观', kicker: 'APPEARANCE' },
-    keyboard: { heading: '按键', kicker: 'KEYBOARD' },
+    keyboard: { heading: '输入', kicker: 'COMPOSER' },
     models: { heading: '模型', kicker: 'CODEX' },
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
     skills: { heading: '技能', kicker: 'CODEX' },
@@ -96,7 +98,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, workspaces, thr
               <Palette size={16} />外观
             </button>
             <button type="button" className={page === 'keyboard' ? 'selected' : ''} aria-current={page === 'keyboard' ? 'page' : undefined} onClick={() => setPage('keyboard')}>
-              <Keyboard size={16} />按键
+              <Keyboard size={16} />输入
             </button>
             <button type="button" className={page === 'models' ? 'selected' : ''} aria-current={page === 'models' ? 'page' : undefined} onClick={() => setPage('models')}>
               <BrainCircuit size={16} />模型
@@ -126,7 +128,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, workspaces, thr
           </header>
 
           {page === 'appearance' && <AppearanceSettings theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
-          {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} onSendShortcut={onSendShortcut} />}
+          {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} />}
           {page === 'models' && <ModelsSettings codex={codex} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
@@ -401,12 +403,17 @@ function AppearanceSettings({ theme, fontSizes, onTheme, onFontSize, onResetFont
   )
 }
 
-function KeyboardSettings({ sendShortcut, onSendShortcut }: { sendShortcut: SendShortcut; onSendShortcut: (shortcut: SendShortcut) => void }) {
+function KeyboardSettings({ sendShortcut, followUpMode, onSendShortcut, onFollowUpMode }: {
+  sendShortcut: SendShortcut
+  followUpMode: FollowUpMode
+  onSendShortcut: (shortcut: SendShortcut) => void
+  onFollowUpMode: (mode: FollowUpMode) => void
+}) {
   return (
     <section className="settings-section" aria-labelledby="send-shortcut-title">
       <div className="settings-section-title">
         <Keyboard size={17} />
-        <div><h3 id="send-shortcut-title">发送消息</h3><p>输入法正在组词时，回车不会触发发送。</p></div>
+        <div><h3 id="send-shortcut-title">输入与发送</h3><p>设置发送快捷键和 Codex 运行时处理后续消息的默认方式。</p></div>
       </div>
       <div className="settings-row-list">
         <label className="settings-row">
@@ -414,6 +421,13 @@ function KeyboardSettings({ sendShortcut, onSendShortcut }: { sendShortcut: Send
           <select value={sendShortcut} onChange={(event) => onSendShortcut(event.target.value as SendShortcut)}>
             <option value="mod-enter">⌘ / Ctrl + Enter</option>
             <option value="enter">Enter</option>
+          </select>
+        </label>
+        <label className="settings-row">
+          <span>后续消息默认行为</span>
+          <select value={followUpMode} onChange={(event) => onFollowUpMode(event.target.value as FollowUpMode)}>
+            <option value="queue">排队</option>
+            <option value="interject">插话</option>
           </select>
         </label>
         <div className="settings-shortcut-note">{sendShortcut === 'enter' ? 'Shift + Enter 换行' : 'Enter 换行'}</div>
