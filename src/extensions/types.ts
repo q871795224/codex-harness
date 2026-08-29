@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import type { CodexModel, ThreadCodexSettings, ThreadItemEntry } from '../core/domain/codex'
+import type { CodexModel, ThreadCodexSettings, ThreadItemEntry, Workspace } from '../core/domain/codex'
 
 export type PluginScopeKind = 'global' | 'workspace' | 'thread'
 
@@ -43,6 +43,7 @@ export interface PluginViewContext {
 
 export interface ConversationTabProps extends PluginViewContext {
   items: ThreadItemEntry[]
+  workspaces: Workspace[]
 }
 
 export interface ConversationTabContribution {

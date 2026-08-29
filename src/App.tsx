@@ -421,6 +421,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                   threadId: harness.selectedThreadId,
                   workspaceRoot: workspace?.root ?? null,
                   items: harness.currentDetail?.items ?? [],
+                  workspaces: harness.workspaces,
                 }}
               />
             ) : null}

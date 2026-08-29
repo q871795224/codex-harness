@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { todoScopePatch, visibleTodos, type TodoItem } from './index'
+import { todoScopePatch, todoWorkspaceLabel, visibleTodos, type TodoItem } from './index'
 
 function todo(id: string, scope: TodoItem['scope'], owner: string | null = null): TodoItem {
   return {
@@ -34,6 +34,28 @@ describe('visibleTodos', () => {
     const sooner = { ...todo('sooner', 'global'), dueAt: 10 }
     expect(visibleTodos([later, done, sooner], { workspaceRoot: null, threadId: null }).map((item) => item.id))
       .toEqual(['sooner', 'later', 'done'])
+  })
+
+  it('shows global and every workspace item in the all-workspaces view', () => {
+    const items = [
+      todo('global', 'global'),
+      todo('workspace-a', 'workspace', '/a'),
+      todo('workspace-b', 'workspace', '/b'),
+      todo('thread-a', 'thread', 'thread-a'),
+    ]
+
+    expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a' }, 'workspaces').map((item) => item.id))
+      .toEqual(['global', 'workspace-a', 'workspace-b'])
+  })
+})
+
+describe('todoWorkspaceLabel', () => {
+  it('uses the registered workspace name and falls back to its directory name', () => {
+    expect(todoWorkspaceLabel(todo('global', 'global'), [])).toBe('全局')
+    expect(todoWorkspaceLabel(todo('named', 'workspace', '/projects/named'), [
+      { root: '/projects/named', checkoutRoot: '/projects/named', name: 'Named project', branch: null, sha: null, createdAt: 0, lastOpenedAt: 0 },
+    ])).toBe('Named project')
+    expect(todoWorkspaceLabel(todo('fallback', 'workspace', '/projects/fallback'), [])).toBe('fallback')
   })
 })
 
