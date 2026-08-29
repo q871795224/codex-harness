@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { todoScopePatch, todoWorkspaceLabel, visibleTodos, type TodoItem } from './index'
+import { DEFAULT_TODO_SCOPE, todoScopePatch, todoThreadLabel, todoWorkspaceLabel, visibleTodos, type TodoItem } from './index'
 
 function todo(id: string, scope: TodoItem['scope'], owner: string | null = null): TodoItem {
   return {
@@ -47,6 +47,18 @@ describe('visibleTodos', () => {
     expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a' }, 'workspaces').map((item) => item.id))
       .toEqual(['global', 'workspace-a', 'workspace-b'])
   })
+
+  it('shows every thread item in the all-threads view', () => {
+    const items = [
+      todo('global', 'global'),
+      todo('thread-a', 'thread', 'thread-a'),
+      todo('thread-b', 'thread', 'thread-b'),
+      todo('workspace-a', 'workspace', '/a'),
+    ]
+
+    expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a' }, 'threads').map((item) => item.id))
+      .toEqual(['thread-a', 'thread-b'])
+  })
 })
 
 describe('todoWorkspaceLabel', () => {
@@ -56,6 +68,13 @@ describe('todoWorkspaceLabel', () => {
       { root: '/projects/named', checkoutRoot: '/projects/named', name: 'Named project', branch: null, sha: null, createdAt: 0, lastOpenedAt: 0 },
     ])).toBe('Named project')
     expect(todoWorkspaceLabel(todo('fallback', 'workspace', '/projects/fallback'), [])).toBe('fallback')
+    expect(todoThreadLabel(todo('unknown', 'thread', 'thread-unknown'), [])).toBe('thread-unknown')
+  })
+})
+
+describe('todo defaults', () => {
+  it('creates new todos at the global scope by default', () => {
+    expect(DEFAULT_TODO_SCOPE).toBe('global')
   })
 })
 

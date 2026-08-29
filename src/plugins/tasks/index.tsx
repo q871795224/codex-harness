@@ -3,7 +3,8 @@ import { ListTodo, Plus, Trash2 } from 'lucide-react'
 import type { ConversationTabProps, HarnessPlugin, PluginInstanceRecord, PluginStorage, PluginViewContext } from '../../extensions/types'
 
 export type TodoScope = 'global' | 'workspace' | 'thread'
-export type TodoFilter = 'context' | 'workspaces'
+export type TodoFilter = 'context' | 'workspaces' | 'threads'
+export const DEFAULT_TODO_SCOPE: TodoScope = 'global'
 
 export interface TodoItem {
   id: string
@@ -25,7 +26,7 @@ export const tasksPlugin: HarnessPlugin = {
     id: 'builtin.tasks',
     name: '待办',
     description: '管理全局、工作区和会话级待办。',
-    version: '1.0.1',
+    version: '1.0.2',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
   },
@@ -54,9 +55,11 @@ export function visibleTodos(items: TodoItem[], context: PluginViewContext, filt
   return items
     .filter((item) => filter === 'workspaces'
       ? item.scope === 'global' || item.scope === 'workspace'
-      : item.scope === 'global'
-        || (item.scope === 'workspace' && item.workspaceRoot === context.workspaceRoot)
-        || (item.scope === 'thread' && item.threadId === context.threadId))
+      : filter === 'threads'
+        ? item.scope === 'thread'
+        : item.scope === 'global'
+          || (item.scope === 'workspace' && item.workspaceRoot === context.workspaceRoot)
+          || (item.scope === 'thread' && item.threadId === context.threadId))
     .sort((left, right) => Number(left.completed) - Number(right.completed)
       || (left.dueAt ?? Number.MAX_SAFE_INTEGER) - (right.dueAt ?? Number.MAX_SAFE_INTEGER)
       || left.createdAt - right.createdAt)
@@ -70,6 +73,14 @@ export function todoWorkspaceLabel(item: TodoItem, workspaces: ConversationTabPr
       ?? item.workspaceRoot
   }
   return '未知工作区'
+}
+
+export function todoThreadLabel(item: TodoItem, threads: ConversationTabProps['threads']): string {
+  if (item.threadId) {
+    const thread = threads.find((candidate) => candidate.id === item.threadId)
+    return thread?.name?.trim() || thread?.preview?.trim() || item.threadId
+  }
+  return '未知会话'
 }
 
 export function todoScopePatch(scope: TodoScope, context: PluginViewContext): Pick<TodoItem, 'scope' | 'workspaceRoot' | 'threadId'> | null {
@@ -90,7 +101,7 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
   const [items, setItems] = useState<TodoItem[]>([])
   const [content, setContent] = useState('')
   const [dueAt, setDueAt] = useState('')
-  const [scope, setScope] = useState<TodoScope>(() => defaultScope(context))
+  const [scope, setScope] = useState<TodoScope>(DEFAULT_TODO_SCOPE)
   const [filter, setFilter] = useState<TodoFilter>('context')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -106,7 +117,7 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
 
   useEffect(() => {
     if ((scope === 'thread' && !context.threadId) || (scope === 'workspace' && !context.workspaceRoot)) {
-      setScope(defaultScope(context))
+      setScope(DEFAULT_TODO_SCOPE)
     }
   }, [context, scope])
 
@@ -148,7 +159,8 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
 
   const shown = visibleTodos(items, context, filter)
   const openCount = shown.filter((item) => !item.completed).length
-  const filterLabel = filter === 'workspaces' ? '所有工作区' : '当前上下文'
+  const filterLabel = filter === 'workspaces' ? '所有工作区' : filter === 'threads' ? '所有会话' : '当前上下文'
+  const showOwner = filter !== 'context'
 
   return (
     <div className="tasks-scroll">
@@ -156,7 +168,7 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
         <header className="tasks-heading">
           <div><h2>待办</h2><p>{filterLabel} · {openCount} 项未完成</p></div>
           <div className="tasks-heading-tools">
-            <label className="tasks-filter"><span>查看</span><select value={filter} onChange={(event) => setFilter(event.target.value as TodoFilter)} aria-label="筛选待办"><option value="context">当前上下文</option><option value="workspaces">所有工作区</option></select></label>
+            <label className="tasks-filter"><span>查看</span><select value={filter} onChange={(event) => setFilter(event.target.value as TodoFilter)} aria-label="筛选待办"><option value="context">当前上下文</option><option value="workspaces">所有工作区</option><option value="threads">所有会话</option></select></label>
             <span>{shown.length} items</span>
           </div>
         </header>
@@ -174,11 +186,11 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
 
         {error && <div className="tasks-error">{error}</div>}
         {loading ? <div className="tasks-empty">正在加载待办…</div> : shown.length === 0 ? (
-          <div className="tasks-empty"><ListTodo size={22} /><span>{filter === 'workspaces' ? '还没有全局或工作区待办' : '当前上下文还没有待办'}</span></div>
+          <div className="tasks-empty"><ListTodo size={22} /><span>{filter === 'workspaces' ? '还没有全局或工作区待办' : filter === 'threads' ? '还没有会话级待办' : '当前上下文还没有待办'}</span></div>
         ) : (
           <div className="tasks-list">
             {shown.map((item) => (
-              <article key={item.id} className={`task-row ${filter === 'workspaces' ? 'with-owner' : ''} ${item.completed ? 'completed' : ''}`}>
+              <article key={item.id} className={`task-row ${showOwner ? 'with-owner' : ''} ${item.completed ? 'completed' : ''}`}>
                 <input type="checkbox" checked={item.completed} onChange={(event) => update(item.id, { completed: event.target.checked })} aria-label={`完成 ${item.content}`} />
                 <input
                   className="task-content"
@@ -191,7 +203,7 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
                   }}
                   aria-label="编辑待办内容"
                 />
-                {filter === 'workspaces' && <span className={`task-owner ${item.scope}`} title={item.workspaceRoot ?? '全局'}>{todoWorkspaceLabel(item, context.workspaces)}</span>}
+                {showOwner && <span className={`task-owner ${item.scope}`} title={item.workspaceRoot ?? item.threadId ?? '全局'}>{item.scope === 'thread' ? todoThreadLabel(item, context.threads) : todoWorkspaceLabel(item, context.workspaces)}</span>}
                 <input
                   className="task-time"
                   type="datetime-local"
@@ -217,12 +229,6 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
       </div>
     </div>
   )
-}
-
-function defaultScope(context: PluginViewContext): TodoScope {
-  if (context.threadId) return 'thread'
-  if (context.workspaceRoot) return 'workspace'
-  return 'global'
 }
 
 function toDateTimeInput(value: number | null): string {
