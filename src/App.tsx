@@ -480,8 +480,13 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                 />
                 <ConversationStats
                   turns={harness.currentDetail?.turns ?? []}
+                  items={harness.currentDetail?.items ?? []}
                   tokenUsage={harness.currentTokenUsage}
                   creditUsage={harness.selectedThreadId ? threadCreditUsages[harness.selectedThreadId] ?? null : null}
+                  thread={harness.currentThread}
+                  workspace={workspace}
+                  taskPlan={harness.currentTaskPlan}
+                  preferences={harness.conversationStats}
                 />
               </div>
             )}
@@ -511,6 +516,16 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
           selectedWorkspaceRoot={(harness.selectedThreadId ? harness.threadRoots[harness.selectedThreadId] : null) ?? harness.selectedWorkspaceRoot}
           codex={codex}
           threadTitleGeneration={harness.threadTitleGeneration}
+          conversationStats={harness.conversationStats}
+          conversationStatsData={{
+            turns: harness.currentDetail?.turns ?? [],
+            items: harness.currentDetail?.items ?? [],
+            tokenUsage: harness.currentTokenUsage,
+            creditUsage: harness.selectedThreadId ? threadCreditUsages[harness.selectedThreadId] ?? null : null,
+            thread: harness.currentThread,
+            workspace,
+            taskPlan: harness.currentTaskPlan,
+          }}
           onTheme={harness.setTheme}
           onFontSize={harness.setFontSize}
           onResetFontSizes={harness.resetFontSizes}
@@ -519,6 +534,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
           onActionShortcut={harness.setActionShortcut}
           onResetActionShortcuts={harness.resetActionShortcuts}
           onThreadTitleGeneration={harness.setThreadTitleGeneration}
+          onConversationStats={harness.setConversationStats}
           onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
           onClose={() => {
             setSettingsOpen(false)

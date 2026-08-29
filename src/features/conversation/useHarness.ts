@@ -21,6 +21,7 @@ import type {
   ThreadItemEntry,
   ThreadSort,
   ThreadTokenUsage,
+  TurnPlanStep,
   ThreadUiState,
   Theme,
   ThreadTitleGenerationSettings,
@@ -56,6 +57,11 @@ import type { TurnCompletedEvent } from '../../core/conversations/types'
 import { diagnosticErrorCode, runtime, type ClientDiagnostic } from '../../core/runtime/bridge'
 import { defaultHarnessActionShortcuts, normalizeHarnessActionShortcuts } from '../actions/harnessActions'
 import {
+  defaultConversationStatsPreferences,
+  normalizeConversationStatsPreferences,
+  type ConversationStatsPreferences,
+} from './conversationStatsConfig'
+import {
   activateTurn,
   completeTurn,
   completedForeignActive,
@@ -71,6 +77,7 @@ const NAVIGATION_PREFERENCES_KEY = 'navigationPreferences'
 const APPEARANCE_PREFERENCES_KEY = 'appearancePreferences'
 const KEYBOARD_PREFERENCES_KEY = 'keyboardPreferences'
 const THREAD_TITLE_GENERATION_KEY = 'threadTitleGeneration'
+const CONVERSATION_STATS_PREFERENCES_KEY = 'conversationStatsPreferences'
 
 const defaultNavigationPreferences: NavigationPreferences = {
   layout: 'workspace',
@@ -242,6 +249,15 @@ function parseKeyboardPreferences(raw: string | null): KeyboardPreferences {
   }
 }
 
+function parseConversationStatsPreferences(raw: string | null): ConversationStatsPreferences {
+  if (!raw) return defaultConversationStatsPreferences()
+  try {
+    return normalizeConversationStatsPreferences(JSON.parse(raw))
+  } catch {
+    return defaultConversationStatsPreferences()
+  }
+}
+
 export function parseThreadTitleGenerationSettings(raw: string | null): ThreadTitleGenerationSettings {
   if (!raw) return DEFAULT_THREAD_TITLE_GENERATION
   try {
@@ -298,9 +314,11 @@ export function useHarness() {
   const [threadStates, setThreadStates] = useState<Record<string, ThreadUiState>>({})
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
   const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
+  const [threadPlans, setThreadPlans] = useState<Record<string, TurnPlanStep[]>>({})
   const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
   const [appearance, setAppearance] = useState<AppearancePreferences>(defaultAppearancePreferences)
   const [keyboard, setKeyboard] = useState<KeyboardPreferences>(defaultKeyboardPreferences)
+  const [conversationStats, setConversationStatsState] = useState<ConversationStatsPreferences>(defaultConversationStatsPreferences)
   const [threadTitleGeneration, setThreadTitleGenerationState] = useState<ThreadTitleGenerationSettings>(DEFAULT_THREAD_TITLE_GENERATION)
   const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
@@ -447,6 +465,12 @@ export function useHarness() {
     threadTitleGenerationRef.current = next
     setThreadTitleGenerationState(next)
     void runtime.setAppState(THREAD_TITLE_GENERATION_KEY, JSON.stringify(next)).catch(() => undefined)
+  }, [])
+
+  const setConversationStats = useCallback((next: ConversationStatsPreferences) => {
+    const normalized = normalizeConversationStatsPreferences(next)
+    setConversationStatsState(normalized)
+    void runtime.setAppState(CONVERSATION_STATS_PREFERENCES_KEY, JSON.stringify(normalized)).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -1394,6 +1418,20 @@ export function useHarness() {
       return
     }
 
+    if (method === 'turn/plan/updated') {
+      const threadId = eventThreadId(params)
+      const plan = Array.isArray(params.plan)
+        ? params.plan.filter((step): step is TurnPlanStep => {
+          if (!step || typeof step !== 'object') return false
+          const candidate = step as Partial<TurnPlanStep>
+          return typeof candidate.step === 'string'
+            && (candidate.status === 'pending' || candidate.status === 'inProgress' || candidate.status === 'completed')
+        })
+        : null
+      if (threadId && plan) setThreadPlans((current) => ({ ...current, [threadId]: plan }))
+      return
+    }
+
     if (method === 'turn/started') {
       const threadId = eventThreadId(params)
       const turn = params.turn as Turn | undefined
@@ -1532,7 +1570,7 @@ export function useHarness() {
     let unlistenTransport: (() => void) | undefined
     const bootstrap = async () => {
       try {
-        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance, storedKeyboard, storedThreadTitleGeneration] = await Promise.all([
+        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance, storedKeyboard, storedThreadTitleGeneration, storedConversationStats] = await Promise.all([
           runtime.listWorkspaces(),
           runtime.listThreadStates(),
           runtime.getAppState('selectedThreadId'),
@@ -1540,6 +1578,7 @@ export function useHarness() {
           runtime.getAppState(APPEARANCE_PREFERENCES_KEY),
           runtime.getAppState(KEYBOARD_PREFERENCES_KEY),
           runtime.getAppState(THREAD_TITLE_GENERATION_KEY),
+          runtime.getAppState(CONVERSATION_STATS_PREFERENCES_KEY),
         ])
         if (disposed) return
         setWorkspaces(storedWorkspaces)
@@ -1550,6 +1589,7 @@ export function useHarness() {
         const parsedThreadTitleGeneration = parseThreadTitleGenerationSettings(storedThreadTitleGeneration)
         threadTitleGenerationRef.current = parsedThreadTitleGeneration
         setThreadTitleGenerationState(parsedThreadTitleGeneration)
+        setConversationStatsState(parseConversationStatsPreferences(storedConversationStats))
         if (storedWorkspaces.length > 0) setSelectedWorkspaceRoot(storedWorkspaces[0].root)
         const loadedThreads = await refreshThreads('active')
         if (disposed) return
@@ -1582,6 +1622,7 @@ export function useHarness() {
   )
   const currentDetail = selectedThreadId ? details[selectedThreadId] ?? null : null
   const currentTokenUsage = selectedThreadId ? threadTokenUsages[selectedThreadId] ?? null : null
+  const currentTaskPlan = selectedThreadId ? threadPlans[selectedThreadId] ?? null : null
   const activeTurnId = selectedThreadId ? activeTurnIds[selectedThreadId] ?? currentDetail?.activeTurnId ?? null : null
   const currentForeignActive = deriveForeignActive(
     activeTurnId,
@@ -1597,9 +1638,11 @@ export function useHarness() {
     threadStates,
     details,
     threadTokenUsages,
+    threadPlans,
     navigation,
     appearance,
     keyboard,
+    conversationStats,
     threadTitleGeneration,
     queues,
     approvals,
@@ -1612,6 +1655,7 @@ export function useHarness() {
     currentThread,
     currentDetail,
     currentTokenUsage,
+    currentTaskPlan,
     activeTurnId,
     currentForeignActive,
     isCurrentWorking: Boolean(activeTurnId),
@@ -1648,6 +1692,7 @@ export function useHarness() {
     setActionShortcut,
     resetActionShortcuts,
     setThreadTitleGeneration,
+    setConversationStats,
     setSelectedWorkspaceRoot,
     changeThreadWorkspace,
     setViewMode: async (mode: ViewMode) => {

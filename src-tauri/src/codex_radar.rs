@@ -163,18 +163,16 @@ fn build_model_table(
         return Err("Codex Radar 模型指标不完整".to_string());
     }
 
-    let best_iq = candidates
-        .iter()
+    let ranked = candidates.iter().filter(|row| row.group != "simple");
+    let best_iq = ranked
+        .clone()
         .map(|row| row.iq)
         .fold(f64::NEG_INFINITY, f64::max);
-    let best_price = candidates
-        .iter()
+    let best_price = ranked
+        .clone()
         .map(|row| row.price)
         .fold(f64::INFINITY, f64::min);
-    let best_minutes = candidates
-        .iter()
-        .map(|row| row.minutes)
-        .fold(f64::INFINITY, f64::min);
+    let best_minutes = ranked.map(|row| row.minutes).fold(f64::INFINITY, f64::min);
     let automatic = candidates
         .iter()
         .enumerate()
@@ -204,9 +202,9 @@ fn build_model_table(
             iq: row.iq,
             price: row.price,
             minutes: row.minutes,
-            best_iq: row.iq == best_iq,
-            best_price: row.price == best_price,
-            best_minutes: row.minutes == best_minutes,
+            best_iq: row.group != "simple" && row.iq == best_iq,
+            best_price: row.group != "simple" && row.price == best_price,
+            best_minutes: row.group != "simple" && row.minutes == best_minutes,
             automatic: index == automatic,
             default_cursor: index == default_cursor,
         })
@@ -319,9 +317,12 @@ mod tests {
             "gpt-5.6-terra"
         );
         assert!(table.rows[0].best_iq);
+        assert!(!simple.best_iq);
+        assert!(!simple.best_price);
+        assert!(!simple.best_minutes);
         assert!(table
             .rows
             .iter()
-            .any(|row| row.best_price && row.model == "gpt-5.6-luna"));
+            .any(|row| { row.best_price && row.model == "gpt-5.6-luna" && row.effort == "xhigh" }));
     }
 }

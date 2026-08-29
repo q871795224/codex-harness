@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Blocks, BrainCircuit, CircleHelp, FolderOpen, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, Blocks, BrainCircuit, CircleHelp, FolderOpen, GripVertical, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
 import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, HarnessActionId, HarnessActionShortcuts, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
@@ -7,6 +7,13 @@ import { runtime } from '../../core/runtime/bridge'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 import type { useCodexCore } from '../codex/useCodexCore'
 import { conflictingAction, formatShortcut, harnessActionDefinitions, shortcutFromEvent } from '../actions/harnessActions'
+import { ConversationStats } from '../conversation/ConversationStats'
+import {
+  conversationStatDefinition,
+  type ConversationStatId,
+  type ConversationStatsData,
+  type ConversationStatsPreferences,
+} from '../conversation/conversationStatsConfig'
 
 interface SettingsDialogProps {
   theme: Theme
@@ -17,6 +24,8 @@ interface SettingsDialogProps {
   selectedWorkspaceRoot: string | null
   codex: ReturnType<typeof useCodexCore>
   threadTitleGeneration: ThreadTitleGenerationSettings
+  conversationStats: ConversationStatsPreferences
+  conversationStatsData: ConversationStatsData
   onTheme: (theme: Theme) => void
   onFontSize: (area: FontSizeArea, fontSize: FontSize) => void
   onResetFontSizes: () => void
@@ -25,6 +34,7 @@ interface SettingsDialogProps {
   onActionShortcut: (actionId: HarnessActionId, shortcut: string) => void
   onResetActionShortcuts: () => void
   onThreadTitleGeneration: (settings: ThreadTitleGenerationSettings) => void
+  onConversationStats: (preferences: ConversationStatsPreferences) => void
   onOpenPlugins: () => void
   onClose: () => void
 }
@@ -38,7 +48,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'appearance' | 'keyboard' | 'models' | 'thread-title' | 'skills' | 'mcp'
+type SettingsPage = 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -47,7 +57,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, threadTitleGeneration, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onOpenPlugins, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, threadTitleGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -55,6 +65,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const pageMeta: Record<SettingsPage, { heading: string; kicker: string }> = {
     appearance: { heading: '外观', kicker: 'APPEARANCE' },
+    'conversation-stats': { heading: '底部信息', kicker: 'CONVERSATION' },
     keyboard: { heading: '快捷键', kicker: 'KEYBOARD' },
     models: { heading: '模型', kicker: 'CODEX' },
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
@@ -107,6 +118,9 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
             <button type="button" className={page === 'appearance' ? 'selected' : ''} aria-current={page === 'appearance' ? 'page' : undefined} onClick={() => setPage('appearance')}>
               <Palette size={16} />外观
             </button>
+            <button type="button" className={page === 'conversation-stats' ? 'selected' : ''} aria-current={page === 'conversation-stats' ? 'page' : undefined} onClick={() => setPage('conversation-stats')}>
+              <Activity size={16} />底部信息
+            </button>
             <button type="button" className={page === 'keyboard' ? 'selected' : ''} aria-current={page === 'keyboard' ? 'page' : undefined} onClick={() => setPage('keyboard')}>
               <Keyboard size={16} />快捷键
             </button>
@@ -135,6 +149,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
           </header>
 
           {page === 'appearance' && <AppearanceSettings theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
+          {page === 'conversation-stats' && <ConversationStatsSettings preferences={conversationStats} data={conversationStatsData} onChange={onConversationStats} />}
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
           {page === 'models' && <ModelsSettings codex={codex} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
@@ -385,6 +400,91 @@ function skillSource(skill: CodexSkill): string {
   if (skill.scope === 'system') return '系统'
   if (skill.scope === 'admin') return '管理员'
   return skill.scope
+}
+
+function ConversationStatsSettings({ preferences, data, onChange }: {
+  preferences: ConversationStatsPreferences
+  data: ConversationStatsData
+  onChange: (preferences: ConversationStatsPreferences) => void
+}) {
+  const [draggedId, setDraggedId] = useState<ConversationStatId | null>(null)
+
+  const toggle = (id: ConversationStatId) => {
+    onChange({ items: preferences.items.map((item) => item.id === id ? { ...item, visible: !item.visible } : item) })
+  }
+
+  const move = (id: ConversationStatId, offset: -1 | 1) => {
+    const index = preferences.items.findIndex((item) => item.id === id)
+    const target = index + offset
+    if (index < 0 || target < 0 || target >= preferences.items.length) return
+    const items = [...preferences.items]
+    ;[items[index], items[target]] = [items[target], items[index]]
+    onChange({ items })
+  }
+
+  const dropBefore = (targetId: ConversationStatId) => {
+    if (!draggedId || draggedId === targetId) return
+    const items = preferences.items.filter((item) => item.id !== draggedId)
+    const target = items.findIndex((item) => item.id === targetId)
+    const dragged = preferences.items.find((item) => item.id === draggedId)
+    if (!dragged || target < 0) return
+    items.splice(target, 0, dragged)
+    onChange({ items })
+  }
+
+  return (
+    <div className="settings-section conversation-stats-settings">
+      <section className="stats-preview-card">
+        <div className="settings-section-title"><Activity size={17} /><div><h3>实时样例</h3><p>按当前选中会话的真实数据渲染；暂无数据的项目不会占位。</p></div></div>
+        <div className="stats-preview-surface">
+          <div className="stats-preview-input">给 Codex 发送消息</div>
+          <ConversationStats {...data} preferences={preferences} emptyLabel="当前会话暂无可展示的信息" />
+        </div>
+      </section>
+
+      <section className="stats-fields-card">
+        <div className="stats-fields-heading">
+          <div><h3>展示项目</h3><p>拖动整行调整位置，也可以使用上移、下移按钮。</p></div>
+          <span>{preferences.items.filter((item) => item.visible).length} / {preferences.items.length} 显示</span>
+        </div>
+        <div className="stats-table-wrap">
+          <table className="stats-settings-table">
+            <thead><tr><th>显示</th><th>名称</th><th>中文含义</th><th>操作</th></tr></thead>
+            <tbody>
+              {preferences.items.map((item, index) => {
+                const definition = conversationStatDefinition(item.id)
+                return (
+                  <tr
+                    key={item.id}
+                    draggable
+                    className={draggedId === item.id ? 'dragging' : undefined}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = 'move'
+                      event.dataTransfer.setData('text/plain', item.id)
+                      setDraggedId(item.id)
+                    }}
+                    onDragEnd={() => setDraggedId(null)}
+                    onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }}
+                    onDrop={(event) => { event.preventDefault(); dropBefore(item.id); setDraggedId(null) }}
+                  >
+                    <td><input type="checkbox" checked={item.visible} onChange={() => toggle(item.id)} aria-label={`显示${definition.name}`} /></td>
+                    <td><span className="stats-field-name"><GripVertical size={14} aria-hidden /><strong>{definition.name}</strong></span></td>
+                    <td>{definition.description}</td>
+                    <td>
+                      <span className="stats-row-actions">
+                        <button type="button" disabled={index === 0} onClick={() => move(item.id, -1)} title="上移" aria-label={`上移${definition.name}`}><ArrowUp size={14} /></button>
+                        <button type="button" disabled={index === preferences.items.length - 1} onClick={() => move(item.id, 1)} title="下移" aria-label={`下移${definition.name}`}><ArrowDown size={14} /></button>
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
 }
 
 function AppearanceSettings({ theme, fontSizes, onTheme, onFontSize, onResetFontSizes }: {

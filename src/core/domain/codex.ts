@@ -284,6 +284,11 @@ export interface ThreadTokenUsage {
   modelContextWindow: number | null
 }
 
+export interface TurnPlanStep {
+  step: string
+  status: 'pending' | 'inProgress' | 'completed'
+}
+
 export interface ThreadCreditUsage {
   creditsMicros: number
   usdMicros: number | null

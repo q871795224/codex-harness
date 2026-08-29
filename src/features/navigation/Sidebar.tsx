@@ -116,6 +116,7 @@ export function Sidebar({
   const [resizing, setResizing] = useState(false)
   const [previewWidth, setPreviewWidth] = useState<number | null>(null)
   const [dragPreviewOrder, setDragPreviewOrder] = useState<string[] | null>(null)
+  const [, setRelativeTimeTick] = useState(0)
   const [draggedThreadId, setDraggedThreadId] = useState<string | null>(null)
   const [threadDrop, setThreadDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const onSearchRef = useRef(onSearch)
@@ -129,6 +130,11 @@ export function Sidebar({
   useEffect(() => {
     onSearchRef.current = onSearch
   }, [onSearch])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRelativeTimeTick((current) => current + 1), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!searchOpen) return

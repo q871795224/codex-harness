@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { ThreadCreditUsage, ThreadTokenUsage, Turn } from '../../core/domain/codex'
-import { formatDuration } from '../../core/domain/format'
+import type { ConversationStatsData, ConversationStatsPreferences } from './conversationStatsConfig'
+import { conversationStatSegments } from './conversationStatsConfig'
 
-interface ConversationStatsProps {
-  turns: Turn[]
-  tokenUsage: ThreadTokenUsage | null
-  creditUsage: ThreadCreditUsage | null
+interface ConversationStatsProps extends ConversationStatsData {
+  preferences: ConversationStatsPreferences
+  emptyLabel?: string
 }
 
 export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
@@ -27,45 +26,14 @@ export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
   )
 }
 
-export function ConversationStats({ turns, tokenUsage, creditUsage }: ConversationStatsProps) {
-  const latestTurn = turns.at(-1) ?? null
-  const segments: Array<{ text: string; title?: string }> = []
-
-  if (tokenUsage && (tokenUsage.total.totalTokens > 0 || tokenUsage.last.totalTokens > 0)) {
-    segments.push({ text: `Tokens ${formatTokens(tokenUsage.total.totalTokens)} / ${formatTokens(tokenUsage.last.totalTokens)}` })
-  }
-  if (latestTurn?.durationMs !== null && latestTurn?.durationMs !== undefined) {
-    segments.push({ text: `本轮 ${formatDuration(latestTurn.durationMs)}` })
-  }
-  if (creditUsage) {
-    segments.push({
-      text: `${formatCredits(creditUsage.creditsMicros)} credits`,
-      title: creditUsage.usdMicros === null ? undefined : `$${formatUsd(creditUsage.usdMicros)} USD`,
-    })
-  }
-
-  if (segments.length === 0) return null
+export function ConversationStats({ turns, items, tokenUsage, creditUsage, thread, workspace, taskPlan, preferences, emptyLabel }: ConversationStatsProps) {
+  const segments = conversationStatSegments(preferences, { turns, items, tokenUsage, creditUsage, thread, workspace, taskPlan })
+  if (segments.length === 0) return emptyLabel ? <div className="conversation-stats empty">{emptyLabel}</div> : null
   return (
     <div className="conversation-stats">
-      {segments.map((segment) => <span key={segment.text} title={segment.title}>{segment.text}</span>)}
+      {segments.map((segment) => <span key={segment.id} title={segment.title}>{segment.text}</span>)}
     </div>
   )
-}
-
-function formatCredits(micros: number): string {
-  const credits = micros / 1_000_000
-  return credits.toLocaleString(undefined, { maximumFractionDigits: credits < 10 ? 3 : 2 })
-}
-
-function formatUsd(micros: number): string {
-  return (micros / 1_000_000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
-}
-
-function formatTokens(value: number): string {
-  if (value < 1_000) return String(Math.round(value))
-  if (value < 100_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}K`
-  if (value < 1_000_000) return `${Math.round(value / 1_000)}K`
-  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
 }
 
 export function formatWorkingElapsed(milliseconds: number): string {

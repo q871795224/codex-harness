@@ -28,7 +28,7 @@ export const sessionLauncherPlugin: HarnessPlugin = {
     id: 'builtin.session-launcher',
     name: '会话启动器',
     description: '在新会话中按 Codex Radar 指标选择模型与推理强度，并切换 YOLO、Auto-review 或 Manual 模式。',
-    version: '1.0.2',
+    version: '1.0.3',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
     permissions: ['network:codexradar.com'],
