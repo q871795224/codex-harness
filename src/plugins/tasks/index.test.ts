@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { visibleTodos, type TodoItem } from './index'
+import { todoScopePatch, visibleTodos, type TodoItem } from './index'
 
 function todo(id: string, scope: TodoItem['scope'], owner: string | null = null): TodoItem {
   return {
@@ -34,5 +34,27 @@ describe('visibleTodos', () => {
     const sooner = { ...todo('sooner', 'global'), dueAt: 10 }
     expect(visibleTodos([later, done, sooner], { workspaceRoot: null, threadId: null }).map((item) => item.id))
       .toEqual(['sooner', 'later', 'done'])
+  })
+})
+
+describe('todoScopePatch', () => {
+  it('moves a todo between global and the current thread', () => {
+    const context = { workspaceRoot: '/repo', threadId: 'thread-a' }
+
+    expect(todoScopePatch('thread', context)).toEqual({
+      scope: 'thread',
+      workspaceRoot: null,
+      threadId: 'thread-a',
+    })
+    expect(todoScopePatch('global', context)).toEqual({
+      scope: 'global',
+      workspaceRoot: null,
+      threadId: null,
+    })
+  })
+
+  it('rejects a scope that has no current owner', () => {
+    expect(todoScopePatch('thread', { workspaceRoot: '/repo', threadId: null })).toBeNull()
+    expect(todoScopePatch('workspace', { workspaceRoot: null, threadId: 'thread-a' })).toBeNull()
   })
 })

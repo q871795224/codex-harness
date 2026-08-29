@@ -50,7 +50,8 @@ export function QuickCommandPanel({ commands, anchorBottom }: QuickCommandPanelP
                   type="button"
                   disabled={running}
                   onClick={() => void run(entry)}
-                  title={state?.message ?? `后台执行 ${entry.contribution.command}`}
+                  title={`${entry.contribution.command}${state ? `\n${state.message}` : ''}`}
+                  aria-label={`${entry.contribution.label}：${entry.contribution.command}`}
                 >
                   <span className={`quick-command-icon ${state?.phase ?? 'idle'}`}>
                     {running ? <LoaderCircle className="spin" size={14} />
@@ -58,8 +59,8 @@ export function QuickCommandPanel({ commands, anchorBottom }: QuickCommandPanelP
                         : state?.phase === 'failed' ? <CircleAlert size={14} />
                           : <Play size={13} fill="currentColor" />}
                   </span>
-                  <span><strong>{entry.contribution.label}</strong><code>{entry.contribution.command}</code></span>
-                  {state && !running && <small className={state.phase}>{state.message}</small>}
+                  <strong>{entry.contribution.label}</strong>
+                  {state && <small className={state.phase}>{state.message}</small>}
                 </button>
               )
             })}

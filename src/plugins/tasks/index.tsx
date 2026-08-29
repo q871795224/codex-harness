@@ -59,6 +59,20 @@ export function visibleTodos(items: TodoItem[], context: PluginViewContext): Tod
       || left.createdAt - right.createdAt)
 }
 
+export function todoScopePatch(scope: TodoScope, context: PluginViewContext): Pick<TodoItem, 'scope' | 'workspaceRoot' | 'threadId'> | null {
+  if (scope === 'workspace') {
+    return context.workspaceRoot
+      ? { scope, workspaceRoot: context.workspaceRoot, threadId: null }
+      : null
+  }
+  if (scope === 'thread') {
+    return context.threadId
+      ? { scope, workspaceRoot: null, threadId: context.threadId }
+      : null
+  }
+  return { scope, workspaceRoot: null, threadId: null }
+}
+
 function TasksTab({ storage, context }: { storage: PluginStorage; context: PluginViewContext }) {
   const [items, setItems] = useState<TodoItem[]>([])
   const [content, setContent] = useState('')
@@ -113,6 +127,11 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Plugi
     commit(items.map((item) => item.id === id ? { ...item, ...patch, updatedAt: Date.now() } : item))
   }
 
+  const updateScope = (id: string, nextScope: TodoScope) => {
+    const patch = todoScopePatch(nextScope, context)
+    if (patch) update(id, patch)
+  }
+
   const shown = visibleTodos(items, context)
   const openCount = shown.filter((item) => !item.completed).length
 
@@ -161,7 +180,16 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Plugi
                   onChange={(event) => update(item.id, { dueAt: event.target.value ? new Date(event.target.value).getTime() : null })}
                   aria-label="编辑计划时间"
                 />
-                <span className={`task-scope ${item.scope}`}>{scopeLabel(item.scope)}</span>
+                <select
+                  className={`task-scope ${item.scope}`}
+                  value={item.scope}
+                  onChange={(event) => updateScope(item.id, event.target.value as TodoScope)}
+                  aria-label={`修改 ${item.content} 的级别`}
+                >
+                  <option value="global">全局</option>
+                  <option value="workspace" disabled={!context.workspaceRoot}>工作区</option>
+                  <option value="thread" disabled={!context.threadId}>会话</option>
+                </select>
                 <button className="task-delete" type="button" onClick={() => commit(items.filter((candidate) => candidate.id !== item.id))} aria-label={`删除 ${item.content}`}><Trash2 size={13} /></button>
               </article>
             ))}
@@ -176,12 +204,6 @@ function defaultScope(context: PluginViewContext): TodoScope {
   if (context.threadId) return 'thread'
   if (context.workspaceRoot) return 'workspace'
   return 'global'
-}
-
-function scopeLabel(scope: TodoScope): string {
-  if (scope === 'workspace') return '工作区'
-  if (scope === 'thread') return '会话'
-  return '全局'
 }
 
 function toDateTimeInput(value: number | null): string {
