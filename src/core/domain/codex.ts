@@ -456,8 +456,8 @@ export function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: st
     const leftRank = ranks.get(left.id)
     const rightRank = ranks.get(right.id)
     if (leftRank === undefined && rightRank === undefined) return 0
-    if (leftRank === undefined) return 1
-    if (rightRank === undefined) return -1
+    if (leftRank === undefined) return -1
+    if (rightRank === undefined) return 1
     return leftRank - rightRank
   })
 }

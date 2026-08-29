@@ -82,6 +82,7 @@ describe('plugin host lifecycle', () => {
       ctx.slots.conversationTabs.register({ id: 'tab', label: 'Tab', render: () => null })
       ctx.slots.newThreadPanels.register({ id: 'launcher', render: () => null })
       ctx.slots.quickActions.register({ id: 'ship', label: 'Ship', run: () => undefined })
+      ctx.slots.quickCommands.register({ id: 'login', label: 'Login', command: 'login', run: async () => ({ success: true, message: 'ok' }) })
     })
     const bad = plugin('plugin-b', () => { throw new Error('boom') })
     const host = new PluginHost([good, bad], { storage: () => storage })
@@ -96,12 +97,14 @@ describe('plugin host lifecycle', () => {
     expect(host.resolvedTabs({ threadId: null, workspaceRoot: null })).toHaveLength(1)
     expect(host.resolvedNewThreadPanels({ threadId: null, workspaceRoot: null })).toHaveLength(1)
     expect(host.resolvedQuickActions({ threadId: null, workspaceRoot: null })).toHaveLength(1)
+    expect(host.resolvedQuickCommands({ threadId: null, workspaceRoot: null })).toHaveLength(1)
 
     await host.syncInstances([])
     expect(calls).toEqual(['second', 'first'])
     expect(host.resolvedTabs({ threadId: null, workspaceRoot: null })).toHaveLength(0)
     expect(host.resolvedNewThreadPanels({ threadId: null, workspaceRoot: null })).toHaveLength(0)
     expect(host.resolvedQuickActions({ threadId: null, workspaceRoot: null })).toHaveLength(0)
+    expect(host.resolvedQuickCommands({ threadId: null, workspaceRoot: null })).toHaveLength(0)
   })
 
   it('reactivates an instance when its config changes', async () => {

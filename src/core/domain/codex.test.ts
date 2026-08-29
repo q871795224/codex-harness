@@ -228,6 +228,15 @@ describe('thread list activity', () => {
     expect(sortThreads([idle, active], 'manual', ['idle', 'active']).map((thread) => thread.id)).toEqual(['idle', 'active'])
   })
 
+  it('puts newly discovered threads above the saved manual order', () => {
+    const old = makeThread({ id: 'old', updatedAt: 10 })
+    const newer = makeThread({ id: 'newer', updatedAt: 20 })
+    const newest = makeThread({ id: 'newest', updatedAt: 30 })
+
+    expect(sortThreads([old, newest, newer], 'manual', ['old']).map((thread) => thread.id))
+      .toEqual(['newest', 'newer', 'old'])
+  })
+
   it('updates both server timestamps when local turn activity arrives', () => {
     const touched = touchThreadActivity(makeThread({ updatedAt: 10, recencyAt: 12 }), 30)
 

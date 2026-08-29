@@ -479,7 +479,7 @@ dependencies = [
 
 [[package]]
 name = "codex-harness"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "block2",
  "futures-util",
@@ -4096,6 +4096,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "windows-sys 0.61.2",
 ]

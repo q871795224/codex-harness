@@ -53,7 +53,8 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
           <div className="quick-action-list">
             {actions.map((action) => {
               const actionRuns = runsForQuickAction(runs, action.instanceId, context.threadId)
-              const activeCount = actionRuns.filter(isActiveRun).length
+              const activeRuns = actionRuns.filter(isActiveRun)
+              const activeCount = activeRuns.length
               const status = quickActionRunsStatus(actionRuns, startingId === action.contribution.id)
               const expanded = expandedInstanceId === action.instanceId
               const accessibleLabel = `${action.contribution.label} · ${activeCount > 0 ? `运行中 ${activeCount}` : quickActionStatusLabel(status)}`
@@ -76,7 +77,7 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
                       </span>
                       <strong>{action.contribution.label}</strong>
                     </button>
-                    {actionRuns.length > 0 && (
+                    {shouldShowRunGroup(actionRuns) && (
                       <button
                         className={`quick-action-runs-toggle${activeCount > 0 ? ' active' : ''}`}
                         type="button"
@@ -89,9 +90,9 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
                       </button>
                     )}
                   </div>
-                  {expanded && (
+                  {expanded && activeCount > 1 && (
                     <div className="quick-action-runs">
-                      {actionRuns.map((run, index) => (
+                      {activeRuns.map((run, index) => (
                         <button
                           key={run.runId}
                           type="button"
@@ -99,7 +100,7 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
                           onClick={() => run.childThreadId && agentRuns.openThread(run.childThreadId)}
                           title={run.childThreadId ? '打开独立会话' : '独立会话正在创建'}
                         >
-                          <span>#{actionRuns.length - index}</span>
+                          <span>#{activeRuns.length - index}</span>
                           <strong>{quickActionRunLabel(run.status)}</strong>
                           {isActiveRun(run) && <small>{formatElapsed(now - run.createdAt)}</small>}
                         </button>
@@ -148,6 +149,10 @@ export function quickActionRunStatus(run: AgentRun | undefined, starting: boolea
   if (run?.status === 'completed') return 'completed'
   if (run?.status === 'failed' || run?.status === 'cancelled') return 'failed'
   return 'idle'
+}
+
+export function shouldShowRunGroup(runs: AgentRun[]): boolean {
+  return runs.filter(isActiveRun).length > 1
 }
 
 function quickActionStatusLabel(status: 'idle' | 'running' | 'completed' | 'failed'): string {

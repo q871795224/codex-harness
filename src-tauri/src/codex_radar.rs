@@ -159,9 +159,6 @@ fn build_model_table(
     references.sort_by(|left, right| right.iq.partial_cmp(&left.iq).unwrap_or(Ordering::Equal));
     candidates.extend(references.into_iter().take(3));
     candidates.push(simple);
-    if candidates.len() != 6 {
-        return Err("Codex Radar 模型指标不完整".to_string());
-    }
 
     let ranked = candidates.iter().filter(|row| row.group != "simple");
     let best_iq = ranked
@@ -324,5 +321,27 @@ mod tests {
             .rows
             .iter()
             .any(|row| { row.best_price && row.model == "gpt-5.6-luna" && row.effort == "xhigh" }));
+    }
+
+    #[test]
+    fn accepts_a_single_hard_problem_recommendation() {
+        let insights = json!({"recommendations": [{"key": "hard_problems", "items": [
+            {"model":"gpt-5.6-sol","effort":"ultra","iq":105.0,"average_cost_usd":20.0,"average_duration_minutes":44.0}
+        ]}]});
+        let efficiency = json!({"points": [
+            {"model":"gpt-5.6-sol","effort":"high","iq":93.0,"average_price_usd":4.0,"average_minutes":20.0},
+            {"model":"gpt-5.6-terra","effort":"max","iq":95.0,"average_price_usd":2.0,"average_minutes":18.0},
+            {"model":"gpt-5.6-luna","effort":"max","iq":96.0,"average_price_usd":0.48,"average_minutes":34.0},
+            {"model":"gpt-5.6-luna","effort":"xhigh","iq":94.0,"average_price_usd":0.3,"average_minutes":33.0}
+        ]});
+
+        let table = build_model_table(&insights, &efficiency, 42).unwrap();
+
+        assert_eq!(table.rows.len(), 5);
+        assert_eq!(
+            table.rows.iter().filter(|row| row.group == "hard").count(),
+            1
+        );
+        assert!(table.rows.iter().any(|row| row.automatic));
     }
 }

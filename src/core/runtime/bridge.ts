@@ -18,6 +18,7 @@ import { parseThreadCreditUsage } from '../domain/codex'
 import type { AgentRun, ThreadInspection } from '../agent-runs/types'
 import type { LocalConnectorHealth, LocalConnectorMessage, LocalConnectorSendInput } from '../local-connectors/types'
 import type { RadarModelTable } from '../codex-radar/types'
+import type { QuickCommandId, QuickCommandResult } from '../quick-commands/types'
 import type { SystemNotificationClick, SystemNotificationInput } from '../notifications/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 
@@ -232,6 +233,10 @@ export const runtime = {
 
   codexRadarModelTable(): Promise<RadarModelTable> {
     return invoke<RadarModelTable>('codex_radar_model_table')
+  },
+
+  runQuickCommand(commandId: QuickCommandId): Promise<QuickCommandResult> {
+    return invoke<QuickCommandResult>('run_quick_command', { commandId })
   },
 
   requestSystemNotificationPermission(): Promise<boolean> {

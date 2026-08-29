@@ -3,6 +3,7 @@ mod codex_radar;
 mod diagnostics;
 mod git_workspace;
 mod local_connector;
+mod quick_command;
 mod store;
 mod system_notification;
 
@@ -85,6 +86,13 @@ async fn local_connector_send_message(
 #[tauri::command]
 async fn codex_radar_model_table(state: State<'_, AppState>) -> Result<RadarModelTable, String> {
     state.codex_radar.model_table().await
+}
+
+#[tauri::command]
+async fn run_quick_command(
+    command_id: String,
+) -> Result<quick_command::QuickCommandResult, String> {
+    quick_command::run(&command_id).await
 }
 
 #[tauri::command]
@@ -380,6 +388,7 @@ pub fn run() {
             local_connector_list_messages,
             local_connector_send_message,
             codex_radar_model_table,
+            run_quick_command,
             request_system_notification_permission,
             send_system_notification,
         ])

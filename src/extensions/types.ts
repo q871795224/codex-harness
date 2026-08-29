@@ -78,6 +78,14 @@ export interface QuickActionContribution {
   run(props: QuickActionProps): void | Promise<void>
 }
 
+export interface QuickCommandContribution {
+  id: string
+  label: string
+  command: string
+  order?: number
+  run(): Promise<{ success: boolean; message: string }>
+}
+
 export interface NewThreadPanelProps extends PluginViewContext {
   models: CodexModel[]
   settings: ThreadCodexSettings
@@ -125,6 +133,9 @@ export interface PluginSlotAccess {
   }
   quickActions: {
     register(contribution: QuickActionContribution): void
+  }
+  quickCommands: {
+    register(contribution: QuickCommandContribution): void
   }
 }
 

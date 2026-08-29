@@ -7,8 +7,10 @@ import type { LocalConnectorService } from './core/local-connectors/types'
 import type { CodexRadarService } from './core/codex-radar/types'
 import type { ConversationService } from './core/conversations/types'
 import type { SystemNotificationService } from './core/notifications/types'
+import type { QuickCommandService } from './core/quick-commands/types'
 import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
+import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
@@ -37,6 +39,9 @@ export default function App() {
     'harness.codexRadar': {
       modelTable: runtime.codexRadarModelTable,
     } satisfies CodexRadarService,
+    'harness.quickCommands': {
+      run: runtime.runQuickCommand,
+    } satisfies QuickCommandService,
     'harness.conversations': {
       onTurnCompleted: harness.onTurnCompleted,
       openThread: harness.openThread,
@@ -112,6 +117,10 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
     workspaceRoot: workspace?.root ?? null,
   })
   const quickActions = plugins.resolvedQuickActions({
+    threadId: harness.selectedThreadId,
+    workspaceRoot: workspace?.root ?? null,
+  })
+  const quickCommands = plugins.resolvedQuickCommands({
     threadId: harness.selectedThreadId,
     workspaceRoot: workspace?.root ?? null,
   })
@@ -494,17 +503,20 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread()} onWorkspace={() => void harness.chooseWorkspace()} />}
       </main>
       {harness.currentThread && harness.viewMode === 'active' && (
-        <QuickActionPanel
-          actions={quickActions}
-          agentRuns={agentRuns}
-          anchorBottom={quickActionBottom}
-          context={{
-            threadId: harness.selectedThreadId,
-            workspaceRoot: workspace?.root ?? null,
-            checkoutRoot: harness.currentThread.cwd,
-            disabled: harness.currentForeignActive,
-          }}
-        />
+        <>
+          <QuickCommandPanel commands={quickCommands} anchorBottom={quickActionBottom} />
+          <QuickActionPanel
+            actions={quickActions}
+            agentRuns={agentRuns}
+            anchorBottom={quickActionBottom}
+            context={{
+              threadId: harness.selectedThreadId,
+              workspaceRoot: workspace?.root ?? null,
+              checkoutRoot: harness.currentThread.cwd,
+              disabled: harness.currentForeignActive,
+            }}
+          />
+        </>
       )}
       {settingsOpen && (
         <SettingsDialog

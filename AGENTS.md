@@ -9,6 +9,7 @@
 - `src/core/plugins/` 放 Harness 插件内核与 React host，`src/plugins/` 放随 App 发布的内置插件；插件只能通过 `src/extensions/types.ts` 中的 context、service、event 和 slot 契约接入能力。
 - 插件实例归属于 `global`、`workspace` 或 `thread`。实例生命周期独立于当前选中的会话，切换页面只改变 contribution 可见性，不能中断后台任务或连接。
 - 快捷 Agent Job 通过声明式 `quickActions` slot 接入右下角统一面板，并通过 `harness.agentRuns` 启动独立会话；每个 Job 对应一个独立插件实例，由实例决定 `global` 或 `workspace` 归属，Run 必须记录发起会话并允许同一会话并发启动，面板按 Job 实例和发起会话聚合展示，插件不能直接调用 App Server 协议。
+- 快捷命令通过声明式 `quickCommands` slot 接入左下角统一面板；插件只能调用 `harness.quickCommands` service 中由 Rust 原生层固定允许的命令，不能执行任意 shell 字符串。VPN 连接完成后以 Cisco 客户端的 `state: Connected` 状态作为成功依据。
 - `src-tauri/src/app_server.rs` 是唯一可直接接触 App Server 传输协议的模块。不要在 React 组件中直接实现协议或连接逻辑。
 - Skill 的发现、解析、启停状态和最终列表以共享 App Server daemon 为准，前端不要自行扫描或解析 `SKILL.md`。
 - MCP 是共享 App Server daemon 的全局配置：应用核心启动时加载一次，仅在用户手动 reload 时刷新；打开设置页不重复请求，状态只显示 App Server `config/read` 的启用/停用配置，不展示会话级连接状态。

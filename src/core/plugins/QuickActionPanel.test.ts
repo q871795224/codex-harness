@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentRun, AgentRunStatus } from '../agent-runs/types'
-import { quickActionRunsStatus, quickActionRunStatus, runsForQuickAction } from './QuickActionPanel'
+import { quickActionRunsStatus, quickActionRunStatus, runsForQuickAction, shouldShowRunGroup } from './QuickActionPanel'
 
 function run(status: AgentRunStatus, overrides: Partial<AgentRun> = {}): AgentRun {
   return {
@@ -37,5 +37,11 @@ describe('quickActionRunStatus', () => {
     ]
     expect(runsForQuickAction(runs, 'quick-agent', 'parent-1').map((item) => item.runId)).toEqual(['matching'])
     expect(runsForQuickAction(runs, 'quick-agent', null)).toEqual([])
+  })
+
+  it('only groups multiple concurrent runs', () => {
+    expect(shouldShowRunGroup([run('running')])).toBe(false)
+    expect(shouldShowRunGroup([run('running'), run('completed')])).toBe(false)
+    expect(shouldShowRunGroup([run('running'), run('waitingApproval')])).toBe(true)
   })
 })
