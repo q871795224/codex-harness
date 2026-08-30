@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_TODO_SCOPE, todoScopePatch, todoThreadLabel, todoWorkspaceLabel, visibleTodos, type TodoItem } from './index'
+import { DEFAULT_TODO_FILTER, DEFAULT_TODO_SCOPE, todoScopePatch, todoThreadLabel, todoWorkspaceLabel, visibleTodos, type TodoItem } from './index'
 
 function todo(id: string, scope: TodoItem['scope'], owner: string | null = null): TodoItem {
   return {
@@ -75,6 +75,10 @@ describe('todoWorkspaceLabel', () => {
 describe('todo defaults', () => {
   it('creates new todos at the global scope by default', () => {
     expect(DEFAULT_TODO_SCOPE).toBe('global')
+  })
+
+  it('shows todos from all threads by default', () => {
+    expect(DEFAULT_TODO_FILTER).toBe('threads')
   })
 })
 

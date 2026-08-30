@@ -24,6 +24,7 @@ import { useCodexCore } from './features/codex/useCodexCore'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
 import { actionForShortcut, threadIndexForAction } from './features/actions/harnessActions'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
+import type { UsageService } from './core/usage/types'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 
@@ -43,6 +44,9 @@ export default function App() {
     'harness.codexRadar': {
       modelTable: runtime.codexRadarModelTable,
     } satisfies CodexRadarService,
+    'harness.usage': {
+      snapshot: runtime.usageSnapshot,
+    } satisfies UsageService,
     'harness.quickCommands': {
       run: runtime.runQuickCommand,
     } satisfies QuickCommandService,

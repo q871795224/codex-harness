@@ -7,6 +7,7 @@ mod local_connector;
 mod quick_command;
 mod store;
 mod system_notification;
+mod usage;
 
 use app_server::AppServerManager;
 use codex_radar::{CodexRadarClient, RadarModelTable};
@@ -87,6 +88,16 @@ async fn local_connector_send_message(
 #[tauri::command]
 async fn codex_radar_model_table(state: State<'_, AppState>) -> Result<RadarModelTable, String> {
     state.codex_radar.model_table().await
+}
+
+#[tauri::command]
+async fn usage_snapshot(
+    state: State<'_, AppState>,
+    since: String,
+    until: String,
+) -> Result<usage::UsageSnapshot, String> {
+    let codex_home = app_server::resolved_codex_home()?;
+    usage::collect(&state.app_server, codex_home, since, until).await
 }
 
 #[tauri::command]
@@ -457,6 +468,7 @@ pub fn run() {
             local_connector_list_messages,
             local_connector_send_message,
             codex_radar_model_table,
+            usage_snapshot,
             run_quick_command,
             request_system_notification_permission,
             send_system_notification,

@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
@@ -15,6 +15,7 @@ use std::{
 };
 use tauri::{AppHandle, Emitter};
 use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
     sync::{mpsc, oneshot, Mutex},
     time::timeout,
@@ -445,6 +446,103 @@ fn managed_codex_home(codex: &Path) -> Option<PathBuf> {
 pub(crate) fn resolved_codex_home() -> Result<PathBuf, String> {
     let codex = find_codex_binary()?;
     managed_codex_home(&codex).ok_or_else(|| "无法确定真实 Codex Home。".to_string())
+}
+
+pub(crate) async fn read_rate_limits_for_home(codex_home: &Path) -> Result<Value, String> {
+    let codex = find_codex_binary()?;
+    let real_home = codex_home
+        .parent()
+        .ok_or_else(|| "Codex Home 缺少用户目录。".to_string())?;
+    let mut child = tokio::process::Command::new(codex)
+        .args(["app-server", "--stdio"])
+        .env("HOME", real_home)
+        .env("CODEX_HOME", codex_home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|error| format!("无法启动 Codex Personal App Server: {error}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "Codex Personal App Server 没有 stdin。".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Codex Personal App Server 没有 stdout。".to_string())?;
+    let mut lines = BufReader::new(stdout).lines();
+
+    write_stdio_request(
+        &mut stdin,
+        1,
+        "initialize",
+        json!({
+            "clientInfo": {
+                "name": "codex-harness-usage",
+                "title": "Codex Harness Usage",
+                "version": env!("CARGO_PKG_VERSION")
+            },
+            "capabilities": {
+                "experimentalApi": true,
+                "requestAttestation": false
+            }
+        }),
+    )
+    .await?;
+    read_stdio_response(&mut lines, 1).await?;
+    write_stdio_request(&mut stdin, 2, "account/rateLimits/read", json!({})).await?;
+    let result = read_stdio_response(&mut lines, 2).await;
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    result
+}
+
+async fn write_stdio_request(
+    stdin: &mut tokio::process::ChildStdin,
+    id: u64,
+    method: &str,
+    params: Value,
+) -> Result<(), String> {
+    let line = json!({ "id": id, "method": method, "params": params }).to_string();
+    stdin
+        .write_all(format!("{line}\n").as_bytes())
+        .await
+        .map_err(|error| format!("无法写入 Codex Personal App Server: {error}"))?;
+    stdin
+        .flush()
+        .await
+        .map_err(|error| format!("无法刷新 Codex Personal App Server 请求: {error}"))
+}
+
+async fn read_stdio_response(
+    lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+    target_id: u64,
+) -> Result<Value, String> {
+    timeout(Duration::from_secs(20), async {
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|error| format!("无法读取 Codex Personal App Server: {error}"))?
+        {
+            let Ok(message) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            if message.get("id").and_then(Value::as_u64) != Some(target_id) {
+                continue;
+            }
+            if let Some(error) = message.get("error") {
+                return Err(format!("Codex Personal App Server 请求失败: {error}"));
+            }
+            return message
+                .get("result")
+                .cloned()
+                .ok_or_else(|| "Codex Personal App Server 响应缺少 result。".to_string());
+        }
+        Err("Codex Personal App Server 提前退出。".to_string())
+    })
+    .await
+    .map_err(|_| "Codex Personal App Server 请求超时。".to_string())?
 }
 
 fn codex_home_ancestor(path: &Path) -> Option<PathBuf> {

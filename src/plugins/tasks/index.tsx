@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ListTodo, Plus, Trash2 } from 'lucide-react'
+import { Check, Copy, ListTodo, Plus, Trash2 } from 'lucide-react'
 import type { ConversationTabProps, HarnessPlugin, PluginInstanceRecord, PluginStorage, PluginViewContext } from '../../extensions/types'
 
 export type TodoScope = 'global' | 'workspace' | 'thread'
 export type TodoFilter = 'context' | 'workspaces' | 'threads'
 export const DEFAULT_TODO_SCOPE: TodoScope = 'global'
+export const DEFAULT_TODO_FILTER: TodoFilter = 'threads'
 
 export interface TodoItem {
   id: string
@@ -26,7 +27,7 @@ export const tasksPlugin: HarnessPlugin = {
     id: 'builtin.tasks',
     name: '待办',
     description: '管理全局、工作区和会话级待办。',
-  version: '1.0.3',
+    version: '1.0.4',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
   },
@@ -102,7 +103,8 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
   const [content, setContent] = useState('')
   const [dueAt, setDueAt] = useState('')
   const [scope, setScope] = useState<TodoScope>(DEFAULT_TODO_SCOPE)
-  const [filter, setFilter] = useState<TodoFilter>('context')
+  const [filter, setFilter] = useState<TodoFilter>(DEFAULT_TODO_FILTER)
+  const [copiedTodoId, setCopiedTodoId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -157,10 +159,19 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
     if (patch) update(id, patch)
   }
 
+  const copyTodo = async (item: TodoItem) => {
+    try {
+      await writeClipboard(item.content)
+      setCopiedTodoId(item.id)
+      window.setTimeout(() => setCopiedTodoId((current) => current === item.id ? null : current), 1_500)
+    } catch (nextError) {
+      setError(`复制失败：${messageOf(nextError)}`)
+    }
+  }
+
   const shown = visibleTodos(items, context, filter)
   const openCount = shown.filter((item) => !item.completed).length
   const filterLabel = filter === 'workspaces' ? '所有工作区' : filter === 'threads' ? '所有会话' : '当前上下文'
-  const showOwner = filter !== 'context'
 
   return (
     <div className="tasks-scroll">
@@ -190,7 +201,7 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
         ) : (
           <div className="tasks-list">
             {shown.map((item) => (
-              <article key={item.id} className={`task-row ${showOwner ? 'with-owner' : ''} ${item.completed ? 'completed' : ''}`}>
+              <article key={item.id} className={`task-row ${item.completed ? 'completed' : ''}`}>
                 <input type="checkbox" checked={item.completed} onChange={(event) => update(item.id, { completed: event.target.checked })} aria-label={`完成 ${item.content}`} />
                 <input
                   className="task-content"
@@ -203,7 +214,15 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
                   }}
                   aria-label="编辑待办内容"
                 />
-                {showOwner && <span className={`task-owner ${item.scope}`} title={item.workspaceRoot ?? item.threadId ?? '全局'}>{item.scope === 'thread' ? todoThreadLabel(item, context.threads) : todoWorkspaceLabel(item, context.workspaces)}</span>}
+                <button
+                  className={`task-copy ${copiedTodoId === item.id ? 'copied' : ''}`}
+                  type="button"
+                  onClick={() => void copyTodo(item)}
+                  aria-label={`复制 ${item.content}`}
+                  title={copiedTodoId === item.id ? '已复制' : '复制待办内容'}
+                >
+                  {copiedTodoId === item.id ? <Check size={13} /> : <Copy size={13} />}
+                </button>
                 <input
                   className="task-time"
                   type="datetime-local"
@@ -218,8 +237,12 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
                   aria-label={`修改 ${item.content} 的级别`}
                 >
                   <option value="global">全局</option>
-                  <option value="workspace" disabled={!context.workspaceRoot}>当前工作区</option>
-                  <option value="thread" disabled={!context.threadId}>当前会话</option>
+                  <option value="workspace" disabled={!context.workspaceRoot && item.scope !== 'workspace'}>
+                    {item.scope === 'workspace' ? todoWorkspaceLabel(item, context.workspaces) : '当前工作区'}
+                  </option>
+                  <option value="thread" disabled={!context.threadId && item.scope !== 'thread'}>
+                    {item.scope === 'thread' ? todoThreadLabel(item, context.threads) : '当前会话'}
+                  </option>
                 </select>
                 <button className="task-delete" type="button" onClick={() => commit(items.filter((candidate) => candidate.id !== item.id))} aria-label={`删除 ${item.content}`}><Trash2 size={13} /></button>
               </article>
@@ -240,4 +263,20 @@ function toDateTimeInput(value: number | null): string {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+async function writeClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) throw new Error('clipboard unavailable')
 }

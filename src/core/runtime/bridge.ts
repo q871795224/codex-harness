@@ -22,6 +22,7 @@ import type { QuickCommandId, QuickCommandResult } from '../quick-commands/types
 import type { SystemNotificationClick, SystemNotificationInput } from '../notifications/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 import type { HarnessFileTree } from '../harness-files/types'
+import type { UsageSnapshot } from '../usage/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -258,6 +259,10 @@ export const runtime = {
 
   codexRadarModelTable(): Promise<RadarModelTable> {
     return invoke<RadarModelTable>('codex_radar_model_table')
+  },
+
+  usageSnapshot(since: string, until: string): Promise<UsageSnapshot> {
+    return invoke<UsageSnapshot>('usage_snapshot', { since, until })
   },
 
   runQuickCommand(commandId: QuickCommandId): Promise<QuickCommandResult> {
