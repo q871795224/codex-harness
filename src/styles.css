@@ -13,9 +13,7 @@
 /* API Workbench navigation, request inspector, examples, and inline environments. */
 .api-workbench-brand { min-width: 0; }.api-workbench-brand > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .api-workbench-grid.environment-mode { grid-template-columns: 230px minmax(460px, 1fr); }
-.api-library-heading > nav { display: flex; min-width: 0; align-items: center; gap: 2px; }
-.api-library-heading > nav button { width: auto; padding: 0 7px; color: #89919d; font-size: 10px; font-weight: 620; }
-.api-library-heading > nav button.active { background: #e9edff; color: #435ab9; }
+.api-library-mode-switch { display: flex !important; width: auto !important; min-width: 0; align-items: center; gap: 5px; padding: 0 7px; color: #596273 !important; font-size: 11px; font-weight: 650; }
 .api-library-heading > div:last-child { position: relative; display: flex; flex: 0 0 auto; gap: 2px; }
 .api-create-menu-wrap { position: relative; }
 .api-create-menu { position: absolute; z-index: 15; top: 30px; right: 0; display: grid; width: 138px; padding: 5px; border: 1px solid #dce1e8; border-radius: 8px; background: #fff; box-shadow: 0 12px 28px rgba(28, 34, 46, .16); }
@@ -43,7 +41,7 @@
 .api-examples-drawer { position: absolute; z-index: 12; top: 123px; right: 0; bottom: 0; display: grid; width: min(285px, 55%); min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); border-left: 1px solid #dfe3ea; background: #f8f9fb; box-shadow: -12px 0 28px rgba(29, 35, 47, .09); animation: api-drawer-in .16s ease-out both; }
 @keyframes api-drawer-in { from { opacity: 0; transform: translateX(12px); } }
 .api-examples-drawer > header, .api-inspector-pane section > header { display: flex; min-height: 49px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 11px; border-bottom: 1px solid #e1e5eb; }
-.api-examples-drawer header div, .api-inspector-pane header div { display: grid; min-width: 0; gap: 2px; }.api-examples-drawer header span, .api-inspector-pane header span { color: #9098a4; font-size: 8px; font-weight: 700; letter-spacing: .1em; }.api-examples-drawer header strong, .api-inspector-pane header strong { color: #3d4551; font-size: 11px; }
+.api-examples-drawer header div { display: grid; min-width: 0; gap: 2px; }.api-inspector-pane header div { display: flex; min-width: 0; align-items: baseline; gap: 6px; }.api-examples-drawer header span, .api-inspector-pane header span { color: #9098a4; font-size: 8px; font-weight: 700; letter-spacing: .1em; }.api-examples-drawer header strong, .api-inspector-pane header strong { color: #3d4551; font-size: 11px; }
 .api-examples-drawer header > button { width: 25px; height: 25px; border-radius: 5px; color: #8c94a0; font-size: 17px; }.api-examples-drawer header > button:hover { background: #e9ecf1; color: #3e4651; }
 .api-example-create { display: grid; gap: 6px; padding: 10px; border-bottom: 1px solid #e4e7ec; }.api-example-create input { height: 30px; padding: 0 8px; border: 1px solid #dfe3e9; border-radius: 6px; outline: 0; background: #fff; font-size: 10px; }.api-example-create button { display: flex; height: 29px; align-items: center; justify-content: center; gap: 5px; border: 1px solid #c9d2f1; border-radius: 6px; background: #f2f5ff; color: #4d62b8; font-size: 10px; }
 .api-example-list { min-height: 0; overflow: auto; padding: 7px; }.api-example-list > p { margin: 12px 7px; color: #8d95a1; font-size: 10px; line-height: 1.55; }.api-example-list > div { display: grid; grid-template-columns: minmax(0, 1fr) 25px; align-items: center; border-radius: 6px; }.api-example-list > div:hover { background: #eceff4; }.api-example-list > div > button:first-child { display: grid; min-width: 0; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 4px; padding: 7px; color: #66707d; text-align: left; }.api-example-list button span, .api-example-list button strong, .api-example-list button small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.api-example-list button strong { color: #4c5561; font-size: 10px; }.api-example-list button small { margin-top: 2px; color: #969da7; font-size: 8px; }.api-example-list > div > button:last-child { color: #a1a8b2; }.api-example-list > div > button:last-child:hover { color: #b05252; }
@@ -60,7 +58,7 @@
 .app-shell[data-theme='dark'] .api-create-menu, .app-shell[data-theme='dark'] .api-examples-drawer, .app-shell[data-theme='dark'] .api-inspector-pane, .app-shell[data-theme='dark'] .api-environment-editor { border-color: #393e47; background: #22252b; }
 .app-shell[data-theme='dark'] .api-create-menu button, .app-shell[data-theme='dark'] .api-tree-request-label, .app-shell[data-theme='dark'] .api-inspector-pane pre, .app-shell[data-theme='dark'] .api-request-details textarea { color: #bbc1cb; }
 .app-shell[data-theme='dark'] .api-create-menu button:hover, .app-shell[data-theme='dark'] .api-example-list > div:hover, .app-shell[data-theme='dark'] .api-environment-list > button:hover, .app-shell[data-theme='dark'] .api-environment-row:hover { background: #2c3038; }
-.app-shell[data-theme='dark'] .api-library-heading > nav button.active, .app-shell[data-theme='dark'] .api-environment-list > button.selected, .app-shell[data-theme='dark'] .api-environment-row.selected { background: #313950; color: #aab8ee; }
+.app-shell[data-theme='dark'] .api-library-mode-switch, .app-shell[data-theme='dark'] .api-environment-list > button.selected, .app-shell[data-theme='dark'] .api-environment-row.selected { background: #313950; color: #aab8ee !important; }
 .app-shell[data-theme='dark'] .api-authorization-editor select, .app-shell[data-theme='dark'] .api-authorization-editor input, .app-shell[data-theme='dark'] .api-example-create input, .app-shell[data-theme='dark'] .api-inspector-pane header button { border-color: #3d424c; background: #292d34; color: #d1d5dd; }
 .app-shell[data-theme='dark'] .api-examples-drawer > header, .app-shell[data-theme='dark'] .api-inspector-pane section > header, .app-shell[data-theme='dark'] .api-example-create, .app-shell[data-theme='dark'] .api-inspector-pane section + section, .app-shell[data-theme='dark'] .api-environment-editor > header, .app-shell[data-theme='dark'] .api-environment-table-head, .app-shell[data-theme='dark'] .api-variable-table-row { border-color: #373c45; }
 .app-shell[data-theme='dark'] .api-examples-drawer header strong, .app-shell[data-theme='dark'] .api-inspector-pane header strong, .app-shell[data-theme='dark'] .api-environment-editor h2, .app-shell[data-theme='dark'] .api-environment-editor header input { color: #dce0e7; }
@@ -69,7 +67,7 @@
 @media (max-width: 1120px) {
   .api-workbench-grid { grid-template-columns: 215px minmax(390px, 1fr) 205px; }
   .api-workbench-grid.environment-mode { grid-template-columns: 215px minmax(420px, 1fr); }
-  .api-library-heading > nav button { padding: 0 4px; font-size: 9px; }
+  .api-library-mode-switch { padding: 0 4px; font-size: 9px; }
   .api-inspector-pane header button { width: 27px; padding: 0; justify-content: center; font-size: 0; }
 }
 
@@ -1256,6 +1254,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 /* Keep structural API Workbench overrides after the legacy API rules. */
 .api-tree-request { grid-template-columns: minmax(0, 1fr) auto; gap: 0; padding-right: 2px; }
 .api-request-editor { grid-template-rows: 40px 47px 36px minmax(145px, .9fr) minmax(150px, 1.1fr); }
+.api-pane-heading { flex-basis: 40px; }
+.api-inspector-pane section > header { min-height: 40px; }
 .api-editor-tabs { justify-content: space-between; padding-right: 8px; }
 @media (max-width: 1120px) {
   .api-workbench-grid { grid-template-columns: 215px minmax(390px, 1fr) 205px; }

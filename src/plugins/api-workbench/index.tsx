@@ -10,8 +10,8 @@ import type {
 } from '../../core/api-workbench/types'
 import {
   activeEnvironment, appendFolder, appendRequest, applyRequestExample, createEnvironment, createRequestExample,
-  createVariable, emptyWorkbenchState, ensureTrailingRow, findRequestContext, removeCollection, removeEnvironment,
-  removeItem, removeLegacySecretVariables, replaceRequest, requestToCurl, variableReferences, type ApiVariableReference, type ApiVariableScope,
+  createVariable, emptyWorkbenchState, ensureTrailingRow, findRequestContext, migrateLegacyEnvironments, removeCollection, removeEnvironment,
+  removeItem, removeLegacySecretVariables, replaceRequest, requestToCurl, variableMap, variableReferences, type ApiVariableReference, type ApiVariableScope,
 } from '../../core/api-workbench/model'
 import { importPostmanJson } from '../../core/api-workbench/import'
 import type { HarnessPlugin, PluginInstanceRecord } from '../../extensions/types'
@@ -22,8 +22,8 @@ export const apiWorkbenchPlugin: HarnessPlugin = {
     id: 'builtin.api-workbench',
     name: 'API 工作台',
     description: '全局 HTTP 请求工作台，支持 Postman Collection 和前后置脚本。',
-    version: '1.2.0',
-    engine: { codexHarness: '^0.4.23' },
+    version: '1.3.0',
+    engine: { codexHarness: '^0.4.24' },
     supportedScopes: ['global'],
     permissions: ['network:http', 'filesystem:import'],
   },
@@ -68,7 +68,7 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
     let disposed = false
     void service.load().then((saved) => {
       if (disposed) return
-      const next = saved ? removeLegacySecretVariables(saved) : emptyWorkbenchState()
+      const next = saved ? migrateLegacyEnvironments(removeLegacySecretVariables(saved)) : emptyWorkbenchState()
       setState(next)
       setSelection(next.selectedRequestId ? { kind: 'request', id: next.selectedRequestId } : null)
       setEnvironmentScope(next.selectedEnvironmentId ?? 'globals')
@@ -191,7 +191,7 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
     <div className={`api-workbench-grid ${libraryMode === 'environments' ? 'environment-mode' : ''}`}>
       <aside className="api-library">
         <div className="api-pane-heading api-library-heading">
-          <nav><button className={libraryMode === 'collections' ? 'active' : ''} onClick={() => setLibraryMode('collections')}>Collections</button><button className={libraryMode === 'environments' ? 'active' : ''} onClick={() => setLibraryMode('environments')}>Environments</button></nav>
+          <button className="api-library-mode-switch" title={`切换到 ${libraryMode === 'collections' ? 'Environments' : 'Collections'}`} onClick={() => setLibraryMode((mode) => mode === 'collections' ? 'environments' : 'collections')}>{libraryMode === 'collections' ? 'Collections' : 'Environments'}<ChevronsUpDown size={13} /></button>
           <div>{libraryMode === 'collections' ? <>
             <button title={allExpanded ? '一键收起所有目录' : '一键展开所有目录'} onClick={() => setExpanded(allExpanded ? new Set() : new Set(expandableIds))}><ChevronsUpDown size={14} /></button>
             <div className="api-create-menu-wrap"><button title="新建" onClick={() => setCreateMenuOpen((open) => !open)}><Plus size={15} /></button>{createMenuOpen && <div className="api-create-menu"><button onClick={() => createItem('folder')}><Folder size={13} />新建文件夹</button><button onClick={() => createItem('request')}><FileText size={13} />新建请求</button></div>}</div>
@@ -213,7 +213,7 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
         {notice && <div className="api-notice"><CheckCircle2 size={14} />{notice}<button onClick={() => setNotice(null)}>×</button></div>}
       </main>
 
-      {libraryMode === 'collections' && <RequestInspector request={selectedRequest} onChange={(request) => update((current) => replaceRequest(current, request))} onCopied={() => setNotice('cURL 已复制。')} onError={setError} />}
+      {libraryMode === 'collections' && <RequestInspector request={selectedRequest} variableScopes={variableScopes} onChange={(request) => update((current) => replaceRequest(current, request))} onCopied={() => setNotice('cURL 已复制。')} onError={setError} />}
     </div>
     {pendingDelete && <ApiConfirmDialog pending={pendingDelete} onCancel={() => setPendingDelete(null)} onConfirm={confirmDelete} />}
   </div>
@@ -265,9 +265,13 @@ function ExamplesDrawer({ request, onChange, onClose }: { request: ApiRequestDef
   return <aside className="api-examples-drawer"><header><div><span>REQUEST EXAMPLES</span><strong>Examples</strong></div><button title="关闭" onClick={onClose}>×</button></header><div className="api-example-create"><input value={name} placeholder="Example 名称" onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save() }} /><button onClick={save}><Plus size={12} />保存当前请求</button></div><div className="api-example-list">{examples.length ? examples.map((example) => <div key={example.id}><button onClick={() => onChange(applyRequestExample(request, example))}><FileText size={13} /><span><strong>{example.name}</strong><small>{example.query.filter((row) => row.key).length} Params · {example.body.mode}</small></span></button><button title={`删除 ${example.name}`} onClick={() => onChange({ ...request, examples: examples.filter((item) => item.id !== example.id) })}><Trash2 size={11} /></button></div>) : <p>还没有 Example。保存当前请求后，可在这里快速切换 Params、Headers 和 Body。</p>}</div></aside>
 }
 
-function RequestInspector({ request, onChange, onCopied, onError }: { request: ApiRequestDefinition | null; onChange(value: ApiRequestDefinition): void; onCopied(): void; onError(error: string): void }) {
-  const curl = request ? requestToCurl(request) : ''
-  const copy = async () => { try { await navigator.clipboard.writeText(curl); onCopied() } catch (error) { onError(`复制失败：${messageOf(error)}`) } }
+function RequestInspector({ request, variableScopes, onChange, onCopied, onError }: { request: ApiRequestDefinition | null; variableScopes: ApiVariableScope[]; onChange(value: ApiRequestDefinition): void; onCopied(): void; onError(error: string): void }) {
+  const curl = request ? requestToCurl(request, variableMap(...variableScopes.map((scope) => scope.values))) : ''
+  const copy = async () => {
+    const unresolved = [...curl.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)].map((match) => match[1].trim())
+    if (unresolved.length) { onError(`无法复制：请先配置变量 ${[...new Set(unresolved)].join('、')}。`); return }
+    try { await navigator.clipboard.writeText(curl); onCopied() } catch (error) { onError(`复制失败：${messageOf(error)}`) }
+  }
   return <aside className="api-inspector-pane"><section><header><div><span>CODE</span><strong>cURL</strong></div><button title="复制 cURL" disabled={!request} onClick={() => void copy()}><Copy size={13} />复制</button></header>{request ? <pre>{curl}</pre> : <div className="api-inspector-empty">选择请求后生成 cURL。</div>}</section><section className="api-request-details"><header><div><span>DETAILS</span><strong>详情</strong></div></header>{request ? <textarea value={request.description ?? ''} placeholder="记录请求用途、注意事项或调用说明…" onChange={(event) => onChange({ ...request, description: event.target.value })} /> : <div className="api-inspector-empty">选择请求后编辑详情。</div>}</section></aside>
 }
 

@@ -78,7 +78,7 @@ export interface ApiEnvironmentDefinition {
 }
 
 export interface ApiWorkbenchState {
-  schemaVersion: 1
+  schemaVersion: 1 | 2
   collections: ApiCollectionDefinition[]
   environments: ApiEnvironmentDefinition[]
   globals: ApiVariable[]

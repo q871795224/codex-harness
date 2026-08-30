@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   appendFolder, appendRequest, applyRequestExample, createRequestExample, emptyWorkbenchState,
-  findRequestContext, removeCollection, removeEnvironment, removeItem, removeLegacySecretVariables, replaceVariables, requestToCurl,
+  findRequestContext, migrateLegacyEnvironments, removeCollection, removeEnvironment, removeItem, removeLegacySecretVariables, replaceVariables, requestToCurl,
   variableMap, variableReferences,
 } from './model'
 import { importPostmanJson } from './import'
@@ -61,6 +61,42 @@ describe('API Workbench model', () => {
     ])
   })
 
+  it('migrates service-specific environments into the canonical environment variables', () => {
+    const state = emptyWorkbenchState()
+    state.schemaVersion = 1
+    state.environments = [
+      { id: 'live', name: 'live', values: [{ id: 'existing', key: 'token', value: 'shared', enabled: true }] },
+      { id: 'test', name: 'test', values: [] },
+      { id: 'legacy-live', name: 'dns-api-live', values: [
+        { id: 'api', key: 'api', value: 'https://dns.live', enabled: true },
+        { id: 'token', key: 'token', value: 'dns-token', enabled: true },
+      ] },
+      { id: 'legacy-test', name: 'dns-api-test', values: [
+        { id: 'test-api', key: 'api', value: 'https://dns.test', enabled: true },
+      ] },
+      { id: 'local-upper', name: 'Local', values: [] },
+      { id: 'local', name: 'local', values: [{ id: 'local-api', key: 'dns-api', value: 'https://dns.local', enabled: true }] },
+    ]
+    state.selectedEnvironmentId = 'legacy-live'
+    state.collections[0].name = 'DNS API'
+    const request = findRequestContext(state, state.selectedRequestId)?.request
+    if (!request) throw new Error('missing default request')
+    request.url = '{{api}}/records'
+    request.authorization = { type: 'bearer', token: '{{token}}' }
+
+    const migrated = migrateLegacyEnvironments(state)
+    expect(migrated.schemaVersion).toBe(2)
+    expect(migrated.environments.map((environment) => environment.name)).toEqual(['live', 'test', 'local'])
+    expect(migrated.environments[0].values).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'token', value: 'shared' }),
+      expect.objectContaining({ key: 'dns-api.api', value: 'https://dns.live' }),
+      expect.objectContaining({ key: 'dns-api.token', value: 'dns-token' }),
+    ]))
+    expect(migrated.selectedEnvironmentId).toBe('live')
+    expect(findRequestContext(migrated, migrated.selectedRequestId)?.request.url).toBe('{{dns-api.api}}/records')
+    expect(findRequestContext(migrated, migrated.selectedRequestId)?.request.authorization?.token).toBe('{{dns-api.token}}')
+  })
+
   it('creates nested folders and requests and removes an entire folder', () => {
     const initial = emptyWorkbenchState()
     const collection = initial.collections[0]
@@ -88,7 +124,27 @@ describe('API Workbench model', () => {
 
     expect(applyRequestExample(request, example).query[0].value).toBe('10')
     expect(requestToCurl(request)).toContain("--header 'Authorization: Bearer {{token}}'")
+    expect(requestToCurl(request, { token: 'terminal-ready' })).toContain("--header 'Authorization: Bearer terminal-ready'")
     expect(requestToCurl(request)).toContain("--data-raw '{\"name\":\"one\"}'")
+  })
+
+  it('resolves variables throughout terminal-ready cURL content', () => {
+    const state = emptyWorkbenchState()
+    const request = findRequestContext(state, state.selectedRequestId)?.request
+    if (!request) throw new Error('missing default request')
+    request.method = 'POST'
+    request.url = '{{protocol}}://{{host}}/items'
+    request.query = [{ id: 'query', key: '{{queryKey}}', value: '{{queryValue}}', enabled: true }]
+    request.headers = [{ id: 'header', key: 'X-Tenant', value: '{{tenant}}', enabled: true }]
+    request.body = { mode: 'raw', raw: '{"tenant":"{{tenant}}"}', rows: [], contentType: 'application/json' }
+
+    const curl = requestToCurl(request, {
+      protocol: 'https', host: '{{domain}}', domain: 'api.test', queryKey: 'search', queryValue: 'one two', tenant: 'sg',
+    })
+    expect(curl).toContain("'https://api.test/items?search=one%20two'")
+    expect(curl).toContain("--header 'X-Tenant: sg'")
+    expect(curl).toContain("--data-raw '{\"tenant\":\"sg\"}'")
+    expect(curl).not.toContain('{{')
   })
 
   it('imports collection hierarchy and scripts', () => {
