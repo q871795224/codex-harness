@@ -155,9 +155,12 @@ async function executeScript(
   }
 }
 
-function toPostmanRequest(request: { method: string; url: string; query: ApiKeyValue[]; headers: ApiKeyValue[]; body: { mode: string; raw: string; rows: ApiKeyValue[]; contentType: string } }) {
+function toPostmanRequest(request: { method: string; url: string; query: ApiKeyValue[]; headers: ApiKeyValue[]; authorization?: { type: 'none' | 'bearer'; token: string }; body: { mode: string; raw: string; rows: ApiKeyValue[]; contentType: string } }) {
   const query = request.query.filter((row) => row.enabled && row.key).map((row) => ({ key: row.key, value: row.value }))
   const header = request.headers.filter((row) => row.enabled && row.key).map((row) => ({ key: row.key, value: row.value }))
+  if (request.authorization?.type === 'bearer' && request.authorization.token && !header.some((row) => row.key.toLowerCase() === 'authorization')) {
+    header.push({ key: 'Authorization', value: `Bearer ${request.authorization.token}` })
+  }
   if (request.body.mode === 'raw' && request.body.contentType && !header.some((row) => row.key.toLowerCase() === 'content-type')) {
     header.push({ key: 'Content-Type', value: request.body.contentType })
   }
@@ -218,7 +221,7 @@ function applyScopes(state: ApiWorkbenchState, collectionId: string, environment
 }
 
 function scopeValues(values: ApiVariable[]): SandboxScopeValue[] {
-  return values.map((variable) => ({ key: variable.key, value: variable.value, disabled: !variable.enabled, type: variable.secret ? 'secret' : 'any' }))
+  return values.map((variable) => ({ key: variable.key, value: variable.value, disabled: !variable.enabled, type: 'any' }))
 }
 
 function mergeScope(existing: ApiVariable[], values: SandboxScopeValue[]): ApiVariable[] {
@@ -229,7 +232,6 @@ function mergeScope(existing: ApiVariable[], values: SandboxScopeValue[]): ApiVa
       key: value.key,
       value: String(value.value ?? ''),
       enabled: value.disabled !== true,
-      secret: current?.secret ?? value.type === 'secret',
     }
   })
 }

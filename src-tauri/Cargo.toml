@@ -1,6 +1,6 @@
 [package]
 name = "codex-harness"
-version = "0.4.22"
+version = "0.4.23"
 description = "A local rich client for Codex App Server"
 authors = ["Codex Harness"]
 edition = "2021"
@@ -30,4 +30,3 @@ block2 = "0.6"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-user-notifications = "0.3"
-security-framework = "3.7"

@@ -115,7 +115,7 @@ function importPairs(value: unknown) {
 function importVariables(value: unknown) {
   if (!Array.isArray(value)) return []
   return value.filter(isRecord).map((variable) => ({
-    ...createVariable(text(variable.key), text(variable.value), variable.type === 'secret'),
+    ...createVariable(text(variable.key), text(variable.value)),
     id: text(variable.id) || createId('variable'),
     enabled: variable.enabled !== false,
   }))

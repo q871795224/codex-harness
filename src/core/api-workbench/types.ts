@@ -3,7 +3,6 @@ export interface ApiVariable {
   key: string
   value: string
   enabled: boolean
-  secret: boolean
 }
 
 export interface ApiKeyValue {
@@ -20,6 +19,19 @@ export interface ApiRequestBody {
   contentType: string
 }
 
+export interface ApiRequestAuthorization {
+  type: 'none' | 'bearer'
+  token: string
+}
+
+export interface ApiRequestExample {
+  id: string
+  name: string
+  query: ApiKeyValue[]
+  headers: ApiKeyValue[]
+  body: ApiRequestBody
+}
+
 export interface ApiRequestDefinition {
   kind: 'request'
   id: string
@@ -29,6 +41,10 @@ export interface ApiRequestDefinition {
   query: ApiKeyValue[]
   headers: ApiKeyValue[]
   body: ApiRequestBody
+  authorization?: ApiRequestAuthorization
+  description?: string
+  examples?: ApiRequestExample[]
+  favorite?: boolean
   preScript: string
   postScript: string
 }
@@ -37,6 +53,7 @@ export interface ApiFolderDefinition {
   kind: 'folder'
   id: string
   name: string
+  favorite?: boolean
   preScript: string
   postScript: string
   items: ApiCollectionItem[]
@@ -47,6 +64,7 @@ export type ApiCollectionItem = ApiRequestDefinition | ApiFolderDefinition
 export interface ApiCollectionDefinition {
   id: string
   name: string
+  favorite?: boolean
   preScript: string
   postScript: string
   variables: ApiVariable[]

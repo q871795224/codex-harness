@@ -6,9 +6,6 @@ use std::{env, fs, path::PathBuf, sync::Mutex, time::Instant};
 
 const MAX_STATE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
-#[cfg(target_os = "macos")]
-const KEYCHAIN_SERVICE: &str = "com.local.codex-harness.api-workbench";
-
 pub struct ApiWorkbenchStore {
     connection: Mutex<Connection>,
 }
@@ -51,12 +48,8 @@ impl ApiWorkbenchStore {
     }
 
     fn open_at(root: PathBuf) -> Result<Self, String> {
-        fs::create_dir_all(&root).map_err(|error| {
-            format!(
-                "无法创建 API 工作台数据目录 {}：{error}",
-                root.display()
-            )
-        })?;
+        fs::create_dir_all(&root)
+            .map_err(|error| format!("无法创建 API 工作台数据目录 {}：{error}", root.display()))?;
         let connection = Connection::open(root.join("api-workbench.sqlite"))
             .map_err(|error| format!("无法打开 API 工作台数据库：{error}"))?;
         connection
@@ -91,10 +84,8 @@ impl ApiWorkbenchStore {
             .map_err(|error| format!("无法加载 API 工作台数据：{error}"))?;
         drop(connection);
         raw.map(|raw| {
-            let mut state = serde_json::from_str::<Value>(&raw)
-                .map_err(|error| format!("API 工作台数据无效：{error}"))?;
-            hydrate_secrets(&mut state)?;
-            Ok(state)
+            serde_json::from_str::<Value>(&raw)
+                .map_err(|error| format!("API 工作台数据无效：{error}"))
         })
         .transpose()
     }
@@ -103,9 +94,7 @@ impl ApiWorkbenchStore {
         if !state.is_object() {
             return Err("API 工作台数据必须是 JSON 对象。".to_string());
         }
-        let mut stored = state.clone();
-        persist_and_redact_secrets(&mut stored)?;
-        let raw = serde_json::to_string(&stored)
+        let raw = serde_json::to_string(state)
             .map_err(|error| format!("无法序列化 API 工作台数据：{error}"))?;
         if raw.len() > MAX_STATE_BYTES {
             return Err("API 工作台数据超过 10 MB 限制。".to_string());
@@ -186,8 +175,7 @@ pub async fn send(input: ApiSendInput) -> Result<ApiSendResponse, String> {
 }
 
 pub fn read_import_file(path: &str) -> Result<String, String> {
-    let metadata =
-        fs::metadata(path).map_err(|error| format!("无法读取导入文件：{error}"))?;
+    let metadata = fs::metadata(path).map_err(|error| format!("无法读取导入文件：{error}"))?;
     if !metadata.is_file() {
         return Err("所选导入路径不是文件。".to_string());
     }
@@ -202,102 +190,8 @@ fn default_true() -> bool {
 }
 
 fn harness_data_dir() -> Result<PathBuf, String> {
-    let home = env::var("HOME")
-        .map_err(|_| "HOME 不可用，无法初始化 API 工作台。".to_string())?;
+    let home = env::var("HOME").map_err(|_| "HOME 不可用，无法初始化 API 工作台。".to_string())?;
     Ok(PathBuf::from(home).join(".codex-harness"))
-}
-
-fn visit_secret_variables(
-    value: &mut Value,
-    visitor: &mut impl FnMut(&str, &mut String) -> Result<(), String>,
-) -> Result<(), String> {
-    match value {
-        Value::Array(values) => {
-            for value in values {
-                visit_secret_variables(value, visitor)?;
-            }
-        }
-        Value::Object(object) => {
-            let secret = object
-                .get("secret")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let id = object.get("id").and_then(Value::as_str).map(str::to_owned);
-            if secret {
-                if let (Some(id), Some(Value::String(secret_value))) = (id, object.get_mut("value"))
-                {
-                    visitor(&id, secret_value)?;
-                }
-            }
-            for child in object.values_mut() {
-                visit_secret_variables(child, visitor)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn persist_and_redact_secrets(value: &mut Value) -> Result<(), String> {
-    visit_secret_variables(value, &mut |id, secret| {
-        if secret.is_empty() {
-            delete_secret(id)?;
-        } else {
-            set_secret(id, secret)?;
-        }
-        secret.clear();
-        Ok(())
-    })
-}
-
-fn hydrate_secrets(value: &mut Value) -> Result<(), String> {
-    visit_secret_variables(value, &mut |id, secret| {
-        *secret = get_secret(id)?.unwrap_or_default();
-        Ok(())
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn set_secret(account: &str, value: &str) -> Result<(), String> {
-    security_framework::passwords::set_generic_password(KEYCHAIN_SERVICE, account, value.as_bytes())
-        .map_err(|error| format!("无法写入 macOS Keychain：{error}"))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn set_secret(_: &str, _: &str) -> Result<(), String> {
-    Err("当前平台不支持 API 工作台 Secret。".to_string())
-}
-
-#[cfg(target_os = "macos")]
-fn get_secret(account: &str) -> Result<Option<String>, String> {
-    match security_framework::passwords::get_generic_password(KEYCHAIN_SERVICE, account) {
-        Ok(bytes) => String::from_utf8(bytes)
-            .map(Some)
-            .map_err(|_| "Keychain 中的 Secret 不是有效的 UTF-8。".to_string()),
-        Err(error) if error.code() == -25300 => Ok(None),
-        Err(error) => Err(format!("无法读取 macOS Keychain：{error}")),
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn delete_secret(account: &str) -> Result<(), String> {
-    match security_framework::passwords::delete_generic_password(KEYCHAIN_SERVICE, account) {
-        Ok(()) => Ok(()),
-        Err(error) if error.code() == -25300 => Ok(()),
-        Err(error) => Err(format!(
-            "无法从 macOS Keychain 删除 Secret：{error}"
-        )),
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn get_secret(_: &str) -> Result<Option<String>, String> {
-    Ok(None)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn delete_secret(_: &str) -> Result<(), String> {
-    Ok(())
 }
 
 trait OptionalRow<T> {

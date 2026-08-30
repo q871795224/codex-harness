@@ -4,6 +4,23 @@ import { executeWorkbenchRequest } from './sandbox'
 import type { ApiSendInput, ApiSendResponse, ApiWorkbenchService } from './types'
 
 describe('API Workbench Postman sandbox', () => {
+  it('adds Bearer authorization after resolving environment variables', async () => {
+    const state = emptyWorkbenchState()
+    const context = findRequestContext(state, state.selectedRequestId)
+    if (!context) throw new Error('missing default request')
+    context.request.url = 'https://api.test/profile'
+    context.request.authorization = { type: 'bearer', token: '{{token}}' }
+    state.environments[0].values = [{ id: 'token', key: 'token', value: 'secret-token', enabled: true }]
+    const sent: ApiSendInput[] = []
+    const service = {
+      send: async (input: ApiSendInput): Promise<ApiSendResponse> => { sent.push(input); return response(200, '{}') },
+    } as ApiWorkbenchService
+
+    await executeWorkbenchRequest(state, context.request.id, service)
+
+    expect(sent[0].headers).toContainEqual({ key: 'Authorization', value: 'Bearer secret-token', enabled: true })
+  })
+
   it('uses pm.sendRequest in pre-script to authenticate and validates the response in post-script', async () => {
     const state = emptyWorkbenchState()
     const context = findRequestContext(state, state.selectedRequestId)
