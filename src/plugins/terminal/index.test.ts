@@ -31,4 +31,26 @@ describe('terminal plugin', () => {
     await Promise.resolve()
     expect(session.output).toBe('prompt')
   })
+
+  it('flushes input typed while the native session is starting', async () => {
+    let resolveCreate!: (value: TerminalSessionInfo) => void
+    const writes: string[] = []
+    const create = new Promise<TerminalSessionInfo>((resolve) => { resolveCreate = resolve })
+    const service: TerminalService = {
+      create: () => create,
+      write: async (_sessionId, data) => { writes.push(data) },
+      resize: async () => undefined,
+      close: async () => undefined,
+      openIterm: async () => undefined,
+      onEvent: async () => () => undefined,
+    }
+    const controller = new TerminalController(service)
+    const session = controller.get('thread-1', '/tmp')
+    await controller.write(session, 'pwd\r')
+    resolveCreate({ sessionId: 'session-1', shell: '/bin/zsh' })
+    await create
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(writes).toEqual(['pwd\r'])
+  })
 })

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
@@ -131,6 +131,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const [pluginsOpen, setPluginsOpen] = useState(false)
   const [rawMode, setRawMode] = useState(false)
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
+  const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
   const [threadCreditUsages, setThreadCreditUsages] = useState<Record<string, ThreadCreditUsage>>({})
@@ -170,7 +171,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
     workspaceRoot: workspace?.root ?? null,
   })
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
-  const composerVisible = harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer
+  const composerCollapsible = Boolean(selectedPluginTab?.contribution.collapsibleComposer)
+  const composerCollapseKey = `${harness.selectedThreadId ?? 'none'}:${tab}`
+  const composerCollapsed = composerCollapsible && Boolean(collapsedComposerKeys[composerCollapseKey])
+  const composerVisible = harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
   const quickPanelBottom = resolveQuickPanelAnchor(composerVisible, quickActionBottom)
   const orderedTabIds = orderConversationTabs(
     ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
@@ -475,6 +479,18 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 }}
               />
             ) : null}
+
+            {harness.viewMode === 'active' && composerCollapsible && (
+              <button
+                className={`composer-collapse-toggle ${composerCollapsed ? 'collapsed' : 'expanded'}`}
+                type="button"
+                onClick={() => setCollapsedComposerKeys((current) => ({ ...current, [composerCollapseKey]: !composerCollapsed }))}
+                aria-label={composerCollapsed ? '展开对话输入框' : '向下收起对话输入框'}
+                title={composerCollapsed ? '展开对话输入框' : '向下收起对话输入框'}
+              >
+                {composerCollapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+              </button>
+            )}
 
             {composerVisible && (
               <div className="input-column" ref={inputColumnRef}>

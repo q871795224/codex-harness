@@ -10,7 +10,6 @@ export const DEFAULT_TODO_FILTER: TodoFilter = 'threads'
 export interface TodoItem {
   id: string
   content: string
-  note?: string
   completed: boolean
   dueAt: number | null
   scope: TodoScope
@@ -21,6 +20,7 @@ export interface TodoItem {
 }
 
 const TODO_STORAGE_KEY = 'items'
+const NOTE_STORAGE_KEY = 'note'
 
 export const tasksPlugin: HarnessPlugin = {
   manifest: {
@@ -106,17 +106,34 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
   const [scope, setScope] = useState<TodoScope>(DEFAULT_TODO_SCOPE)
   const [filter, setFilter] = useState<TodoFilter>(DEFAULT_TODO_FILTER)
   const [copiedTodoId, setCopiedTodoId] = useState<string | null>(null)
-  const [noteTodoId, setNoteTodoId] = useState<string | null>(null)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [note, setNote] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const saveQueue = useRef(Promise.resolve())
 
   useEffect(() => {
     let disposed = false
-    void storage.get<TodoItem[]>(TODO_STORAGE_KEY)
-      .then((saved) => { if (!disposed) setItems(Array.isArray(saved) ? saved : []) })
-      .catch((nextError) => { if (!disposed) setError(messageOf(nextError)) })
-      .finally(() => { if (!disposed) setLoading(false) })
+    const load = async () => {
+      try {
+        const [savedItems, savedNote] = await Promise.all([
+          storage.get<unknown>(TODO_STORAGE_KEY),
+          storage.get<unknown>(NOTE_STORAGE_KEY),
+        ])
+        const normalized = normalizeTodoStorage(savedItems)
+        const nextNote = typeof savedNote === 'string' ? savedNote : normalized.legacyNote
+        if (disposed) return
+        setItems(normalized.items)
+        setNote(nextNote)
+        if (normalized.changed) await storage.set(TODO_STORAGE_KEY, normalized.items)
+        if (typeof savedNote !== 'string' && normalized.legacyNote) await storage.set(NOTE_STORAGE_KEY, normalized.legacyNote)
+      } catch (nextError) {
+        if (!disposed) setError(messageOf(nextError))
+      } finally {
+        if (!disposed) setLoading(false)
+      }
+    }
+    void load()
     return () => { disposed = true }
   }, [storage])
 
@@ -132,6 +149,15 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
     saveQueue.current = saveQueue.current
       .catch(() => undefined)
       .then(() => storage.set(TODO_STORAGE_KEY, next))
+      .catch((nextError) => setError(messageOf(nextError)))
+  }
+
+  const commitNote = (next: string) => {
+    setNote(next)
+    setError(null)
+    saveQueue.current = saveQueue.current
+      .catch(() => undefined)
+      .then(() => storage.set(NOTE_STORAGE_KEY, next))
       .catch((nextError) => setError(messageOf(nextError)))
   }
 
@@ -178,15 +204,13 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
   const shown = visibleTodos(items, context, filter)
   const openCount = shown.filter((item) => !item.completed).length
   const filterLabel = filter === 'workspaces' ? '所有工作区' : filter === 'threads' ? '所有会话' : '当前上下文'
-  const noteTodo = items.find((item) => item.id === noteTodoId) ?? null
-
-  if (noteTodo) {
+  if (noteOpen) {
     return (
       <TodoNoteEditor
-        item={noteTodo}
+        note={note}
         error={error}
-        onBack={() => setNoteTodoId(null)}
-        onChange={(note) => update(noteTodo.id, { note })}
+        onBack={() => setNoteOpen(false)}
+        onChange={commitNote}
       />
     )
   }
@@ -197,6 +221,7 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
         <header className="tasks-heading">
           <div><h2>待办</h2><p>{filterLabel} · {openCount} 项未完成</p></div>
           <div className="tasks-heading-tools">
+            <button className={`tasks-note-button ${note ? 'has-note' : ''}`} type="button" onClick={() => setNoteOpen(true)}><FileText size={13} />Note</button>
             <label className="tasks-filter"><span>查看</span><select value={filter} onChange={(event) => setFilter(event.target.value as TodoFilter)} aria-label="筛选待办"><option value="context">当前上下文</option><option value="workspaces">所有工作区</option><option value="threads">所有会话</option></select></label>
             <span>{shown.length} items</span>
           </div>
@@ -230,18 +255,8 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
                     if (nextContent) update(item.id, { content: nextContent })
                     else setError('待办内容不能为空。')
                   }}
-                  onDoubleClick={() => setNoteTodoId(item.id)}
                   aria-label="编辑待办内容"
                 />
-                <button
-                  className={`task-note ${item.note ? 'has-note' : ''}`}
-                  type="button"
-                  onClick={() => setNoteTodoId(item.id)}
-                  aria-label={`打开 ${item.content} 的 Note`}
-                  title={item.note ? '打开 Note（已有内容）' : '打开 Note'}
-                >
-                  <FileText size={13} />
-                </button>
                 <button
                   className={`task-copy ${copiedTodoId === item.id ? 'copied' : ''}`}
                   type="button"
@@ -282,19 +297,18 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
   )
 }
 
-function TodoNoteEditor({ item, error, onBack, onChange }: {
-  item: TodoItem
+function TodoNoteEditor({ note, error, onBack, onChange }: {
+  note: string
   error: string | null
   onBack(): void
   onChange(note: string): void
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const note = item.note ?? ''
   const lines = note.length === 0 ? 0 : note.split('\n').length
 
   useEffect(() => {
     textareaRef.current?.focus()
-  }, [item.id])
+  }, [])
 
   const pastePlainText = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     event.preventDefault()
@@ -312,7 +326,7 @@ function TodoNoteEditor({ item, error, onBack, onChange }: {
         <button type="button" onClick={onBack} title="返回待办列表"><ArrowLeft size={15} />待办</button>
         <div>
           <span>PLAIN TEXT NOTE</span>
-          <strong>{item.content}</strong>
+          <strong>临时 Note</strong>
         </div>
         <output>{lines} lines · {note.length} chars</output>
       </header>
@@ -324,7 +338,7 @@ function TodoNoteEditor({ item, error, onBack, onChange }: {
         onChange={(event) => onChange(event.target.value)}
         onPaste={pastePlainText}
         placeholder="临时记录、粘贴或修改纯文本…"
-        aria-label={`${item.content} 的纯文本 Note`}
+        aria-label="全局纯文本 Note"
         autoCapitalize="off"
         autoCorrect="off"
         spellCheck={false}
@@ -336,6 +350,20 @@ function TodoNoteEditor({ item, error, onBack, onChange }: {
 
 export function insertPlainText(value: string, selectionStart: number, selectionEnd: number, pasted: string): string {
   return `${value.slice(0, selectionStart)}${pasted}${value.slice(selectionEnd)}`
+}
+
+export function normalizeTodoStorage(raw: unknown): { items: TodoItem[]; legacyNote: string; changed: boolean } {
+  if (!Array.isArray(raw)) return { items: [], legacyNote: '', changed: false }
+  let legacyNote = ''
+  let changed = false
+  const items = raw.map((value) => {
+    const candidate = value as TodoItem & { note?: unknown }
+    if (Object.prototype.hasOwnProperty.call(candidate, 'note')) changed = true
+    if (!legacyNote && typeof candidate.note === 'string') legacyNote = candidate.note
+    const { note: _legacyNote, ...item } = candidate
+    return item
+  })
+  return { items, legacyNote, changed }
 }
 
 function toDateTimeInput(value: number | null): string {

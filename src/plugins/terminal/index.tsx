@@ -18,6 +18,7 @@ interface ManagedTerminalSession {
   output: string
   status: SessionStatus
   error: string | null
+  pendingInput: string
   listeners: Set<(data: string) => void>
 }
 
@@ -39,6 +40,7 @@ export class TerminalController {
       output: '',
       status: 'starting',
       error: null,
+      pendingInput: '',
       listeners: new Set(),
     }
     this.sessions.set(key, session)
@@ -74,7 +76,10 @@ export class TerminalController {
   }
 
   async write(session: ManagedTerminalSession, data: string): Promise<void> {
-    if (!session.id) return
+    if (!session.id) {
+      if (session.status === 'starting') session.pendingInput += data
+      return
+    }
     try {
       await this.service.write(session.id, data)
     } catch (error) {
@@ -116,6 +121,11 @@ export class TerminalController {
       session.shell = created.shell
       session.status = 'running'
       this.notify(session, '')
+      if (session.pendingInput) {
+        const pendingInput = session.pendingInput
+        session.pendingInput = ''
+        await this.service.write(created.sessionId, pendingInput)
+      }
       const pending = this.pendingEvents.get(created.sessionId) ?? []
       this.pendingEvents.delete(created.sessionId)
       for (const event of pending) this.handleEvent(event)
@@ -157,7 +167,7 @@ export const terminalPlugin: HarnessPlugin = {
       label: '终端',
       order: 40,
       icon: SquareTerminal,
-      hideComposer: true,
+      collapsibleComposer: true,
       render: (props) => <TerminalTab controller={controller} service={service} context={props} />,
     })
   },
@@ -273,12 +283,15 @@ function TerminalCanvas({ controller, session }: {
     const input = terminal.onData((data) => void controller.write(session, data))
     const observer = new ResizeObserver(() => fitTerminal(fit, terminal, controller, session))
     observer.observe(container)
+    const focus = () => terminal.focus()
+    container.addEventListener('pointerdown', focus)
     requestAnimationFrame(() => {
       fitTerminal(fit, terminal, controller, session)
       terminal.focus()
     })
     return () => {
       observer.disconnect()
+      container.removeEventListener('pointerdown', focus)
       input.dispose()
       removeListener()
       terminal.dispose()

@@ -58,6 +58,7 @@ impl TerminalManager {
         let shell = login_shell();
         let mut command = CommandBuilder::new(&shell);
         command.arg("-l");
+        command.arg("-i");
         command.cwd(&input.cwd);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
@@ -229,6 +230,10 @@ fn uuid_like_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        sync::mpsc,
+        time::{Duration, Instant},
+    };
 
     #[test]
     fn clamps_pty_dimensions() {
@@ -240,5 +245,61 @@ mod tests {
     #[test]
     fn rejects_missing_working_directory() {
         assert!(validate_cwd("/definitely/not/a/real/codex-harness-path").is_err());
+    }
+
+    #[test]
+    fn interactive_pty_accepts_input_and_returns_output() {
+        let home = tempfile::tempdir().expect("creates isolated shell home");
+        let pair = native_pty_system()
+            .openpty(pty_size(80, 24))
+            .expect("creates test pty");
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.arg("-i");
+        command.cwd(home.path());
+        command.env("HOME", home.path());
+        let mut child = pair
+            .slave
+            .spawn_command(command)
+            .expect("starts test shell");
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().expect("clones pty reader");
+        let mut writer = pair.master.take_writer().expect("takes pty writer");
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut buffer = [0_u8; 1024];
+            while let Ok(length) = reader.read(&mut buffer) {
+                if length == 0 {
+                    break;
+                }
+                if sender
+                    .send(String::from_utf8_lossy(&buffer[..length]).into_owned())
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
+        writer
+            .write_all(b"printf '\\137\\137HARNESS_PTY_OK\\137\\137\\n'\r")
+            .expect("writes command to pty");
+        writer.flush().expect("flushes pty input");
+        let mut output = String::new();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let Ok(chunk) = receiver.recv_timeout(remaining) else {
+                break;
+            };
+            output.push_str(&chunk);
+            if output.contains("__HARNESS_PTY_OK__") {
+                break;
+            }
+        }
+        let _ = child.kill();
+        assert!(
+            output.contains("__HARNESS_PTY_OK__"),
+            "output was {output:?}"
+        );
     }
 }

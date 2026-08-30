@@ -54,6 +54,7 @@ export interface ConversationTabContribution {
   order?: number
   icon?: ComponentType<{ size?: string | number }>
   hideComposer?: boolean
+  collapsibleComposer?: boolean
   render(props: ConversationTabProps): ReactNode
 }
 
