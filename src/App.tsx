@@ -12,6 +12,7 @@ import type { HarnessFilesService, HarnessInstructionConfig } from './core/harne
 import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
+import { resolveQuickPanelAnchor } from './core/plugins/quickPanelLayout'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
@@ -160,6 +161,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
     workspaceRoot: workspace?.root ?? null,
   })
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
+  const composerVisible = harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer
+  const quickPanelBottom = resolveQuickPanelAnchor(composerVisible, quickActionBottom)
   const orderedTabIds = orderConversationTabs(
     ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
@@ -195,7 +198,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
       observer.disconnect()
       window.removeEventListener('resize', update)
     }
-  }, [harness.selectedThreadId, harness.viewMode])
+  }, [harness.selectedThreadId, harness.viewMode, tab])
 
   useEffect(() => {
     void runtime.getAppState(CONVERSATION_TAB_ORDER_KEY)
@@ -464,7 +467,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
               />
             ) : null}
 
-            {harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer && (
+            {composerVisible && (
               <div className="input-column" ref={inputColumnRef}>
                 <QueueDock
                   queue={currentQueue}
@@ -545,11 +548,11 @@ function HarnessShell({ harness, agentRuns, codex }: {
       </main>
       {harness.currentThread && harness.viewMode === 'active' && (
         <>
-          <QuickCommandPanel commands={quickCommands} anchorBottom={quickActionBottom} />
+          <QuickCommandPanel commands={quickCommands} anchorBottom={quickPanelBottom} />
           <QuickActionPanel
             actions={quickActions}
             agentRuns={agentRuns}
-            anchorBottom={quickActionBottom}
+            anchorBottom={quickPanelBottom}
             context={{
               threadId: harness.selectedThreadId,
               threadCwd,
