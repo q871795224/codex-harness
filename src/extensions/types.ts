@@ -38,6 +38,7 @@ export type PluginInstanceStatus =
 
 export interface PluginViewContext {
   threadId: string | null
+  threadCwd: string | null
   workspaceRoot: string | null
 }
 

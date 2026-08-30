@@ -21,6 +21,7 @@ import type { RadarModelTable } from '../codex-radar/types'
 import type { QuickCommandId, QuickCommandResult } from '../quick-commands/types'
 import type { SystemNotificationClick, SystemNotificationInput } from '../notifications/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
+import type { HarnessFileTree } from '../harness-files/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -194,6 +195,30 @@ export const runtime = {
 
   setPluginState<T>(instanceId: string, key: string, value: T): Promise<void> {
     return invoke<void>('set_plugin_state', { instanceId, key, value })
+  },
+
+  listHarnessFiles(cwd: string): Promise<HarnessFileTree> {
+    return invoke<HarnessFileTree>('list_harness_files', { cwd })
+  },
+
+  readHarnessFile(cwd: string, path: string): Promise<string> {
+    return invoke<string>('read_harness_file', { cwd, path })
+  },
+
+  writeHarnessFile(cwd: string, path: string, content: string): Promise<void> {
+    return invoke<void>('write_harness_file', { cwd, path, content })
+  },
+
+  createHarnessDirectory(cwd: string, path: string): Promise<void> {
+    return invoke<void>('create_harness_directory', { cwd, path })
+  },
+
+  renameHarnessPath(cwd: string, path: string, nextPath: string): Promise<void> {
+    return invoke<void>('rename_harness_path', { cwd, path, nextPath })
+  },
+
+  removeHarnessPath(cwd: string, path: string): Promise<void> {
+    return invoke<void>('remove_harness_path', { cwd, path })
   },
 
   listPluginRuns(): Promise<AgentRun[]> {

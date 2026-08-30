@@ -24,7 +24,7 @@ describe('visibleTodos', () => {
       todo('thread-a', 'thread', 'thread-a'),
       todo('thread-b', 'thread', 'thread-b'),
     ]
-    expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a' }).map((item) => item.id))
+    expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a', threadCwd: '/a' }).map((item) => item.id))
       .toEqual(['global', 'workspace-a', 'thread-a'])
   })
 
@@ -32,7 +32,7 @@ describe('visibleTodos', () => {
     const later = { ...todo('later', 'global'), dueAt: 20 }
     const done = { ...todo('done', 'global'), completed: true, dueAt: 1 }
     const sooner = { ...todo('sooner', 'global'), dueAt: 10 }
-    expect(visibleTodos([later, done, sooner], { workspaceRoot: null, threadId: null }).map((item) => item.id))
+    expect(visibleTodos([later, done, sooner], { workspaceRoot: null, threadId: null, threadCwd: null }).map((item) => item.id))
       .toEqual(['sooner', 'later', 'done'])
   })
 
@@ -44,11 +44,11 @@ describe('visibleTodos', () => {
       todo('thread-a', 'thread', 'thread-a'),
     ]
 
-    expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a' }, 'workspaces').map((item) => item.id))
+    expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a', threadCwd: '/a' }, 'workspaces').map((item) => item.id))
       .toEqual(['global', 'workspace-a', 'workspace-b'])
   })
 
-  it('shows every thread item in the all-threads view', () => {
+  it('shows all scopes in the all-threads view', () => {
     const items = [
       todo('global', 'global'),
       todo('thread-a', 'thread', 'thread-a'),
@@ -56,8 +56,8 @@ describe('visibleTodos', () => {
       todo('workspace-a', 'workspace', '/a'),
     ]
 
-    expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a' }, 'threads').map((item) => item.id))
-      .toEqual(['thread-a', 'thread-b'])
+    expect(visibleTodos(items, { workspaceRoot: '/a', threadId: 'thread-a', threadCwd: '/a' }, 'threads').map((item) => item.id))
+      .toEqual(['global', 'thread-a', 'thread-b', 'workspace-a'])
   })
 })
 
@@ -80,7 +80,7 @@ describe('todo defaults', () => {
 
 describe('todoScopePatch', () => {
   it('moves a todo between global and the current thread', () => {
-    const context = { workspaceRoot: '/repo', threadId: 'thread-a' }
+    const context = { workspaceRoot: '/repo', threadId: 'thread-a', threadCwd: '/repo' }
 
     expect(todoScopePatch('thread', context)).toEqual({
       scope: 'thread',
@@ -95,7 +95,7 @@ describe('todoScopePatch', () => {
   })
 
   it('rejects a scope that has no current owner', () => {
-    expect(todoScopePatch('thread', { workspaceRoot: '/repo', threadId: null })).toBeNull()
-    expect(todoScopePatch('workspace', { workspaceRoot: null, threadId: 'thread-a' })).toBeNull()
+    expect(todoScopePatch('thread', { workspaceRoot: '/repo', threadId: null, threadCwd: '/repo' })).toBeNull()
+    expect(todoScopePatch('workspace', { workspaceRoot: null, threadId: 'thread-a', threadCwd: null })).toBeNull()
   })
 })

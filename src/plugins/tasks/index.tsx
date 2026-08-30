@@ -26,7 +26,7 @@ export const tasksPlugin: HarnessPlugin = {
     id: 'builtin.tasks',
     name: '待办',
     description: '管理全局、工作区和会话级待办。',
-    version: '1.0.2',
+  version: '1.0.3',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
   },
@@ -56,7 +56,7 @@ export function visibleTodos(items: TodoItem[], context: PluginViewContext, filt
     .filter((item) => filter === 'workspaces'
       ? item.scope === 'global' || item.scope === 'workspace'
       : filter === 'threads'
-        ? item.scope === 'thread'
+        ? true
         : item.scope === 'global'
           || (item.scope === 'workspace' && item.workspaceRoot === context.workspaceRoot)
           || (item.scope === 'thread' && item.threadId === context.threadId))
@@ -179,14 +179,14 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
           <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} aria-label="计划时间" />
           <select value={scope} onChange={(event) => setScope(event.target.value as TodoScope)} aria-label="待办级别">
             <option value="global">全局</option>
-            <option value="workspace" disabled={!context.workspaceRoot}>工作区</option>
-            <option value="thread" disabled={!context.threadId}>会话</option>
+            <option value="workspace" disabled={!context.workspaceRoot}>当前工作区</option>
+            <option value="thread" disabled={!context.threadId}>当前会话</option>
           </select>
         </form>
 
         {error && <div className="tasks-error">{error}</div>}
         {loading ? <div className="tasks-empty">正在加载待办…</div> : shown.length === 0 ? (
-          <div className="tasks-empty"><ListTodo size={22} /><span>{filter === 'workspaces' ? '还没有全局或工作区待办' : filter === 'threads' ? '还没有会话级待办' : '当前上下文还没有待办'}</span></div>
+          <div className="tasks-empty"><ListTodo size={22} /><span>{filter === 'workspaces' ? '还没有全局或工作区待办' : filter === 'threads' ? '还没有待办' : '当前上下文还没有待办'}</span></div>
         ) : (
           <div className="tasks-list">
             {shown.map((item) => (
@@ -218,8 +218,8 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
                   aria-label={`修改 ${item.content} 的级别`}
                 >
                   <option value="global">全局</option>
-                  <option value="workspace" disabled={!context.workspaceRoot}>工作区</option>
-                  <option value="thread" disabled={!context.threadId}>会话</option>
+                  <option value="workspace" disabled={!context.workspaceRoot}>当前工作区</option>
+                  <option value="thread" disabled={!context.threadId}>当前会话</option>
                 </select>
                 <button className="task-delete" type="button" onClick={() => commit(items.filter((candidate) => candidate.id !== item.id))} aria-label={`删除 ${item.content}`}><Trash2 size={13} /></button>
               </article>

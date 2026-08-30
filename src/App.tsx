@@ -8,6 +8,7 @@ import type { CodexRadarService } from './core/codex-radar/types'
 import type { ConversationService } from './core/conversations/types'
 import type { SystemNotificationService } from './core/notifications/types'
 import type { QuickCommandService } from './core/quick-commands/types'
+import type { HarnessFilesService } from './core/harness-files/types'
 import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
@@ -51,6 +52,14 @@ export default function App() {
       send: runtime.sendSystemNotification,
       onClick: runtime.listenSystemNotificationClicks,
     } satisfies SystemNotificationService,
+    'harness.files': {
+      list: runtime.listHarnessFiles,
+      read: runtime.readHarnessFile,
+      write: runtime.writeHarnessFile,
+      createDirectory: runtime.createHarnessDirectory,
+      rename: runtime.renameHarnessPath,
+      remove: runtime.removeHarnessPath,
+    } satisfies HarnessFilesService,
   }), [agentRuns, harness.onTurnCompleted, harness.openThread])
 
   useEffect(() => {
@@ -104,24 +113,30 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
   )
+  const threadCwd = harness.currentThread?.cwd ?? null
   const pluginTabs = plugins.resolvedTabs({
     threadId: harness.selectedThreadId,
+    threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const newThreadPanels = plugins.resolvedNewThreadPanels({
     threadId: harness.selectedThreadId,
+    threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const composerActions = plugins.resolvedComposerActions({
     threadId: harness.selectedThreadId,
+    threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const quickActions = plugins.resolvedQuickActions({
     threadId: harness.selectedThreadId,
+    threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const quickCommands = plugins.resolvedQuickCommands({
     threadId: harness.selectedThreadId,
+    threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
@@ -398,6 +413,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                     panel={panel}
                     props={{
                       threadId: harness.selectedThreadId,
+                      threadCwd,
                       workspaceRoot: workspace?.root ?? null,
                       models: codex.models,
                       settings: codex.settingsForThread(harness.selectedThreadId),
@@ -419,6 +435,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                 tab={selectedPluginTab}
                 props={{
                   threadId: harness.selectedThreadId,
+                  threadCwd,
                   workspaceRoot: workspace?.root ?? null,
                   items: harness.currentDetail?.items ?? [],
                   workspaces: harness.workspaces,
@@ -467,6 +484,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                   onCommand={(command) => {
                     if (command.name === 'raw') setRawMode((current) => !current)
                     else if (command.name === 'new') runAction('thread.new')
+                    else if (command.name === 'reset') return harness.resetThread()
                     else if (command.name === 'model' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { model: command.model })
                     else if (command.name === 'reasoning' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { effort: command.effort })
                     else if (command.name === 'permissions' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { approvalPolicy: command.approvalPolicy })
@@ -478,6 +496,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
                       action={action}
                       props={{
                         threadId: harness.selectedThreadId,
+                        threadCwd,
                         workspaceRoot: workspace?.root ?? null,
                         ...api,
                       }}
@@ -513,6 +532,7 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
             anchorBottom={quickActionBottom}
             context={{
               threadId: harness.selectedThreadId,
+              threadCwd,
               workspaceRoot: workspace?.root ?? null,
               checkoutRoot: harness.currentThread.cwd,
               disabled: harness.currentForeignActive,

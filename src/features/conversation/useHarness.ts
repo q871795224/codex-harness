@@ -734,7 +734,7 @@ export function useHarness() {
     }
   }, [notify, refreshThreads])
 
-  const createThread = useCallback(async () => {
+  const startNewThread = useCallback(async (sessionStartSource: 'clear' | undefined, operation: '创建' | '重置') => {
     const workspaceRoot = resolveNewThreadWorkspaceRoot(selectedThreadIdRef.current, threadsRef.current, selectedWorkspaceRoot)
     if (!workspaceRoot) {
       notify('请先在左侧选择一个 Git 主工作区。', 'error')
@@ -745,6 +745,7 @@ export function useHarness() {
       const response = await runtime.request<StartThreadResponse>('thread/start', {
         cwd: workspaceRoot,
         runtimeWorkspaceRoots: [workspaceRoot],
+        ...(sessionStartSource ? { sessionStartSource } : {}),
       })
       const previousThreadId = selectedThreadIdRef.current
       unstartedDraftThreadIdsRef.current.add(response.thread.id)
@@ -767,11 +768,25 @@ export function useHarness() {
         }),
       }))
     } catch (error) {
-      notify(`无法创建会话：${messageOf(error)}`, 'error')
+      notify(`无法${operation}会话：${messageOf(error)}`, 'error')
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
   }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, selectedWorkspaceRoot, upsertThread])
+
+  const createThread = useCallback(async () => {
+    await startNewThread(undefined, '创建')
+  }, [startNewThread])
+
+  const resetThread = useCallback(async () => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId) return
+    if (activeTurnIdsRef.current[threadId]) {
+      notify('请先停止或等待当前回合结束，再重置会话。', 'error')
+      return
+    }
+    await startNewThread('clear', '重置')
+  }, [notify, startNewThread])
 
   const changeThreadWorkspace = useCallback(async (threadId: string, checkoutRoot: string) => {
     const currentThread = threadsRef.current.find((thread) => thread.id === threadId)
@@ -1665,6 +1680,7 @@ export function useHarness() {
     loadOlderTurns,
     chooseWorkspace,
     createThread,
+    resetThread,
     setThreadDraftContent,
     startTurnInThread: (threadId: string, prompt: string) => startTurn(threadId, prompt),
     sendMessage,

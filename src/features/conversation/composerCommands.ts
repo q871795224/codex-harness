@@ -6,6 +6,7 @@ export interface RawComposerCommand {
 
 export type ComposerCommand = RawComposerCommand
   | { name: 'new' }
+  | { name: 'reset' }
   | { name: 'model'; model: string }
   | { name: 'reasoning'; effort: string }
   | { name: 'permissions'; approvalPolicy: ApprovalPolicy }
@@ -15,6 +16,7 @@ export function parseComposerCommand(text: string, hasAttachments: boolean): Com
   const command = text.trim()
   if (command === '/raw') return { name: 'raw' }
   if (command === '/new') return { name: 'new' }
+  if (command === '/reset') return { name: 'reset' }
   const model = command.match(/^\/model\s+(\S+)$/)
   if (model) return { name: 'model', model: model[1] }
   const reasoning = command.match(/^\/reasoning\s+(\S+)$/)

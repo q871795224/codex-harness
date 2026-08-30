@@ -57,7 +57,7 @@ describe('scoped contributions', () => {
       { pluginId: 'trajectory', instanceId: 'global', scope: { kind: 'global' }, contribution: contribution('tab', 20) },
       { pluginId: 'trajectory', instanceId: 'workspace', scope: { kind: 'workspace', workspaceRoot: '/repo' }, contribution: contribution('tab', 20) },
       { pluginId: 'tasks', instanceId: 'tasks', scope: { kind: 'global' }, contribution: contribution('tasks', 10) },
-    ], { threadId: 'thread-1', workspaceRoot: '/repo' })
+    ], { threadId: 'thread-1', threadCwd: '/repo', workspaceRoot: '/repo' })
 
     expect(resolved.map((entry) => entry.instanceId)).toEqual(['tasks', 'workspace'])
   })
@@ -67,7 +67,7 @@ describe('scoped contributions', () => {
     const resolved = resolveScopedContributions([
       { pluginId: 'quick-agent', instanceId: 'global', scope: { kind: 'global' }, contribution: contribution('global-job') },
       { pluginId: 'quick-agent', instanceId: 'workspace', scope: { kind: 'workspace', workspaceRoot: '/repo' }, contribution: contribution('workspace-job') },
-    ], { threadId: 'thread-1', workspaceRoot: '/repo' })
+    ], { threadId: 'thread-1', threadCwd: '/repo', workspaceRoot: '/repo' })
 
     expect(resolved.map((entry) => entry.contribution.id)).toEqual(['global-job', 'workspace-job'])
   })
@@ -94,17 +94,17 @@ describe('plugin host lifecycle', () => {
 
     expect(host.status('instance-1').phase).toBe('active')
     expect(host.status('instance-2')).toEqual({ phase: 'failed', error: 'boom' })
-    expect(host.resolvedTabs({ threadId: null, workspaceRoot: null })).toHaveLength(1)
-    expect(host.resolvedNewThreadPanels({ threadId: null, workspaceRoot: null })).toHaveLength(1)
-    expect(host.resolvedQuickActions({ threadId: null, workspaceRoot: null })).toHaveLength(1)
-    expect(host.resolvedQuickCommands({ threadId: null, workspaceRoot: null })).toHaveLength(1)
+    expect(host.resolvedTabs({ threadId: null, threadCwd: null, workspaceRoot: null })).toHaveLength(1)
+    expect(host.resolvedNewThreadPanels({ threadId: null, threadCwd: null, workspaceRoot: null })).toHaveLength(1)
+    expect(host.resolvedQuickActions({ threadId: null, threadCwd: null, workspaceRoot: null })).toHaveLength(1)
+    expect(host.resolvedQuickCommands({ threadId: null, threadCwd: null, workspaceRoot: null })).toHaveLength(1)
 
     await host.syncInstances([])
     expect(calls).toEqual(['second', 'first'])
-    expect(host.resolvedTabs({ threadId: null, workspaceRoot: null })).toHaveLength(0)
-    expect(host.resolvedNewThreadPanels({ threadId: null, workspaceRoot: null })).toHaveLength(0)
-    expect(host.resolvedQuickActions({ threadId: null, workspaceRoot: null })).toHaveLength(0)
-    expect(host.resolvedQuickCommands({ threadId: null, workspaceRoot: null })).toHaveLength(0)
+    expect(host.resolvedTabs({ threadId: null, threadCwd: null, workspaceRoot: null })).toHaveLength(0)
+    expect(host.resolvedNewThreadPanels({ threadId: null, threadCwd: null, workspaceRoot: null })).toHaveLength(0)
+    expect(host.resolvedQuickActions({ threadId: null, threadCwd: null, workspaceRoot: null })).toHaveLength(0)
+    expect(host.resolvedQuickCommands({ threadId: null, threadCwd: null, workspaceRoot: null })).toHaveLength(0)
   })
 
   it('reactivates an instance when its config changes', async () => {

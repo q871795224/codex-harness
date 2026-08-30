@@ -442,6 +442,11 @@ fn managed_codex_home(codex: &Path) -> Option<PathBuf> {
         })
 }
 
+pub(crate) fn resolved_codex_home() -> Result<PathBuf, String> {
+    let codex = find_codex_binary()?;
+    managed_codex_home(&codex).ok_or_else(|| "无法确定真实 Codex Home。".to_string())
+}
+
 fn codex_home_ancestor(path: &Path) -> Option<PathBuf> {
     path.ancestors()
         .find(|ancestor| ancestor.file_name().is_some_and(|name| name == ".codex"))

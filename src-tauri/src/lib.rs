@@ -2,6 +2,7 @@ mod app_server;
 mod codex_radar;
 mod diagnostics;
 mod git_workspace;
+mod harness_files;
 mod local_connector;
 mod quick_command;
 mod store;
@@ -324,6 +325,42 @@ fn set_plugin_state(
 }
 
 #[tauri::command]
+fn list_harness_files(cwd: String) -> Result<harness_files::HarnessFileTree, String> {
+    let codex_home = app_server::resolved_codex_home()?;
+    harness_files::list(&cwd, &codex_home)
+}
+
+#[tauri::command]
+fn read_harness_file(cwd: String, path: String) -> Result<String, String> {
+    let codex_home = app_server::resolved_codex_home()?;
+    harness_files::read(&cwd, &codex_home, &path)
+}
+
+#[tauri::command]
+fn write_harness_file(cwd: String, path: String, content: String) -> Result<(), String> {
+    let codex_home = app_server::resolved_codex_home()?;
+    harness_files::write(&cwd, &codex_home, &path, &content)
+}
+
+#[tauri::command]
+fn create_harness_directory(cwd: String, path: String) -> Result<(), String> {
+    let codex_home = app_server::resolved_codex_home()?;
+    harness_files::create_directory(&cwd, &codex_home, &path)
+}
+
+#[tauri::command]
+fn rename_harness_path(cwd: String, path: String, next_path: String) -> Result<(), String> {
+    let codex_home = app_server::resolved_codex_home()?;
+    harness_files::rename(&cwd, &codex_home, &path, &next_path)
+}
+
+#[tauri::command]
+fn remove_harness_path(cwd: String, path: String) -> Result<(), String> {
+    let codex_home = app_server::resolved_codex_home()?;
+    harness_files::remove(&cwd, &codex_home, &path)
+}
+
+#[tauri::command]
 fn list_plugin_runs(state: State<'_, AppState>) -> Result<Vec<PluginRun>, String> {
     state.store.list_plugin_runs()
 }
@@ -382,6 +419,12 @@ pub fn run() {
             delete_plugin_instance,
             get_plugin_state,
             set_plugin_state,
+            list_harness_files,
+            read_harness_file,
+            write_harness_file,
+            create_harness_directory,
+            rename_harness_path,
+            remove_harness_path,
             list_plugin_runs,
             upsert_plugin_run,
             local_connector_health,

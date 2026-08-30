@@ -479,6 +479,7 @@ function commandSuggestions(query: string, models: CodexModel[], selectedModel: 
     const normalized = query.toLocaleLowerCase()
     return [
       { name: 'new', detail: '新建会话', complete: true },
+      { name: 'reset', detail: '清空当前会话并开始新会话', complete: true },
       { name: 'model', detail: '选择当前会话模型', complete: false },
       { name: 'reasoning', detail: '选择推理强度', complete: false },
       { name: 'permissions', detail: '选择审批策略', complete: false },
