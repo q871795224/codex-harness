@@ -261,8 +261,12 @@ export const runtime = {
     return invoke<RadarModelTable>('codex_radar_model_table')
   },
 
-  usageSnapshot(since: string, until: string): Promise<UsageSnapshot> {
-    return invoke<UsageSnapshot>('usage_snapshot', { since, until })
+  usageCachedSnapshot(since: string, until: string): Promise<UsageSnapshot | null> {
+    return invoke<UsageSnapshot | null>('usage_cached_snapshot', { since, until })
+  },
+
+  usageRefreshSnapshot(since: string, until: string): Promise<UsageSnapshot> {
+    return invoke<UsageSnapshot>('usage_refresh_snapshot', { since, until })
   },
 
   runQuickCommand(commandId: QuickCommandId): Promise<QuickCommandResult> {

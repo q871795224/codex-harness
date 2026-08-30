@@ -165,6 +165,11 @@ impl HarnessStore {
             );
             CREATE INDEX IF NOT EXISTS plugin_runs_instance_updated
               ON plugin_runs(instance_id, updated_at DESC);
+            CREATE TABLE IF NOT EXISTS usage_snapshots (
+              range_key TEXT PRIMARY KEY NOT NULL,
+              snapshot_json TEXT NOT NULL,
+              fetched_at INTEGER NOT NULL
+            );
             "#,
             )
             .map_err(|error| format!("无法初始化 Codex Harness 本地状态库: {error}"))?;
@@ -309,6 +314,61 @@ impl HarnessStore {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(error) => Err(format!("无法读取应用状态: {error}")),
         }
+    }
+
+    pub fn get_usage_snapshot(&self, range_key: &str) -> Result<Option<String>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        match connection.query_row(
+            "SELECT snapshot_json FROM usage_snapshots WHERE range_key = ?1",
+            [range_key],
+            |row| row.get(0),
+        ) {
+            Ok(value) => Ok(Some(value)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(format!("无法读取用量快照: {error}")),
+        }
+    }
+
+    pub fn set_usage_snapshot(
+        &self,
+        range_key: &str,
+        snapshot_json: &str,
+        fetched_at: i64,
+    ) -> Result<(), String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        connection
+            .execute(
+                r#"
+                INSERT INTO usage_snapshots (range_key, snapshot_json, fetched_at)
+                VALUES (?1, ?2, ?3)
+                ON CONFLICT(range_key) DO UPDATE SET
+                  snapshot_json = excluded.snapshot_json,
+                  fetched_at = excluded.fetched_at
+                "#,
+                params![range_key, snapshot_json, fetched_at],
+            )
+            .map_err(|error| format!("无法保存用量快照: {error}"))?;
+        connection
+            .execute(
+                r#"
+                DELETE FROM usage_snapshots
+                WHERE range_key NOT IN (
+                    SELECT range_key
+                    FROM usage_snapshots
+                    ORDER BY fetched_at DESC
+                    LIMIT 24
+                )
+                "#,
+                [],
+            )
+            .map_err(|error| format!("无法清理用量快照: {error}"))?;
+        Ok(())
     }
 
     pub fn list_plugin_instances(&self) -> Result<Vec<PluginInstance>, String> {
@@ -736,6 +796,28 @@ mod tests {
                 .get_app_state("selectedThreadId")
                 .expect("reads saved state"),
             Some("thread-2".to_string())
+        );
+    }
+
+    #[test]
+    fn persists_usage_snapshots_by_date_range() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+        assert_eq!(
+            store.get_usage_snapshot("2026-08-01:2026-08-30").unwrap(),
+            None
+        );
+        store
+            .set_usage_snapshot("2026-08-01:2026-08-30", r#"{"fetchedAt":42}"#, 42)
+            .expect("stores usage snapshot");
+        drop(store);
+        let reloaded = HarnessStore::open_at(directory.0.clone()).expect("reopens isolated store");
+        assert_eq!(
+            reloaded
+                .get_usage_snapshot("2026-08-01:2026-08-30")
+                .expect("reads usage snapshot")
+                .as_deref(),
+            Some(r#"{"fetchedAt":42}"#),
         );
     }
 

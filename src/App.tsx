@@ -45,7 +45,8 @@ export default function App() {
       modelTable: runtime.codexRadarModelTable,
     } satisfies CodexRadarService,
     'harness.usage': {
-      snapshot: runtime.usageSnapshot,
+      cachedSnapshot: runtime.usageCachedSnapshot,
+      refreshSnapshot: runtime.usageRefreshSnapshot,
     } satisfies UsageService,
     'harness.quickCommands': {
       run: runtime.runQuickCommand,

@@ -33,6 +33,7 @@ struct AppState {
     local_connector: LocalConnector,
     codex_radar: CodexRadarClient,
     store: HarnessStore,
+    usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
 }
 
@@ -91,13 +92,49 @@ async fn codex_radar_model_table(state: State<'_, AppState>) -> Result<RadarMode
 }
 
 #[tauri::command]
-async fn usage_snapshot(
+fn usage_cached_snapshot(
+    state: State<'_, AppState>,
+    since: String,
+    until: String,
+) -> Result<Option<usage::UsageSnapshot>, String> {
+    let key = usage::cache_key(&since, &until)?;
+    Ok(state
+        .store
+        .get_usage_snapshot(&key)?
+        .and_then(|raw| serde_json::from_str(&raw).ok()))
+}
+
+#[tauri::command]
+async fn usage_refresh_snapshot(
     state: State<'_, AppState>,
     since: String,
     until: String,
 ) -> Result<usage::UsageSnapshot, String> {
+    let key = usage::cache_key(&since, &until)?;
+    let _refresh = state.usage_refresh.lock().await;
+    if let Some(cached) = state
+        .store
+        .get_usage_snapshot(&key)?
+        .and_then(|raw| serde_json::from_str::<usage::UsageSnapshot>(&raw).ok())
+        .filter(|snapshot| current_time_millis().saturating_sub(snapshot.fetched_at) < 30_000)
+    {
+        return Ok(cached);
+    }
     let codex_home = app_server::resolved_codex_home()?;
-    usage::collect(&state.app_server, codex_home, since, until).await
+    let snapshot = usage::collect(&state.app_server, codex_home, since, until).await?;
+    let raw =
+        serde_json::to_string(&snapshot).map_err(|error| format!("无法序列化用量快照: {error}"))?;
+    state
+        .store
+        .set_usage_snapshot(&key, &raw, snapshot.fetched_at as i64)?;
+    Ok(snapshot)
+}
+
+fn current_time_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 #[tauri::command]
@@ -434,6 +471,7 @@ pub fn run() {
                 local_connector: LocalConnector::new(),
                 codex_radar: CodexRadarClient::new(),
                 store,
+                usage_refresh: tokio::sync::Mutex::new(()),
                 workspace_cache: Arc::new(Mutex::new(HashMap::new())),
             });
             Ok(())
@@ -468,7 +506,8 @@ pub fn run() {
             local_connector_list_messages,
             local_connector_send_message,
             codex_radar_model_table,
-            usage_snapshot,
+            usage_cached_snapshot,
+            usage_refresh_snapshot,
             run_quick_command,
             request_system_notification_permission,
             send_system_notification,

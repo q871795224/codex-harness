@@ -1,5 +1,5 @@
 use crate::app_server::{read_rate_limits_for_home, AppServerManager};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
@@ -12,7 +12,7 @@ use tokio::{process::Command, time::timeout};
 
 const AIS_USAGE_URL: &str = "https://compass.llm.shopee.io/api/v1/cqp/ccswitch/monthly_usage";
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSnapshot {
     pub fetched_at: u64,
@@ -21,7 +21,7 @@ pub struct UsageSnapshot {
     pub providers: Vec<UsageProvider>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageProvider {
     pub id: String,
@@ -36,7 +36,7 @@ pub struct UsageProvider {
     pub budget: Option<UsageBudget>,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageTotals {
     pub input_tokens: u64,
@@ -48,7 +48,7 @@ pub struct UsageTotals {
     pub cost_usd: f64,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsagePeriod {
     pub date: String,
@@ -59,9 +59,10 @@ pub struct UsagePeriod {
     pub reasoning_output_tokens: u64,
     pub total_tokens: u64,
     pub cost_usd: f64,
+    pub models: Vec<ModelUsage>,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelUsage {
     pub model: String,
@@ -74,7 +75,7 @@ pub struct ModelUsage {
     pub cost_usd: f64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RateWindow {
     pub label: String,
@@ -84,7 +85,7 @@ pub struct RateWindow {
     pub resets_at: Option<u64>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageBudget {
     pub used_usd: f64,
@@ -123,18 +124,6 @@ pub async fn collect(
         &since,
         &until,
     );
-    let claude = collect_ccusage(
-        "claude",
-        "Claude Code",
-        "claude",
-        None,
-        &real_home,
-        &since,
-        &until,
-    );
-    let opencode = collect_ccusage(
-        "opencode", "OpenCode", "opencode", None, &real_home, &since, &until,
-    );
     let business_limits = app_server.request("account/rateLimits/read".to_string(), json!({}));
     let personal_limits = async {
         if personal_codex_home.is_dir() {
@@ -145,24 +134,28 @@ pub async fn collect(
     };
     let ais = collect_ais(&real_home, &until);
 
-    let (mut business, mut personal, claude, opencode, business_limits, personal_limits, ais) = futures_util::join!(
+    let (mut business, mut personal, business_limits, personal_limits, ais) = futures_util::join!(
         business_history,
         personal_history,
-        claude,
-        opencode,
         business_limits,
         personal_limits,
         ais,
     );
-    attach_rate_limits(&mut business, business_limits);
-    attach_rate_limits(&mut personal, personal_limits);
+    attach_rate_limits(&mut business, business_limits, true);
+    attach_rate_limits(&mut personal, personal_limits, false);
 
     Ok(UsageSnapshot {
         fetched_at: now_millis(),
         since,
         until,
-        providers: vec![business, personal, ais, claude, opencode],
+        providers: vec![business, personal, ais],
     })
+}
+
+pub fn cache_key(since: &str, until: &str) -> Result<String, String> {
+    validate_date(since)?;
+    validate_date(until)?;
+    Ok(format!("{since}:{until}"))
 }
 
 async fn collect_ccusage(
@@ -258,6 +251,22 @@ fn parse_ccusage_provider(
         if date.is_empty() {
             continue;
         }
+        let mut period_models = BTreeMap::<String, ModelUsage>::new();
+        if let Some(entries) = row.get("models").and_then(Value::as_object) {
+            for (name, data) in entries {
+                merge_model(&mut period_models, name, data);
+                merge_model(&mut models, name, data);
+            }
+        }
+        if let Some(entries) = row.get("modelBreakdowns").and_then(Value::as_array) {
+            for data in entries {
+                let Some(name) = data.get("modelName").and_then(Value::as_str) else {
+                    continue;
+                };
+                merge_model(&mut period_models, name, data);
+                merge_model(&mut models, name, data);
+            }
+        }
         periods.push(UsagePeriod {
             date,
             input_tokens: integer(row, "inputTokens"),
@@ -269,20 +278,8 @@ fn parse_ccusage_provider(
             cost_usd: number(row, "costUSD")
                 .or_else(|| number(row, "totalCost"))
                 .unwrap_or(0.0),
+            models: period_models.into_values().collect(),
         });
-        if let Some(entries) = row.get("models").and_then(Value::as_object) {
-            for (name, data) in entries {
-                merge_model(&mut models, name, data);
-            }
-        }
-        if let Some(entries) = row.get("modelBreakdowns").and_then(Value::as_array) {
-            for data in entries {
-                let Some(name) = data.get("modelName").and_then(Value::as_str) else {
-                    continue;
-                };
-                merge_model(&mut models, name, data);
-            }
-        }
     }
     periods.sort_by(|left, right| left.date.cmp(&right.date));
     let totals = sum_periods(&periods);
@@ -338,10 +335,10 @@ fn sum_periods(periods: &[UsagePeriod]) -> UsageTotals {
         })
 }
 
-fn attach_rate_limits(provider: &mut UsageProvider, result: Result<Value, String>) {
+fn attach_rate_limits(provider: &mut UsageProvider, result: Result<Value, String>, business: bool) {
     match result {
         Ok(value) => {
-            let quota = parse_rate_limits(&value);
+            let quota = parse_rate_limits(&value, business);
             if quota.is_empty() {
                 provider.message = Some(match provider.message.take() {
                     Some(history) => format!("{history}；额度接口未返回窗口"),
@@ -370,7 +367,7 @@ fn attach_rate_limits(provider: &mut UsageProvider, result: Result<Value, String
     }
 }
 
-fn parse_rate_limits(value: &Value) -> Vec<RateWindow> {
+fn parse_rate_limits(value: &Value, business: bool) -> Vec<RateWindow> {
     let snapshot = value
         .get("rateLimitsByLimitId")
         .and_then(Value::as_object)
@@ -378,11 +375,12 @@ fn parse_rate_limits(value: &Value) -> Vec<RateWindow> {
         .or_else(|| value.get("rateLimits"))
         .unwrap_or(value);
     let mut windows = Vec::new();
-    for (key, fallback_label) in [
-        ("primary", "5 小时"),
-        ("secondary", "每周"),
-        ("individualLimit", "月度额度"),
-    ] {
+    let definitions = if business {
+        vec![("individualLimit", "月剩余")]
+    } else {
+        vec![("primary", "5 小时"), ("secondary", "每周")]
+    };
+    for (key, fallback_label) in definitions {
         let Some(window) = snapshot.get(key) else {
             continue;
         };
@@ -391,10 +389,14 @@ fn parse_rate_limits(value: &Value) -> Vec<RateWindow> {
             .or_else(|| number(window, "remainingPercent").map(|remaining| 100.0 - remaining))
             .unwrap_or(0.0)
             .clamp(0.0, 100.0);
-        let label = match duration {
-            Some(300) => "5 小时",
-            Some(minutes) if minutes >= 7 * 24 * 60 => "每周",
-            _ => fallback_label,
+        let label = if business {
+            fallback_label
+        } else {
+            match duration {
+                Some(300) => "5 小时",
+                Some(minutes) if minutes >= 7 * 24 * 60 => "每周",
+                _ => fallback_label,
+            }
         };
         windows.push(RateWindow {
             label: label.to_string(),
@@ -623,14 +625,31 @@ mod tests {
 
     #[test]
     fn normalizes_codex_rate_limit_windows() {
-        let windows = parse_rate_limits(&json!({ "rateLimitsByLimitId": { "codex": {
-            "primary": { "usedPercent": 20, "windowDurationMins": 300, "resetsAt": 123 },
-            "secondary": { "usedPercent": 70, "windowDurationMins": 10080 }
-        }}}));
+        let windows = parse_rate_limits(
+            &json!({ "rateLimitsByLimitId": { "codex": {
+                "primary": { "usedPercent": 20, "windowDurationMins": 300, "resetsAt": 123 },
+                "secondary": { "usedPercent": 70, "windowDurationMins": 10080 }
+            }}}),
+            false,
+        );
         assert_eq!(windows.len(), 2);
         assert_eq!(windows[0].label, "5 小时");
         assert_eq!(windows[0].remaining_percent, 80.0);
         assert_eq!(windows[1].label, "每周");
+    }
+
+    #[test]
+    fn keeps_only_monthly_business_limit() {
+        let windows = parse_rate_limits(
+            &json!({ "rateLimits": {
+                "primary": { "usedPercent": 10, "windowDurationMins": 300 },
+                "individualLimit": { "remainingPercent": 64, "windowDurationMins": 300 }
+            }}),
+            true,
+        );
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].label, "月剩余");
+        assert_eq!(windows[0].remaining_percent, 64.0);
     }
 
     #[test]

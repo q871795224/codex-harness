@@ -1,4 +1,4 @@
-export type UsageProviderId = 'codex-business' | 'codex-personal' | 'ais' | 'claude' | 'opencode'
+export type UsageProviderId = 'codex-business' | 'codex-personal' | 'ais'
 export type UsageProviderStatus = 'ready' | 'unavailable' | 'error'
 
 export interface UsageTotals {
@@ -13,6 +13,7 @@ export interface UsageTotals {
 
 export interface UsagePeriod extends UsageTotals {
   date: string
+  models: UsageModel[]
 }
 
 export interface UsageModel extends UsageTotals {
@@ -35,7 +36,7 @@ export interface UsageBudget {
 export interface UsageProvider {
   id: UsageProviderId
   label: string
-  sourceKind: 'codex' | 'claude' | 'opencode' | 'ais'
+  sourceKind: 'codex' | 'ais'
   status: UsageProviderStatus
   message: string | null
   totals: UsageTotals
@@ -53,5 +54,6 @@ export interface UsageSnapshot {
 }
 
 export interface UsageService {
-  snapshot(since: string, until: string): Promise<UsageSnapshot>
+  cachedSnapshot(since: string, until: string): Promise<UsageSnapshot | null>
+  refreshSnapshot(since: string, until: string): Promise<UsageSnapshot>
 }

@@ -41,7 +41,10 @@ describe('usage plugin', () => {
   it('registers one global tab backed by the restricted usage service', async () => {
     const host = new PluginHost([usagePlugin], {
       storage: () => ({ get: async () => null, set: async () => undefined }),
-      services: { 'harness.usage': { snapshot: async () => ({ fetchedAt: 0, since: '', until: '', providers: [] }) } },
+      services: { 'harness.usage': {
+        cachedSnapshot: async () => null,
+        refreshSnapshot: async () => ({ fetchedAt: 0, since: '', until: '', providers: [] }),
+      } },
     })
     await host.syncInstances([usageDefaultInstance])
     const tabs = host.resolvedTabs({ threadId: 'thread-1', threadCwd: '/repo', workspaceRoot: '/repo' })
