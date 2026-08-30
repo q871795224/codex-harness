@@ -152,7 +152,7 @@ export const runtime = {
     const paths = await open({
       directory: false,
       multiple: true,
-      title: 'Import Postman Collections, Environments, or Globals',
+      title: '导入 Postman Collection、Environment 或 Globals',
       filters: [{ name: 'JSON', extensions: ['json'] }],
     })
     if (!paths) return []

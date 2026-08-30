@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { emptyWorkbenchState, findRequestContext, replaceVariables, variableMap } from './model'
+import {
+  emptyWorkbenchState, findRequestContext, removeCollection, removeEnvironment, replaceVariables,
+  variableMap, variableReferences,
+} from './model'
 import { importPostmanJson } from './import'
 
 vi.stubGlobal('crypto', { randomUUID: () => `id-${Math.random()}` })
@@ -12,6 +15,37 @@ describe('API Workbench model', () => {
     )).toEqual({ host: 'environment' })
     expect(replaceVariables('https://{{host}}/{{missing}}', { host: 'api.test' }))
       .toBe('https://api.test/{{missing}}')
+  })
+
+  it('describes referenced variables using the narrowest enabled scope', () => {
+    const globals = [{ id: 'g', key: 'host', value: 'global.test', enabled: true, secret: false }]
+    const environment = [
+      { id: 'e', key: 'host', value: 'environment.test', enabled: true, secret: false },
+      { id: 's', key: 'token', value: 'secret-token', enabled: true, secret: true },
+    ]
+    expect(variableReferences('https://{{host}}/{{ token }}/{{missing}}/{{host}}', [
+      { label: '全局变量', values: globals },
+      { label: '测试环境', values: environment },
+    ])).toEqual([
+      { key: 'host', variable: environment[0], scope: '测试环境' },
+      { key: 'token', variable: environment[1], scope: '测试环境' },
+      { key: 'missing', variable: null, scope: null },
+    ])
+  })
+
+  it('removes collections and environments while keeping valid selections', () => {
+    const state = emptyWorkbenchState()
+    const selectedRequestId = state.selectedRequestId
+    const selectedEnvironmentId = state.selectedEnvironmentId
+    const withoutCollection = removeCollection(state, state.collections[0].id)
+    expect(withoutCollection.collections).toEqual([])
+    expect(withoutCollection.selectedRequestId).toBeNull()
+    expect(selectedRequestId).not.toBeNull()
+
+    const withoutEnvironment = removeEnvironment(state, state.environments[0].id)
+    expect(withoutEnvironment.environments).toEqual([])
+    expect(withoutEnvironment.selectedEnvironmentId).toBeNull()
+    expect(selectedEnvironmentId).not.toBeNull()
   })
 
   it('imports collection hierarchy and scripts', () => {

@@ -7,8 +7,8 @@ type UnknownRecord = Record<string, unknown>
 
 export function importPostmanJson(raw: string, state: ApiWorkbenchState): ApiWorkbenchState {
   let document: unknown
-  try { document = JSON.parse(raw) } catch { throw new Error('The selected file is not valid JSON.') }
-  if (!isRecord(document)) throw new Error('The Postman file must contain a JSON object.')
+  try { document = JSON.parse(raw) } catch { throw new Error('所选文件不是有效的 JSON。') }
+  if (!isRecord(document)) throw new Error('Postman 文件必须包含一个 JSON 对象。')
   if (isRecord(document.info) && Array.isArray(document.item)) {
     const collection = importCollection(document)
     const requests = flattenImportedRequests(collection.items)
@@ -27,7 +27,7 @@ export function importPostmanJson(raw: string, state: ApiWorkbenchState): ApiWor
         updatedAt: Date.now(),
       }
     }
-    const environment = createEnvironment(text(document.name) || 'Imported environment')
+    const environment = createEnvironment(text(document.name) || '导入的环境')
     environment.values = importVariables(document.values)
     return {
       ...state,
@@ -36,12 +36,12 @@ export function importPostmanJson(raw: string, state: ApiWorkbenchState): ApiWor
       updatedAt: Date.now(),
     }
   }
-  throw new Error('Unsupported Postman file. Export a Collection, Environment, or Globals JSON file.')
+  throw new Error('不支持此 Postman 文件，请导出 Collection、Environment 或 Globals JSON。')
 }
 
 function importCollection(document: UnknownRecord) {
   const info = isRecord(document.info) ? document.info : {}
-  const collection = createCollection(text(info.name) || 'Imported collection')
+  const collection = createCollection(text(info.name) || '导入的 Collection')
   collection.id = text(info._postman_id) || createId('collection')
   collection.variables = importVariables(document.variable)
   collection.preScript = scriptFor(document.event, 'prerequest')
@@ -69,7 +69,7 @@ function importItems(value: unknown): ApiCollectionItem[] {
     const imported: ApiRequestDefinition = {
       kind: 'request',
       id: text(entry.id) || createId('request'),
-      name: text(entry.name) || 'Request',
+      name: text(entry.name) || '请求',
       method: text(request.method) || 'GET',
       url: requestUrl(request.url),
       query: requestQuery(request.url),

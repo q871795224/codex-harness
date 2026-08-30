@@ -53,12 +53,12 @@ impl ApiWorkbenchStore {
     fn open_at(root: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&root).map_err(|error| {
             format!(
-                "Unable to create the API Workbench data directory {}: {error}",
+                "无法创建 API 工作台数据目录 {}：{error}",
                 root.display()
             )
         })?;
         let connection = Connection::open(root.join("api-workbench.sqlite"))
-            .map_err(|error| format!("Unable to open the API Workbench database: {error}"))?;
+            .map_err(|error| format!("无法打开 API 工作台数据库：{error}"))?;
         connection
             .execute_batch(
                 r#"
@@ -70,7 +70,7 @@ impl ApiWorkbenchStore {
                 );
                 "#,
             )
-            .map_err(|error| format!("Unable to initialize the API Workbench database: {error}"))?;
+            .map_err(|error| format!("无法初始化 API 工作台数据库：{error}"))?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -80,7 +80,7 @@ impl ApiWorkbenchStore {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "The API Workbench database lock is unavailable.".to_string())?;
+            .map_err(|_| "API 工作台数据库锁当前不可用。".to_string())?;
         let raw = connection
             .query_row(
                 "SELECT state_json FROM workbench_state WHERE state_key = 'global'",
@@ -88,11 +88,11 @@ impl ApiWorkbenchStore {
                 |row| row.get::<_, String>(0),
             )
             .optional()
-            .map_err(|error| format!("Unable to load API Workbench data: {error}"))?;
+            .map_err(|error| format!("无法加载 API 工作台数据：{error}"))?;
         drop(connection);
         raw.map(|raw| {
             let mut state = serde_json::from_str::<Value>(&raw)
-                .map_err(|error| format!("API Workbench data is invalid: {error}"))?;
+                .map_err(|error| format!("API 工作台数据无效：{error}"))?;
             hydrate_secrets(&mut state)?;
             Ok(state)
         })
@@ -101,19 +101,19 @@ impl ApiWorkbenchStore {
 
     pub fn save(&self, state: &Value) -> Result<Value, String> {
         if !state.is_object() {
-            return Err("API Workbench data must be a JSON object.".to_string());
+            return Err("API 工作台数据必须是 JSON 对象。".to_string());
         }
         let mut stored = state.clone();
         persist_and_redact_secrets(&mut stored)?;
         let raw = serde_json::to_string(&stored)
-            .map_err(|error| format!("Unable to serialize API Workbench data: {error}"))?;
+            .map_err(|error| format!("无法序列化 API 工作台数据：{error}"))?;
         if raw.len() > MAX_STATE_BYTES {
-            return Err("API Workbench data exceeds the 10 MB limit.".to_string());
+            return Err("API 工作台数据超过 10 MB 限制。".to_string());
         }
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "The API Workbench database lock is unavailable.".to_string())?;
+            .map_err(|_| "API 工作台数据库锁当前不可用。".to_string())?;
         connection
             .execute(
                 r#"
@@ -125,20 +125,20 @@ impl ApiWorkbenchStore {
                 "#,
                 params![raw],
             )
-            .map_err(|error| format!("Unable to save API Workbench data: {error}"))?;
+            .map_err(|error| format!("无法保存 API 工作台数据：{error}"))?;
         Ok(state.clone())
     }
 }
 
 pub async fn send(input: ApiSendInput) -> Result<ApiSendResponse, String> {
     let method = Method::from_bytes(input.method.trim().to_uppercase().as_bytes())
-        .map_err(|_| format!("Unsupported HTTP method: {}", input.method))?;
+        .map_err(|_| format!("不支持的 HTTP 方法：{}", input.method))?;
     let timeout = input.timeout_ms.unwrap_or(30_000).clamp(100, 300_000);
     let client = Client::builder()
         .timeout(std::time::Duration::from_millis(timeout))
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
-        .map_err(|error| format!("Unable to create the HTTP client: {error}"))?;
+        .map_err(|error| format!("无法创建 HTTP 客户端：{error}"))?;
     let mut request = client.request(method, input.url.trim());
     for header in input
         .headers
@@ -146,7 +146,7 @@ pub async fn send(input: ApiSendInput) -> Result<ApiSendResponse, String> {
         .filter(|header| header.enabled && !header.key.trim().is_empty())
     {
         let name = HeaderName::from_bytes(header.key.trim().as_bytes())
-            .map_err(|_| format!("Invalid HTTP header name: {}", header.key))?;
+            .map_err(|_| format!("HTTP 请求头名称无效：{}", header.key))?;
         request = request.header(name, header.value);
     }
     if let Some(body) = input.body {
@@ -156,7 +156,7 @@ pub async fn send(input: ApiSendInput) -> Result<ApiSendResponse, String> {
     let response = request
         .send()
         .await
-        .map_err(|error| format!("HTTP request failed: {error}"))?;
+        .map_err(|error| format!("HTTP 请求失败：{error}"))?;
     let status = response.status();
     let headers = response
         .headers()
@@ -170,7 +170,7 @@ pub async fn send(input: ApiSendInput) -> Result<ApiSendResponse, String> {
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| format!("Unable to read the HTTP response: {error}"))?;
+        .map_err(|error| format!("无法读取 HTTP 响应：{error}"))?;
     let size_bytes = bytes.len();
     let truncated = size_bytes > MAX_RESPONSE_BYTES;
     let visible = &bytes[..size_bytes.min(MAX_RESPONSE_BYTES)];
@@ -187,14 +187,14 @@ pub async fn send(input: ApiSendInput) -> Result<ApiSendResponse, String> {
 
 pub fn read_import_file(path: &str) -> Result<String, String> {
     let metadata =
-        fs::metadata(path).map_err(|error| format!("Unable to read the import file: {error}"))?;
+        fs::metadata(path).map_err(|error| format!("无法读取导入文件：{error}"))?;
     if !metadata.is_file() {
-        return Err("The selected import path is not a file.".to_string());
+        return Err("所选导入路径不是文件。".to_string());
     }
     if metadata.len() as usize > MAX_STATE_BYTES {
-        return Err("The import file exceeds the 10 MB limit.".to_string());
+        return Err("导入文件超过 10 MB 限制。".to_string());
     }
-    fs::read_to_string(path).map_err(|error| format!("Unable to read the import file: {error}"))
+    fs::read_to_string(path).map_err(|error| format!("无法读取导入文件：{error}"))
 }
 
 fn default_true() -> bool {
@@ -203,7 +203,7 @@ fn default_true() -> bool {
 
 fn harness_data_dir() -> Result<PathBuf, String> {
     let home = env::var("HOME")
-        .map_err(|_| "HOME is unavailable; API Workbench cannot be initialized.".to_string())?;
+        .map_err(|_| "HOME 不可用，无法初始化 API 工作台。".to_string())?;
     Ok(PathBuf::from(home).join(".codex-harness"))
 }
 
@@ -260,12 +260,12 @@ fn hydrate_secrets(value: &mut Value) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn set_secret(account: &str, value: &str) -> Result<(), String> {
     security_framework::passwords::set_generic_password(KEYCHAIN_SERVICE, account, value.as_bytes())
-        .map_err(|error| format!("Unable to write to macOS Keychain: {error}"))
+        .map_err(|error| format!("无法写入 macOS Keychain：{error}"))
 }
 
 #[cfg(not(target_os = "macos"))]
 fn set_secret(_: &str, _: &str) -> Result<(), String> {
-    Err("API Workbench secrets are not supported on this platform.".to_string())
+    Err("当前平台不支持 API 工作台 Secret。".to_string())
 }
 
 #[cfg(target_os = "macos")]
@@ -273,9 +273,9 @@ fn get_secret(account: &str) -> Result<Option<String>, String> {
     match security_framework::passwords::get_generic_password(KEYCHAIN_SERVICE, account) {
         Ok(bytes) => String::from_utf8(bytes)
             .map(Some)
-            .map_err(|_| "The Keychain secret is not valid UTF-8.".to_string()),
+            .map_err(|_| "Keychain 中的 Secret 不是有效的 UTF-8。".to_string()),
         Err(error) if error.code() == -25300 => Ok(None),
-        Err(error) => Err(format!("Unable to read macOS Keychain: {error}")),
+        Err(error) => Err(format!("无法读取 macOS Keychain：{error}")),
     }
 }
 
@@ -285,7 +285,7 @@ fn delete_secret(account: &str) -> Result<(), String> {
         Ok(()) => Ok(()),
         Err(error) if error.code() == -25300 => Ok(()),
         Err(error) => Err(format!(
-            "Unable to delete the secret from macOS Keychain: {error}"
+            "无法从 macOS Keychain 删除 Secret：{error}"
         )),
     }
 }
