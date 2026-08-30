@@ -325,39 +325,65 @@ fn set_plugin_state(
 }
 
 #[tauri::command]
-fn list_harness_files(cwd: String) -> Result<harness_files::HarnessFileTree, String> {
+fn list_harness_files(
+    cwd: String,
+    fallback_filenames: Vec<String>,
+    max_bytes: usize,
+) -> Result<harness_files::HarnessFileTree, String> {
     let codex_home = app_server::resolved_codex_home()?;
-    harness_files::list(&cwd, &codex_home)
+    harness_files::list(&cwd, &codex_home, &fallback_filenames, max_bytes)
 }
 
 #[tauri::command]
-fn read_harness_file(cwd: String, path: String) -> Result<String, String> {
+fn read_harness_file(
+    cwd: String,
+    path: String,
+    fallback_filenames: Vec<String>,
+) -> Result<String, String> {
     let codex_home = app_server::resolved_codex_home()?;
-    harness_files::read(&cwd, &codex_home, &path)
+    harness_files::read(&cwd, &codex_home, &path, &fallback_filenames)
 }
 
 #[tauri::command]
-fn write_harness_file(cwd: String, path: String, content: String) -> Result<(), String> {
+fn write_harness_file(
+    cwd: String,
+    path: String,
+    content: String,
+    fallback_filenames: Vec<String>,
+) -> Result<(), String> {
     let codex_home = app_server::resolved_codex_home()?;
-    harness_files::write(&cwd, &codex_home, &path, &content)
+    harness_files::write(&cwd, &codex_home, &path, &content, &fallback_filenames)
 }
 
 #[tauri::command]
-fn create_harness_directory(cwd: String, path: String) -> Result<(), String> {
+fn create_harness_directory(
+    cwd: String,
+    path: String,
+    fallback_filenames: Vec<String>,
+) -> Result<(), String> {
     let codex_home = app_server::resolved_codex_home()?;
-    harness_files::create_directory(&cwd, &codex_home, &path)
+    harness_files::create_directory(&cwd, &codex_home, &path, &fallback_filenames)
 }
 
 #[tauri::command]
-fn rename_harness_path(cwd: String, path: String, next_path: String) -> Result<(), String> {
+fn rename_harness_path(
+    cwd: String,
+    path: String,
+    next_path: String,
+    fallback_filenames: Vec<String>,
+) -> Result<(), String> {
     let codex_home = app_server::resolved_codex_home()?;
-    harness_files::rename(&cwd, &codex_home, &path, &next_path)
+    harness_files::rename(&cwd, &codex_home, &path, &next_path, &fallback_filenames)
 }
 
 #[tauri::command]
-fn remove_harness_path(cwd: String, path: String) -> Result<(), String> {
+fn remove_harness_path(
+    cwd: String,
+    path: String,
+    fallback_filenames: Vec<String>,
+) -> Result<(), String> {
     let codex_home = app_server::resolved_codex_home()?;
-    harness_files::remove(&cwd, &codex_home, &path)
+    harness_files::remove(&cwd, &codex_home, &path, &fallback_filenames)
 }
 
 #[tauri::command]

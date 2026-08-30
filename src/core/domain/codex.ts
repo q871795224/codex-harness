@@ -213,6 +213,8 @@ export interface CodexConfig {
   approvals_reviewer?: ApprovalsReviewer | null
   sandbox_mode?: SandboxMode | null
   mcp_servers?: Record<string, { enabled?: boolean }>
+  project_doc_fallback_filenames?: string[] | null
+  project_doc_max_bytes?: number | null
 }
 
 export interface CodexSkill {

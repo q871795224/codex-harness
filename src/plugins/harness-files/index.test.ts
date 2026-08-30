@@ -10,6 +10,7 @@ function node(name: string, children: HarnessFileNode[] = []): HarnessFileNode {
     kind: children.length > 0 ? 'directory' : 'file',
     source: 'harness',
     exists: true,
+    instructionStatus: null,
     children,
   }
 }
@@ -26,6 +27,7 @@ describe('flattenNodes', () => {
 describe('harnessFilesPlugin', () => {
   it('registers a tab backed by the restricted Harness file service', async () => {
     const files: HarnessFilesService = {
+      configurationKey: () => '[]:32768',
       list: async () => ({ cwd: '/repo', projectRoot: '/repo', roots: [] }),
       read: async () => '',
       write: async () => undefined,

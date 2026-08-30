@@ -2,13 +2,13 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { Bot, ChevronLeft, ChevronRight, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
-import { DEFAULT_FONT_SIZES, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
+import { DEFAULT_FONT_SIZES, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
 import type { CodexRadarService } from './core/codex-radar/types'
 import type { ConversationService } from './core/conversations/types'
 import type { SystemNotificationService } from './core/notifications/types'
 import type { QuickCommandService } from './core/quick-commands/types'
-import type { HarnessFilesService } from './core/harness-files/types'
+import type { HarnessFilesService, HarnessInstructionConfig } from './core/harness-files/types'
 import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
@@ -29,7 +29,10 @@ const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 
 export default function App() {
   const harness = useHarness()
+  const codex = useCodexCore()
   const agentRuns = useAgentRunService(harness.selectThread, harness.startTurnInThread)
+  const harnessInstructionConfig = useRef(resolveHarnessInstructionConfig(codex.config))
+  harnessInstructionConfig.current = resolveHarnessInstructionConfig(codex.config)
   const services = useMemo(() => ({
     'harness.agentRuns': agentRuns,
     'harness.localConnectors': {
@@ -53,12 +56,13 @@ export default function App() {
       onClick: runtime.listenSystemNotificationClicks,
     } satisfies SystemNotificationService,
     'harness.files': {
-      list: runtime.listHarnessFiles,
-      read: runtime.readHarnessFile,
-      write: runtime.writeHarnessFile,
-      createDirectory: runtime.createHarnessDirectory,
-      rename: runtime.renameHarnessPath,
-      remove: runtime.removeHarnessPath,
+      configurationKey: () => JSON.stringify(harnessInstructionConfig.current),
+      list: (cwd) => runtime.listHarnessFiles(cwd, harnessInstructionConfig.current.fallbackFilenames, harnessInstructionConfig.current.maxBytes),
+      read: (cwd, path) => runtime.readHarnessFile(cwd, path, harnessInstructionConfig.current.fallbackFilenames),
+      write: (cwd, path, content) => runtime.writeHarnessFile(cwd, path, content, harnessInstructionConfig.current.fallbackFilenames),
+      createDirectory: (cwd, path) => runtime.createHarnessDirectory(cwd, path, harnessInstructionConfig.current.fallbackFilenames),
+      rename: (cwd, path, nextPath) => runtime.renameHarnessPath(cwd, path, nextPath, harnessInstructionConfig.current.fallbackFilenames),
+      remove: (cwd, path) => runtime.removeHarnessPath(cwd, path, harnessInstructionConfig.current.fallbackFilenames),
     } satisfies HarnessFilesService,
   }), [agentRuns, harness.onTurnCompleted, harness.openThread])
 
@@ -81,14 +85,17 @@ export default function App() {
 
   return (
     <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances} services={services}>
-      <HarnessShell harness={harness} agentRuns={agentRuns} />
+      <HarnessShell harness={harness} agentRuns={agentRuns} codex={codex} />
     </PluginHostProvider>
   )
 }
 
-function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHarness>; agentRuns: AgentRunService }) {
+function HarnessShell({ harness, agentRuns, codex }: {
+  harness: ReturnType<typeof useHarness>
+  agentRuns: AgentRunService
+  codex: ReturnType<typeof useCodexCore>
+}) {
   const plugins = usePluginHost()
-  const codex = useCodexCore()
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
   const [tabOrder, setTabOrder] = useState<string[]>([])
@@ -592,6 +599,15 @@ function HarnessShell({ harness, agentRuns }: { harness: ReturnType<typeof useHa
       {harness.toast && <div className={`toast ${harness.toast.kind}`}>{harness.toast.message}</div>}
     </div>
   )
+}
+
+function resolveHarnessInstructionConfig(config: CodexConfig): HarnessInstructionConfig {
+  const fallbackFilenames = (config.project_doc_fallback_filenames ?? [])
+    .filter((name): name is string => typeof name === 'string' && name.length > 0)
+  const maxBytes = Number.isSafeInteger(config.project_doc_max_bytes) && (config.project_doc_max_bytes ?? 0) > 0
+    ? config.project_doc_max_bytes!
+    : 32 * 1024
+  return { fallbackFilenames, maxBytes }
 }
 
 function SidebarEdgeToggle({

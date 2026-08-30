@@ -50,6 +50,7 @@ export const harnessFilesDefaultInstance: PluginInstanceRecord = {
 
 function HarnessFilesTab({ files, context }: { files: HarnessFilesService; context: ConversationTabProps }) {
   const cwd = context.threadCwd
+  const configurationKey = files.configurationKey()
   const [tree, setTree] = useState<HarnessFileTree | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -102,7 +103,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     setSavedContent('')
     setNotice(null)
     void refresh(null)
-  }, [cwd]) // refresh is intentionally keyed by the actual thread cwd.
+  }, [cwd, configurationKey]) // Config changes alter fallback names and the effective instruction chain.
 
   useEffect(() => {
     if (!cwd || !selected || selected.kind !== 'file') {
@@ -261,6 +262,11 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
             </header>
             <div className="harness-editor-meta">
               <span>{sourceLabel(selected.source)}</span>
+              {selected.instructionStatus && (
+                <em className={`harness-instruction-status ${selected.instructionStatus}`} title={instructionStatusDescription(selected.instructionStatus)}>
+                  {instructionStatusLabel(selected.instructionStatus)}
+                </em>
+              )}
               {!selected.exists && <em>文件尚未创建，输入内容后保存即可创建</em>}
               {notice && <em className="success">{notice}</em>}
             </div>
@@ -304,7 +310,9 @@ function TreeNode({ node, selectedPath, expanded, depth, onSelect }: {
         {node.kind === 'directory' ? (open ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="tree-spacer" />}
         {node.kind === 'directory' ? <DirectoryIcon size={15} /> : <FileCode2 size={14} />}
         <span>{node.name}</span>
-        {!node.exists && <small>未创建</small>}
+        {node.instructionStatus
+          ? <small className={`harness-instruction-status ${node.instructionStatus}`} title={instructionStatusDescription(node.instructionStatus)}>{instructionStatusLabel(node.instructionStatus)}</small>
+          : !node.exists && <small>未创建</small>}
       </button>
       {node.kind === 'directory' && open && node.children.map((child) => (
         <TreeNode key={`${child.source}:${child.path}:${child.name}`} node={child} selectedPath={selectedPath} expanded={expanded} depth={depth + 1} onSelect={onSelect} />
@@ -352,6 +360,22 @@ function sourceLabel(source: HarnessFileNode['source']): string {
   if (source === 'global') return 'CODEX GLOBAL'
   if (source === 'project') return 'PROJECT INSTRUCTIONS'
   return 'THREAD .HARNESS'
+}
+
+function instructionStatusLabel(status: NonNullable<HarnessFileNode['instructionStatus']>): string {
+  if (status === 'active') return '生效'
+  if (status === 'overridden') return '被覆盖'
+  if (status === 'empty') return '空文件'
+  if (status === 'truncated') return '部分生效'
+  return '超出限制'
+}
+
+function instructionStatusDescription(status: NonNullable<HarnessFileNode['instructionStatus']>): string {
+  if (status === 'active') return 'Codex 会将这个文件加入当前线程的指令链。'
+  if (status === 'overridden') return '同一目录中有优先级更高的非空指令文件。'
+  if (status === 'empty') return 'Codex 会跳过空指令文件，并继续检查下一候选文件。'
+  if (status === 'truncated') return '文件超过剩余的项目指令字节额度，只有前半部分会生效。'
+  return '在读取到这个文件前已经达到项目指令字节上限。'
 }
 
 function messageOf(error: unknown): string {

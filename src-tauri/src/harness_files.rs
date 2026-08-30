@@ -6,12 +6,13 @@ use std::{
 };
 
 const AGENT_FILENAMES: [&str; 2] = ["AGENTS.override.md", "AGENTS.md"];
+const DEFAULT_MAX_BYTES: usize = 32 * 1024;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessFileTree {
     pub cwd: String,
-    pub project_root: String,
+    pub project_root: Option<String>,
     pub roots: Vec<HarnessFileNode>,
 }
 
@@ -23,6 +24,7 @@ pub struct HarnessFileNode {
     pub kind: NodeKind,
     pub source: NodeSource,
     pub exists: bool,
+    pub instruction_status: Option<InstructionStatus>,
     pub children: Vec<HarnessFileNode>,
 }
 
@@ -41,25 +43,51 @@ pub enum NodeSource {
     Harness,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum InstructionStatus {
+    Active,
+    Overridden,
+    Empty,
+    Truncated,
+    Excluded,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ManagedPathKind {
     AgentFile,
     Harness,
 }
 
-pub fn list(cwd: &str, codex_home: &Path) -> Result<HarnessFileTree, String> {
-    let scope = ManagedScope::resolve(cwd, codex_home)?;
-    Ok(scope.tree())
+pub fn list(
+    cwd: &str,
+    codex_home: &Path,
+    fallback_filenames: &[String],
+    max_bytes: usize,
+) -> Result<HarnessFileTree, String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
+    Ok(scope.tree(max_bytes))
 }
 
-pub fn read(cwd: &str, codex_home: &Path, path: &str) -> Result<String, String> {
-    let scope = ManagedScope::resolve(cwd, codex_home)?;
+pub fn read(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    fallback_filenames: &[String],
+) -> Result<String, String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
     let target = scope.validate_existing(path, false)?;
     fs::read_to_string(&target).map_err(|error| format!("无法读取 {}: {error}", target.display()))
 }
 
-pub fn write(cwd: &str, codex_home: &Path, path: &str, content: &str) -> Result<(), String> {
-    let scope = ManagedScope::resolve(cwd, codex_home)?;
+pub fn write(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    content: &str,
+    fallback_filenames: &[String],
+) -> Result<(), String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
     let target = scope.validate_target(path, false)?;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
@@ -68,15 +96,26 @@ pub fn write(cwd: &str, codex_home: &Path, path: &str, content: &str) -> Result<
     fs::write(&target, content).map_err(|error| format!("无法写入 {}: {error}", target.display()))
 }
 
-pub fn create_directory(cwd: &str, codex_home: &Path, path: &str) -> Result<(), String> {
-    let scope = ManagedScope::resolve(cwd, codex_home)?;
+pub fn create_directory(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    fallback_filenames: &[String],
+) -> Result<(), String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
     let target = scope.validate_target(path, true)?;
     fs::create_dir_all(&target)
         .map_err(|error| format!("无法创建目录 {}: {error}", target.display()))
 }
 
-pub fn rename(cwd: &str, codex_home: &Path, path: &str, next_path: &str) -> Result<(), String> {
-    let scope = ManagedScope::resolve(cwd, codex_home)?;
+pub fn rename(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    next_path: &str,
+    fallback_filenames: &[String],
+) -> Result<(), String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
     let source = scope.validate_existing(path, true)?;
     let target = scope.validate_target(next_path, source.is_dir())?;
     if scope.classify(&source)? != scope.classify(&target)? {
@@ -94,8 +133,13 @@ pub fn rename(cwd: &str, codex_home: &Path, path: &str, next_path: &str) -> Resu
     })
 }
 
-pub fn remove(cwd: &str, codex_home: &Path, path: &str) -> Result<(), String> {
-    let scope = ManagedScope::resolve(cwd, codex_home)?;
+pub fn remove(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    fallback_filenames: &[String],
+) -> Result<(), String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
     let target = scope.validate_existing(path, true)?;
     if target == scope.harness_root {
         return Err("不能删除 .harness 根目录。".to_string());
@@ -111,52 +155,73 @@ pub fn remove(cwd: &str, codex_home: &Path, path: &str) -> Result<(), String> {
 
 struct ManagedScope {
     cwd: PathBuf,
-    project_root: PathBuf,
+    project_root: Option<PathBuf>,
     codex_home: PathBuf,
     project_directories: Vec<PathBuf>,
     harness_root: PathBuf,
+    instruction_filenames: Vec<String>,
 }
 
 impl ManagedScope {
-    fn resolve(cwd: &str, codex_home: &Path) -> Result<Self, String> {
+    fn resolve(
+        cwd: &str,
+        codex_home: &Path,
+        fallback_filenames: &[String],
+    ) -> Result<Self, String> {
         let cwd = fs::canonicalize(cwd)
             .map_err(|error| format!("无法访问线程工作目录 {cwd}: {error}"))?;
         if !cwd.is_dir() {
             return Err("线程工作目录不是有效目录。".to_string());
         }
-        let project_root = git_project_root(&cwd)?;
-        if !cwd.starts_with(&project_root) {
-            return Err("线程工作目录不在 Git 项目根目录内。".to_string());
-        }
+        let project_root = git_project_root(&cwd);
         let codex_home = absolute_path(codex_home)?;
-        let mut project_directories = vec![project_root.clone()];
-        let relative = cwd
-            .strip_prefix(&project_root)
-            .map_err(|_| "无法解析项目指令目录。".to_string())?;
-        let mut cursor = project_root.clone();
-        for component in relative.components() {
-            cursor.push(component.as_os_str());
-            project_directories.push(cursor.clone());
+        let mut project_directories = vec![project_root.clone().unwrap_or_else(|| cwd.clone())];
+        if let Some(root) = &project_root {
+            if !cwd.starts_with(root) {
+                return Err("线程工作目录不在 Git 项目根目录内。".to_string());
+            }
+            let relative = cwd
+                .strip_prefix(root)
+                .map_err(|_| "无法解析项目指令目录。".to_string())?;
+            let mut cursor = root.clone();
+            for component in relative.components() {
+                cursor.push(component.as_os_str());
+                project_directories.push(cursor.clone());
+            }
         }
+        let instruction_filenames = instruction_filenames(fallback_filenames);
         Ok(Self {
             harness_root: cwd.join(".harness"),
             cwd,
             project_root,
             codex_home,
             project_directories,
+            instruction_filenames,
         })
     }
 
-    fn tree(&self) -> HarnessFileTree {
-        let global_children = AGENT_FILENAMES
-            .iter()
-            .map(|name| file_node(self.codex_home.join(name), NodeSource::Global))
-            .collect();
+    fn tree(&self, max_bytes: usize) -> HarnessFileTree {
+        let max_bytes = if max_bytes == 0 {
+            DEFAULT_MAX_BYTES
+        } else {
+            max_bytes
+        };
+        let mut used_bytes = 0;
+        let mut has_active_document = false;
+        let global_names = AGENT_FILENAMES.map(str::to_string);
+        let mut global_children =
+            instruction_nodes(&self.codex_home, &global_names, NodeSource::Global);
+        apply_instruction_budget(
+            &mut global_children,
+            max_bytes,
+            &mut used_bytes,
+            &mut has_active_document,
+        );
         let project_children = self
             .project_directories
             .iter()
             .map(|directory| {
-                let label = if directory == &self.project_root {
+                let label = if self.project_root.as_ref() == Some(directory) {
                     "项目根目录".to_string()
                 } else if directory == &self.cwd {
                     "当前目录".to_string()
@@ -166,21 +231,22 @@ impl ManagedScope {
                         .map(|name| name.to_string_lossy().into_owned())
                         .unwrap_or_else(|| directory.display().to_string())
                 };
-                directory_node(
-                    directory.clone(),
-                    label,
-                    NodeSource::Project,
-                    AGENT_FILENAMES
-                        .iter()
-                        .map(|name| file_node(directory.join(name), NodeSource::Project))
-                        .collect(),
-                )
+                let mut children =
+                    instruction_nodes(directory, &self.instruction_filenames, NodeSource::Project);
+                apply_instruction_budget(
+                    &mut children,
+                    max_bytes,
+                    &mut used_bytes,
+                    &mut has_active_document,
+                );
+                directory_node(directory.clone(), label, NodeSource::Project, children)
             })
             .collect();
         let harness_children = read_directory_nodes(&self.harness_root, NodeSource::Harness);
+        let project_group_path = self.project_root.as_ref().unwrap_or(&self.cwd).join(".");
         HarnessFileTree {
             cwd: display_path(&self.cwd),
-            project_root: display_path(&self.project_root),
+            project_root: self.project_root.as_ref().map(|path| display_path(path)),
             roots: vec![
                 directory_node(
                     self.codex_home.clone(),
@@ -189,8 +255,12 @@ impl ManagedScope {
                     global_children,
                 ),
                 directory_node(
-                    self.project_root.join("."),
-                    "项目指令链".to_string(),
+                    project_group_path,
+                    if self.project_root.is_some() {
+                        "项目指令链".to_string()
+                    } else {
+                        "当前目录指令".to_string()
+                    },
                     NodeSource::Project,
                     project_children,
                 ),
@@ -200,6 +270,7 @@ impl ManagedScope {
                     kind: NodeKind::Directory,
                     source: NodeSource::Harness,
                     exists: self.harness_root.is_dir(),
+                    instruction_status: None,
                     children: harness_children,
                 },
             ],
@@ -252,37 +323,113 @@ impl ManagedScope {
         if path.starts_with(&self.harness_root) {
             return Ok(ManagedPathKind::Harness);
         }
-        let is_agent_file = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| AGENT_FILENAMES.contains(&name));
+        let filename = path.file_name().and_then(|name| name.to_str());
         let parent = path.parent();
-        if is_agent_file
-            && (parent == Some(self.codex_home.as_path())
-                || self
-                    .project_directories
-                    .iter()
-                    .any(|directory| parent == Some(directory.as_path())))
-        {
+        let is_global_instruction = filename.is_some_and(|name| AGENT_FILENAMES.contains(&name))
+            && parent == Some(self.codex_home.as_path());
+        let is_project_instruction = filename.is_some_and(|name| {
+            self.instruction_filenames
+                .iter()
+                .any(|candidate| candidate == name)
+        }) && self
+            .project_directories
+            .iter()
+            .any(|directory| parent == Some(directory.as_path()));
+        if is_global_instruction || is_project_instruction {
             return Ok(ManagedPathKind::AgentFile);
         }
         Err("路径不属于当前线程的 Harness 管理范围。".to_string())
     }
 }
 
-fn git_project_root(cwd: &Path) -> Result<PathBuf, String> {
+fn git_project_root(cwd: &Path) -> Option<PathBuf> {
     let output = Command::new("git")
         .arg("-C")
         .arg(cwd)
         .args(["rev-parse", "--show-toplevel"])
         .output()
-        .map_err(|error| format!("无法运行 Git: {error}"))?;
+        .ok()?;
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+        return None;
     }
-    let root = String::from_utf8(output.stdout)
-        .map_err(|error| format!("Git 输出不是有效 UTF-8: {error}"))?;
-    fs::canonicalize(root.trim()).map_err(|error| format!("无法解析 Git 项目根目录: {error}"))
+    let root = String::from_utf8(output.stdout).ok()?;
+    fs::canonicalize(root.trim()).ok()
+}
+
+fn instruction_filenames(fallback_filenames: &[String]) -> Vec<String> {
+    let mut names = AGENT_FILENAMES.map(str::to_string).to_vec();
+    for name in fallback_filenames {
+        let path = Path::new(name);
+        let is_plain_filename = !name.is_empty()
+            && path.components().count() == 1
+            && matches!(path.components().next(), Some(Component::Normal(_)));
+        if is_plain_filename && !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    names
+}
+
+fn instruction_nodes(
+    directory: &Path,
+    names: &[String],
+    source: NodeSource,
+) -> Vec<HarnessFileNode> {
+    let mut selected = false;
+    names
+        .iter()
+        .map(|name| {
+            let path = directory.join(name);
+            let status = if path.is_file() {
+                match fs::read(&path) {
+                    Ok(content) if content.iter().all(u8::is_ascii_whitespace) => {
+                        Some(InstructionStatus::Empty)
+                    }
+                    Ok(_) if !selected => {
+                        selected = true;
+                        Some(InstructionStatus::Active)
+                    }
+                    Ok(_) => Some(InstructionStatus::Overridden),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+            file_node(path, source, status)
+        })
+        .collect()
+}
+
+fn apply_instruction_budget(
+    nodes: &mut [HarnessFileNode],
+    max_bytes: usize,
+    used_bytes: &mut usize,
+    has_active_document: &mut bool,
+) {
+    let Some(node) = nodes
+        .iter_mut()
+        .find(|node| node.instruction_status == Some(InstructionStatus::Active))
+    else {
+        return;
+    };
+    let separator_bytes = usize::from(*has_active_document) * 2;
+    let available = max_bytes.saturating_sub(*used_bytes);
+    if available <= separator_bytes {
+        node.instruction_status = Some(InstructionStatus::Excluded);
+        return;
+    }
+    let file_bytes = fs::metadata(&node.path)
+        .ok()
+        .and_then(|metadata| usize::try_from(metadata.len()).ok())
+        .unwrap_or(0);
+    let required = separator_bytes.saturating_add(file_bytes);
+    if required > available {
+        node.instruction_status = Some(InstructionStatus::Truncated);
+        *used_bytes = max_bytes;
+    } else {
+        *used_bytes = used_bytes.saturating_add(required);
+    }
+    *has_active_document = true;
 }
 
 fn read_directory_nodes(directory: &Path, source: NodeSource) -> Vec<HarnessFileNode> {
@@ -312,6 +459,7 @@ fn read_directory_nodes(directory: &Path, source: NodeSource) -> Vec<HarnessFile
                     kind: NodeKind::File,
                     source,
                     exists: true,
+                    instruction_status: None,
                     children: Vec::new(),
                 })
             } else {
@@ -346,11 +494,16 @@ fn directory_node(
         name,
         kind: NodeKind::Directory,
         source,
+        instruction_status: None,
         children,
     }
 }
 
-fn file_node(path: PathBuf, source: NodeSource) -> HarnessFileNode {
+fn file_node(
+    path: PathBuf,
+    source: NodeSource,
+    instruction_status: Option<InstructionStatus>,
+) -> HarnessFileNode {
     HarnessFileNode {
         exists: path.is_file(),
         path: display_path(&path),
@@ -360,6 +513,7 @@ fn file_node(path: PathBuf, source: NodeSource) -> HarnessFileNode {
             .unwrap_or_default(),
         kind: NodeKind::File,
         source,
+        instruction_status,
         children: Vec::new(),
     }
 }
@@ -458,7 +612,8 @@ mod tests {
         fs::create_dir_all(cwd.join(".harness/plans")).expect("creates harness tree");
         fs::write(cwd.join(".harness/plans/today.md"), "today").expect("writes harness file");
 
-        let tree = list(cwd.to_str().unwrap(), &codex_home).expect("lists files");
+        let tree =
+            list(cwd.to_str().unwrap(), &codex_home, &[], DEFAULT_MAX_BYTES).expect("lists files");
 
         assert_eq!(tree.roots.len(), 3);
         assert_eq!(tree.roots[0].children[1].exists, true);
@@ -466,6 +621,70 @@ mod tests {
         assert_eq!(tree.roots[1].children.last().unwrap().name, "当前目录");
         assert_eq!(tree.roots[2].children[0].name, "plans");
         assert_eq!(tree.roots[2].children[0].children[0].name, "today.md");
+    }
+
+    #[test]
+    fn applies_fallback_precedence_and_combined_size_limit() {
+        let (_temp, repository, cwd, codex_home) = fixture();
+        fs::write(codex_home.join("AGENTS.md"), "global").unwrap();
+        fs::write(repository.join("AGENTS.override.md"), "override").unwrap();
+        fs::write(repository.join("AGENTS.md"), "regular").unwrap();
+        fs::write(cwd.join("TEAM.md"), "team instructions").unwrap();
+
+        let tree = list(
+            cwd.to_str().unwrap(),
+            &codex_home,
+            &["TEAM.md".to_string()],
+            10,
+        )
+        .unwrap();
+        let global = &tree.roots[0].children;
+        let root = &tree.roots[1].children[0].children;
+        let current = &tree.roots[1].children.last().unwrap().children;
+
+        assert_eq!(
+            global[1].instruction_status,
+            Some(InstructionStatus::Active)
+        );
+        assert_eq!(
+            root[0].instruction_status,
+            Some(InstructionStatus::Truncated)
+        );
+        assert_eq!(
+            root[1].instruction_status,
+            Some(InstructionStatus::Overridden)
+        );
+        assert_eq!(
+            current[2].instruction_status,
+            Some(InstructionStatus::Excluded)
+        );
+    }
+
+    #[test]
+    fn non_git_cwd_uses_only_the_current_directory() {
+        let temp = TestDir::new();
+        let cwd = temp.0.join("plain-directory");
+        let codex_home = temp.0.join("home/.codex");
+        fs::create_dir_all(&cwd).unwrap();
+        fs::create_dir_all(&codex_home).unwrap();
+        fs::write(cwd.join("TEAM.md"), "local").unwrap();
+
+        let tree = list(
+            cwd.to_str().unwrap(),
+            &codex_home,
+            &["TEAM.md".to_string()],
+            DEFAULT_MAX_BYTES,
+        )
+        .unwrap();
+
+        assert_eq!(tree.project_root, None);
+        assert_eq!(tree.roots[1].name, "当前目录指令");
+        assert_eq!(tree.roots[1].children.len(), 1);
+        assert_eq!(tree.roots[1].children[0].name, "当前目录");
+        assert_eq!(
+            tree.roots[1].children[0].children[2].instruction_status,
+            Some(InstructionStatus::Active)
+        );
     }
 
     #[test]
@@ -477,13 +696,15 @@ mod tests {
             &codex_home,
             harness_file.to_str().unwrap(),
             "hello",
+            &[],
         )
         .expect("writes managed file");
         assert_eq!(
             read(
                 cwd.to_str().unwrap(),
                 &codex_home,
-                harness_file.to_str().unwrap()
+                harness_file.to_str().unwrap(),
+                &[],
             )
             .unwrap(),
             "hello"
@@ -494,7 +715,8 @@ mod tests {
             cwd.to_str().unwrap(),
             &codex_home,
             outside.to_str().unwrap(),
-            "blocked"
+            "blocked",
+            &[],
         )
         .is_err());
     }
@@ -509,6 +731,7 @@ mod tests {
             &codex_home,
             original.to_str().unwrap(),
             "content",
+            &[],
         )
         .unwrap();
         rename(
@@ -516,6 +739,7 @@ mod tests {
             &codex_home,
             original.to_str().unwrap(),
             renamed.to_str().unwrap(),
+            &[],
         )
         .unwrap();
         assert!(renamed.is_file());
@@ -523,6 +747,7 @@ mod tests {
             cwd.to_str().unwrap(),
             &codex_home,
             renamed.to_str().unwrap(),
+            &[],
         )
         .unwrap();
         assert!(!renamed.exists());
@@ -544,7 +769,8 @@ mod tests {
             cwd.to_str().unwrap(),
             &codex_home,
             link.to_str().unwrap(),
-            "changed"
+            "changed",
+            &[],
         )
         .is_err());
         assert_eq!(fs::read_to_string(outside).unwrap(), "safe");

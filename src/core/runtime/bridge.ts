@@ -197,28 +197,28 @@ export const runtime = {
     return invoke<void>('set_plugin_state', { instanceId, key, value })
   },
 
-  listHarnessFiles(cwd: string): Promise<HarnessFileTree> {
-    return invoke<HarnessFileTree>('list_harness_files', { cwd })
+  listHarnessFiles(cwd: string, fallbackFilenames: string[], maxBytes: number): Promise<HarnessFileTree> {
+    return invoke<HarnessFileTree>('list_harness_files', { cwd, fallbackFilenames, maxBytes })
   },
 
-  readHarnessFile(cwd: string, path: string): Promise<string> {
-    return invoke<string>('read_harness_file', { cwd, path })
+  readHarnessFile(cwd: string, path: string, fallbackFilenames: string[]): Promise<string> {
+    return invoke<string>('read_harness_file', { cwd, path, fallbackFilenames })
   },
 
-  writeHarnessFile(cwd: string, path: string, content: string): Promise<void> {
-    return invoke<void>('write_harness_file', { cwd, path, content })
+  writeHarnessFile(cwd: string, path: string, content: string, fallbackFilenames: string[]): Promise<void> {
+    return invoke<void>('write_harness_file', { cwd, path, content, fallbackFilenames })
   },
 
-  createHarnessDirectory(cwd: string, path: string): Promise<void> {
-    return invoke<void>('create_harness_directory', { cwd, path })
+  createHarnessDirectory(cwd: string, path: string, fallbackFilenames: string[]): Promise<void> {
+    return invoke<void>('create_harness_directory', { cwd, path, fallbackFilenames })
   },
 
-  renameHarnessPath(cwd: string, path: string, nextPath: string): Promise<void> {
-    return invoke<void>('rename_harness_path', { cwd, path, nextPath })
+  renameHarnessPath(cwd: string, path: string, nextPath: string, fallbackFilenames: string[]): Promise<void> {
+    return invoke<void>('rename_harness_path', { cwd, path, nextPath, fallbackFilenames })
   },
 
-  removeHarnessPath(cwd: string, path: string): Promise<void> {
-    return invoke<void>('remove_harness_path', { cwd, path })
+  removeHarnessPath(cwd: string, path: string, fallbackFilenames: string[]): Promise<void> {
+    return invoke<void>('remove_harness_path', { cwd, path, fallbackFilenames })
   },
 
   listPluginRuns(): Promise<AgentRun[]> {
