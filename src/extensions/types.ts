@@ -53,6 +53,7 @@ export interface ConversationTabContribution {
   label: string
   order?: number
   icon?: ComponentType<{ size?: string | number }>
+  hideComposer?: boolean
   render(props: ConversationTabProps): ReactNode
 }
 

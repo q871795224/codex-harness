@@ -23,6 +23,7 @@ import type { SystemNotificationClick, SystemNotificationInput } from '../notifi
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 import type { HarnessFileTree } from '../harness-files/types'
 import type { UsageSnapshot } from '../usage/types'
+import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-workbench/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -145,6 +146,32 @@ export const runtime = {
     })
     if (!paths) return []
     return Array.isArray(paths) ? paths : [paths]
+  },
+
+  async chooseApiWorkbenchImportFile(): Promise<string | null> {
+    const path = await open({
+      directory: false,
+      multiple: false,
+      title: '导入 Postman Collection 或 Environment',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    return typeof path === 'string' ? path : null
+  },
+
+  apiWorkbenchLoad(): Promise<ApiWorkbenchState | null> {
+    return invoke<ApiWorkbenchState | null>('api_workbench_load')
+  },
+
+  apiWorkbenchSave(value: ApiWorkbenchState): Promise<ApiWorkbenchState> {
+    return invoke<ApiWorkbenchState>('api_workbench_save', { value })
+  },
+
+  apiWorkbenchSend(input: ApiSendInput): Promise<ApiSendResponse> {
+    return invoke<ApiSendResponse>('api_workbench_send', { input })
+  },
+
+  apiWorkbenchReadImportFile(path: string): Promise<string> {
+    return invoke<string>('api_workbench_read_import_file', { path })
   },
 
   mapThreadWorkspaces(paths: string[]): Promise<Record<string, Workspace | null>> {

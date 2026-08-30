@@ -1,3 +1,4 @@
+mod api_workbench;
 mod app_server;
 mod codex_radar;
 mod diagnostics;
@@ -33,8 +34,31 @@ struct AppState {
     local_connector: LocalConnector,
     codex_radar: CodexRadarClient,
     store: HarnessStore,
+    api_workbench: api_workbench::ApiWorkbenchStore,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
+}
+
+#[tauri::command]
+fn api_workbench_load(state: State<'_, AppState>) -> Result<Option<Value>, String> {
+    state.api_workbench.load()
+}
+
+#[tauri::command]
+fn api_workbench_save(state: State<'_, AppState>, value: Value) -> Result<Value, String> {
+    state.api_workbench.save(&value)
+}
+
+#[tauri::command]
+async fn api_workbench_send(
+    input: api_workbench::ApiSendInput,
+) -> Result<api_workbench::ApiSendResponse, String> {
+    api_workbench::send(input).await
+}
+
+#[tauri::command]
+fn api_workbench_read_import_file(path: String) -> Result<String, String> {
+    api_workbench::read_import_file(&path)
 }
 
 #[derive(Debug, Deserialize)]
@@ -449,6 +473,8 @@ fn upsert_plugin_run(
 
 pub fn run() {
     let store = HarnessStore::open().expect("无法初始化 Codex Harness 本地状态库");
+    let api_workbench =
+        api_workbench::ApiWorkbenchStore::open().expect("无法初始化 API Workbench 数据库");
     let diagnostics = Arc::new(DiagnosticLog::open().expect("无法初始化 Codex Harness 诊断日志"));
     diagnostics.record(
         "info",
@@ -471,6 +497,7 @@ pub fn run() {
                 local_connector: LocalConnector::new(),
                 codex_radar: CodexRadarClient::new(),
                 store,
+                api_workbench,
                 usage_refresh: tokio::sync::Mutex::new(()),
                 workspace_cache: Arc::new(Mutex::new(HashMap::new())),
             });
@@ -511,6 +538,10 @@ pub fn run() {
             run_quick_command,
             request_system_notification_permission,
             send_system_notification,
+            api_workbench_load,
+            api_workbench_save,
+            api_workbench_send,
+            api_workbench_read_import_file,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错");

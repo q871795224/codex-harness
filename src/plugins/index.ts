@@ -9,6 +9,7 @@ import { sessionLauncherDefaultInstance, sessionLauncherPlugin } from './session
 import { tasksDefaultInstance, tasksPlugin } from './tasks'
 import { harnessFilesDefaultInstance, harnessFilesPlugin } from './harness-files'
 import { usageDefaultInstance, usagePlugin } from './usage'
+import { apiWorkbenchDefaultInstance, apiWorkbenchPlugin } from './api-workbench'
 
-export const builtInPlugins: HarnessPlugin[] = [sessionLauncherPlugin, tasksPlugin, usagePlugin, trajectoryPlugin, harnessFilesPlugin, lunaPlugin, quickAgentPlugin, quickCommandPlugin, seaTalkPlugin, notificationsPlugin]
-export const defaultPluginInstances: PluginInstanceRecord[] = [sessionLauncherDefaultInstance, tasksDefaultInstance, usageDefaultInstance, ...trajectoryDefaults, harnessFilesDefaultInstance, lunaDefaultInstance, quickAgentDefaultInstance, ...quickCommandDefaultInstances, seaTalkDefaultInstance, notificationsDefaultInstance]
+export const builtInPlugins: HarnessPlugin[] = [sessionLauncherPlugin, tasksPlugin, usagePlugin, trajectoryPlugin, harnessFilesPlugin, apiWorkbenchPlugin, lunaPlugin, quickAgentPlugin, quickCommandPlugin, seaTalkPlugin, notificationsPlugin]
+export const defaultPluginInstances: PluginInstanceRecord[] = [sessionLauncherDefaultInstance, tasksDefaultInstance, usageDefaultInstance, ...trajectoryDefaults, harnessFilesDefaultInstance, apiWorkbenchDefaultInstance, lunaDefaultInstance, quickAgentDefaultInstance, ...quickCommandDefaultInstances, seaTalkDefaultInstance, notificationsDefaultInstance]

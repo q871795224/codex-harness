@@ -23,6 +23,7 @@
 ## 本地状态与安全
 
 - 本地 UI 状态保存在 `~/.codex-harness/state.sqlite`；不要把会话正文、凭据或 token 写入该库。
+- API Workbench 的 Collection、Environment 与请求定义是跨工作区、跨会话的全局数据，保存在独立的 `~/.codex-harness/api-workbench.sqlite`；标记为 Secret 的变量值只存入 macOS Keychain，数据库中必须保持为空。
 - 启动时会复用或启动 `codex app-server daemon`；关闭 Harness 不应停止该 daemon。
 - Harness 管理 daemon 时必须从实际 `.codex` 安装路径推导并显式设置真实用户的 `HOME` 与 `CODEX_HOME`，不能继承 `codex-personal` 等隔离环境；新启动 daemon 的文件描述符软限制设为 4096。
 

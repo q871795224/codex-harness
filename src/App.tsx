@@ -25,6 +25,7 @@ import { orderConversationTabs, parseConversationTabOrder, reorderConversationTa
 import { actionForShortcut, threadIndexForAction } from './features/actions/harnessActions'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 import type { UsageService } from './core/usage/types'
+import type { ApiWorkbenchService } from './core/api-workbench/types'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 
@@ -69,6 +70,13 @@ export default function App() {
       rename: (cwd, path, nextPath) => runtime.renameHarnessPath(cwd, path, nextPath, harnessInstructionConfig.current.fallbackFilenames),
       remove: (cwd, path) => runtime.removeHarnessPath(cwd, path, harnessInstructionConfig.current.fallbackFilenames),
     } satisfies HarnessFilesService,
+    'harness.apiWorkbench': {
+      load: runtime.apiWorkbenchLoad,
+      save: runtime.apiWorkbenchSave,
+      send: runtime.apiWorkbenchSend,
+      chooseImportFile: runtime.chooseApiWorkbenchImportFile,
+      readImportFile: runtime.apiWorkbenchReadImportFile,
+    } satisfies ApiWorkbenchService,
   }), [agentRuns, harness.onTurnCompleted, harness.openThread])
 
   useEffect(() => {
@@ -456,7 +464,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
               />
             ) : null}
 
-            {harness.viewMode === 'active' && (
+            {harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer && (
               <div className="input-column" ref={inputColumnRef}>
                 <QueueDock
                   queue={currentQueue}
