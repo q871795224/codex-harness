@@ -148,14 +148,15 @@ export const runtime = {
     return Array.isArray(paths) ? paths : [paths]
   },
 
-  async chooseApiWorkbenchImportFile(): Promise<string | null> {
-    const path = await open({
+  async chooseApiWorkbenchImportFiles(): Promise<string[]> {
+    const paths = await open({
       directory: false,
-      multiple: false,
-      title: '导入 Postman Collection 或 Environment',
+      multiple: true,
+      title: 'Import Postman Collections, Environments, or Globals',
       filters: [{ name: 'JSON', extensions: ['json'] }],
     })
-    return typeof path === 'string' ? path : null
+    if (!paths) return []
+    return Array.isArray(paths) ? paths : [paths]
   },
 
   apiWorkbenchLoad(): Promise<ApiWorkbenchState | null> {

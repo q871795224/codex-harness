@@ -474,7 +474,7 @@ fn upsert_plugin_run(
 pub fn run() {
     let store = HarnessStore::open().expect("无法初始化 Codex Harness 本地状态库");
     let api_workbench =
-        api_workbench::ApiWorkbenchStore::open().expect("无法初始化 API Workbench 数据库");
+        api_workbench::ApiWorkbenchStore::open().expect("Unable to initialize API Workbench");
     let diagnostics = Arc::new(DiagnosticLog::open().expect("无法初始化 Codex Harness 诊断日志"));
     diagnostics.record(
         "info",

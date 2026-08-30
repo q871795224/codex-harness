@@ -36,4 +36,18 @@ describe('API Workbench model', () => {
     expect(context?.request.postScript).toContain('pm.environment.set')
     expect(context?.request.url).toBe('{{base}}/login')
   })
+
+  it('imports exported Postman globals into the global variable scope', () => {
+    const state = emptyWorkbenchState()
+    const imported = importPostmanJson(JSON.stringify({
+      name: 'Globals',
+      _postman_variable_scope: 'globals',
+      values: [{ key: 'tenant', value: 'sg', enabled: true }],
+    }), state)
+
+    expect(imported.globals).toEqual([
+      expect.objectContaining({ key: 'tenant', value: 'sg', enabled: true }),
+    ])
+    expect(imported.environments).toHaveLength(state.environments.length)
+  })
 })

@@ -112,6 +112,6 @@ export interface ApiWorkbenchService {
   load(): Promise<ApiWorkbenchState | null>
   save(state: ApiWorkbenchState): Promise<ApiWorkbenchState>
   send(input: ApiSendInput): Promise<ApiSendResponse>
-  chooseImportFile(): Promise<string | null>
+  chooseImportFiles(): Promise<string[]>
   readImportFile(path: string): Promise<string>
 }

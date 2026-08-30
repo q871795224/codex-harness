@@ -74,7 +74,7 @@ export default function App() {
       load: runtime.apiWorkbenchLoad,
       save: runtime.apiWorkbenchSave,
       send: runtime.apiWorkbenchSend,
-      chooseImportFile: runtime.chooseApiWorkbenchImportFile,
+      chooseImportFiles: runtime.chooseApiWorkbenchImportFiles,
       readImportFile: runtime.apiWorkbenchReadImportFile,
     } satisfies ApiWorkbenchService,
   }), [agentRuns, harness.onTurnCompleted, harness.openThread])

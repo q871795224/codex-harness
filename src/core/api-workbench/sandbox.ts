@@ -37,7 +37,7 @@ export async function executeWorkbenchRequest(
   service: ApiWorkbenchService,
 ): Promise<{ state: ApiWorkbenchState; result: ApiExecutionResult }> {
   const context = findRequestContext(state, requestId)
-  if (!context) throw new Error('找不到要执行的请求')
+  if (!context) throw new Error('The selected request could not be found.')
   const environment = activeEnvironment(state)
   const logs: ApiScriptLog[] = []
   const assertions: ApiAssertion[] = []

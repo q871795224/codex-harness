@@ -17,9 +17,9 @@ export const apiWorkbenchPlugin: HarnessPlugin = {
     schemaVersion: 1,
     id: 'builtin.api-workbench',
     name: 'API Workbench',
-    description: '全局 HTTP 请求工作台，支持 Postman Collection 与 Pre/Post Script。',
-    version: '1.0.0',
-    engine: { codexHarness: '^0.4.19' },
+    description: 'Global HTTP request workbench with Postman collections and pre/post scripts.',
+    version: '1.0.1',
+    engine: { codexHarness: '^0.4.20' },
     supportedScopes: ['global'],
     permissions: ['network:http', 'filesystem:import', 'keychain:secrets'],
   },
@@ -61,6 +61,7 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const saveTimer = useRef<number | null>(null)
   const revision = useRef(0)
@@ -103,6 +104,7 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
     setState((current) => current ? recipe(current) : current)
     setDirty(true)
     setError(null)
+    setNotice(null)
   }
 
   const run = async () => {
@@ -127,24 +129,25 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
     }
   }
 
-  const importFile = async () => {
+  const importFiles = async () => {
     if (!state) return
     try {
-      const path = await service.chooseImportFile()
-      if (!path) return
-      const raw = await service.readImportFile(path)
-      const next = importPostmanJson(raw, state)
+      const paths = await service.chooseImportFiles()
+      if (!paths.length) return
+      let next = state
+      for (const path of paths) next = importPostmanJson(await service.readImportFile(path), next)
       revision.current += 1
       setState(next)
       setSelection(next.selectedRequestId ? { kind: 'request', id: next.selectedRequestId } : null)
       setExpanded(new Set(next.collections.map((collection) => collection.id)))
       setDirty(true)
       setError(null)
+      setNotice(`${paths.length} Postman ${paths.length === 1 ? 'file' : 'files'} imported.`)
     } catch (nextError) { setError(messageOf(nextError)) }
   }
 
-  if (loading) return <div className="api-workbench-loading"><LoaderCircle className="spin" size={18} />加载全局 API 数据…</div>
-  if (!state) return <div className="plugin-error">API Workbench 初始化失败：{error}</div>
+  if (loading) return <div className="api-workbench-loading"><LoaderCircle className="spin" size={18} />Loading global API data…</div>
+  if (!state) return <div className="plugin-error">API Workbench failed to initialize: {error}</div>
 
   return (
     <div className="api-workbench">
@@ -155,7 +158,7 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
             <option value="">No environment</option>
             {state.environments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select></label>
-          <button type="button" onClick={() => void importFile()}><Import size={14} />Import</button>
+          <button type="button" title="Import exported Postman JSON files" onClick={() => void importFiles()}><Import size={14} />Import</button>
           <span className={`api-save-state ${dirty ? 'dirty' : ''}`}><Save size={12} />{saving ? 'Saving' : dirty ? 'Unsaved' : 'Saved'}</span>
         </div>
       </header>
@@ -163,8 +166,8 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
       <div className="api-workbench-grid">
         <aside className="api-library">
           <div className="api-pane-heading"><div><span>LIBRARY</span><strong>Collections</strong></div><div>
-            <button title="新建 Collection" onClick={() => update((current) => ({ ...current, collections: [...current.collections, createCollection('New collection')] }))}><Folder size={14} /></button>
-            <button title="新建 Request" onClick={() => update((current) => {
+            <button title="New collection" onClick={() => update((current) => ({ ...current, collections: [...current.collections, createCollection('New collection')] }))}><Folder size={14} /></button>
+            <button title="New request" onClick={() => update((current) => {
               const next = appendRequest(current)
               if (next.selectedRequestId) setSelection({ kind: 'request', id: next.selectedRequestId })
               return next
@@ -203,6 +206,7 @@ function ApiWorkbenchTab({ service }: { service: ApiWorkbenchService }) {
             <div className="api-empty"><FlaskConical size={30} /><strong>Select a request</strong><p>Choose an API from the global library or import a Postman Collection.</p></div>
           )}
           {error && <div className="api-error"><XCircle size={14} />{error}<button onClick={() => setError(null)}>×</button></div>}
+          {notice && <div className="api-notice"><CheckCircle2 size={14} />{notice}<button onClick={() => setNotice(null)}>×</button></div>}
         </main>
 
         <aside className="api-environment-pane">
@@ -262,7 +266,7 @@ function RequestEditor({ request, section, sending, result, responseSection, onS
   onSection(value: RequestSection): void; onResponseSection(value: ResponseSection): void; onChange(value: ApiRequestDefinition): void; onSend(): void; onDelete(): void
 }) {
   return <div className="api-request-editor">
-    <div className="api-request-title"><input value={request.name} onChange={(event) => onChange({ ...request, name: event.target.value })} /><button title="删除请求" onClick={onDelete}><Trash2 size={14} /></button></div>
+    <div className="api-request-title"><input value={request.name} onChange={(event) => onChange({ ...request, name: event.target.value })} /><button title="Delete request" onClick={onDelete}><Trash2 size={14} /></button></div>
     <div className="api-address-bar">
       <select className={`method-${request.method.toLowerCase()}`} value={request.method} onChange={(event) => onChange({ ...request, method: event.target.value })}>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].map((method) => <option key={method}>{method}</option>)}</select>
       <input value={request.url} placeholder="https://api.example.com/v1/resource" spellCheck={false} onChange={(event) => onChange({ ...request, url: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) onSend() }} />
@@ -309,7 +313,7 @@ function VariableEditor({ values, onChange }: { values: ApiVariable[]; onChange(
   }
   return <div className="api-variable-list">{rows.map((row) => <div className="api-variable" key={row.id}>
     <div><input type="checkbox" checked={row.enabled} onChange={(event) => update(row.id, { enabled: event.target.checked })} /><input value={row.key} placeholder="variable" onChange={(event) => update(row.id, { key: event.target.value })} /></div>
-    <div><input type={row.secret ? 'password' : 'text'} value={row.value} placeholder="value" onChange={(event) => update(row.id, { value: event.target.value })} /><button className={row.secret ? 'active' : ''} title="存入 Keychain" onClick={() => update(row.id, { secret: !row.secret })}><KeyRound size={12} /></button></div>
+    <div><input type={row.secret ? 'password' : 'text'} value={row.value} placeholder="value" onChange={(event) => update(row.id, { value: event.target.value })} /><button className={row.secret ? 'active' : ''} title="Store in macOS Keychain" onClick={() => update(row.id, { secret: !row.secret })}><KeyRound size={12} /></button></div>
   </div>)}</div>
 }
 

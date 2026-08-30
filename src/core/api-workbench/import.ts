@@ -7,8 +7,8 @@ type UnknownRecord = Record<string, unknown>
 
 export function importPostmanJson(raw: string, state: ApiWorkbenchState): ApiWorkbenchState {
   let document: unknown
-  try { document = JSON.parse(raw) } catch { throw new Error('文件不是有效的 JSON') }
-  if (!isRecord(document)) throw new Error('Postman 文件根节点必须是对象')
+  try { document = JSON.parse(raw) } catch { throw new Error('The selected file is not valid JSON.') }
+  if (!isRecord(document)) throw new Error('The Postman file must contain a JSON object.')
   if (isRecord(document.info) && Array.isArray(document.item)) {
     const collection = importCollection(document)
     const requests = flattenImportedRequests(collection.items)
@@ -20,6 +20,13 @@ export function importPostmanJson(raw: string, state: ApiWorkbenchState): ApiWor
     }
   }
   if (Array.isArray(document.values)) {
+    if (document._postman_variable_scope === 'globals') {
+      return {
+        ...state,
+        globals: importVariables(document.values),
+        updatedAt: Date.now(),
+      }
+    }
     const environment = createEnvironment(text(document.name) || 'Imported environment')
     environment.values = importVariables(document.values)
     return {
@@ -29,7 +36,7 @@ export function importPostmanJson(raw: string, state: ApiWorkbenchState): ApiWor
       updatedAt: Date.now(),
     }
   }
-  throw new Error('无法识别 Postman Collection 或 Environment 格式')
+  throw new Error('Unsupported Postman file. Export a Collection, Environment, or Globals JSON file.')
 }
 
 function importCollection(document: UnknownRecord) {
