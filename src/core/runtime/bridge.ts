@@ -24,6 +24,7 @@ import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 import type { HarnessFileTree } from '../harness-files/types'
 import type { UsageSnapshot } from '../usage/types'
 import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-workbench/types'
+import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -173,6 +174,30 @@ export const runtime = {
 
   apiWorkbenchReadImportFile(path: string): Promise<string> {
     return invoke<string>('api_workbench_read_import_file', { path })
+  },
+
+  terminalCreate(cwd: string, cols: number, rows: number): Promise<TerminalSessionInfo> {
+    return invoke<TerminalSessionInfo>('terminal_create', { input: { cwd, cols, rows } })
+  },
+
+  terminalWrite(sessionId: string, data: string): Promise<void> {
+    return invoke<void>('terminal_write', { sessionId, data })
+  },
+
+  terminalResize(sessionId: string, cols: number, rows: number): Promise<void> {
+    return invoke<void>('terminal_resize', { sessionId, cols, rows })
+  },
+
+  terminalClose(sessionId: string): Promise<void> {
+    return invoke<void>('terminal_close', { sessionId })
+  },
+
+  terminalOpenIterm(cwd: string): Promise<void> {
+    return invoke<void>('terminal_open_iterm', { cwd })
+  },
+
+  async listenTerminalEvents(handler: (event: TerminalEvent) => void): Promise<() => void> {
+    return listen<TerminalEvent>('harness-terminal', (event) => handler(event.payload))
   },
 
   mapThreadWorkspaces(paths: string[]): Promise<Record<string, Workspace | null>> {

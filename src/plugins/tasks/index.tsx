@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Check, Copy, ListTodo, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from 'react'
+import { ArrowLeft, Check, Copy, FileText, ListTodo, Plus, Trash2 } from 'lucide-react'
 import type { ConversationTabProps, HarnessPlugin, PluginInstanceRecord, PluginStorage, PluginViewContext } from '../../extensions/types'
 
 export type TodoScope = 'global' | 'workspace' | 'thread'
@@ -10,6 +10,7 @@ export const DEFAULT_TODO_FILTER: TodoFilter = 'threads'
 export interface TodoItem {
   id: string
   content: string
+  note?: string
   completed: boolean
   dueAt: number | null
   scope: TodoScope
@@ -27,7 +28,7 @@ export const tasksPlugin: HarnessPlugin = {
     id: 'builtin.tasks',
     name: '待办',
     description: '管理全局、工作区和会话级待办。',
-    version: '1.0.4',
+    version: '1.1.0',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
   },
@@ -105,8 +106,10 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
   const [scope, setScope] = useState<TodoScope>(DEFAULT_TODO_SCOPE)
   const [filter, setFilter] = useState<TodoFilter>(DEFAULT_TODO_FILTER)
   const [copiedTodoId, setCopiedTodoId] = useState<string | null>(null)
+  const [noteTodoId, setNoteTodoId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const saveQueue = useRef(Promise.resolve())
 
   useEffect(() => {
     let disposed = false
@@ -126,7 +129,10 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
   const commit = (next: TodoItem[]) => {
     setItems(next)
     setError(null)
-    void storage.set(TODO_STORAGE_KEY, next).catch((nextError) => setError(messageOf(nextError)))
+    saveQueue.current = saveQueue.current
+      .catch(() => undefined)
+      .then(() => storage.set(TODO_STORAGE_KEY, next))
+      .catch((nextError) => setError(messageOf(nextError)))
   }
 
   const createTodo = (event: FormEvent) => {
@@ -172,6 +178,18 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
   const shown = visibleTodos(items, context, filter)
   const openCount = shown.filter((item) => !item.completed).length
   const filterLabel = filter === 'workspaces' ? '所有工作区' : filter === 'threads' ? '所有会话' : '当前上下文'
+  const noteTodo = items.find((item) => item.id === noteTodoId) ?? null
+
+  if (noteTodo) {
+    return (
+      <TodoNoteEditor
+        item={noteTodo}
+        error={error}
+        onBack={() => setNoteTodoId(null)}
+        onChange={(note) => update(noteTodo.id, { note })}
+      />
+    )
+  }
 
   return (
     <div className="tasks-scroll">
@@ -212,8 +230,18 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
                     if (nextContent) update(item.id, { content: nextContent })
                     else setError('待办内容不能为空。')
                   }}
+                  onDoubleClick={() => setNoteTodoId(item.id)}
                   aria-label="编辑待办内容"
                 />
+                <button
+                  className={`task-note ${item.note ? 'has-note' : ''}`}
+                  type="button"
+                  onClick={() => setNoteTodoId(item.id)}
+                  aria-label={`打开 ${item.content} 的 Note`}
+                  title={item.note ? '打开 Note（已有内容）' : '打开 Note'}
+                >
+                  <FileText size={13} />
+                </button>
                 <button
                   className={`task-copy ${copiedTodoId === item.id ? 'copied' : ''}`}
                   type="button"
@@ -252,6 +280,62 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
       </div>
     </div>
   )
+}
+
+function TodoNoteEditor({ item, error, onBack, onChange }: {
+  item: TodoItem
+  error: string | null
+  onBack(): void
+  onChange(note: string): void
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const note = item.note ?? ''
+  const lines = note.length === 0 ? 0 : note.split('\n').length
+
+  useEffect(() => {
+    textareaRef.current?.focus()
+  }, [item.id])
+
+  const pastePlainText = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    event.preventDefault()
+    const textarea = event.currentTarget
+    const pasted = event.clipboardData.getData('text/plain')
+    const selectionStart = textarea.selectionStart
+    const caret = selectionStart + pasted.length
+    onChange(insertPlainText(textarea.value, selectionStart, textarea.selectionEnd, pasted))
+    requestAnimationFrame(() => textarea.setSelectionRange(caret, caret))
+  }
+
+  return (
+    <section className="todo-note-shell">
+      <header className="todo-note-heading">
+        <button type="button" onClick={onBack} title="返回待办列表"><ArrowLeft size={15} />待办</button>
+        <div>
+          <span>PLAIN TEXT NOTE</span>
+          <strong>{item.content}</strong>
+        </div>
+        <output>{lines} lines · {note.length} chars</output>
+      </header>
+      {error && <div className="tasks-error todo-note-error">{error}</div>}
+      <textarea
+        ref={textareaRef}
+        className="todo-note-editor"
+        value={note}
+        onChange={(event) => onChange(event.target.value)}
+        onPaste={pastePlainText}
+        placeholder="临时记录、粘贴或修改纯文本…"
+        aria-label={`${item.content} 的纯文本 Note`}
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+      <footer className="todo-note-footer"><span>TXT</span><p>自动保存 · 仅保留剪贴板中的纯文本</p></footer>
+    </section>
+  )
+}
+
+export function insertPlainText(value: string, selectionStart: number, selectionEnd: number, pasted: string): string {
+  return `${value.slice(0, selectionStart)}${pasted}${value.slice(selectionEnd)}`
 }
 
 function toDateTimeInput(value: number | null): string {

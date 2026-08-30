@@ -1,7 +1,7 @@
 {
   "name": "codex-harness",
   "private": true,
-  "version": "0.4.24",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420 --strictPort --mode stable",
@@ -20,6 +20,8 @@
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2.0.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "buffer": "6.0.3",
     "events": "3.3.0",
     "lucide-react": "^0.468.0",

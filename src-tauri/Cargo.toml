@@ -1,6 +1,6 @@
 [package]
 name = "codex-harness"
-version = "0.4.24"
+version = "0.5.0"
 description = "A local rich client for Codex App Server"
 authors = ["Codex Harness"]
 edition = "2021"
@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 futures-util = "0.3"
 libc = "0.2"
+portable-pty = "0.9"
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls-no-alpn"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

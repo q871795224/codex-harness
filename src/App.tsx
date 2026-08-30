@@ -27,6 +27,7 @@ import { actionForShortcut, threadIndexForAction } from './features/actions/harn
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 import type { UsageService } from './core/usage/types'
 import type { ApiWorkbenchService } from './core/api-workbench/types'
+import type { TerminalService } from './core/terminal/types'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 
@@ -78,6 +79,14 @@ export default function App() {
       chooseImportFiles: runtime.chooseApiWorkbenchImportFiles,
       readImportFile: runtime.apiWorkbenchReadImportFile,
     } satisfies ApiWorkbenchService,
+    'harness.terminal': {
+      create: runtime.terminalCreate,
+      write: runtime.terminalWrite,
+      resize: runtime.terminalResize,
+      close: runtime.terminalClose,
+      openIterm: runtime.terminalOpenIterm,
+      onEvent: runtime.listenTerminalEvents,
+    } satisfies TerminalService,
   }), [agentRuns, harness.onTurnCompleted, harness.openThread])
 
   useEffect(() => {

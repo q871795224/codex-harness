@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_TODO_FILTER, DEFAULT_TODO_SCOPE, todoScopePatch, todoThreadLabel, todoWorkspaceLabel, visibleTodos, type TodoItem } from './index'
+import { DEFAULT_TODO_FILTER, DEFAULT_TODO_SCOPE, insertPlainText, todoScopePatch, todoThreadLabel, todoWorkspaceLabel, visibleTodos, type TodoItem } from './index'
 
 function todo(id: string, scope: TodoItem['scope'], owner: string | null = null): TodoItem {
   return {
@@ -79,6 +79,17 @@ describe('todo defaults', () => {
 
   it('shows todos from all threads by default', () => {
     expect(DEFAULT_TODO_FILTER).toBe('threads')
+  })
+})
+
+describe('todo note plain text', () => {
+  it('inserts clipboard text exactly at the current selection', () => {
+    expect(insertPlainText('before <b>old</b> after', 7, 17, '<b>new</b>\nraw'))
+      .toBe('before <b>new</b>\nraw after')
+  })
+
+  it('does not trim whitespace or blank lines', () => {
+    expect(insertPlainText('ab', 1, 1, '  value  \n\n')).toBe('a  value  \n\nb')
   })
 })
 

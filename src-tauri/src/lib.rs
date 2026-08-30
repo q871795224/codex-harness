@@ -8,6 +8,7 @@ mod local_connector;
 mod quick_command;
 mod store;
 mod system_notification;
+mod terminal;
 mod usage;
 
 use app_server::AppServerManager;
@@ -34,6 +35,7 @@ struct AppState {
     local_connector: LocalConnector,
     codex_radar: CodexRadarClient,
     store: HarnessStore,
+    terminal: Arc<terminal::TerminalManager>,
     api_workbench: api_workbench::ApiWorkbenchStore,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
@@ -166,6 +168,44 @@ async fn run_quick_command(
     command_id: String,
 ) -> Result<quick_command::QuickCommandResult, String> {
     quick_command::run(&command_id).await
+}
+
+#[tauri::command]
+fn terminal_create(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    input: terminal::TerminalCreateInput,
+) -> Result<terminal::TerminalSessionInfo, String> {
+    state.terminal.create(app, input)
+}
+
+#[tauri::command]
+fn terminal_write(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    state.terminal.write(&session_id, &data)
+}
+
+#[tauri::command]
+fn terminal_resize(
+    state: State<'_, AppState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    state.terminal.resize(&session_id, cols, rows)
+}
+
+#[tauri::command]
+fn terminal_close(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    state.terminal.close(&session_id)
+}
+
+#[tauri::command]
+fn terminal_open_iterm(cwd: String) -> Result<(), String> {
+    terminal::open_iterm(&cwd)
 }
 
 #[tauri::command]
@@ -497,6 +537,7 @@ pub fn run() {
                 local_connector: LocalConnector::new(),
                 codex_radar: CodexRadarClient::new(),
                 store,
+                terminal: Arc::new(terminal::TerminalManager::default()),
                 api_workbench,
                 usage_refresh: tokio::sync::Mutex::new(()),
                 workspace_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -536,6 +577,11 @@ pub fn run() {
             usage_cached_snapshot,
             usage_refresh_snapshot,
             run_quick_command,
+            terminal_create,
+            terminal_write,
+            terminal_resize,
+            terminal_close,
+            terminal_open_iterm,
             request_system_notification_permission,
             send_system_notification,
             api_workbench_load,
