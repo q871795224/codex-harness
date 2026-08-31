@@ -30,14 +30,12 @@ import type {
 } from '../../core/domain/codex'
 import { yoloModeSettings } from '../codex/yoloMode'
 import {
-  DEFAULT_SIDEBAR_WIDTH,
   DEFAULT_THREAD_TITLE_GENERATION,
   defaultFontSizePreferences,
   emptyThreadDetail,
   isActive,
   itemText,
   normalizeFontSize,
-  normalizeFontSizePreferences,
   normalizeFollowUpMode,
   normalizeSendShortcut,
   normalizeSidebarWidth,
@@ -53,7 +51,7 @@ import {
 import type { TurnCompletedEvent } from '../../core/conversations/types'
 import { diagnosticErrorCode, runtime, type ClientDiagnostic } from '../../core/runtime/bridge'
 import { appServer, type StartThreadResponse } from '../../core/runtime/appServerClient'
-import { defaultHarnessActionShortcuts, normalizeHarnessActionShortcuts } from '../actions/harnessActions'
+import { defaultHarnessActionShortcuts } from '../actions/harnessActions'
 import {
   defaultConversationStatsPreferences,
   normalizeConversationStatsPreferences,
@@ -79,6 +77,18 @@ import {
 } from './conversationEventParser'
 import { approvalResponse, isApprovalRequestMethod } from './approvalFlow'
 import {
+  APPEARANCE_PREFERENCES_KEY,
+  CONVERSATION_STATS_PREFERENCES_KEY,
+  defaultAppearancePreferences,
+  defaultKeyboardPreferences,
+  defaultNavigationPreferences,
+  KEYBOARD_PREFERENCES_KEY,
+  loadHarnessBootstrap,
+  NAVIGATION_PREFERENCES_KEY,
+  THREAD_TITLE_GENERATION_KEY,
+  togglePinnedIdentifier,
+} from './harnessBootstrap'
+import {
   isFirstUserTurn,
   resolveNewThreadWorkspaceRoot,
   resumedThreadDetail,
@@ -92,35 +102,9 @@ import {
 } from './threadLifecycle'
 import { promoteQueuedSubmission, restartInputs, submitActiveTurnInput } from './turnQueue'
 
+export { parseThreadTitleGenerationSettings } from './harnessBootstrap'
+
 type ViewMode = 'active' | 'archived'
-
-const NAVIGATION_PREFERENCES_KEY = 'navigationPreferences'
-const APPEARANCE_PREFERENCES_KEY = 'appearancePreferences'
-const KEYBOARD_PREFERENCES_KEY = 'keyboardPreferences'
-const THREAD_TITLE_GENERATION_KEY = 'threadTitleGeneration'
-const CONVERSATION_STATS_PREFERENCES_KEY = 'conversationStatsPreferences'
-
-const defaultNavigationPreferences: NavigationPreferences = {
-  layout: 'workspace',
-  sort: 'recent',
-  manualThreadOrder: [],
-  workspaceSort: 'stable',
-  pinnedThreadIds: [],
-  pinnedWorkspaceRoots: [],
-  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
-  sidebarCollapsed: false,
-}
-
-const defaultAppearancePreferences: AppearancePreferences = {
-  theme: 'light',
-  fontSizes: defaultFontSizePreferences(),
-}
-
-const defaultKeyboardPreferences: KeyboardPreferences = {
-  sendShortcut: 'mod-enter',
-  followUpMode: 'queue',
-  actionShortcuts: defaultHarnessActionShortcuts,
-}
 
 interface TitleGenerator {
   targetThreadId: string
@@ -144,88 +128,6 @@ function recordTitleDiagnostic(diagnostic: Omit<ClientDiagnostic, 'area'>): void
 
 function isMissingRollout(error: unknown): boolean {
   return messageOf(error).toLowerCase().includes('no rollout found')
-}
-
-function parseNavigationPreferences(raw: string | null): NavigationPreferences {
-  if (!raw) return defaultNavigationPreferences
-  try {
-    const value = JSON.parse(raw) as Partial<NavigationPreferences>
-    return {
-      layout: value.layout === 'list' ? 'list' : 'workspace',
-      sort: value.sort === 'manual' ? 'manual' : 'recent',
-      manualThreadOrder: Array.isArray(value.manualThreadOrder)
-        ? [...new Set(value.manualThreadOrder.filter((id): id is string => typeof id === 'string'))].slice(0, 500)
-        : [],
-      workspaceSort: value.workspaceSort === 'recent' ? 'recent' : 'stable',
-      pinnedThreadIds: parsePinnedIdentifiers(value.pinnedThreadIds),
-      pinnedWorkspaceRoots: parsePinnedIdentifiers(value.pinnedWorkspaceRoots),
-      sidebarWidth: normalizeSidebarWidth(value.sidebarWidth),
-      sidebarCollapsed: value.sidebarCollapsed === true,
-    }
-  } catch {
-    return defaultNavigationPreferences
-  }
-}
-
-function parsePinnedIdentifiers(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return [...new Set(value.filter((id): id is string => typeof id === 'string' && id.length > 0))].slice(0, 500)
-}
-
-function togglePinnedIdentifier(identifiers: string[], identifier: string): string[] {
-  return identifiers.includes(identifier)
-    ? identifiers.filter((item) => item !== identifier)
-    : [identifier, ...identifiers].slice(0, 500)
-}
-
-function parseAppearancePreferences(raw: string | null): AppearancePreferences {
-  if (!raw) return defaultAppearancePreferences
-  try {
-    const value = JSON.parse(raw)
-    return {
-      theme: normalizeTheme(value?.theme),
-      fontSizes: normalizeFontSizePreferences(value),
-    }
-  } catch {
-    return defaultAppearancePreferences
-  }
-}
-
-function parseKeyboardPreferences(raw: string | null): KeyboardPreferences {
-  if (!raw) return defaultKeyboardPreferences
-  try {
-    const value = JSON.parse(raw) as Partial<KeyboardPreferences>
-    return {
-      sendShortcut: normalizeSendShortcut(value.sendShortcut),
-      followUpMode: normalizeFollowUpMode(value.followUpMode),
-      actionShortcuts: normalizeHarnessActionShortcuts(value.actionShortcuts),
-    }
-  } catch {
-    return defaultKeyboardPreferences
-  }
-}
-
-function parseConversationStatsPreferences(raw: string | null): ConversationStatsPreferences {
-  if (!raw) return defaultConversationStatsPreferences()
-  try {
-    return normalizeConversationStatsPreferences(JSON.parse(raw))
-  } catch {
-    return defaultConversationStatsPreferences()
-  }
-}
-
-export function parseThreadTitleGenerationSettings(raw: string | null): ThreadTitleGenerationSettings {
-  if (!raw) return DEFAULT_THREAD_TITLE_GENERATION
-  try {
-    const value = JSON.parse(raw) as Partial<ThreadTitleGenerationSettings>
-    return {
-      model: typeof value.model === 'string' && value.model.trim() ? value.model : DEFAULT_THREAD_TITLE_GENERATION.model,
-      effort: typeof value.effort === 'string' && value.effort.trim() ? value.effort : DEFAULT_THREAD_TITLE_GENERATION.effort,
-      prompt: typeof value.prompt === 'string' && value.prompt.trim() ? value.prompt : DEFAULT_THREAD_TITLE_GENERATION.prompt,
-    }
-  } catch {
-    return DEFAULT_THREAD_TITLE_GENERATION
-  }
 }
 
 export function useHarness() {
@@ -1582,32 +1484,22 @@ export function useHarness() {
     let unlistenTransport: (() => void) | undefined
     const bootstrap = async () => {
       try {
-        const [storedWorkspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance, storedKeyboard, storedThreadTitleGeneration, storedConversationStats] = await Promise.all([
-          runtime.listWorkspaces(),
-          runtime.listThreadStates(),
-          runtime.getAppState('selectedThreadId'),
-          runtime.getAppState(NAVIGATION_PREFERENCES_KEY),
-          runtime.getAppState(APPEARANCE_PREFERENCES_KEY),
-          runtime.getAppState(KEYBOARD_PREFERENCES_KEY),
-          runtime.getAppState(THREAD_TITLE_GENERATION_KEY),
-          runtime.getAppState(CONVERSATION_STATS_PREFERENCES_KEY),
-        ])
+        const restored = await loadHarnessBootstrap(runtime)
         if (disposed) return
-        setWorkspaces(storedWorkspaces)
-        setThreadStates(Object.fromEntries(storedStates.map((state) => [state.threadId, state])))
-        setNavigation(parseNavigationPreferences(storedNavigation))
-        setAppearance(parseAppearancePreferences(storedAppearance))
-        setKeyboard(parseKeyboardPreferences(storedKeyboard))
-        const parsedThreadTitleGeneration = parseThreadTitleGenerationSettings(storedThreadTitleGeneration)
-        threadTitleGenerationRef.current = parsedThreadTitleGeneration
-        setThreadTitleGenerationState(parsedThreadTitleGeneration)
-        setConversationStatsState(parseConversationStatsPreferences(storedConversationStats))
-        if (storedWorkspaces.length > 0) setSelectedWorkspaceRoot(storedWorkspaces[0].root)
+        setWorkspaces(restored.workspaces)
+        setThreadStates(restored.threadStates)
+        setNavigation(restored.navigation)
+        setAppearance(restored.appearance)
+        setKeyboard(restored.keyboard)
+        threadTitleGenerationRef.current = restored.threadTitleGeneration
+        setThreadTitleGenerationState(restored.threadTitleGeneration)
+        setConversationStatsState(restored.conversationStats)
+        if (restored.workspaces.length > 0) setSelectedWorkspaceRoot(restored.workspaces[0].root)
         const loadedThreads = await refreshThreads('active')
         if (disposed) return
         setPhase('ready')
-        if (rememberedThreadId && loadedThreads.some((thread) => thread.id === rememberedThreadId)) {
-          void selectThread(rememberedThreadId)
+        if (restored.rememberedThreadId && loadedThreads.some((thread) => thread.id === restored.rememberedThreadId)) {
+          void selectThread(restored.rememberedThreadId)
         }
       } catch (error) {
         if (!disposed) {

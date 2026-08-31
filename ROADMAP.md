@@ -42,7 +42,7 @@ Codex Harness 是 Codex App Server 上的本地工作台，重点是会话组织
 
 ### 工程质量
 
-- 将 App Server method string 收口到类型化 facade，业务组件不再直接发送任意协议方法；ThreadDetail 事件更新、App Server 事件字段解析、会话恢复/新建状态组装、turn 启动/queue/steer 和审批协议映射已抽成可测试逻辑，后续继续拆分其余会话操作。
+- 将 App Server method string 收口到类型化 facade，业务组件不再直接发送任意协议方法；ThreadDetail 事件更新、App Server 事件字段解析、Harness 启动状态恢复、会话恢复/新建状态组装、turn 启动/queue/steer 和审批协议映射已抽成可测试逻辑，后续继续拆分其余会话操作。
 - 停止包含待处理插话的 turn 时保留原始结构化输入，后续重发不会把图片、Skill 或文件 mention 降级为展示文本。
 - 为 fork、事件 reducer、并发写入保护和 IPC 错误分支增加测试；逐步提高覆盖率阈值。
 - 按真实 bundle profile 延迟加载设置页、Terminal/xterm 和 API Workbench sandbox；继续以首屏成本而非 warning 数量决定后续拆分。
