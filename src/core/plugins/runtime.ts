@@ -12,6 +12,7 @@ import type {
   PluginViewContext,
   QuickActionContribution,
   QuickCommandContribution,
+  ThreadHeaderActionContribution,
 } from '../../extensions/types'
 
 type Disposer = () => void | Promise<void>
@@ -146,6 +147,7 @@ export class PluginHost {
   private readonly services = new ServiceRegistry()
   private readonly events = new EventBus()
   private readonly tabs = new ContributionRegistry<ConversationTabContribution>()
+  private readonly threadHeaderActions = new ContributionRegistry<ThreadHeaderActionContribution>()
   private readonly newThreadPanels = new ContributionRegistry<NewThreadPanelContribution>()
   private readonly composerActions = new ContributionRegistry<ComposerActionContribution>()
   private readonly quickActions = new ContributionRegistry<QuickActionContribution>()
@@ -172,6 +174,10 @@ export class PluginHost {
 
   resolvedTabs(context: PluginViewContext): ResolvedContribution<ConversationTabContribution>[] {
     return resolveScopedContributions(this.tabs.list(), context)
+  }
+
+  resolvedThreadHeaderActions(context: PluginViewContext): ResolvedContribution<ThreadHeaderActionContribution>[] {
+    return resolveScopedContributions(this.threadHeaderActions.list(), context)
   }
 
   resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[] {
@@ -283,6 +289,9 @@ export class PluginHost {
         emit: <T,>(event: string, payload: T) => this.events.emit(event, payload),
       },
       slots: {
+        threadHeaderActions: {
+          register: (contribution) => lifecycle.effect(this.threadHeaderActions.register({ ...metadata, contribution })),
+        },
         newThreadPanels: {
           register: (contribution) => lifecycle.effect(this.newThreadPanels.register({ ...metadata, contribution })),
         },

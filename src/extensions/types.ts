@@ -69,6 +69,16 @@ export interface ComposerActionContribution {
   render(props: ComposerActionProps): ReactNode
 }
 
+export interface ThreadHeaderActionProps extends PluginViewContext {
+  disabled: boolean
+}
+
+export interface ThreadHeaderActionContribution {
+  id: string
+  order?: number
+  render(props: ThreadHeaderActionProps): ReactNode
+}
+
 export interface QuickActionProps extends PluginViewContext {
   checkoutRoot: string | null
   disabled: boolean
@@ -127,6 +137,9 @@ export interface PluginEventAccess {
 }
 
 export interface PluginSlotAccess {
+  threadHeaderActions: {
+    register(contribution: ThreadHeaderActionContribution): void
+  }
   newThreadPanels: {
     register(contribution: NewThreadPanelContribution): void
   }

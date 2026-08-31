@@ -25,6 +25,7 @@ import type { HarnessFileTree } from '../harness-files/types'
 import type { UsageSnapshot } from '../usage/types'
 import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-workbench/types'
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
+import type { WorkspaceAppId } from '../app-launcher/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -194,6 +195,10 @@ export const runtime = {
 
   terminalOpenIterm(cwd: string): Promise<void> {
     return invoke<void>('terminal_open_iterm', { cwd })
+  },
+
+  openWorkspaceApp(appId: WorkspaceAppId, cwd: string): Promise<void> {
+    return invoke<void>('open_workspace_app', { appId, cwd })
   },
 
   async listenTerminalEvents(handler: (event: TerminalEvent) => void): Promise<() => void> {
