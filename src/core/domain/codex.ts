@@ -95,7 +95,7 @@ export interface AppearancePreferences {
 export type Theme = 'light' | 'dark'
 export type SendShortcut = 'mod-enter' | 'enter'
 export type FollowUpMode = 'queue' | 'interject'
-export type HarnessActionId = 'thread.new' | `thread.select.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}` | 'sidebar.toggle' | 'composer.focus'
+export type HarnessActionId = 'thread.new' | `thread.select.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}` | 'sidebar.toggle' | 'composer.focus' | 'tab.focus.toggle'
 export type HarnessActionShortcuts = Record<HarnessActionId, string>
 
 export interface KeyboardPreferences {

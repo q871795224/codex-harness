@@ -121,6 +121,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const plugins = usePluginHost()
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
+  const [focusedTab, setFocusedTab] = useState<string | null>(null)
   const [tabOrder, setTabOrder] = useState<string[]>([])
   const tabOrderRef = useRef<string[]>([])
   const [draggedTab, setDraggedTab] = useState<string | null>(null)
@@ -171,6 +172,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
     workspaceRoot: workspace?.root ?? null,
   })
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
+  const tabFocused = focusedTab === tab && Boolean(selectedPluginTab?.contribution.focusable)
   const composerCollapsible = Boolean(selectedPluginTab?.contribution.collapsibleComposer)
   const composerCollapseKey = `${harness.selectedThreadId ?? 'none'}:${tab}`
   const composerCollapsed = composerCollapsible && Boolean(collapsedComposerKeys[composerCollapseKey])
@@ -228,6 +230,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
   }, [selectedPluginTab, tab])
 
   useEffect(() => {
+    if (focusedTab && (!selectedPluginTab?.contribution.focusable || focusedTab !== tab)) setFocusedTab(null)
+  }, [focusedTab, selectedPluginTab, tab])
+
+  useEffect(() => {
     void runtime.setWindowTheme(harness.appearance.theme).catch(() => undefined)
   }, [harness.appearance.theme])
 
@@ -241,7 +247,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
     if (actionId === 'thread.new') void harness.createThread()
     else if (actionId === 'sidebar.toggle') harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)
     else if (actionId === 'composer.focus') setComposerFocusRequest((current) => current + 1)
-  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.setSidebarCollapsed, visibleThreadIds])
+    else if (actionId === 'tab.focus.toggle' && selectedPluginTab?.contribution.focusable) {
+      setFocusedTab((current) => current === tab ? null : tab)
+    }
+  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.setSidebarCollapsed, selectedPluginTab, tab, visibleThreadIds])
 
   useEffect(() => {
     if (settingsOpen || pluginsOpen) return undefined
@@ -318,6 +327,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
       className="app-shell"
       data-flavor={flavor}
       data-theme={harness.appearance.theme}
+      data-tab-focused={tabFocused || undefined}
       style={{
         '--h-navigation-font-offset': `${harness.appearance.fontSizes.navigation - DEFAULT_FONT_SIZES.navigation}px`,
         '--h-conversation-font-offset': `${harness.appearance.fontSizes.conversation - DEFAULT_FONT_SIZES.conversation}px`,

@@ -22,14 +22,14 @@ export const apiWorkbenchPlugin: HarnessPlugin = {
     id: 'builtin.api-workbench',
     name: 'API 工作台',
     description: '全局 HTTP 请求工作台，支持 Postman Collection 和前后置脚本。',
-    version: '1.3.0',
+    version: '1.3.1',
     engine: { codexHarness: '^0.4.24' },
     supportedScopes: ['global'],
     permissions: ['network:http', 'filesystem:import'],
   },
   activate(ctx) {
     const service = ctx.services.get<ApiWorkbenchService>('harness.apiWorkbench')
-    ctx.slots.conversationTabs.register({ id: 'api-workbench', label: 'API', order: 35, icon: FlaskConical, render: () => <ApiWorkbenchTab service={service} /> })
+    ctx.slots.conversationTabs.register({ id: 'api-workbench', label: 'API', order: 35, icon: FlaskConical, focusable: true, render: () => <ApiWorkbenchTab service={service} /> })
   },
 }
 
