@@ -45,7 +45,6 @@ import {
   textInput,
   threadTitle,
   touchThreadActivity,
-  threadsOlderThan,
   withInitialThreadPreview,
 } from '../../core/domain/codex'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
@@ -89,6 +88,7 @@ import {
   togglePinnedIdentifier,
 } from './harnessBootstrap'
 import { subscribeHarnessRuntime } from './harnessSubscriptions'
+import { archiveThreadsBefore, listThreadPage, type ThreadViewMode } from './threadCatalog'
 import {
   isFirstUserTurn,
   resolveNewThreadWorkspaceRoot,
@@ -105,7 +105,7 @@ import { promoteQueuedSubmission, restartInputs, submitActiveTurnInput } from '.
 
 export { parseThreadTitleGenerationSettings } from './harnessBootstrap'
 
-type ViewMode = 'active' | 'archived'
+type ViewMode = ThreadViewMode
 
 interface TitleGenerator {
   targetThreadId: string
@@ -427,16 +427,7 @@ export function useHarness() {
   }, [])
 
   const refreshThreads = useCallback(async (mode: ViewMode = viewMode, searchTerm = '') => {
-    const response = await appServer.listThreads({
-      // The state DB already backs normal Codex session navigation. Avoid the
-      // expensive JSONL scan-and-repair path on every Harness refresh.
-      limit: 100,
-      sortKey: 'recency_at',
-      sortDirection: 'desc',
-      archived: mode === 'archived',
-      useStateDbOnly: true,
-      ...(searchTerm.trim() ? { searchTerm: searchTerm.trim() } : {}),
-    })
+    const response = await listThreadPage(appServer, mode, searchTerm)
     setThreads(response.data)
     setThreadRoots((current) => {
       const next = { ...current }
@@ -451,26 +442,6 @@ export function useHarness() {
     void mapThreadRoots(response.data)
     return response.data
   }, [mapThreadRoots, viewMode])
-
-  const listAllActiveThreads = useCallback(async (): Promise<Thread[]> => {
-    const allThreads: Thread[] = []
-    let cursor: string | null = null
-
-    do {
-      const response = await appServer.listThreads({
-        cursor,
-        limit: 100,
-        sortKey: 'recency_at',
-        sortDirection: 'desc',
-        archived: false,
-        useStateDbOnly: true,
-      })
-      allThreads.push(...response.data)
-      cursor = response.nextCursor
-    } while (cursor)
-
-    return allThreads
-  }, [])
 
   const loadQueue = useCallback(async (threadId: string) => {
     try {
@@ -1093,22 +1064,13 @@ export function useHarness() {
     setBusy((current) => ({ ...current, archiveOldThreads: true }))
     try {
       const cutoff = Date.now() / 1_000 - 3 * 24 * 60 * 60
-      const candidates = threadsOlderThan(await listAllActiveThreads(), cutoff)
-      if (candidates.length === 0) {
+      const result = await archiveThreadsBefore(appServer, cutoff)
+      if (result.candidateCount === 0) {
         notify('没有超过 3 天的会话需要归档')
         return
       }
 
-      const archivedIds = new Set<string>()
-      let failedCount = 0
-      for (const thread of candidates) {
-        try {
-          await appServer.archiveThread(thread.id)
-          archivedIds.add(thread.id)
-        } catch {
-          failedCount += 1
-        }
-      }
+      const archivedIds = new Set(result.archivedIds)
 
       if (archivedIds.size > 0) {
         setThreads((current) => current.filter((thread) => !archivedIds.has(thread.id)))
@@ -1118,10 +1080,10 @@ export function useHarness() {
         }
       }
 
-      if (failedCount > 0) {
+      if (result.failedCount > 0) {
         const message = archivedIds.size > 0
-          ? `已归档 ${archivedIds.size} 个 3 天前的会话；${failedCount} 个未能归档`
-          : `未能归档 ${failedCount} 个 3 天前的会话`
+          ? `已归档 ${archivedIds.size} 个 3 天前的会话；${result.failedCount} 个未能归档`
+          : `未能归档 ${result.failedCount} 个 3 天前的会话`
         notify(message, 'error')
       } else {
         notify(`已归档 ${archivedIds.size} 个 3 天前的会话`)
@@ -1131,7 +1093,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, archiveOldThreads: false }))
     }
-  }, [busy.archiveOldThreads, listAllActiveThreads, notify])
+  }, [busy.archiveOldThreads, notify])
 
   const unarchiveThread = useCallback(async (threadId: string) => {
     try {
