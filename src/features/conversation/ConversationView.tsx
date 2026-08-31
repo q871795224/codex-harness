@@ -7,6 +7,7 @@ import {
   ArrowDownToLine,
   Bot,
   Check,
+  CircleAlert,
   ChevronDown,
   ChevronRight,
   Command,
@@ -163,9 +164,11 @@ interface ConversationViewProps {
   workingTurnId: string | null
   workingStartedAt: number | null
   onRawModeToggle: () => void
+  onContinueAfterFailure?: () => void
+  continueDisabled?: boolean
 }
 
-export function ConversationView({ items, turns, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle }: ConversationViewProps) {
+export function ConversationView({ items, turns, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -202,9 +205,12 @@ export function ConversationView({ items, turns, approvals, workspace, workspace
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
   const rawTranscriptRows = items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
-  const turnStatuses: Record<string, Turn['status']> = Object.fromEntries(turns.map((turn) => [turn.id, turn.status]))
-  if (workingTurnId) turnStatuses[workingTurnId] = 'inProgress'
-  const transcriptTurns = rawMode ? [] : groupTranscriptTurns(items, turnStatuses)
+  const turnDetails = turns.map((turn) => ({ id: turn.id, status: turn.status, error: turn.error }))
+  const activeTurnIndex = turnDetails.findIndex((turn) => turn.id === workingTurnId)
+  if (workingTurnId && activeTurnIndex >= 0) turnDetails[activeTurnIndex] = { ...turnDetails[activeTurnIndex], status: 'inProgress' }
+  else if (workingTurnId) turnDetails.push({ id: workingTurnId, status: 'inProgress', error: null })
+  const transcriptTurns = rawMode ? [] : groupTranscriptTurns(items, turnDetails)
+  const latestTurnId = turns.at(-1)?.id ?? null
   const workingMessageIndex = rawMode && working ? latestAgentMessageIndex(rawTranscriptRows, workingTurnId) : -1
   const activeTurnHasContent = transcriptTurns.some((turn) => turn.turnId === workingTurnId && (turn.processRows.length > 0 || turn.finalRows.length > 0))
 
@@ -271,6 +277,16 @@ export function ConversationView({ items, turns, approvals, workspace, workspace
               turn={turn}
               working={working && turn.turnId === workingTurnId}
               workingStartedAt={workingStartedAt}
+              canContinue={Boolean(onContinueAfterFailure) && !working && !continueDisabled && latestTurnId === turn.turnId}
+              onContinue={onContinueAfterFailure}
+            />
+          ))}
+          {rawMode && turns.filter((turn) => turn.status === 'failed').map((turn) => (
+            <TurnFailureNotice
+              key={`failure:${turn.id}`}
+              error={turn.error}
+              canContinue={Boolean(onContinueAfterFailure) && !working && !continueDisabled && latestTurnId === turn.id}
+              onContinue={onContinueAfterFailure}
             />
           ))}
           {working && (rawMode ? workingMessageIndex < 0 : !activeTurnHasContent) && (
@@ -308,7 +324,13 @@ export function latestAgentMessageIndex(rows: Array<{ entry: ThreadItemEntry }>,
   return -1
 }
 
-function TranscriptTurnView({ turn, working, workingStartedAt }: { turn: TranscriptTurn; working: boolean; workingStartedAt: number | null }) {
+function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onContinue }: {
+  turn: TranscriptTurn
+  working: boolean
+  workingStartedAt: number | null
+  canContinue: boolean
+  onContinue?: () => void
+}) {
   const processRows = turn.processRows.filter(isRenderableProcessRow)
   return (
     <section className={`conversation-turn${working ? ' running' : ''}`} data-turn-id={turn.turnId}>
@@ -350,7 +372,27 @@ function TranscriptTurnView({ turn, working, workingStartedAt }: { turn: Transcr
           )}
         </div>
       )}
+      {turn.status === 'failed' && <TurnFailureNotice error={turn.error} canContinue={canContinue} onContinue={onContinue} />}
     </section>
+  )
+}
+
+function TurnFailureNotice({ error, canContinue, onContinue }: {
+  error: Turn['error'] | undefined
+  canContinue: boolean
+  onContinue?: () => void
+}) {
+  const reason = error?.message?.trim() || 'Codex 未返回更具体的失败原因。'
+  return (
+    <article className="turn-failure-notice" role="alert">
+      <div className="turn-failure-copy">
+        <span><CircleAlert size={15} />执行失败</span>
+        <p>{reason}</p>
+      </div>
+      {canContinue && onContinue && (
+        <button type="button" onClick={onContinue} title="在当前会话中新开一轮并发送“继续”；不会重试上一条请求。">继续</button>
+      )}
+    </article>
   )
 }
 

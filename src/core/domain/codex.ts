@@ -186,6 +186,7 @@ export interface ActivePermissionProfile {
 export interface ThreadCodexSettings {
   model: string
   effort: string
+  serviceTier: string | null
   approvalPolicy: ApprovalPolicy
   approvalsReviewer: ApprovalsReviewer
   sandboxMode: SandboxMode
@@ -206,11 +207,20 @@ export interface CodexModel {
   defaultReasoningEffort: string
   inputModalities: string[]
   isDefault: boolean
+  serviceTiers?: CodexServiceTier[]
+  defaultServiceTier?: string | null
+}
+
+export interface CodexServiceTier {
+  id: string
+  name: string
+  description: string
 }
 
 export interface CodexConfig {
   model: string | null
   model_reasoning_effort: string | null
+  service_tier?: string | null
   approval_policy: ApprovalPolicy | null
   approvals_reviewer?: ApprovalsReviewer | null
   sandbox_mode?: SandboxMode | null
@@ -348,11 +358,12 @@ export interface ThreadDetail {
   sandbox: SandboxPolicy | null
   activePermissionProfile: ActivePermissionProfile | null
   model: string | null
+  threadSettings?: Partial<ThreadCodexSettings> | null
 }
 
 export function emptyThreadDetail(
   thread: Thread,
-  runtime: Partial<Pick<ThreadDetail, 'runtimeWorkspaceRoots' | 'sandbox' | 'activePermissionProfile' | 'model'>> = {},
+  runtime: Partial<Pick<ThreadDetail, 'runtimeWorkspaceRoots' | 'sandbox' | 'activePermissionProfile' | 'model' | 'threadSettings'>> = {},
 ): ThreadDetail {
   return {
     thread,
@@ -365,6 +376,7 @@ export function emptyThreadDetail(
     sandbox: runtime.sandbox ?? null,
     activePermissionProfile: runtime.activePermissionProfile ?? null,
     model: runtime.model ?? null,
+    threadSettings: runtime.threadSettings ?? null,
   }
 }
 

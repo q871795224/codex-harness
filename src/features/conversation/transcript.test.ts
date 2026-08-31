@@ -45,7 +45,7 @@ describe('groupTranscriptTurns', () => {
       entry('turn-1', 'agentMessage', '先检查实现', 'commentary'),
       { turnId: 'turn-1', item: { id: 'command-1', type: 'commandExecution', command: 'pnpm test' } },
       entry('turn-1', 'agentMessage', '已经修复', 'final_answer'),
-    ], { 'turn-1': 'completed' })
+    ], [{ id: 'turn-1', status: 'completed', error: null }])
 
     expect(turns).toHaveLength(1)
     expect(turns[0].userRows).toHaveLength(1)
@@ -58,7 +58,7 @@ describe('groupTranscriptTurns', () => {
       entry('turn-1', 'agentMessage', '第一段'),
       { turnId: 'turn-1', item: { id: 'command-1', type: 'commandExecution' } },
       entry('turn-1', 'agentMessage', '总结'),
-    ], { 'turn-1': 'completed' })
+    ], [{ id: 'turn-1', status: 'completed', error: null }])
 
     expect(turns[0].processRows).toHaveLength(2)
     expect(turns[0].finalRows[0].agentText).toBe('总结')
@@ -67,7 +67,7 @@ describe('groupTranscriptTurns', () => {
   it('keeps phase-less agent messages in the process while a turn is running', () => {
     const turns = groupTranscriptTurns([
       entry('turn-1', 'agentMessage', '仍在处理'),
-    ], { 'turn-1': 'inProgress' })
+    ], [{ id: 'turn-1', status: 'inProgress', error: null }])
 
     expect(turns[0].processRows).toHaveLength(1)
     expect(turns[0].finalRows).toHaveLength(0)
@@ -78,8 +78,22 @@ describe('groupTranscriptTurns', () => {
       entry('turn-1', 'agentMessage', '检查中', 'commentary'),
       { turnId: 'turn-1', item: { id: 'command-1', type: 'commandExecution' } },
       { turnId: 'turn-1', item: { id: 'files-1', type: 'fileChange', changes: [{ path: 'a.ts' }, { path: 'b.ts' }] } },
-    ], { 'turn-1': 'completed' })
+    ], [{ id: 'turn-1', status: 'completed', error: null }])
 
     expect(summarizeProcessRows(turns[0].processRows)).toBe('3 项 · 修改 2 个文件 · 运行 1 条命令')
+  })
+
+  it('keeps a failed turn visible when no item was returned', () => {
+    const turns = groupTranscriptTurns([], [{
+      id: 'turn-failed',
+      status: 'failed',
+      error: { message: 'Selected model is at capacity. Please try a different model.' },
+    }])
+
+    expect(turns).toEqual([expect.objectContaining({
+      turnId: 'turn-failed',
+      status: 'failed',
+      error: { message: 'Selected model is at capacity. Please try a different model.' },
+    })])
   })
 })

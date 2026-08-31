@@ -172,6 +172,7 @@ pub async fn install(
     );
 
     let update_started = Instant::now();
+    app_server.emit_update_stage("cli");
     diagnostics.record(
         "info",
         "codex-update",
@@ -220,6 +221,7 @@ pub async fn install(
         "install.daemon_restart.started",
         json!({ "installedVersion": installed, "targetVersion": target }),
     );
+    app_server.emit_update_stage("daemon");
     let restart_started = Instant::now();
     app_server
         .restart_after_update()

@@ -1,17 +1,25 @@
-import { ArrowRight, Download, ExternalLink, LoaderCircle, RotateCw } from 'lucide-react'
-import type { CodexUpdateStatus } from '../../core/codex-update/types'
+import { ArrowRight, Check, Download, ExternalLink, LoaderCircle, RotateCw } from 'lucide-react'
+import type { CodexUpdateStage, CodexUpdateStatus } from '../../core/codex-update/types'
 import { runtime } from '../../core/runtime/bridge'
 
 interface CodexUpdatePanelProps {
   status: CodexUpdateStatus
   updating: boolean
+  updateStage: CodexUpdateStage | null
   error: string | null
   onInstall(): void
   onDefer(): void
   onSkip(): void
 }
 
-export function CodexUpdatePanel({ status, updating, error, onInstall, onDefer, onSkip }: CodexUpdatePanelProps) {
+const UPDATE_STAGES: { id: CodexUpdateStage; label: string }[] = [
+  { id: 'cli', label: '更新 CLI' },
+  { id: 'daemon', label: '重启 App Server' },
+  { id: 'reconnect', label: '重新连接' },
+]
+
+export function CodexUpdatePanel({ status, updating, updateStage, error, onInstall, onDefer, onSkip }: CodexUpdatePanelProps) {
+  const latestVersion = status.latestVersion
   return (
     <section className="codex-update-panel" aria-label="Codex 更新可用">
       <header className="codex-update-head">
@@ -32,10 +40,26 @@ export function CodexUpdatePanel({ status, updating, error, onInstall, onDefer, 
         Codex CLI 与 App Server 会一起更新。安装完成后 Harness 将重启共享 daemon 并自动重新连接；其他正在连接该 daemon 的 Codex 客户端会短暂断开。
       </p>
 
-      {updating && (
-        <div className="codex-update-progress" role="status">
-          <LoaderCircle className="spin" size={14} />
-          <span>正在更新 CLI → 重启 App Server → 重新连接…</span>
+      {latestVersion && (
+        <button className="codex-update-release" type="button" onClick={() => void runtime.openExternalUrl(releaseUrl(latestVersion))}>
+          查看 v{latestVersion} 更新内容<ExternalLink size={12} />
+        </button>
+      )}
+
+      {updating && updateStage && (
+        <div className="codex-update-progress" role="status" aria-label="Codex 更新进度">
+          {UPDATE_STAGES.map((stage, index) => {
+            const current = Math.max(0, UPDATE_STAGES.findIndex(({ id }) => id === updateStage))
+            const state = index < current ? 'complete' : index === current ? 'active' : 'pending'
+            return (
+              <div className="codex-update-stage" data-state={state} key={stage.id}>
+                <span className="codex-update-stage-icon">
+                  {state === 'complete' ? <Check size={12} /> : state === 'active' ? <LoaderCircle className="spin" size={12} /> : index + 1}
+                </span>
+                <span>{stage.label}</span>
+              </div>
+            )
+          })}
         </div>
       )}
       {error && (
@@ -55,6 +79,10 @@ export function CodexUpdatePanel({ status, updating, error, onInstall, onDefer, 
       </footer>
     </section>
   )
+}
+
+function releaseUrl(version: string): string {
+  return `https://github.com/openai/codex/releases/tag/rust-v${encodeURIComponent(version)}`
 }
 
 function currentVersion(status: CodexUpdateStatus): string | null {

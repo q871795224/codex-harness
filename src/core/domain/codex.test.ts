@@ -94,6 +94,7 @@ describe('emptyThreadDetail', () => {
       sandbox: null,
       activePermissionProfile: null,
       model: null,
+      threadSettings: null,
     })
   })
 })

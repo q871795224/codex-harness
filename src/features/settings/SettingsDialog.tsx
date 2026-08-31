@@ -7,6 +7,7 @@ import { runtime } from '../../core/runtime/bridge'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 import type { useCodexCore } from '../codex/useCodexCore'
 import { mcpNeedsAttention, mcpStatusLabel } from '../codex/mcpStatus'
+import { fastServiceTier, fastServiceTierTooltip } from '../codex/serviceTier'
 import { conflictingAction, formatShortcut, harnessActionDefinitions, shortcutFromEvent } from '../actions/harnessActions'
 import { ConversationStats } from '../conversation/ConversationStats'
 import {
@@ -307,6 +308,8 @@ function SettingsVersions({
 
 function ModelsSettings({ codex }: { codex: ReturnType<typeof useCodexCore> }) {
   const selectedModel = codex.models.find((model) => model.model === codex.defaults.model) ?? codex.models[0] ?? null
+  const fastTier = fastServiceTier(selectedModel)
+  const speedValue = fastTier?.id === codex.defaults.serviceTier ? fastTier.id : 'default'
 
   return (
     <div className="settings-section codex-settings">
@@ -315,6 +318,7 @@ function ModelsSettings({ codex }: { codex: ReturnType<typeof useCodexCore> }) {
         <div className="settings-row-list">
           <label className="settings-row"><span>模型</span><select value={codex.defaults.model} disabled={codex.loading || codex.models.length === 0} onChange={(event) => void codex.updateDefault('model', event.target.value)}>{codex.models.map((model) => <option key={model.id} value={model.model}>{model.displayName}</option>)}</select></label>
           <label className="settings-row"><span>推理强度</span><select value={codex.defaults.effort} disabled={codex.loading || !selectedModel} onChange={(event) => void codex.updateDefault('model_reasoning_effort', event.target.value)}>{(selectedModel?.supportedReasoningEfforts ?? []).map((option) => <option key={option.reasoningEffort} value={option.reasoningEffort}>{option.reasoningEffort}</option>)}</select></label>
+          <label className="settings-row"><span>默认速度</span><select value={speedValue} disabled={codex.loading || !fastTier} title={fastTier ? fastServiceTierTooltip(fastTier) : '当前模型不支持 Fast'} onChange={(event) => void codex.updateDefault('service_tier', event.target.value)}><option value="default">Standard</option>{fastTier && <option value={fastTier.id}>Fast</option>}</select></label>
           <label className="settings-row"><span>审批模式</span><select value={codex.defaults.approvalPolicy} disabled={codex.loading} onChange={(event) => void codex.updateDefault('approval_policy', event.target.value)}><option value="on-request">On request</option><option value="untrusted">Untrusted</option><option value="never">Never</option></select></label>
         </div>
       </section>

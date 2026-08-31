@@ -7,3 +7,5 @@ export interface CodexUpdateStatus {
   lastCheckedAt: number | null
   checkError: string | null
 }
+
+export type CodexUpdateStage = 'cli' | 'daemon' | 'reconnect'

@@ -126,7 +126,12 @@ impl AppServerManager {
             .await
             .map_err(|error| format!("等待 Codex App Server 重启任务失败: {error}"))??;
 
+        self.emit_update_stage("reconnect");
         self.connection().await.map(|_| ())
+    }
+
+    pub(crate) fn emit_update_stage(&self, stage: &str) {
+        let _ = self.app.emit("codex-update:progress", stage);
     }
 
     async fn connection(&self) -> Result<Connection, String> {
@@ -451,6 +456,21 @@ pub(crate) fn update_codex_cli() -> Result<CodexCommandSummary, String> {
 
 fn restart_daemon() -> Result<(), String> {
     let codex = find_codex_binary()?;
+    let first_error = match run_daemon_restart(&codex) {
+        Ok(()) => return Ok(()),
+        Err(error) => error,
+    };
+    if !is_unmanaged_daemon_error(&first_error) {
+        return Err(first_error);
+    }
+
+    let pid =
+        unmanaged_app_server_pid(&codex).map_err(|error| format!("{first_error}。{error}"))?;
+    terminate_unmanaged_app_server(pid)?;
+    run_daemon_restart(&codex)
+}
+
+fn run_daemon_restart(codex: &Path) -> Result<(), String> {
     let mut command = codex_command(&codex);
     command.args(["app-server", "daemon", "restart"]);
     raise_open_file_limit(&mut command);
@@ -464,6 +484,87 @@ fn restart_daemon() -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn is_unmanaged_daemon_error(error: &str) -> bool {
+    error.contains("app server is running but is not managed by codex app-server daemon")
+}
+
+#[cfg(target_os = "macos")]
+fn unmanaged_app_server_pid(codex: &Path) -> Result<u32, String> {
+    use std::os::fd::AsRawFd;
+
+    let socket_path = daemon_info(codex)?
+        .socket_path
+        .ok_or_else(|| "无法确认现有 App Server 的 socket。".to_string())?;
+    let stream = std::os::unix::net::UnixStream::connect(&socket_path)
+        .map_err(|error| format!("无法连接现有 App Server ({socket_path}): {error}"))?;
+    let mut pid: libc::pid_t = 0;
+    let mut length = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
+    let result = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_LOCAL,
+            libc::LOCAL_PEERPID,
+            (&mut pid as *mut libc::pid_t).cast(),
+            &mut length,
+        )
+    };
+    if result != 0 || pid <= 1 {
+        return Err("无法确认现有 App Server 进程，未执行自动接管。".to_string());
+    }
+    Ok(pid as u32)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn unmanaged_app_server_pid(_codex: &Path) -> Result<u32, String> {
+    Err("当前平台不支持自动接管非 daemon 管理的 App Server。".to_string())
+}
+
+#[cfg(unix)]
+fn terminate_unmanaged_app_server(pid: u32) -> Result<(), String> {
+    let pid = pid as libc::pid_t;
+    if pid <= 1 || pid == std::process::id() as libc::pid_t {
+        return Err("拒绝终止无法确认的 App Server 进程。".to_string());
+    }
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+        return Err(format!(
+            "无法停止非 daemon 管理的 App Server (PID {pid}): {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    for _ in 0..50 {
+        if !process_is_running(pid) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if unsafe { libc::kill(pid, libc::SIGKILL) } != 0 && process_is_running(pid) {
+        return Err(format!(
+            "非 daemon 管理的 App Server (PID {pid}) 未能退出: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    for _ in 0..20 {
+        if !process_is_running(pid) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Err(format!(
+        "非 daemon 管理的 App Server (PID {pid}) 未能退出。"
+    ))
+}
+
+#[cfg(unix)]
+fn process_is_running(pid: libc::pid_t) -> bool {
+    (unsafe { libc::kill(pid, 0) == 0 })
+        || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(not(unix))]
+fn terminate_unmanaged_app_server(_pid: u32) -> Result<(), String> {
+    Err("当前平台不支持自动接管非 daemon 管理的 App Server。".to_string())
 }
 
 fn daemon_info(codex: &Path) -> Result<DaemonInfo, String> {
@@ -756,5 +857,15 @@ mod tests {
             Some(PathBuf::from("/Users/example/.codex"))
         );
         assert_eq!(codex_home_ancestor(Path::new("/usr/local/bin/codex")), None);
+    }
+
+    #[test]
+    fn only_recovers_the_known_unmanaged_daemon_failure() {
+        assert!(is_unmanaged_daemon_error(
+            "无法重启 Codex App Server: Error: app server is running but is not managed by codex app-server daemon"
+        ));
+        assert!(!is_unmanaged_daemon_error(
+            "无法重启 Codex App Server: permission denied"
+        ));
     }
 }

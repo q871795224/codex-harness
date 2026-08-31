@@ -10,6 +10,7 @@ export interface TranscriptItem {
 export interface TranscriptTurn {
   turnId: string
   status?: Turn['status']
+  error?: Turn['error']
   userRows: TranscriptItem[]
   processRows: TranscriptItem[]
   finalRows: TranscriptItem[]
@@ -50,19 +51,26 @@ export function groupTranscriptItems(items: ThreadItemEntry[]): TranscriptItem[]
 
 export function groupTranscriptTurns(
   items: ThreadItemEntry[],
-  statuses: Record<string, Turn['status']> = {},
+  turnDetails: Array<Pick<Turn, 'id' | 'status' | 'error'>> = [],
 ): TranscriptTurn[] {
   const turns: TranscriptTurn[] = []
   const byId = new Map<string, TranscriptItem[]>()
+  const detailById = new Map(turnDetails.map((turn) => [turn.id, turn]))
+
+  const ensureTurn = (turnId: string) => {
+    if (byId.has(turnId)) return
+    const detail = detailById.get(turnId)
+    byId.set(turnId, [])
+    turns.push({ turnId, status: detail?.status, error: detail?.error, userRows: [], processRows: [], finalRows: [] })
+  }
+
+  for (const detail of turnDetails) ensureTurn(detail.id)
 
   for (const row of groupTranscriptItems(items)) {
     const turnId = row.entry.turnId
+    ensureTurn(turnId)
     const existing = byId.get(turnId)
-    if (existing) existing.push(row)
-    else {
-      byId.set(turnId, [row])
-      turns.push({ turnId, status: statuses[turnId], userRows: [], processRows: [], finalRows: [] })
-    }
+    existing?.push(row)
   }
 
   for (const turn of turns) {

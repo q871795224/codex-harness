@@ -5,6 +5,7 @@ import { launchMode, modePatch } from './index'
 const base: ThreadCodexSettings = {
   model: 'gpt-5.6-sol',
   effort: 'high',
+  serviceTier: null,
   approvalPolicy: 'on-request',
   approvalsReviewer: 'user',
   sandboxMode: 'workspace-write',

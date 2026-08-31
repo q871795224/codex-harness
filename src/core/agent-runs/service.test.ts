@@ -58,6 +58,7 @@ describe('AgentRunCoordinator', () => {
       settings: {
         model: 'gpt-5.6-luna',
         effort: 'max',
+        serviceTier: null,
         approvalPolicy: 'never',
         approvalsReviewer: 'user',
         sandboxMode: 'danger-full-access',

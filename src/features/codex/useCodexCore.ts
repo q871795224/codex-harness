@@ -23,7 +23,7 @@ interface McpStartupUpdate {
   error: string | null
 }
 
-const FALLBACK_APPROVAL: ApprovalPolicy = 'on-request'
+const FALLBACK_APPROVAL: ApprovalPolicy = 'never'
 
 export function useCodexCore() {
   const [models, setModels] = useState<CodexModel[]>([])
@@ -108,16 +108,23 @@ export function useCodexCore() {
     return threadSettings[threadId] ?? defaults
   }, [defaults, threadSettings])
 
+  const syncThreadSettings = useCallback((threadId: string, actual: Partial<ThreadCodexSettings>) => {
+    const next = normalizeThreadSettings({ ...defaults, ...actual }, models)
+    setThreadSettings((current) => settingsEqual(current[threadId], next) ? current : { ...current, [threadId]: next })
+  }, [defaults, models])
+
   const updateThreadSettings = useCallback(async (threadId: string, patch: Partial<ThreadCodexSettings>) => {
     setError(null)
     const previous = threadSettings[threadId] ?? defaults
     const next = normalizeThreadSettings({ ...previous, ...patch }, models)
+    const serviceTierChanged = patch.serviceTier !== undefined || previous.serviceTier !== next.serviceTier
     setThreadSettings((current) => ({ ...current, [threadId]: next }))
     try {
       await runtime.request('thread/settings/update', {
         threadId,
         ...(patch.model !== undefined ? { model: next.model } : {}),
         ...(patch.effort !== undefined ? { effort: next.effort } : {}),
+        ...(serviceTierChanged ? { serviceTier: next.serviceTier } : {}),
         ...(patch.approvalPolicy !== undefined ? { approvalPolicy: next.approvalPolicy } : {}),
         ...(patch.approvalsReviewer !== undefined ? { approvalsReviewer: next.approvalsReviewer } : {}),
         ...(patch.sandboxMode !== undefined ? { sandboxPolicy: sandboxPolicy(next.sandboxMode) } : {}),
@@ -127,24 +134,47 @@ export function useCodexCore() {
       setError(messageOf(nextError))
       throw nextError
     }
+
+    const defaultsToPersist: Array<{ keyPath: 'model' | 'service_tier'; value: string }> = []
+    if (patch.model !== undefined) defaultsToPersist.push({ keyPath: 'model', value: next.model })
+    if (serviceTierChanged) defaultsToPersist.push({ keyPath: 'service_tier', value: next.serviceTier ?? 'default' })
+    if (defaultsToPersist.length === 0) return
+
+    try {
+      await Promise.all(defaultsToPersist.map(({ keyPath, value }) => runtime.request('config/value/write', { keyPath, value, mergeStrategy: 'upsert' })))
+      setConfig((current) => ({
+        ...current,
+        ...(patch.model !== undefined ? { model: next.model } : {}),
+        ...(serviceTierChanged ? { service_tier: next.serviceTier ?? 'default' } : {}),
+      }))
+    } catch (nextError) {
+      setError(`当前会话设置已生效，但无法保存为下次默认值：${messageOf(nextError)}`)
+    }
   }, [defaults, models, threadSettings])
 
-  const updateDefault = useCallback(async (key: 'model' | 'model_reasoning_effort' | 'approval_policy', value: string) => {
+  const updateDefault = useCallback(async (key: 'model' | 'model_reasoning_effort' | 'service_tier' | 'approval_policy', value: string) => {
     setError(null)
     try {
-      await runtime.request('config/value/write', { keyPath: key, value, mergeStrategy: 'upsert' })
-      setConfig((current) => ({ ...current, [key]: value }))
+      const selectedModel = key === 'model' ? models.find((model) => model.model === value) : null
+      const configuredTier = config.service_tier && config.service_tier !== 'default' ? config.service_tier : null
+      const clearUnsupportedTier = configuredTier !== null && selectedModel !== null && selectedModel !== undefined
+        && !selectedModel.serviceTiers?.some((tier) => tier.id === configuredTier)
+      await Promise.all([
+        runtime.request('config/value/write', { keyPath: key, value, mergeStrategy: 'upsert' }),
+        ...(clearUnsupportedTier ? [runtime.request('config/value/write', { keyPath: 'service_tier', value: 'default', mergeStrategy: 'upsert' })] : []),
+      ])
+      setConfig((current) => ({ ...current, [key]: value, ...(clearUnsupportedTier ? { service_tier: 'default' } : {}) }))
     } catch (nextError) {
       setError(messageOf(nextError))
     }
-  }, [])
+  }, [config.service_tier, models])
 
   const displayedMcpServers = useMemo(() => mcpServers.map((server) => {
     const update = mcpStartupUpdates[server.name]
     return update ? { ...server, runtimeStatus: update.runtimeStatus, startupError: update.error } : server
   }), [mcpServers, mcpStartupUpdates])
 
-  return { models, config, defaults, loading, error, reload, settingsForThread, updateThreadSettings, updateDefault, mcpServers: displayedMcpServers, mcpLoading, mcpError, reloadMcp }
+  return { models, config, defaults, loading, error, reload, settingsForThread, syncThreadSettings, updateThreadSettings, updateDefault, mcpServers: displayedMcpServers, mcpLoading, mcpError, reloadMcp }
 }
 
 function resolveDefaults(models: CodexModel[], config: CodexConfig): ThreadCodexSettings {
@@ -157,9 +187,10 @@ function resolveDefaults(models: CodexModel[], config: CodexConfig): ThreadCodex
   return {
     model: model?.model ?? config.model ?? '',
     effort,
+    serviceTier: config.service_tier && config.service_tier !== 'default' ? config.service_tier : null,
     approvalPolicy: config.approval_policy ?? FALLBACK_APPROVAL,
     approvalsReviewer: config.approvals_reviewer ?? 'user',
-    sandboxMode: config.sandbox_mode ?? 'workspace-write',
+    sandboxMode: config.sandbox_mode ?? 'danger-full-access',
   }
 }
 
@@ -169,7 +200,19 @@ function normalizeThreadSettings(settings: ThreadCodexSettings, models: CodexMod
   const effort = model.supportedReasoningEfforts.some((candidate) => candidate.reasoningEffort === settings.effort)
     ? settings.effort
     : model.defaultReasoningEffort
-  return { ...settings, effort }
+  const serviceTier = settings.serviceTier && model.serviceTiers?.some((tier) => tier.id === settings.serviceTier)
+    ? settings.serviceTier
+    : null
+  return { ...settings, effort, serviceTier }
+}
+
+function settingsEqual(left: ThreadCodexSettings | undefined, right: ThreadCodexSettings): boolean {
+  return left?.model === right.model
+    && left?.effort === right.effort
+    && left?.serviceTier === right.serviceTier
+    && left?.approvalPolicy === right.approvalPolicy
+    && left?.approvalsReviewer === right.approvalsReviewer
+    && left?.sandboxMode === right.sandboxMode
 }
 
 function messageOf(error: unknown): string {

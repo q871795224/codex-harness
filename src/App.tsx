@@ -198,6 +198,17 @@ function HarnessShell({ harness, agentRuns, codex }: {
     tabOrder,
   )
   const latestTurn = harness.currentDetail?.turns.at(-1) ?? null
+  const syncedThreadSettingsRef = useRef(new Map<string, string>())
+
+  useEffect(() => {
+    const threadId = harness.selectedThreadId
+    const threadSettings = harness.currentDetail?.threadSettings
+    if (!threadId || !threadSettings) return
+    const signature = JSON.stringify(threadSettings)
+    if (syncedThreadSettingsRef.current.get(threadId) === signature) return
+    syncedThreadSettingsRef.current.set(threadId, signature)
+    codex.syncThreadSettings(threadId, threadSettings)
+  }, [codex.syncThreadSettings, harness.currentDetail?.threadSettings, harness.selectedThreadId])
 
   useEffect(() => {
     const threadId = harness.selectedThreadId
@@ -492,6 +503,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   <CodexUpdatePanel
                     status={codexUpdate.status}
                     updating={codexUpdate.updating}
+                    updateStage={codexUpdate.updateStage}
                     error={codexUpdate.error}
                     onInstall={() => void codexUpdate.install()}
                     onDefer={codexUpdate.defer}
@@ -519,6 +531,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 workingTurnId={currentActiveTurn?.id ?? null}
                 workingStartedAt={currentActiveTurn?.startedAt ?? null}
                 onRawModeToggle={() => setRawMode((current) => !current)}
+                onContinueAfterFailure={canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
+                continueDisabled={Boolean(harness.busy.composer)}
               />
             ) : selectedPluginTab ? (
               <PluginTabBoundary

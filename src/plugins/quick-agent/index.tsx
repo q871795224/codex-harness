@@ -19,7 +19,7 @@ export const quickAgentPlugin: HarnessPlugin = {
     id: 'builtin.quick-agent',
     name: '快捷 Agent',
     description: '在独立会话中使用预设模型和权限执行固定 Job。',
-    version: '1.0.3',
+    version: '1.0.4',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace'],
   },

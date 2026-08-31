@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, FileText, Image, Plus, Send, Sparkles, Square, Terminal, X } from 'lucide-react'
+import { ChevronDown, FileText, Image, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
@@ -18,6 +18,8 @@ import {
   type CollapsedPaste,
 } from './composerInput'
 import { parseComposerCommand, type ComposerCommand } from './composerCommands'
+import { fastServiceTier, fastServiceTierTooltip } from '../codex/serviceTier'
+import { isYoloMode, yoloModeSettings } from '../codex/yoloMode'
 
 interface ComposerProps {
   initialDraft?: ComposerDraft
@@ -98,6 +100,9 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
   const previousFocusRequestRef = useRef(focusRequest)
   const onDraftChangeRef = useRef(onDraftChange)
   const selectedModel = models.find((model) => model.model === settings.model) ?? models[0] ?? null
+  const fastTier = fastServiceTier(selectedModel)
+  const fastEnabled = fastTier?.id === settings.serviceTier
+  const yoloEnabled = isYoloMode(settings)
   const imageUnsupported = attachments.some((item) => item.kind === 'image') && selectedModel !== null && !selectedModel.inputModalities.includes('image')
   const expandedText = useMemo(() => expandCollapsedPastes(text, collapsedPastes), [collapsedPastes, text])
   const hasContent = Boolean(expandedText.trim() || attachments.length)
@@ -439,6 +444,30 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
               <option value="untrusted">Untrusted</option>
               <option value="never">Never</option>
             </select>
+            <button
+              type="button"
+              className={`yolo-mode-button${yoloEnabled ? ' active' : ''}`}
+              disabled={settingsLocked}
+              onClick={() => updateSettings(yoloModeSettings(!yoloEnabled))}
+              title={yoloEnabled ? '关闭 YOLO：恢复按需审批和工作区沙箱' : '开启 YOLO：不请求审批并允许完整文件系统访问'}
+              aria-label="切换 YOLO 模式"
+              aria-pressed={yoloEnabled}
+            >
+              <ShieldOff size={14} />
+            </button>
+            {fastTier && (
+              <button
+                type="button"
+                className={`fast-mode-button${fastEnabled ? ' active' : ''}`}
+                disabled={settingsLocked}
+                onClick={() => updateSettings({ serviceTier: fastEnabled ? null : fastTier.id })}
+                title={fastServiceTierTooltip(fastTier)}
+                aria-label="切换 Fast 模式"
+                aria-pressed={fastEnabled}
+              >
+                <Zap size={14} fill={fastEnabled ? 'currentColor' : 'none'} />
+              </button>
+            )}
           </div>
           {onCollapse && (
             <button type="button" className="composer-collapse-toggle expanded" onClick={onCollapse} aria-label="向下收起对话输入框" title="向下收起对话输入框">

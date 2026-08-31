@@ -4,7 +4,9 @@ import type {
   AppearancePreferences,
   ApprovalRequest,
   ActivePermissionProfile,
+  ApprovalPolicy,
   Badge,
+  ApprovalsReviewer,
   FollowUpMode,
   FontSize,
   FontSizeArea,
@@ -16,6 +18,7 @@ import type {
   PendingSteer,
   QueuedSubmission,
   Thread,
+  ThreadCodexSettings,
   ThreadDetail,
   ThreadItem,
   ThreadItemEntry,
@@ -32,6 +35,7 @@ import type {
   SendShortcut,
   SandboxPolicy,
 } from '../../core/domain/codex'
+import { yoloModeSettings } from '../codex/yoloMode'
 import {
   DEFAULT_SIDEBAR_WIDTH,
   DEFAULT_THREAD_TITLE_GENERATION,
@@ -101,13 +105,20 @@ const defaultKeyboardPreferences: KeyboardPreferences = {
   actionShortcuts: defaultHarnessActionShortcuts,
 }
 
-interface ResumeResponse {
+interface ThreadSettingsResponse {
+  approvalPolicy: ApprovalPolicy
+  approvalsReviewer: ApprovalsReviewer
+  model: string
+  reasoningEffort: string | null
+  serviceTier: string | null
+  sandbox: SandboxPolicy
+}
+
+interface ResumeResponse extends ThreadSettingsResponse {
   thread: Thread
   initialTurnsPage?: { data: Turn[]; nextCursor: string | null } | null
   runtimeWorkspaceRoots: string[]
-  sandbox: SandboxPolicy
   activePermissionProfile: ActivePermissionProfile | null
-  model: string
 }
 
 interface ThreadListResponse {
@@ -128,12 +139,10 @@ interface StartTurnResponse {
   turn: Turn
 }
 
-interface StartThreadResponse {
+interface StartThreadResponse extends ThreadSettingsResponse {
   thread: Thread
   runtimeWorkspaceRoots: string[]
-  sandbox: SandboxPolicy
   activePermissionProfile: ActivePermissionProfile | null
-  model: string
 }
 
 interface TitleGenerator {
@@ -156,6 +165,39 @@ function eventThreadId(params: JsonObject): string | null {
 function toThreadItem(value: unknown): ThreadItem | null {
   if (!value || typeof value !== 'object' || !('type' in value)) return null
   return value as ThreadItem
+}
+
+function runtimeThreadSettings(response: ThreadSettingsResponse): Partial<ThreadCodexSettings> {
+  return {
+    model: response.model,
+    ...(response.reasoningEffort ? { effort: response.reasoningEffort } : {}),
+    // Older App Server versions may omit this newly added field. Treat that as
+    // the standard tier instead of letting an undefined value leak into state.
+    serviceTier: response.serviceTier ?? null,
+    approvalPolicy: response.approvalPolicy,
+    approvalsReviewer: response.approvalsReviewer,
+    sandboxMode: sandboxModeForPolicy(response.sandbox),
+  }
+}
+
+function eventThreadSettings(value: JsonObject): Partial<ThreadCodexSettings> {
+  const settings: Partial<ThreadCodexSettings> = {}
+  if (typeof value.model === 'string') settings.model = value.model
+  if (typeof value.effort === 'string') settings.effort = value.effort
+  if (typeof value.serviceTier === 'string' || value.serviceTier === null) settings.serviceTier = value.serviceTier
+  if (value.approvalPolicy === 'untrusted' || value.approvalPolicy === 'on-request' || value.approvalPolicy === 'never') {
+    settings.approvalPolicy = value.approvalPolicy
+  }
+  if (value.approvalsReviewer === 'user' || value.approvalsReviewer === 'auto_review') settings.approvalsReviewer = value.approvalsReviewer
+  const sandbox = value.sandboxPolicy as SandboxPolicy | undefined
+  if (sandbox) settings.sandboxMode = sandboxModeForPolicy(sandbox)
+  return settings
+}
+
+function sandboxModeForPolicy(policy: SandboxPolicy): ThreadCodexSettings['sandboxMode'] {
+  if (policy.type === 'dangerFullAccess') return 'danger-full-access'
+  if (policy.type === 'readOnly') return 'read-only'
+  return 'workspace-write'
 }
 
 function newClientId(): string {
@@ -350,6 +392,7 @@ export function useHarness() {
   const selectedThreadIdRef = useRef<string | null>(null)
   const threadsRef = useRef<Thread[]>([])
   const pendingRestartRef = useRef<Record<string, PendingSteer[]>>({})
+  const continuingFailedThreadsRef = useRef(new Set<string>())
   const locallyStartingRef = useRef(new Set<string>())
   const unstartedDraftThreadIdsRef = useRef(new Set<string>())
   const draftContentThreadIdsRef = useRef(new Set<string>())
@@ -737,6 +780,7 @@ export function useHarness() {
           sandbox: response.sandbox,
           activePermissionProfile: response.activePermissionProfile,
           model: response.model,
+          threadSettings: runtimeThreadSettings(response),
         },
       }))
       upsertThread(response.thread)
@@ -821,9 +865,13 @@ export function useHarness() {
     }
     setBusy((current) => ({ ...current, createThread: true }))
     try {
+      const yolo = yoloModeSettings(true)
       const response = await runtime.request<StartThreadResponse>('thread/start', {
         cwd: workspaceRoot,
         runtimeWorkspaceRoots: [workspaceRoot],
+        approvalPolicy: yolo.approvalPolicy,
+        approvalsReviewer: yolo.approvalsReviewer,
+        sandbox: yolo.sandboxMode,
         ...(sessionStartSource ? { sessionStartSource } : {}),
       })
       const previousThreadId = selectedThreadIdRef.current
@@ -844,6 +892,7 @@ export function useHarness() {
           sandbox: response.sandbox,
           activePermissionProfile: response.activePermissionProfile,
           model: response.model,
+          threadSettings: runtimeThreadSettings(response),
         }),
       }))
     } catch (error) {
@@ -1139,6 +1188,28 @@ export function useHarness() {
       setBusy((current) => ({ ...current, composer: false }))
     }
   }, [loadQueue, maybeGenerateThreadTitle, notify, startTurn, updateDetail, updateThread])
+
+  const continueAfterFailure = useCallback(async () => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId || activeTurnIdsRef.current[threadId] || continuingFailedThreadsRef.current.has(threadId)) return
+    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+    const latestTurn = detailsRef.current[threadId]?.turns.at(-1)
+    if (!latestTurn || latestTurn.status !== 'failed') return
+    if (thread?.canAcceptDirectInput === false) {
+      notify('当前会话不接受继续输入。', 'error')
+      return
+    }
+    continuingFailedThreadsRef.current.add(threadId)
+    setBusy((current) => ({ ...current, composer: true }))
+    try {
+      await startTurn(threadId, '继续')
+    } catch (error) {
+      notify(`无法继续会话：${messageOf(error)}`, 'error')
+    } finally {
+      continuingFailedThreadsRef.current.delete(threadId)
+      setBusy((current) => ({ ...current, composer: false }))
+    }
+  }, [notify, startTurn])
 
   const stopTurn = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -1462,10 +1533,11 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       const settings = params.threadSettings as JsonObject | undefined
       const cwd = typeof settings?.cwd === 'string' ? settings.cwd : null
-      if (threadId && cwd) {
+      if (threadId && cwd && settings) {
         const sandbox = settings?.sandboxPolicy as SandboxPolicy | undefined
         const profile = (settings?.activePermissionProfile ?? null) as ActivePermissionProfile | null
         const model = typeof settings?.model === 'string' ? settings.model : null
+        const nextThreadSettings = eventThreadSettings(settings)
         threadMappingVersionsRef.current[threadId] = (threadMappingVersionsRef.current[threadId] ?? 0) + 1
         setThreadRoots((current) => {
           const next = { ...current }
@@ -1485,6 +1557,7 @@ export function useHarness() {
           sandbox: sandbox ?? detail.sandbox,
           activePermissionProfile: profile,
           model: model ?? detail.model,
+          threadSettings: Object.keys(nextThreadSettings).length > 0 ? { ...(detail.threadSettings ?? {}), ...nextThreadSettings } : detail.threadSettings,
         }))
         const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
         if (thread) void mapThreadRoots([{ ...thread, cwd }])
@@ -1776,6 +1849,7 @@ export function useHarness() {
     setThreadDraftContent,
     startTurnInThread: (threadId: string, prompt: string) => startTurn(threadId, prompt),
     sendMessage,
+    continueAfterFailure,
     stopTurn,
     editQueue,
     removeQueue,

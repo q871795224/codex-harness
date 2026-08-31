@@ -66,12 +66,12 @@ export function readQuickAgentConfig(value: Readonly<Record<string, unknown>>): 
 
 export function settingsForMode(job: QuickAgentJob): ThreadCodexSettings {
   if (job.mode === 'yolo') {
-    return { model: job.model, effort: job.effort, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access' }
+    return { model: job.model, effort: job.effort, serviceTier: null, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access' }
   }
   if (job.mode === 'auto-review') {
-    return { model: job.model, effort: job.effort, approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandboxMode: 'workspace-write' }
+    return { model: job.model, effort: job.effort, serviceTier: null, approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandboxMode: 'workspace-write' }
   }
-  return { model: job.model, effort: job.effort, approvalPolicy: 'on-request', approvalsReviewer: 'user', sandboxMode: 'workspace-write' }
+  return { model: job.model, effort: job.effort, serviceTier: null, approvalPolicy: 'on-request', approvalsReviewer: 'user', sandboxMode: 'workspace-write' }
 }
 
 export function runModeLabel(mode: QuickAgentRunMode): string {

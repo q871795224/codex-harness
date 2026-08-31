@@ -26,7 +26,7 @@ import type { UsageSnapshot } from '../usage/types'
 import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-workbench/types'
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId } from '../app-launcher/types'
-import type { CodexUpdateStatus } from '../codex-update/types'
+import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -117,6 +117,10 @@ export const runtime = {
 
   installCodexUpdate(): Promise<CodexUpdateStatus> {
     return invoke<CodexUpdateStatus>('install_codex_update')
+  },
+
+  listenCodexUpdateProgress(handler: (stage: CodexUpdateStage) => void): Promise<() => void> {
+    return listen<CodexUpdateStage>('codex-update:progress', (event) => handler(event.payload))
   },
 
   skipCodexUpdate(version: string): Promise<CodexUpdateStatus> {

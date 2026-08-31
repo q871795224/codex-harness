@@ -16,6 +16,7 @@ describe('CodexUpdatePanel', () => {
           checkError: null,
         }}
         updating={false}
+        updateStage={null}
         error={null}
         onInstall={() => undefined}
         onDefer={() => undefined}
@@ -26,8 +27,31 @@ describe('CodexUpdatePanel', () => {
     expect(html).toContain('v0.150.1')
     expect(html).toContain('v0.151.0')
     expect(html).toContain('Codex CLI 与 App Server 会一起更新')
+    expect(html).toContain('查看 v0.151.0 更新内容')
     expect(html).toContain('>更新<')
     expect(html).toContain('>跳过<')
     expect(html).toContain('>跳过直到下个版本<')
+  })
+
+  it('renders completed, active, and pending update stages', () => {
+    const html = renderToStaticMarkup(
+      <CodexUpdatePanel
+        status={{
+          currentVersion: '0.150.1', appServerVersion: '0.150.1', latestVersion: '0.151.0',
+          updateAvailable: true, skipped: false, lastCheckedAt: 1, checkError: null,
+        }}
+        updating
+        updateStage="daemon"
+        error={null}
+        onInstall={() => undefined}
+        onDefer={() => undefined}
+        onSkip={() => undefined}
+      />,
+    )
+
+    expect(html).toContain('data-state="complete"')
+    expect(html).toContain('data-state="active"')
+    expect(html).toContain('data-state="pending"')
+    expect(html).toContain('重启 App Server')
   })
 })

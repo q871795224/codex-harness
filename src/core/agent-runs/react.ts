@@ -21,6 +21,7 @@ export function useAgentRunService(
         threadId,
         model: settings.model,
         effort: settings.effort,
+        ...(settings.serviceTier ? { serviceTier: settings.serviceTier } : {}),
         approvalPolicy: settings.approvalPolicy,
         approvalsReviewer: settings.approvalsReviewer,
         sandboxPolicy: sandboxPolicy(settings.sandboxMode),
