@@ -570,13 +570,14 @@ pub fn run() {
                 app.handle().clone(),
                 diagnostics.clone(),
             ));
+            let terminal = Arc::new(terminal::TerminalManager::new(diagnostics.clone()));
             app.manage(AppState {
                 app_server: manager,
                 diagnostics,
                 local_connector: LocalConnector::new(),
                 codex_radar: CodexRadarClient::new(),
                 store,
-                terminal: Arc::new(terminal::TerminalManager::default()),
+                terminal,
                 api_workbench,
                 codex_update: tokio::sync::Mutex::new(()),
                 usage_refresh: tokio::sync::Mutex::new(()),

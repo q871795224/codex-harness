@@ -90,6 +90,7 @@ export default function App() {
       close: runtime.terminalClose,
       openIterm: runtime.terminalOpenIterm,
       onEvent: runtime.listenTerminalEvents,
+      recordDiagnostic: (diagnostic) => runtime.recordClientDiagnostic({ area: 'terminal', ...diagnostic }),
     } satisfies TerminalService,
     'harness.appLauncher': {
       open: runtime.openWorkspaceApp,

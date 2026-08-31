@@ -1,5 +1,7 @@
+use crate::diagnostics::{error_code, DiagnosticLog};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -27,7 +29,7 @@ pub struct TerminalSessionInfo {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
 enum TerminalEvent {
     Output { session_id: String, data: String },
     Exit { session_id: String },
@@ -39,22 +41,44 @@ struct TerminalSession {
     child: Box<dyn Child + Send + Sync>,
 }
 
-#[derive(Default)]
 pub struct TerminalManager {
     sessions: Mutex<HashMap<String, TerminalSession>>,
+    diagnostics: Arc<DiagnosticLog>,
 }
 
 impl TerminalManager {
+    pub fn new(diagnostics: Arc<DiagnosticLog>) -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            diagnostics,
+        }
+    }
+
     pub fn create(
         self: &Arc<Self>,
         app: AppHandle,
         input: TerminalCreateInput,
     ) -> Result<TerminalSessionInfo, String> {
-        validate_cwd(&input.cwd)?;
+        self.diagnostics.record(
+            "info",
+            "terminal",
+            "session.create_requested",
+            json!({ "cols": input.cols, "rows": input.rows }),
+        );
+        if let Err(error) = validate_cwd(&input.cwd) {
+            self.record_failure("session.create_failed", None, &error);
+            return Err(error);
+        }
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(pty_size(input.cols, input.rows))
-            .map_err(|error| format!("无法创建终端 PTY: {error}"))?;
+            .map_err(|error| {
+                self.failure(
+                    "session.create_failed",
+                    None,
+                    format!("无法创建终端 PTY: {error}"),
+                )
+            })?;
         let shell = login_shell();
         let mut command = CommandBuilder::new(&shell);
         command.arg("-l");
@@ -63,24 +87,39 @@ impl TerminalManager {
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
 
-        let child = pair
-            .slave
-            .spawn_command(command)
-            .map_err(|error| format!("无法启动终端 shell: {error}"))?;
+        let child = pair.slave.spawn_command(command).map_err(|error| {
+            self.failure(
+                "session.create_failed",
+                None,
+                format!("无法启动终端 shell: {error}"),
+            )
+        })?;
         drop(pair.slave);
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|error| format!("无法读取终端输出: {error}"))?;
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|error| format!("无法写入终端: {error}"))?;
+        let mut reader = pair.master.try_clone_reader().map_err(|error| {
+            self.failure(
+                "session.create_failed",
+                None,
+                format!("无法读取终端输出: {error}"),
+            )
+        })?;
+        let writer = pair.master.take_writer().map_err(|error| {
+            self.failure(
+                "session.create_failed",
+                None,
+                format!("无法写入终端: {error}"),
+            )
+        })?;
         let session_id = uuid_like_id();
 
         self.sessions
             .lock()
-            .map_err(|_| "终端会话锁已损坏".to_string())?
+            .map_err(|_| {
+                self.failure(
+                    "session.create_failed",
+                    None,
+                    "终端会话锁已损坏".to_string(),
+                )
+            })?
             .insert(
                 session_id.clone(),
                 TerminalSession {
@@ -92,30 +131,89 @@ impl TerminalManager {
 
         let manager = Arc::clone(self);
         let reader_session_id = session_id.clone();
+        self.diagnostics.record(
+            "info",
+            "terminal",
+            "session.created",
+            json!({ "sessionId": session_id, "shell": shell }),
+        );
         std::thread::spawn(move || {
             let mut buffer = [0_u8; 8192];
+            let mut received_output = false;
+            let stop_reason;
             loop {
                 match reader.read(&mut buffer) {
-                    Ok(0) | Err(_) => break,
-                    Ok(length) => {
-                        let data = String::from_utf8_lossy(&buffer[..length]).into_owned();
-                        let _ = app.emit(
-                            TERMINAL_EVENT,
-                            TerminalEvent::Output {
-                                session_id: reader_session_id.clone(),
-                                data,
-                            },
+                    Ok(0) => {
+                        stop_reason = "eof";
+                        break;
+                    }
+                    Err(error) => {
+                        manager.diagnostics.record(
+                            "error",
+                            "terminal",
+                            "reader.failed",
+                            json!({
+                                "sessionId": reader_session_id,
+                                "errorCode": error_code(&error.to_string()),
+                            }),
                         );
+                        stop_reason = "read_failed";
+                        break;
+                    }
+                    Ok(length) => {
+                        if !received_output {
+                            received_output = true;
+                            manager.diagnostics.record(
+                                "info",
+                                "terminal",
+                                "reader.output_started",
+                                json!({ "sessionId": reader_session_id, "bytes": length }),
+                            );
+                        }
+                        let data = String::from_utf8_lossy(&buffer[..length]).into_owned();
+                        if app
+                            .emit(
+                                TERMINAL_EVENT,
+                                TerminalEvent::Output {
+                                    session_id: reader_session_id.clone(),
+                                    data,
+                                },
+                            )
+                            .is_err()
+                        {
+                            manager.diagnostics.record(
+                                "error",
+                                "terminal",
+                                "event.emit_failed",
+                                json!({ "sessionId": reader_session_id, "eventType": "output" }),
+                            );
+                        }
                     }
                 }
             }
             manager.remove_finished(&reader_session_id);
-            let _ = app.emit(
-                TERMINAL_EVENT,
-                TerminalEvent::Exit {
-                    session_id: reader_session_id,
-                },
+            manager.diagnostics.record(
+                "info",
+                "terminal",
+                "reader.stopped",
+                json!({ "sessionId": reader_session_id, "reason": stop_reason }),
             );
+            if app
+                .emit(
+                    TERMINAL_EVENT,
+                    TerminalEvent::Exit {
+                        session_id: reader_session_id.clone(),
+                    },
+                )
+                .is_err()
+            {
+                manager.diagnostics.record(
+                    "error",
+                    "terminal",
+                    "event.emit_failed",
+                    json!({ "sessionId": reader_session_id, "eventType": "exit" }),
+                );
+            }
         });
 
         Ok(TerminalSessionInfo { session_id, shell })
@@ -129,11 +227,15 @@ impl TerminalManager {
         let session = sessions
             .get_mut(session_id)
             .ok_or_else(|| "终端会话不存在或已经退出".to_string())?;
-        session
+        let result = session
             .writer
             .write_all(data.as_bytes())
             .and_then(|_| session.writer.flush())
-            .map_err(|error| format!("终端输入失败: {error}"))
+            .map_err(|error| format!("终端输入失败: {error}"));
+        if let Err(error) = &result {
+            self.record_failure("session.write_failed", Some(session_id), error);
+        }
+        result
     }
 
     pub fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), String> {
@@ -144,10 +246,14 @@ impl TerminalManager {
         let session = sessions
             .get(session_id)
             .ok_or_else(|| "终端会话不存在或已经退出".to_string())?;
-        session
+        let result = session
             .master
             .resize(pty_size(cols, rows))
-            .map_err(|error| format!("调整终端尺寸失败: {error}"))
+            .map_err(|error| format!("调整终端尺寸失败: {error}"));
+        if let Err(error) = &result {
+            self.record_failure("session.resize_failed", Some(session_id), error);
+        }
+        result
     }
 
     pub fn close(&self, session_id: &str) -> Result<(), String> {
@@ -161,6 +267,12 @@ impl TerminalManager {
                 .child
                 .kill()
                 .map_err(|error| format!("关闭终端失败: {error}"))?;
+            self.diagnostics.record(
+                "info",
+                "terminal",
+                "session.closed",
+                json!({ "sessionId": session_id }),
+            );
         }
         Ok(())
     }
@@ -169,6 +281,20 @@ impl TerminalManager {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.remove(session_id);
         }
+    }
+
+    fn failure(&self, event: &str, session_id: Option<&str>, error: String) -> String {
+        self.record_failure(event, session_id, &error);
+        error
+    }
+
+    fn record_failure(&self, event: &str, session_id: Option<&str>, error: &str) {
+        self.diagnostics.record(
+            "error",
+            "terminal",
+            event,
+            json!({ "sessionId": session_id, "errorCode": error_code(error) }),
+        );
     }
 }
 
@@ -245,6 +371,19 @@ mod tests {
     #[test]
     fn rejects_missing_working_directory() {
         assert!(validate_cwd("/definitely/not/a/real/codex-harness-path").is_err());
+    }
+
+    #[test]
+    fn serializes_terminal_event_fields_for_the_frontend_contract() {
+        let event = serde_json::to_value(TerminalEvent::Output {
+            session_id: "session-1".to_string(),
+            data: "prompt".to_string(),
+        })
+        .expect("serializes terminal event");
+
+        assert_eq!(event["type"], "output");
+        assert_eq!(event["sessionId"], "session-1");
+        assert!(event.get("session_id").is_none());
     }
 
     #[test]

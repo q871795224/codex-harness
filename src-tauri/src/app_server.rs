@@ -265,12 +265,14 @@ impl AppServerManager {
                                     .and_then(Value::as_object)
                                     .and_then(|params| params.get("threadId"))
                                     .and_then(Value::as_str);
-                                reader_diagnostics.record(
-                                    "info",
-                                    "app-server",
-                                    "notification.received",
-                                    json!({ "method": method, "threadId": thread_id }),
-                                );
+                                if should_persist_notification(method) {
+                                    reader_diagnostics.record(
+                                        "info",
+                                        "app-server",
+                                        "notification.received",
+                                        json!({ "method": method, "threadId": thread_id }),
+                                    );
+                                }
                                 let _ = app.emit("app-server:event", payload);
                             }
                         }
@@ -817,6 +819,13 @@ fn describe_error(error: &Value) -> String {
         .unwrap_or_else(|| error.to_string())
 }
 
+fn should_persist_notification(method: Option<&str>) -> bool {
+    !matches!(
+        method,
+        Some("item/agentMessage/delta" | "item/commandExecution/outputDelta")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -867,5 +876,15 @@ mod tests {
         assert!(!is_unmanaged_daemon_error(
             "无法重启 Codex App Server: permission denied"
         ));
+    }
+
+    #[test]
+    fn omits_high_volume_output_deltas_from_diagnostics() {
+        assert!(!should_persist_notification(Some("item/agentMessage/delta")));
+        assert!(!should_persist_notification(Some(
+            "item/commandExecution/outputDelta"
+        )));
+        assert!(should_persist_notification(Some("item/completed")));
+        assert!(should_persist_notification(None));
     }
 }

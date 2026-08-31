@@ -31,6 +31,7 @@ describe('terminal plugin', () => {
       close: async () => undefined,
       openIterm: async () => undefined,
       onEvent: async () => () => undefined,
+      recordDiagnostic: async () => undefined,
     }
     const controller = new TerminalController(service)
     const session = controller.get('thread-1', '/tmp')
@@ -52,6 +53,7 @@ describe('terminal plugin', () => {
       close: async () => undefined,
       openIterm: async () => undefined,
       onEvent: async () => () => undefined,
+      recordDiagnostic: async () => undefined,
     }
     const controller = new TerminalController(service)
     const session = controller.get('thread-1', '/tmp')

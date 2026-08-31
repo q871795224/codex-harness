@@ -71,6 +71,12 @@ export class TerminalController {
     if (event.type === 'output') {
       if (!session.receivedOutput) {
         session.receivedOutput = true
+        void this.recordDiagnostic({
+          level: 'info',
+          event: 'ui.output_received',
+          durationMs: Date.now() - session.requestedAt,
+          status: session.status,
+        })
         console.info('[terminal] first output', {
           sessionId: event.sessionId,
           bytes: event.data.length,
@@ -81,6 +87,12 @@ export class TerminalController {
       this.notify(session, event.data)
       return
     }
+    void this.recordDiagnostic({
+      level: 'info',
+      event: 'ui.exit_received',
+      durationMs: Date.now() - session.requestedAt,
+      status: session.status,
+    })
     console.info('[terminal] exited', { sessionId: event.sessionId, elapsedMs: Date.now() - session.requestedAt })
     session.status = 'exited'
     session.id = null
@@ -132,6 +144,7 @@ export class TerminalController {
   }
 
   private async start(session: ManagedTerminalSession): Promise<void> {
+    void this.recordDiagnostic({ level: 'info', event: 'ui.create_requested', stage: 'create' })
     console.info('[terminal] create requested', { key: session.key, cwd: session.cwd })
     const slowCreateTimer = globalThis.setTimeout(() => {
       console.warn('[terminal] create is taking longer than expected', {
@@ -146,6 +159,13 @@ export class TerminalController {
       session.shell = created.shell
       session.status = 'running'
       session.runningAt = Date.now()
+      void this.recordDiagnostic({
+        level: 'info',
+        event: 'ui.created',
+        durationMs: session.runningAt - session.requestedAt,
+        stage: 'create',
+        status: session.status,
+      })
       console.info('[terminal] created', {
         sessionId: created.sessionId,
         shell: created.shell,
@@ -170,12 +190,22 @@ export class TerminalController {
   private fail(session: ManagedTerminalSession, error: unknown): void {
     session.status = 'failed'
     session.error = messageOf(error)
+    void this.recordDiagnostic({
+      level: 'error',
+      event: 'ui.failed',
+      durationMs: Date.now() - session.requestedAt,
+      status: session.status,
+    })
     console.error('[terminal] failed', { key: session.key, error: session.error, elapsedMs: Date.now() - session.requestedAt })
     this.notify(session, '')
   }
 
   private notify(session: ManagedTerminalSession, data: string): void {
     for (const listener of session.listeners) listener(data)
+  }
+
+  private async recordDiagnostic(diagnostic: Parameters<TerminalService['recordDiagnostic']>[0]): Promise<void> {
+    await this.service.recordDiagnostic(diagnostic).catch(() => undefined)
   }
 }
 
@@ -185,7 +215,7 @@ export const terminalPlugin: HarnessPlugin = {
     id: 'builtin.terminal',
     name: '终端',
     description: '在当前工作目录中运行本机 login shell。',
-    version: '1.0.2',
+    version: '1.0.3',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
     permissions: ['process:terminal'],
