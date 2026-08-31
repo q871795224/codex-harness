@@ -6,6 +6,7 @@ export class AgentRunCoordinator implements AgentRunService {
   private readonly listeners = new Set<() => void>()
   private readonly pendingWriterRoots = new Set<string>()
   private readonly returningRunIds = new Set<string>()
+  private readonly eventChains = new Map<string, Promise<void>>()
   private initializePromise: Promise<void> | null = null
 
   constructor(
@@ -170,12 +171,25 @@ export class AgentRunCoordinator implements AgentRunService {
     const run = this.runs.find((candidate) => candidate.childThreadId === threadId)
     if (!run) return
 
+    const previous = this.eventChains.get(run.runId) ?? Promise.resolve()
+    const next = previous.catch(() => undefined).then(() => this.applyEvent(run.runId, event))
+    this.eventChains.set(run.runId, next)
+    void next.catch(() => undefined).finally(() => {
+      if (this.eventChains.get(run.runId) === next) this.eventChains.delete(run.runId)
+    })
+  }
+
+  private async applyEvent(runId: string, event: AppServerEvent): Promise<void> {
+    const run = this.runs.find((candidate) => candidate.runId === runId)
+    if (!run) return
+    const params = event.params ?? {}
+
     if (event.id !== undefined && isApprovalRequest(event.method ?? '')) {
-      void this.persist({ ...run, status: 'waitingApproval', updatedAt: Date.now() })
+      await this.persist({ ...run, status: 'waitingApproval', updatedAt: Date.now() })
       return
     }
     if (event.method === 'serverRequest/resolved' && run.status === 'waitingApproval') {
-      void this.persist({ ...run, status: 'running', updatedAt: Date.now() })
+      await this.persist({ ...run, status: 'running', updatedAt: Date.now() })
       return
     }
     if (event.method !== 'turn/completed') return
@@ -183,7 +197,7 @@ export class AgentRunCoordinator implements AgentRunService {
     const status = turn?.status === 'completed' ? 'completed'
       : turn?.status === 'interrupted' ? 'cancelled'
         : 'failed'
-    void this.persist({
+    await this.persist({
       ...run,
       status,
       errorSummary: status === 'failed' ? turn?.error?.message ?? '子 Agent 执行失败' : null,

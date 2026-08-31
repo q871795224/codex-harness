@@ -112,6 +112,30 @@ describe('AgentRunCoordinator', () => {
     expect(service.snapshot()[0].returnedAt).not.toBeNull()
   })
 
+  it('serializes approval and completion events for the same run', async () => {
+    const transport = new FakeTransport()
+    transport.runs = [makeRun()]
+    const saveRun = transport.saveRun.bind(transport)
+    let releaseApproval!: () => void
+    const approvalBlocked = new Promise<void>((resolve) => { releaseApproval = resolve })
+    transport.saveRun = async (run) => {
+      if (run.status === 'waitingApproval') await approvalBlocked
+      return saveRun(run)
+    }
+    const service = new AgentRunCoordinator(transport, () => undefined)
+    await service.initialize()
+
+    service.handleEvent({ id: 1, method: 'execCommandApproval', params: { threadId: 'child-1' } })
+    service.handleEvent({ method: 'serverRequest/resolved', params: { threadId: 'child-1' } })
+    service.handleEvent({ method: 'turn/completed', params: { threadId: 'child-1', turn: { status: 'completed' } } })
+    await Promise.resolve()
+    expect(service.snapshot()[0].status).toBe('running')
+
+    releaseApproval()
+    await waitFor(() => service.snapshot()[0].status === 'completed')
+    expect(service.snapshot()[0].status).toBe('completed')
+  })
+
   it('waits for the parent turn to finish before returning a delegated result', async () => {
     const transport = new FakeTransport()
     transport.runs = [makeRun({
