@@ -18,6 +18,7 @@ describe('API Workbench Postman sandbox', () => {
 
     await executeWorkbenchRequest(state, context.request.id, service)
 
+    expect(sent[0].url).toBe('https://api.test/profile')
     expect(sent[0].headers).toContainEqual({ key: 'Authorization', value: 'Bearer secret-token', enabled: true })
   })
 
@@ -60,6 +61,47 @@ pm.test('response is successful', function () {
       expect.objectContaining({ key: 'token', value: 'secret-token' }),
     ]))
     expect(execution.result.assertions).toContainEqual(expect.objectContaining({ name: 'response is successful', passed: true }))
+  })
+
+  it('interrupts a script that stops responding without blocking the test process', async () => {
+    const state = emptyWorkbenchState()
+    const context = findRequestContext(state, state.selectedRequestId)
+    if (!context) throw new Error('missing default request')
+    context.request.preScript = 'while (true) {}'
+    const service = { send: async () => response(200, '{}') } as unknown as ApiWorkbenchService
+
+    await expect(executeWorkbenchRequest(state, context.request.id, service, { scriptTimeoutMs: 25 }))
+      .rejects.toThrow('sandbox not responding')
+  }, 2_000)
+
+  it('limits pm.sendRequest calls across one request execution', async () => {
+    const state = emptyWorkbenchState()
+    const context = findRequestContext(state, state.selectedRequestId)
+    if (!context) throw new Error('missing default request')
+    context.request.url = 'https://api.test/main'
+    context.request.preScript = `
+for (let index = 0; index < 4; index += 1) {
+  pm.sendRequest('https://api.test/nested/' + index, function () {});
+}`
+    const sent: ApiSendInput[] = []
+    const service = {
+      send: async (input: ApiSendInput): Promise<ApiSendResponse> => {
+        sent.push(input)
+        return response(200, '{}')
+      },
+    } as ApiWorkbenchService
+
+    const execution = await executeWorkbenchRequest(state, context.request.id, service, { maxSubrequests: 2 })
+
+    expect(sent.map((input) => input.url)).toEqual([
+      'https://api.test/nested/0',
+      'https://api.test/nested/1',
+      'https://api.test/main',
+    ])
+    expect(execution.result.logs).toContainEqual(expect.objectContaining({
+      level: 'error',
+      message: '脚本子请求超过单次运行上限（2）。',
+    }))
   })
 })
 

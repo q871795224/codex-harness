@@ -31,17 +31,38 @@ interface ScriptRunState {
   request: unknown
 }
 
+export interface SandboxExecutionOptions {
+  scriptTimeoutMs?: number
+  maxSubrequests?: number
+}
+
+interface ScriptBudget {
+  subrequests: number
+  maxSubrequests: number
+  limitReported: boolean
+}
+
+const DEFAULT_SCRIPT_TIMEOUT_MS = 10_000
+const DEFAULT_MAX_SUBREQUESTS = 20
+
 export async function executeWorkbenchRequest(
   state: ApiWorkbenchState,
   requestId: string,
   service: ApiWorkbenchService,
+  options: SandboxExecutionOptions = {},
 ): Promise<{ state: ApiWorkbenchState; result: ApiExecutionResult }> {
   const context = findRequestContext(state, requestId)
   if (!context) throw new Error('找不到所选请求。')
   const environment = activeEnvironment(state)
   const logs: ApiScriptLog[] = []
   const assertions: ApiAssertion[] = []
-  const sandbox = await createSandbox()
+  const scriptTimeoutMs = positiveLimit(options.scriptTimeoutMs, DEFAULT_SCRIPT_TIMEOUT_MS)
+  const budget: ScriptBudget = {
+    subrequests: 0,
+    maxSubrequests: positiveLimit(options.maxSubrequests, DEFAULT_MAX_SUBREQUESTS),
+    limitReported: false,
+  }
+  const sandbox = await createSandbox(scriptTimeoutMs)
   let scriptError: string | null = null
   let runState: ScriptRunState = {
     globals: scopeValues(state.globals),
@@ -54,13 +75,13 @@ export async function executeWorkbenchRequest(
   try {
     for (const script of [context.collection.preScript, ...context.folders.map((folder) => folder.preScript), context.request.preScript]) {
       if (!script.trim()) continue
-      runState = await executeScript(sandbox, 'prerequest', script, runState, 'pre', service, logs, assertions)
+      runState = await executeScript(sandbox, 'prerequest', script, runState, 'pre', service, logs, assertions, budget, scriptTimeoutMs)
     }
     const prepared = postmanRequestToSendInput(runState.request, runState)
     const response = await service.send(prepared)
     for (const script of [context.collection.postScript, ...context.folders.map((folder) => folder.postScript), context.request.postScript]) {
       if (!script.trim()) continue
-      runState = await executeScript(sandbox, 'test', script, runState, 'post', service, logs, assertions, response)
+      runState = await executeScript(sandbox, 'test', script, runState, 'post', service, logs, assertions, budget, scriptTimeoutMs, response)
     }
     const nextState = applyScopes(state, context.collection.id, environment?.id ?? null, runState)
     return { state: nextState, result: { request: prepared, response, logs, assertions, scriptError } }
@@ -72,9 +93,9 @@ export async function executeWorkbenchRequest(
   }
 }
 
-async function createSandbox(): Promise<any> {
+async function createSandbox(timeoutMs: number): Promise<any> {
   return new Promise((resolve, reject) => {
-    Sandbox.createContext({ timeout: 10_000, disableLegacyAPIs: false }, (error, context) => error ? reject(error) : resolve(context))
+    Sandbox.createContext({ timeout: timeoutMs, disableLegacyAPIs: false }, (error, context) => error ? reject(error) : resolve(context))
   })
 }
 
@@ -87,9 +108,12 @@ async function executeScript(
   service: ApiWorkbenchService,
   logs: ApiScriptLog[],
   assertions: ApiAssertion[],
+  budget: ScriptBudget,
+  timeoutMs: number,
   response?: ApiSendResponse,
 ): Promise<ScriptRunState> {
   const id = createId('execution')
+  const requestBeforeScript = new PostmanRequest(state.request).toJSON()
   const requestEvent = `execution.request.${id}`
   const errorEvent = `execution.error.${id}`
   const consoleHandler = (_cursor: unknown, level: string, ...args: unknown[]) => {
@@ -110,6 +134,13 @@ async function executeScript(
   const errorHandler = (_cursor: unknown, error: unknown) => logs.push({ level: 'error', message: messageOf(error), source })
   const requestHandler = async (_cursor: unknown, _executionId: string, eventId: number, request: unknown) => {
     try {
+      if (budget.subrequests >= budget.maxSubrequests) {
+        const message = `脚本子请求超过单次运行上限（${budget.maxSubrequests}）。`
+        if (!budget.limitReported) logs.push({ level: 'error', message, source })
+        budget.limitReported = true
+        throw new Error(message)
+      }
+      budget.subrequests += 1
       const input = postmanRequestToSendInput(request, state)
       const result = await service.send(input)
       sandbox.dispatch(`execution.response.${id}`, eventId, null, toPostmanResponse(result), {})
@@ -127,7 +158,7 @@ async function executeScript(
         new PostmanEvent({ listen, script: { type: 'text/javascript', exec: script.split('\n') } }),
         {
           id,
-          timeout: 10_000,
+          timeout: timeoutMs,
           context: {
             environment: state.environment,
             collectionVariables: state.collectionVariables,
@@ -145,7 +176,7 @@ async function executeScript(
       collectionVariables: result.collectionVariables?.values ?? state.collectionVariables,
       globals: result.globals?.values ?? state.globals,
       local: result._variables?.values ?? state.local,
-      request: result.request ?? state.request,
+      request: usableResultRequest(result.request, requestBeforeScript),
     }
   } finally {
     sandbox.off('console', consoleHandler)
@@ -153,6 +184,17 @@ async function executeScript(
     sandbox.off(errorEvent, errorHandler)
     sandbox.off(requestEvent, requestHandler)
   }
+}
+
+function positiveLimit(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) && value !== undefined && value > 0 ? Math.floor(value) : fallback
+}
+
+function usableResultRequest(candidate: unknown, fallback: unknown): unknown {
+  if (candidate === undefined || candidate === null) return fallback
+  const next = new PostmanRequest(candidate)
+  const previous = new PostmanRequest(fallback)
+  return next.url.toString() || !previous.url.toString() ? next.toJSON() : fallback
 }
 
 function toPostmanRequest(request: { method: string; url: string; query: ApiKeyValue[]; headers: ApiKeyValue[]; authorization?: { type: 'none' | 'bearer'; token: string }; body: { mode: string; raw: string; rows: ApiKeyValue[]; contentType: string } }) {
@@ -164,16 +206,18 @@ function toPostmanRequest(request: { method: string; url: string; query: ApiKeyV
   if (request.body.mode === 'raw' && request.body.contentType && !header.some((row) => row.key.toLowerCase() === 'content-type')) {
     header.push({ key: 'Content-Type', value: request.body.contentType })
   }
-  return {
+  const result = new PostmanRequest({
     method: request.method,
-    url: { raw: request.url, query },
+    url: request.url,
     header,
     body: request.body.mode === 'raw'
       ? { mode: 'raw', raw: request.body.raw }
       : request.body.mode === 'urlencoded'
         ? { mode: 'urlencoded', urlencoded: request.body.rows.filter((row) => row.enabled && row.key).map((row) => ({ key: row.key, value: row.value })) }
         : undefined,
-  }
+  })
+  result.url.addQueryParams(query)
+  return result.toJSON()
 }
 
 function postmanRequestToSendInput(value: unknown, scopes: ScriptRunState): ApiSendInput {

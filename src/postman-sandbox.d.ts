@@ -17,8 +17,9 @@ declare module 'postman-collection' {
   export class Request {
     constructor(definition: unknown)
     method: string
-    url: { toString(): string }
+    url: { addQueryParams(params: unknown): void; toString(): string }
     headers: { toJSON(): Array<{ key: string; value: string; disabled?: boolean }> }
     body?: { mode?: string; raw?: string; urlencoded?: { toJSON(): Array<{ key: string; value: string; disabled?: boolean }> } }
+    toJSON(): unknown
   }
 }
