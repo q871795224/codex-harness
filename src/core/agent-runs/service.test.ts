@@ -89,6 +89,7 @@ describe('AgentRunCoordinator', () => {
 
     service.handleEvent({ method: 'turn/completed', params: { threadId: 'child-1', turn: { status: 'completed' } } })
     await waitFor(() => service.snapshot()[0].status === 'completed')
+    transport.inspection = { active: false, lastTurnStatus: 'completed' }
     await service.returnToParent(run.runId)
     await service.returnToParent(run.runId)
 
@@ -96,6 +97,22 @@ describe('AgentRunCoordinator', () => {
     expect(transport.startedPrompts[1].threadId).toBe('parent-1')
     expect(transport.startedPrompts[1].prompt).toContain('子任务结论')
     expect(service.snapshot()[0].returnedAt).not.toBeNull()
+  })
+
+  it('waits for the parent turn to finish before returning a delegated result', async () => {
+    const transport = new FakeTransport()
+    transport.runs = [makeRun({
+      mode: 'delegated',
+      status: 'completed',
+      parentThreadId: 'parent-1',
+      completedAt: 10,
+    })]
+    const service = new AgentRunCoordinator(transport, () => undefined)
+
+    await expect(service.returnToParent('run-1')).rejects.toThrow('主会话仍在运行')
+
+    expect(transport.startedPrompts).toEqual([])
+    expect(service.snapshot()[0].returnedAt).toBeNull()
   })
 
   it('reconciles a finished run after restart', async () => {

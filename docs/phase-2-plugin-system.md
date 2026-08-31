@@ -323,7 +323,7 @@ export interface StartAgentRunInput {
 
 首版支持一次子任务、一次结果回传。自动多轮的主/子 Agent 对话、模型主动创建 Harness run、模型直接调用 Harness 插件都不在阶段 2 范围；这些能力需要 App Server 原生 sub-agent/tool 协议。未来若 App Server 提供稳定接口，`harness.agentRuns` 可以更换适配层，插件 UI 和运行索引无需重写。
 
-`completion: 'return-to-parent'` 作为后续显式配置保留。启用时也必须限制最大回传次数、总时长和取消传播，避免两个 thread 无限互相触发。
+快捷 Agent Job 可显式配置 `completion: 'return-to-parent'`。启用后，子任务完成时由统一面板展示“回传结果到当前会话”，用户手动触发后才会启动父 thread 的新 turn；父 thread 仍在运行时拒绝回传并允许稍后重试，每个 Run 最多成功回传一次。Harness 不自动触发父子 Agent 多轮对话。
 
 ## 独立 Tab 插件
 

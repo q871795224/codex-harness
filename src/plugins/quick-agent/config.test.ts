@@ -10,6 +10,7 @@ const job = (overrides: Partial<QuickAgentJob> = {}): QuickAgentJob => ({
   effort: 'max',
   mode: 'yolo',
   workspaceAccess: 'shared-write',
+  completion: 'detached',
   ...overrides,
 })
 
@@ -23,8 +24,10 @@ describe('quick agent config', () => {
     const value = { ...job() } as Record<string, unknown>
     delete value.mode
     delete value.workspaceAccess
+    delete value.completion
     expect(readQuickAgentConfig({ jobs: [value] }).jobs[0].mode).toBe('yolo')
     expect(readQuickAgentConfig({ jobs: [value] }).jobs[0].workspaceAccess).toBe('shared-write')
+    expect(readQuickAgentConfig({ jobs: [value] }).jobs[0].completion).toBe('detached')
   })
 
   it('keeps the first job available for one-job plugin instances', () => {

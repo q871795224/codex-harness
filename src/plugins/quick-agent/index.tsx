@@ -19,7 +19,7 @@ export const quickAgentPlugin: HarnessPlugin = {
     id: 'builtin.quick-agent',
     name: '快捷 Agent',
     description: '在独立会话中使用预设模型和权限执行固定 Job。',
-    version: '1.1.0',
+    version: '1.2.0',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace'],
   },
@@ -37,10 +37,11 @@ export const quickAgentPlugin: HarnessPlugin = {
       label: job.name,
       async run({ checkoutRoot, threadId }) {
         if (!checkoutRoot) throw new Error('请先打开一个具有工作目录的会话。')
+        if (job.completion === 'return-to-parent' && !threadId) throw new Error('结果回传需要从会话中启动。')
         await agentRuns.start({
           instanceId: ctx.instanceId,
           title: job.name,
-          mode: 'detached',
+          mode: job.completion === 'return-to-parent' ? 'delegated' : 'detached',
           workspaceAccess: job.workspaceAccess,
           workspaceRoot: checkoutRoot,
           parentThreadId: threadId,
@@ -133,6 +134,9 @@ function JobEditor({ job, models, onChange }: {
         </select></label>
         <label><span>工作区</span><select value={job.workspaceAccess} onChange={(event) => onChange({ workspaceAccess: event.target.value as QuickAgentJob['workspaceAccess'] })}>
           <option value="read-only">只读（可并发）</option><option value="shared-write">共享写入（互斥）</option><option value="isolated-delivery">隔离交付（新 worktree）</option>
+        </select></label>
+        <label><span>结果处理</span><select value={job.completion} onChange={(event) => onChange({ completion: event.target.value as QuickAgentJob['completion'] })}>
+          <option value="detached">独立查看</option><option value="return-to-parent">完成后可回传当前会话</option>
         </select></label>
       </div>
     </article>

@@ -3,6 +3,7 @@ import type { PluginInstanceRecord } from '../../extensions/types'
 
 export type QuickAgentRunMode = 'yolo' | 'auto-review' | 'manual'
 export type QuickAgentWorkspaceAccess = 'read-only' | 'shared-write' | 'isolated-delivery'
+export type QuickAgentCompletion = 'detached' | 'return-to-parent'
 
 export interface QuickAgentJob {
   id: string
@@ -12,6 +13,7 @@ export interface QuickAgentJob {
   effort: string
   mode: QuickAgentRunMode
   workspaceAccess: QuickAgentWorkspaceAccess
+  completion: QuickAgentCompletion
 }
 
 export interface QuickAgentConfig {
@@ -26,6 +28,7 @@ export const DEFAULT_QUICK_AGENT_JOB: QuickAgentJob = {
   effort: 'max',
   mode: 'yolo',
   workspaceAccess: 'isolated-delivery',
+  completion: 'detached',
 }
 
 export function newQuickAgentJob(): QuickAgentJob {
@@ -37,6 +40,7 @@ export function newQuickAgentJob(): QuickAgentJob {
     effort: 'max',
     mode: 'yolo',
     workspaceAccess: 'read-only',
+    completion: 'detached',
   }
 }
 
@@ -63,8 +67,9 @@ export function readQuickAgentConfig(value: Readonly<Record<string, unknown>>): 
     if (typeof value.name !== 'string' || typeof value.prompt !== 'string' || typeof value.model !== 'string' || typeof value.effort !== 'string') return []
     const mode = isRunMode(value.mode) ? value.mode : 'yolo'
     const workspaceAccess = isWorkspaceAccess(value.workspaceAccess) ? value.workspaceAccess : 'shared-write'
+    const completion = isCompletion(value.completion) ? value.completion : 'detached'
     seen.add(value.id)
-    return [{ id: value.id, name: value.name, prompt: value.prompt, model: value.model, effort: value.effort, mode, workspaceAccess }]
+    return [{ id: value.id, name: value.name, prompt: value.prompt, model: value.model, effort: value.effort, mode, workspaceAccess, completion }]
   })
   return { jobs }
 }
@@ -94,4 +99,8 @@ function isRunMode(value: unknown): value is QuickAgentRunMode {
 
 function isWorkspaceAccess(value: unknown): value is QuickAgentWorkspaceAccess {
   return value === 'read-only' || value === 'shared-write' || value === 'isolated-delivery'
+}
+
+function isCompletion(value: unknown): value is QuickAgentCompletion {
+  return value === 'detached' || value === 'return-to-parent'
 }

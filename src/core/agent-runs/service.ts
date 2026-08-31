@@ -5,6 +5,7 @@ export class AgentRunCoordinator implements AgentRunService {
   private runs: AgentRun[] = []
   private readonly listeners = new Set<() => void>()
   private readonly pendingWriterRoots = new Set<string>()
+  private readonly returningRunIds = new Set<string>()
   private initializePromise: Promise<void> | null = null
 
   constructor(
@@ -108,15 +109,25 @@ export class AgentRunCoordinator implements AgentRunService {
     if (run.mode !== 'delegated' || !run.parentThreadId) throw new Error('该任务没有父会话')
     if (run.status !== 'completed') throw new Error('任务尚未完成')
     if (run.returnedAt) return
-    const result = await this.loadResult(runId)
-    await this.transport.startTurn(run.parentThreadId, [
-      `以下是临时子 Agent「${run.title}」的执行结果：`,
-      '',
-      result,
-      '',
-      '请结合当前主会话目标继续处理。',
-    ].join('\n'))
-    await this.persist({ ...run, returnedAt: Date.now(), updatedAt: Date.now() })
+    if (this.returningRunIds.has(runId)) return
+    this.returningRunIds.add(runId)
+    try {
+      const parent = await this.transport.inspectThread(run.parentThreadId)
+      if (parent.active || parent.lastTurnStatus === 'inProgress') {
+        throw new Error('主会话仍在运行，请等待当前任务结束后再回传。')
+      }
+      const result = await this.loadResult(runId)
+      await this.transport.startTurn(run.parentThreadId, [
+        `以下是临时子 Agent「${run.title}」的执行结果：`,
+        '',
+        result,
+        '',
+        '请结合当前主会话目标继续处理。',
+      ].join('\n'))
+      await this.persist({ ...run, returnedAt: Date.now(), updatedAt: Date.now() })
+    } finally {
+      this.returningRunIds.delete(runId)
+    }
   }
 
   async openWorkspace(runId: string): Promise<void> {
