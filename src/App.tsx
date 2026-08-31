@@ -9,7 +9,7 @@ import type { ConversationService } from './core/conversations/types'
 import type { SystemNotificationService } from './core/notifications/types'
 import type { QuickCommandService } from './core/quick-commands/types'
 import type { HarnessFilesService, HarnessInstructionConfig } from './core/harness-files/types'
-import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
+import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, PluginThreadHeaderAction, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
 import { resolveQuickPanelAnchor, shouldShowQuickPanels } from './core/plugins/quickPanelLayout'
@@ -29,6 +29,7 @@ import { builtInPlugins, defaultPluginInstances } from './plugins'
 import type { UsageService } from './core/usage/types'
 import type { ApiWorkbenchService } from './core/api-workbench/types'
 import type { TerminalService } from './core/terminal/types'
+import type { AppLauncherService } from './core/app-launcher/types'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 
@@ -88,6 +89,9 @@ export default function App() {
       openIterm: runtime.terminalOpenIterm,
       onEvent: runtime.listenTerminalEvents,
     } satisfies TerminalService,
+    'harness.appLauncher': {
+      open: runtime.openWorkspaceApp,
+    } satisfies AppLauncherService,
   }), [agentRuns, harness.onTurnCompleted, harness.openThread])
 
   useEffect(() => {
@@ -147,6 +151,11 @@ function HarnessShell({ harness, agentRuns, codex }: {
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
   )
   const threadCwd = harness.currentThread?.cwd ?? null
+  const threadHeaderActions = plugins.resolvedThreadHeaderActions({
+    threadId: harness.selectedThreadId,
+    threadCwd,
+    workspaceRoot: workspace?.root ?? null,
+  })
   const pluginTabs = plugins.resolvedTabs({
     threadId: harness.selectedThreadId,
     threadCwd,
@@ -394,6 +403,18 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
                   : undefined)
               }}
+              headerActions={threadHeaderActions.map((action) => (
+                <PluginThreadHeaderAction
+                  key={`${action.pluginId}:${action.contribution.id}`}
+                  action={action}
+                  props={{
+                    threadId: harness.selectedThreadId,
+                    threadCwd,
+                    workspaceRoot: workspace?.root ?? null,
+                    disabled: !threadCwd,
+                  }}
+                />
+              ))}
             />
             <div className="tab-bar">
               <div className="thread-tabs">

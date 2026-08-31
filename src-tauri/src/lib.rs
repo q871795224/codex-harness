@@ -1,4 +1,5 @@
 mod api_workbench;
+mod app_launcher;
 mod app_server;
 mod codex_radar;
 mod diagnostics;
@@ -206,6 +207,11 @@ fn terminal_close(state: State<'_, AppState>, session_id: String) -> Result<(), 
 #[tauri::command]
 fn terminal_open_iterm(cwd: String) -> Result<(), String> {
     terminal::open_iterm(&cwd)
+}
+
+#[tauri::command]
+fn open_workspace_app(app_id: String, cwd: String) -> Result<(), String> {
+    app_launcher::open(&app_id, &cwd)
 }
 
 #[tauri::command]
@@ -582,6 +588,7 @@ pub fn run() {
             terminal_resize,
             terminal_close,
             terminal_open_iterm,
+            open_workspace_app,
             request_system_notification_permission,
             send_system_notification,
             api_workbench_load,

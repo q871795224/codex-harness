@@ -38,9 +38,10 @@ interface ConversationHeaderProps {
   onArchive: () => void
   onUnarchive: () => void
   onChooseWorkspace: () => void
+  headerActions?: ReactNode
 }
 
-export function ConversationHeader({ thread, workspace, archived, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onChooseWorkspace }: ConversationHeaderProps) {
+export function ConversationHeader({ thread, workspace, archived, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onChooseWorkspace, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -94,6 +95,7 @@ export function ConversationHeader({ thread, workspace, archived, workspaceChang
           >
             {workspaceChanging ? '正在切换…' : thread.cwd}
           </button>
+          {headerActions && <span className="thread-header-actions">{headerActions}</span>}
         </div>
       </div>
       <button

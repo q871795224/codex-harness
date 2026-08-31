@@ -13,6 +13,8 @@ import type {
   PluginViewContext,
   QuickActionContribution,
   QuickCommandContribution,
+  ThreadHeaderActionContribution,
+  ThreadHeaderActionProps,
 } from '../../extensions/types'
 import { defaultPluginInstancesToSeed, removedDefaultPluginInstanceIds } from './defaults'
 import { PluginHost, type ResolvedContribution } from './runtime'
@@ -26,6 +28,7 @@ interface PluginHostContextValue {
   error: string | null
   status(instanceId: string): PluginInstanceStatus
   resolvedTabs(context: PluginViewContext): ResolvedContribution<ConversationTabContribution>[]
+  resolvedThreadHeaderActions(context: PluginViewContext): ResolvedContribution<ThreadHeaderActionContribution>[]
   resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[]
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[]
   resolvedQuickActions(context: PluginViewContext): ResolvedContribution<QuickActionContribution>[]
@@ -111,6 +114,7 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     error,
     status: (instanceId) => host.status(instanceId),
     resolvedTabs: (context) => host.resolvedTabs(context),
+    resolvedThreadHeaderActions: (context) => host.resolvedThreadHeaderActions(context),
     resolvedNewThreadPanels: (context) => host.resolvedNewThreadPanels(context),
     resolvedComposerActions: (context) => host.resolvedComposerActions(context),
     resolvedQuickActions: (context) => host.resolvedQuickActions(context),
@@ -193,6 +197,17 @@ export function PluginComposerAction({ action, props }: {
 }) {
   return (
     <PluginRenderBoundary pluginId={action.pluginId} instanceId={action.instanceId} label="输入框操作">
+      {action.contribution.render(props)}
+    </PluginRenderBoundary>
+  )
+}
+
+export function PluginThreadHeaderAction({ action, props }: {
+  action: ResolvedContribution<ThreadHeaderActionContribution>
+  props: ThreadHeaderActionProps
+}) {
+  return (
+    <PluginRenderBoundary pluginId={action.pluginId} instanceId={action.instanceId} label="会话标题操作">
       {action.contribution.render(props)}
     </PluginRenderBoundary>
   )

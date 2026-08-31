@@ -256,6 +256,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .thread-path { max-width: 360px; overflow: hidden; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-overflow: ellipsis; white-space: nowrap; }
 .thread-path:hover:not(:disabled) { color: #435dcd; text-decoration: underline; text-underline-offset: 2px; }
 .thread-path:disabled { cursor: default; }
+.thread-header-actions { display: inline-flex; align-items: center; gap: 4px; }
+.thread-context-action { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px; border: 1px solid #d9dde5; border-radius: 5px; background: #f8f9fb; color: #596270; cursor: pointer; font: inherit; font-weight: 650; transition: border-color .14s ease, background .14s ease, color .14s ease; }.thread-context-action:hover:not(:disabled) { border-color: #bdc8ec; background: #f1f4ff; color: #3f57b9; }.thread-context-action:disabled { cursor: default; opacity: .55; }.thread-context-action.failed { border-color: #e5c4c4; background: #fff7f7; color: #ad5c5c; }
 .header-action { display: flex; align-items: center; gap: 5px; height: 29px; margin-top: 1px; padding: 0 8px; border: 1px solid #e3e5e9; border-radius: 7px; background: #fff; color: #565d68; cursor: pointer; font-size: 12px; opacity: 0; pointer-events: none; transition: border-color .14s ease, color .14s ease, opacity .14s ease; }
 .thread-header:hover .header-action, .thread-header:focus-within .header-action { opacity: 1; pointer-events: auto; }
 .header-action:hover { border-color: #cdd0d6; color: #292e37; }
@@ -868,6 +870,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .app-shell[data-theme='dark'] .new-chat-button,
 .app-shell[data-theme='dark'] .sidebar-search,
 .app-shell[data-theme='dark'] .header-action,
+.app-shell[data-theme='dark'] .thread-context-action,
 .app-shell[data-theme='dark'] .load-older-turns,
 .app-shell[data-theme='dark'] .scroll-to-bottom,
 .app-shell[data-theme='dark'] .composer-card,
@@ -963,9 +966,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .app-shell[data-theme='dark'] .plugins-toggle,
 .app-shell[data-theme='dark'] .thread-tabs button,
 .app-shell[data-theme='dark'] .header-action,
+.app-shell[data-theme='dark'] .thread-context-action,
 .app-shell[data-theme='dark'] .composer-icon-button,
 .app-shell[data-theme='dark'] .settings-nav nav button,
 .app-shell[data-theme='dark'] .settings-close { color: #a6adb8; }
+.app-shell[data-theme='dark'] .thread-context-action.failed { border-color: #684548; background: #38282b; color: #e59b9f; }
 .app-shell[data-theme='dark'] .workspace-row.selected,
 .app-shell[data-theme='dark'] .thread-row.selected,
 .app-shell[data-theme='dark'] .heading-actions .navigation-options button.selected,
