@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { Bot, Check, ChevronDown, ChevronRight, CircleAlert, Copy, LoaderCircle, Play, Reply, SquareCode, Trash2 } from 'lucide-react'
+import { Bot, Check, ChevronDown, ChevronRight, CircleAlert, Copy, LoaderCircle, Play, Reply, Square, SquareCode, Trash2 } from 'lucide-react'
 import type { AgentRun, AgentRunService } from '../agent-runs/types'
 import type { QuickActionProps } from '../../extensions/types'
 import type { ResolvedContribution } from './runtime'
@@ -80,6 +80,18 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
     }
   }
 
+  const cancelRun = async (run: AgentRun) => {
+    setRunActionId(`cancel:${run.runId}`)
+    setError(null)
+    try {
+      await agentRuns.cancel(run.runId)
+    } catch (nextError) {
+      setError(messageOf(nextError))
+    } finally {
+      setRunActionId(null)
+    }
+  }
+
   return (
     <div className={`quick-action-dock${open ? ' open' : ''}`} style={anchorBottom === undefined ? undefined : { bottom: anchorBottom }}>
       {open ? (
@@ -136,6 +148,7 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
                         const isolated = run.workspaceAccess === 'isolated-delivery'
                         const workspaceAvailable = isolated && !run.workspaceRemovedAt
                         const canReturn = run.mode === 'delegated' && run.status === 'completed' && !run.returnedAt
+                        const canCancel = (run.status === 'running' || run.status === 'waitingApproval') && Boolean(run.childThreadId && run.turnId)
                         return (
                           <div className="quick-action-run" key={run.runId}>
                             <button
@@ -151,8 +164,9 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
                                 : run.returnedAt ? <small>已回传</small>
                                   : run.workspaceRemovedAt ? <small>已清理</small> : null}
                             </button>
-                            {(isolated || canReturn) && (
+                            {(isolated || canReturn || canCancel) && (
                               <div className="quick-action-run-tools">
+                                {canCancel && <button type="button" disabled={runActionId !== null} onClick={() => void cancelRun(run)} title="停止任务" aria-label="停止任务">{runActionId === `cancel:${run.runId}` ? <LoaderCircle className="spin" size={11} /> : <Square size={10} fill="currentColor" />}</button>}
                                 {canReturn && <button type="button" disabled={runActionId !== null} onClick={() => void returnResult(run)} title="回传结果到当前会话" aria-label="回传结果到当前会话">{runActionId === `return:${run.runId}` ? <LoaderCircle className="spin" size={11} /> : <Reply size={11} />}</button>}
                                 {workspaceAvailable && <button type="button" disabled={runActionId !== null} onClick={() => void agentRuns.openWorkspace(run.runId).catch((nextError) => setError(messageOf(nextError)))} title="在 GoLand 中打开 worktree" aria-label="在 GoLand 中打开 worktree"><SquareCode size={11} /></button>}
                                 <button type="button" disabled={runActionId !== null} onClick={() => void copyBranch(run)} title="复制隔离分支" aria-label="复制隔离分支">{runActionId === `copy:${run.runId}` ? <LoaderCircle className="spin" size={11} /> : <Copy size={11} />}</button>

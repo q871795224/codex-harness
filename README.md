@@ -22,7 +22,7 @@
 - Harness 已加载随 App 发布的内置插件；外部 Harness 插件需等待独立 WebView 权限隔离完成，Codex 插件继续由 App Server 管理。
 - 插件实例可归属于全局、workspace 或 thread，并拥有独立启停、配置和本地 KV。
 - “轨迹”已作为首个内置插件通过 `conversation.tabs` slot 接入。
-- “临时 Agent”通过独立 child thread 支持后台运行与人工确认回传，运行索引不保存会话正文。快捷 Agent 可声明只读、共享写入或隔离交付，也可声明完成后由用户手动回传发起会话；共享目录的并发写任务会被拦截，隔离交付使用独立 Git worktree。运行记录可打开子会话/GoLand、复制分支，并在任务结束后安全清理干净的 worktree。
+- “临时 Agent”通过独立 child thread 支持后台运行与人工确认回传，运行索引不保存会话正文。快捷 Agent 可声明只读、共享写入或隔离交付，也可声明完成后由用户手动回传发起会话；共享目录的并发写任务会被拦截，隔离交付使用独立 Git worktree。运行记录可直接停止 active Run、打开子会话/GoLand、复制分支，并在任务结束后安全清理干净的 worktree。
 - “SeaTalk Bridge”复用本机 companion，提供内存 Inbox、Codex 草稿、编辑预览和显式确认发送；凭据仍由 companion 管理。
 - “会话启动器”通过 `newThreadPanels` slot 在空白新会话中展示 Codex Radar 模型表，并将 YOLO、Auto-review 或 Manual 模式作为完整的审批 reviewer 与 sandbox 组合写入 App Server。
 

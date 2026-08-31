@@ -22,7 +22,7 @@ class FakeTransport implements AgentRunTransport {
     this.startedPrompts.push({ threadId, prompt })
     return `turn-${this.startedPrompts.length}`
   }
-  async interruptTurn() {}
+  async interruptTurn(_threadId: string, _turnId: string) {}
   async inspectThread() { return this.inspection }
   async readLastAgentMessage() { return this.result }
   async openWorkspace(_workspaceRoot: string) {}
@@ -73,6 +73,19 @@ describe('AgentRunCoordinator', () => {
     })
 
     expect(calls).toEqual(['configure', 'turn'])
+  })
+
+  it('interrupts an active child turn and records cancellation', async () => {
+    const transport = new FakeTransport()
+    const interrupted: Array<{ threadId: string; turnId: string }> = []
+    transport.interruptTurn = async (threadId, turnId) => { interrupted.push({ threadId, turnId }) }
+    transport.runs = [makeRun()]
+    const service = new AgentRunCoordinator(transport, () => undefined)
+
+    await service.cancel('run-1')
+
+    expect(interrupted).toEqual([{ threadId: 'child-1', turnId: 'turn-1' }])
+    expect(service.snapshot()[0]).toMatchObject({ status: 'cancelled' })
   })
 
   it('tracks completion and returns delegated results to the parent once', async () => {

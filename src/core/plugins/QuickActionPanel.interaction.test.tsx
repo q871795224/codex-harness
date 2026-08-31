@@ -35,6 +35,18 @@ describe('QuickActionPanel result return', () => {
     expect(await screen.findByText(/主会话仍在运行/)).toBeTruthy()
     expect(screen.getByRole('button', { name: '回传结果到当前会话' })).toBeTruthy()
   })
+
+  it('stops an active run without opening its child conversation', async () => {
+    const service = new FakeAgentRuns([delegatedRun({ status: 'running', completedAt: null })])
+    renderPanel(service)
+
+    fireEvent.click(screen.getByRole('button', { name: '打开快捷 Agent' }))
+    fireEvent.click(screen.getByRole('button', { name: /1 个运行中任务/ }))
+    fireEvent.click(screen.getByRole('button', { name: '停止任务' }))
+
+    await waitFor(() => expect(service.cancel).toHaveBeenCalledWith('run-1'))
+    expect(screen.getByText('已取消')).toBeTruthy()
+  })
 })
 
 class FakeAgentRuns implements AgentRunService {
@@ -48,7 +60,10 @@ class FakeAgentRuns implements AgentRunService {
   snapshot = () => this.runs
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   start = vi.fn()
-  cancel = vi.fn()
+  cancel = vi.fn(async (runId: string) => {
+    this.runs = this.runs.map((run) => run.runId === runId ? { ...run, status: 'cancelled', completedAt: Date.now() } : run)
+    for (const listener of this.listeners) listener()
+  })
   loadResult = vi.fn()
   returnToParent = vi.fn(async (runId: string) => {
     if (this.returnError) throw this.returnError
@@ -78,7 +93,7 @@ function renderPanel(agentRuns: AgentRunService) {
   return render(<QuickActionPanel actions={actions} context={context} agentRuns={agentRuns} />)
 }
 
-function delegatedRun(): AgentRun {
+function delegatedRun(overrides: Partial<AgentRun> = {}): AgentRun {
   return {
     runId: 'run-1',
     instanceId: 'quick-agent-1',
@@ -96,5 +111,6 @@ function delegatedRun(): AgentRun {
     completedAt: 2,
     returnedAt: null,
     workspaceRemovedAt: null,
+    ...overrides,
   }
 }
