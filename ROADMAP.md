@@ -19,33 +19,32 @@ Codex Harness 是 Codex App Server 上的本地工作台，重点是会话组织
 - Codex 回复与 file change 到 GoLand 文件/行的快捷跳转。
 - Vitest、Rust 单元测试、`pnpm test:coverage` 和基线覆盖率门禁。
 
-## 近期优先级
+## 本轮已完成
 
-### P0：交付衔接
+### 交付衔接
 
-- 在会话完成态提供聚焦的交付动作：打开 GoLand、复制当前分支、打开对应 GitLab 新建 MR 页面。
+- 会话标题栏提供聚焦的交付动作：打开 GoLand、复制当前分支、打开对应 GitHub PR / GitLab MR 新建页面。
 - MR 跳转必须从 Git remote 安全推导，无法识别时只展示可解释的降级动作。
 - 不新增 Harness diff；如 GoLand 未来提供稳定的 Changes/Diff 深链，再增加对应快捷入口。
 
-### P0：并发写入安全
+### 并发写入安全
 
 - 为快捷 Agent Job 声明运行模式：只读、共享工作区写入、隔离交付。
 - 同一 cwd 已有写任务时，对第二个写任务给出明确冲突提示；不能把“不同会话”误认为“文件已隔离”。
 - 只有隔离交付场景需要自动 worktree；不建设通用 Worktree Center。
 
-### P1：Agent Activity
+### Agent Activity
 
-- 在 App Server 稳定接口可用后，增加会话级 Agent Activity 汇总，而不依赖 experimental 父子筛选。
+- 基于 transcript 中的稳定 `collabAgentToolCall` 增加会话级 Agent Activity 汇总，不依赖 experimental 父子筛选。
 - 汇总运行中、等待审批、失败和已完成子 Agent；审批仍进入 Harness 统一审批流。
 - 仅在 App Server 明确支持 direct input 时提供输入；停止和追加任务也必须遵循原生协议能力。
 
-### P1：工程质量
+### 工程质量
 
-- 优先拆分 `useHarness.ts` 的协议适配、事件 reducer 和会话操作，保持 React hook 只负责编排。
-- 收紧 App Server 请求为类型化 facade，并逐步淘汰业务代码中的任意 method string。
+- 将 App Server method string 收口到类型化 facade，业务组件不再直接发送任意协议方法；后续继续拆分 `useHarness.ts` 的事件 reducer 和会话操作。
 - 为 fork、事件 reducer、并发写入保护和 IPC 错误分支增加测试；逐步提高覆盖率阈值。
-- 按真实 bundle profile 做代码分割，优先处理主包和 API Workbench sandbox，不为了消除 warning 盲目拆包。
-- 配置并验证 Tauri CSP；必须覆盖稳定版、开发版、IPC、asset 和本地 WebSocket 场景后再启用。
+- 按真实 bundle profile 延迟加载设置页、Terminal/xterm 和 API Workbench sandbox；继续以首屏成本而非 warning 数量决定后续拆分。
+- 启用 Tauri CSP：生产 WebView 只允许本地资源与 IPC，开发态额外允许 localhost/HMR；API Workbench 脚本执行所需的 `unsafe-eval` 明确保留。
 
 ## 明确不做
 

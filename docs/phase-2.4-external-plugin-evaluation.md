@@ -130,7 +130,7 @@ Host 不能提供 generic native invoke 或 generic App Server request。每个 
 - `main` 与 `plugin:*` capability 分离，并有原生测试证明 plugin label 无法调用 Harness IPC。
 - package verifier 覆盖 traversal、symlink、hash mismatch、同版本覆盖和原子回滚测试。
 - RPC broker 覆盖 schema、scope、权限、超时、取消、限流和卸载后请求测试。
-- 外部 WebView 使用非空 CSP；主 App 也从当前 `csp: null` 迁到受限 CSP。
+- 外部 WebView 使用独立、非空 CSP；主 App 已启用受限 CSP，但为内置 API Workbench 的 Postman 脚本执行保留 `unsafe-eval`，外部插件 WebView 不得继承这一例外。
 - 崩溃、禁用、删除、升级和 App 退出都能关闭 WebView 并撤销 pending RPC。
 - 至少用一个只读 Tab 插件和一个 localhost connector 插件做端到端验收。
 

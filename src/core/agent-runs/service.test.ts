@@ -5,6 +5,7 @@ import { AgentRunCoordinator } from './service'
 class FakeTransport implements AgentRunTransport {
   runs: AgentRun[] = []
   startedPrompts: Array<{ threadId: string; prompt: string }> = []
+  startedWorkspaces: string[] = []
   inspection: ThreadInspection = { active: true, lastTurnStatus: 'inProgress' }
   result = '子任务结论'
 
@@ -14,7 +15,8 @@ class FakeTransport implements AgentRunTransport {
     this.runs = [saved, ...this.runs.filter((candidate) => candidate.runId !== run.runId)]
     return saved
   }
-  async startThread() { return 'child-1' }
+  async prepareWorkspace(workspaceRoot: string, _access: AgentRun['workspaceAccess'], _runId: string) { return workspaceRoot }
+  async startThread(workspaceRoot: string) { this.startedWorkspaces.push(workspaceRoot); return 'child-1' }
   async configureThread() {}
   async startTurn(threadId: string, prompt: string) {
     this.startedPrompts.push({ threadId, prompt })
@@ -33,6 +35,7 @@ describe('AgentRunCoordinator', () => {
     const run = await service.start({
       instanceId: 'temporary-agent',
       mode: 'detached',
+      workspaceAccess: 'shared-write',
       workspaceRoot: '/repo',
       prompt: '查询当前发布状态并总结',
     })
@@ -53,6 +56,7 @@ describe('AgentRunCoordinator', () => {
     await service.start({
       instanceId: 'quick-agent',
       mode: 'detached',
+      workspaceAccess: 'shared-write',
       workspaceRoot: '/repo',
       prompt: '发布当前分支',
       settings: {
@@ -74,6 +78,7 @@ describe('AgentRunCoordinator', () => {
     const run = await service.start({
       instanceId: 'temporary-agent',
       mode: 'delegated',
+      workspaceAccess: 'read-only',
       workspaceRoot: '/repo',
       parentThreadId: 'parent-1',
       prompt: '分析失败原因',
@@ -100,6 +105,43 @@ describe('AgentRunCoordinator', () => {
 
     expect(service.snapshot()[0].status).toBe('completed')
   })
+
+  it('blocks two shared writers in the same checkout but permits read-only work', async () => {
+    const transport = new FakeTransport()
+    const service = new AgentRunCoordinator(transport, () => undefined)
+    await service.start({ instanceId: 'writer', mode: 'detached', workspaceAccess: 'shared-write', workspaceRoot: '/repo', prompt: '修改代码' })
+
+    await expect(service.start({ instanceId: 'writer-2', mode: 'detached', workspaceAccess: 'shared-write', workspaceRoot: '/repo', prompt: '也修改代码' }))
+      .rejects.toThrow('正在写入同一工作目录')
+    await expect(service.start({ instanceId: 'reader', mode: 'detached', workspaceAccess: 'read-only', workspaceRoot: '/repo', prompt: '只检查代码' }))
+      .resolves.toMatchObject({ status: 'running', workspaceAccess: 'read-only' })
+  })
+
+  it('reserves the checkout while a shared writer is starting', async () => {
+    const transport = new FakeTransport()
+    let releaseWorkspace!: () => void
+    transport.prepareWorkspace = (workspaceRoot) => new Promise((resolve) => {
+      releaseWorkspace = () => resolve(workspaceRoot)
+    })
+    const service = new AgentRunCoordinator(transport, () => undefined)
+
+    const first = service.start({ instanceId: 'writer', mode: 'detached', workspaceAccess: 'shared-write', workspaceRoot: '/repo', prompt: '修改代码' })
+    await Promise.resolve()
+    await expect(service.start({ instanceId: 'writer-2', mode: 'detached', workspaceAccess: 'shared-write', workspaceRoot: '/repo', prompt: '同时修改' }))
+      .rejects.toThrow('正在写入同一工作目录')
+    releaseWorkspace()
+    await expect(first).resolves.toMatchObject({ status: 'running' })
+  })
+
+  it('prepares a separate workspace for isolated delivery', async () => {
+    const transport = new FakeTransport()
+    transport.prepareWorkspace = async (_workspaceRoot, access) => access === 'isolated-delivery' ? '/repo-isolated' : '/repo'
+    const service = new AgentRunCoordinator(transport, () => undefined)
+
+    const run = await service.start({ instanceId: 'delivery', mode: 'detached', workspaceAccess: 'isolated-delivery', workspaceRoot: '/repo', prompt: '交付改动' })
+    expect(run.workspaceRoot).toBe('/repo-isolated')
+    expect(transport.startedWorkspaces).toEqual(['/repo-isolated'])
+  })
 })
 
 function makeRun(overrides: Partial<AgentRun> = {}): AgentRun {
@@ -107,6 +149,7 @@ function makeRun(overrides: Partial<AgentRun> = {}): AgentRun {
     runId: 'run-1',
     instanceId: 'temporary-agent',
     mode: 'detached',
+    workspaceAccess: 'shared-write',
     status: 'running',
     title: '任务',
     workspaceRoot: '/repo',

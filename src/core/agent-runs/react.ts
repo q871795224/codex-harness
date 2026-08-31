@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { runtime } from '../runtime/bridge'
+import { appServer } from '../runtime/appServerClient'
 import { AgentRunCoordinator } from './service'
 import type { AgentRunService, AgentRunTransport } from './types'
 
@@ -16,8 +17,11 @@ export function useAgentRunService(
     const transport: AgentRunTransport = {
       listRuns: () => runtime.listPluginRuns(),
       saveRun: (run) => runtime.upsertPluginRun(run),
+      prepareWorkspace: (workspaceRoot, access, runId) => access === 'isolated-delivery'
+        ? runtime.createAgentWorktree(workspaceRoot, runId)
+        : Promise.resolve(workspaceRoot),
       startThread: (workspaceRoot) => runtime.startCodexThread(workspaceRoot),
-      configureThread: (threadId, settings) => runtime.request('thread/settings/update', {
+      configureThread: (threadId, settings) => appServer.updateThreadSettings({
         threadId,
         model: settings.model,
         effort: settings.effort,

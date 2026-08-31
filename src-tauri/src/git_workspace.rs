@@ -1,9 +1,19 @@
 use crate::store::Workspace;
+use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
 };
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDeliveryContext {
+    pub branch: Option<String>,
+    pub remote_url: Option<String>,
+    pub review_url: Option<String>,
+    pub review_label: Option<String>,
+}
 
 pub fn resolve_workspace(path: &str) -> Result<Workspace, String> {
     let selected = fs::canonicalize(path).map_err(|error| format!("无法访问所选目录: {error}"))?;
@@ -73,6 +83,114 @@ pub fn resolve_workspace(path: &str) -> Result<Workspace, String> {
         created_at: 0,
         last_opened_at: 0,
     })
+}
+
+pub fn delivery_context(path: &str) -> Result<WorkspaceDeliveryContext, String> {
+    let cwd = fs::canonicalize(path).map_err(|error| format!("无法访问工作目录: {error}"))?;
+    if !cwd.is_dir() {
+        return Err("工作目录不存在".to_string());
+    }
+    let inside = git(&cwd, ["rev-parse", "--is-inside-work-tree"])?;
+    if inside.trim() != "true" {
+        return Err("当前目录不在 Git 工作区中".to_string());
+    }
+    let branch = git_optional(&cwd, ["branch", "--show-current"]);
+    let remote_url = git_optional(&cwd, ["remote", "get-url", "origin"]);
+    let review = branch
+        .as_deref()
+        .zip(remote_url.as_deref())
+        .and_then(|(branch, remote)| review_url(remote, branch));
+    Ok(WorkspaceDeliveryContext {
+        branch,
+        remote_url,
+        review_url: review.as_ref().map(|(url, _)| url.clone()),
+        review_label: review.map(|(_, label)| label),
+    })
+}
+
+pub fn create_agent_worktree(cwd: &str, run_id: &str, data_dir: &Path) -> Result<String, String> {
+    if run_id.is_empty()
+        || !run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        return Err("Agent Run ID 格式无效".to_string());
+    }
+    let workspace = resolve_workspace(cwd)?;
+    let target = data_dir.join("agent-worktrees").join(run_id);
+    if target.exists() {
+        return Err("隔离 worktree 已存在".to_string());
+    }
+    let parent = target
+        .parent()
+        .ok_or_else(|| "无法确定 worktree 目录".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("无法创建 worktree 目录: {error}"))?;
+    let short_id: String = run_id
+        .chars()
+        .filter(|character| *character != '-')
+        .take(8)
+        .collect();
+    let branch = format!("codex-harness/{short_id}");
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&workspace.checkout_root)
+        .args(["worktree", "add", "-b", &branch])
+        .arg(&target)
+        .arg("HEAD")
+        .output()
+        .map_err(|error| format!("无法创建隔离 worktree: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "无法创建隔离 worktree: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    fs::canonicalize(&target)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| format!("无法解析隔离 worktree: {error}"))
+}
+
+fn review_url(remote: &str, branch: &str) -> Option<(String, String)> {
+    let base = remote_web_url(remote)?;
+    let encoded_branch = percent_encode(branch);
+    if base.starts_with("https://github.com/") || base.starts_with("http://github.com/") {
+        return Some((
+            format!("{base}/compare/{encoded_branch}?expand=1"),
+            "创建 PR".to_string(),
+        ));
+    }
+    Some((
+        format!("{base}/-/merge_requests/new?merge_request%5Bsource_branch%5D={encoded_branch}"),
+        "创建 MR".to_string(),
+    ))
+}
+
+fn remote_web_url(remote: &str) -> Option<String> {
+    let remote = remote.trim().trim_end_matches('/').trim_end_matches(".git");
+    if remote.starts_with("https://") || remote.starts_with("http://") {
+        return Some(remote.to_string());
+    }
+    if let Some(value) = remote.strip_prefix("ssh://") {
+        let host_and_path = value.split_once('@').map(|(_, tail)| tail).unwrap_or(value);
+        return host_and_path
+            .split_once('/')
+            .map(|(host, path)| format!("https://{host}/{path}"));
+    }
+    let (_, host_and_path) = remote.split_once('@')?;
+    let (host, path) = host_and_path.split_once(':')?;
+    Some(format!("https://{host}/{path}"))
+}
+
+fn percent_encode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 fn git<const N: usize>(cwd: &Path, args: [&str; N]) -> Result<String, String> {
@@ -223,6 +341,53 @@ mod tests {
         git_command(
             &directory.0,
             &["worktree", "remove", "--force", worktree.to_str().unwrap()],
+        );
+    }
+
+    #[test]
+    fn builds_review_urls_for_github_and_gitlab_remotes() {
+        assert_eq!(
+            review_url("git@github.com:openai/codex.git", "feature/fork"),
+            Some((
+                "https://github.com/openai/codex/compare/feature%2Ffork?expand=1".to_string(),
+                "创建 PR".to_string(),
+            ))
+        );
+        assert_eq!(
+            review_url("ssh://git@git.example.com/group/repo.git", "fix one"),
+            Some((
+                "https://git.example.com/group/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix%20one".to_string(),
+                "创建 MR".to_string(),
+            ))
+        );
+        assert_eq!(review_url("/tmp/repo.git", "main"), None);
+    }
+
+    #[test]
+    fn creates_an_isolated_agent_worktree() {
+        let repository = TestDir::new();
+        let data = TestDir::new();
+        init_git(&repository.0);
+        git_command(
+            &repository.0,
+            &["config", "user.name", "Codex Harness Test"],
+        );
+        git_command(
+            &repository.0,
+            &["config", "user.email", "test@example.invalid"],
+        );
+        git_command(&repository.0, &["commit", "--allow-empty", "-m", "initial"]);
+
+        let worktree = create_agent_worktree(
+            repository.0.to_str().unwrap(),
+            "12345678-1234-1234-1234-123456789abc",
+            &data.0,
+        )
+        .expect("creates isolated worktree");
+        assert!(Path::new(&worktree).is_dir());
+        assert_eq!(
+            git_optional(Path::new(&worktree), ["branch", "--show-current"]).as_deref(),
+            Some("codex-harness/12345678")
         );
     }
 }

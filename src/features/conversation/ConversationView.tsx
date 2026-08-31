@@ -8,6 +8,7 @@ import {
   Bot,
   Check,
   CircleAlert,
+  CircleStop,
   ChevronDown,
   ChevronRight,
   Command,
@@ -31,6 +32,7 @@ import { formatDuration, truncate } from '../../core/domain/format'
 import { groupTranscriptTurns, summarizeProcessRows, type TranscriptItem, type TranscriptTurn } from './transcript'
 import { runtime } from '../../core/runtime/bridge'
 import { WorkingStatus } from './ConversationStats'
+import { collectNativeAgentActivities, type NativeAgentActivity } from './agentActivity'
 
 interface ConversationHeaderProps {
   thread: Thread
@@ -169,6 +171,9 @@ interface ConversationViewProps {
   onForkTurn?: (turnId: string) => void
   forkingTurnId?: string | null
   onOpenThread?: (threadId: string) => void
+  agentApprovalCounts?: Record<string, number>
+  activeTurnIds?: Record<string, string>
+  onInterruptAgent?: (threadId: string) => void
   newThreadPanels?: ReactNode
   rawMode: boolean
   working: boolean
@@ -179,7 +184,7 @@ interface ConversationViewProps {
   continueDisabled?: boolean
 }
 
-export function ConversationView({ items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
+export function ConversationView({ items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -224,6 +229,7 @@ export function ConversationView({ items, turns, cwd, approvals, workspace, work
   const latestTurnId = turns.at(-1)?.id ?? null
   const workingMessageIndex = rawMode && working ? latestAgentMessageIndex(rawTranscriptRows, workingTurnId) : -1
   const activeTurnHasContent = transcriptTurns.some((turn) => turn.turnId === workingTurnId && (turn.processRows.length > 0 || turn.finalRows.length > 0))
+  const agentActivities = collectNativeAgentActivities(items, agentApprovalCounts)
 
   return (
     <section className="conversation-pane" aria-label="对话内容">
@@ -244,6 +250,14 @@ export function ConversationView({ items, turns, cwd, approvals, workspace, work
             <button className="load-older-turns" type="button" onClick={onLoadOlderTurns} disabled={loadingOlderTurns}>
               {loadingOlderTurns ? '正在加载更早消息…' : '加载更早消息'}
             </button>
+          )}
+          {agentActivities.length > 0 && (
+            <AgentActivitySummary
+              activities={agentActivities}
+              activeTurnIds={activeTurnIds}
+              onOpenThread={onOpenThread}
+              onInterrupt={onInterruptAgent}
+            />
           )}
           {items.length === 0 && (
             <div className="fresh-thread-wrap">
@@ -322,6 +336,41 @@ export function ConversationView({ items, turns, cwd, approvals, workspace, work
       </button>
     </section>
   )
+}
+
+function AgentActivitySummary({ activities, activeTurnIds, onOpenThread, onInterrupt }: {
+  activities: NativeAgentActivity[]
+  activeTurnIds: Record<string, string>
+  onOpenThread?: (threadId: string) => void
+  onInterrupt?: (threadId: string) => void
+}) {
+  const activeCount = activities.filter((activity) => activeTurnIds[activity.threadId] || isAgentActive(activity.status)).length
+  return (
+    <section className="agent-activity-summary" aria-label="Agent Activity">
+      <header><span><GitFork size={14} />Agent Activity</span><small>{activeCount > 0 ? `${activeCount} 个运行中` : `${activities.length} 个 Agent`}</small></header>
+      <div>
+        {activities.map((activity) => (
+          <article key={activity.threadId}>
+            <button type="button" className="agent-activity-open" onClick={() => onOpenThread?.(activity.threadId)} disabled={!onOpenThread} title="打开子 Agent 会话">
+              <strong>{activity.task ? truncate(activity.task, 72) : collabToolLabel(activity.tool)}</strong>
+              <span>{activityStatusLabel(activity.status)}</span>
+              {activity.approvalCount > 0 && <em>{activity.approvalCount} 个审批</em>}
+              {activity.message && <small>{truncate(activity.message, 90)}</small>}
+            </button>
+            {activeTurnIds[activity.threadId] && onInterrupt && (
+              <button type="button" className="agent-activity-stop" onClick={() => onInterrupt(activity.threadId)} title="停止子 Agent 当前轮">
+                <CircleStop size={13} />停止
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function isAgentActive(status: string): boolean {
+  return status === 'pendingInit' || status === 'running' || status === 'inProgress'
 }
 
 function transcriptRowKey(row: TranscriptItem, index: number): string {

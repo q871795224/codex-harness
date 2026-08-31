@@ -1,12 +1,14 @@
 import type { AppServerEvent, ThreadCodexSettings } from '../domain/codex'
 
 export type AgentRunMode = 'detached' | 'delegated'
+export type AgentWorkspaceAccess = 'read-only' | 'shared-write' | 'isolated-delivery'
 export type AgentRunStatus = 'starting' | 'running' | 'waitingApproval' | 'completed' | 'failed' | 'cancelled'
 
 export interface AgentRun {
   runId: string
   instanceId: string
   mode: AgentRunMode
+  workspaceAccess: AgentWorkspaceAccess
   status: AgentRunStatus
   title: string
   workspaceRoot: string
@@ -24,6 +26,7 @@ export interface StartAgentRunInput {
   instanceId: string
   title?: string
   mode: AgentRunMode
+  workspaceAccess: AgentWorkspaceAccess
   workspaceRoot: string
   parentThreadId?: string | null
   prompt: string
@@ -50,6 +53,7 @@ export interface ThreadInspection {
 export interface AgentRunTransport {
   listRuns(): Promise<AgentRun[]>
   saveRun(run: AgentRun): Promise<AgentRun>
+  prepareWorkspace(workspaceRoot: string, access: AgentWorkspaceAccess, runId: string): Promise<string>
   startThread(workspaceRoot: string): Promise<string>
   configureThread(threadId: string, settings: ThreadCodexSettings): Promise<void>
   startTurn(threadId: string, prompt: string): Promise<string>

@@ -880,7 +880,9 @@ mod tests {
 
     #[test]
     fn omits_high_volume_output_deltas_from_diagnostics() {
-        assert!(!should_persist_notification(Some("item/agentMessage/delta")));
+        assert!(!should_persist_notification(Some(
+            "item/agentMessage/delta"
+        )));
         assert!(!should_persist_notification(Some(
             "item/commandExecution/outputDelta"
         )));

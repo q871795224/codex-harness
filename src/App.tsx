@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
@@ -19,7 +19,6 @@ import { Composer, type ComposerDraft } from './features/conversation/Composer'
 import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
-import { PluginSettingsDialog, SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { useCodexUpdate } from './features/codex/useCodexUpdate'
@@ -34,6 +33,8 @@ import type { TerminalService } from './core/terminal/types'
 import type { AppLauncherService } from './core/app-launcher/types'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
+const SettingsDialog = lazy(() => import('./features/settings/SettingsDialog').then((module) => ({ default: module.SettingsDialog })))
+const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDialog').then((module) => ({ default: module.PluginSettingsDialog })))
 
 export default function App() {
   const harness = useHarness()
@@ -94,6 +95,8 @@ export default function App() {
     } satisfies TerminalService,
     'harness.appLauncher': {
       open: runtime.openWorkspaceApp,
+      deliveryContext: runtime.workspaceDeliveryContext,
+      openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
   }), [agentRuns, harness.onTurnCompleted, harness.openThread])
 
@@ -505,6 +508,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 onForkTurn={canMutate && !harness.isCurrentWorking ? (turnId) => void harness.forkThreadAtTurn(turnId) : undefined}
                 forkingTurnId={harness.forkingTurnId}
                 onOpenThread={(threadId) => void harness.openThread(threadId)}
+                agentApprovalCounts={Object.fromEntries(Object.entries(harness.approvals).map(([threadId, requests]) => [threadId, requests.length]))}
+                activeTurnIds={harness.activeTurnIds}
+                onInterruptAgent={(threadId) => void harness.interruptAgentThread(threadId)}
                 newThreadPanels={codexUpdate.loading ? null : codexUpdate.visible && codexUpdate.status ? (
                   <CodexUpdatePanel
                     status={codexUpdate.status}
@@ -669,7 +675,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         </>
       )}
       {settingsOpen && (
-        <SettingsDialog
+        <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
           theme={harness.appearance.theme}
           fontSizes={harness.appearance.fontSizes}
           sendShortcut={harness.keyboard.sendShortcut}
@@ -702,10 +708,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
             setSettingsOpen(false)
             setComposerFocusRequest((current) => current + 1)
           }}
-        />
+        /></Suspense>
       )}
       {pluginsOpen && (
-        <PluginSettingsDialog
+        <Suspense fallback={<div className="dialog-loading">正在加载插件设置…</div>}><PluginSettingsDialog
           workspaces={harness.workspaces}
           threads={harness.threads}
           selectedThreadId={harness.selectedThreadId}
@@ -715,7 +721,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
             setPluginsOpen(false)
             setComposerFocusRequest((current) => current + 1)
           }}
-        />
+        /></Suspense>
       )}
       {harness.toast && <div className={`toast ${harness.toast.kind}`}>{harness.toast.message}</div>}
     </div>

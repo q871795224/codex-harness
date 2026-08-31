@@ -25,7 +25,7 @@ import type { HarnessFileTree } from '../harness-files/types'
 import type { UsageSnapshot } from '../usage/types'
 import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-workbench/types'
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
-import type { WorkspaceAppId } from '../app-launcher/types'
+import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/types'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
 
 interface PluginInstanceDto {
@@ -222,6 +222,10 @@ export const runtime = {
     return invoke<void>('open_workspace_path', { appId, cwd, path, line: line ?? null })
   },
 
+  workspaceDeliveryContext(cwd: string): Promise<WorkspaceDeliveryContext> {
+    return invoke<WorkspaceDeliveryContext>('workspace_delivery_context', { cwd })
+  },
+
   async listenTerminalEvents(handler: (event: TerminalEvent) => void): Promise<() => void> {
     return listen<TerminalEvent>('harness-terminal', (event) => handler(event.payload))
   },
@@ -305,12 +309,17 @@ export const runtime = {
     return invoke<AgentRun[]>('list_plugin_runs')
   },
 
+  createAgentWorktree(cwd: string, runId: string): Promise<string> {
+    return invoke<string>('create_agent_worktree', { cwd, runId })
+  },
+
   upsertPluginRun(run: AgentRun): Promise<AgentRun> {
     return invoke<AgentRun>('upsert_plugin_run', {
       input: {
         runId: run.runId,
         instanceId: run.instanceId,
         mode: run.mode,
+        workspaceAccess: run.workspaceAccess,
         status: run.status,
         title: run.title,
         workspaceRoot: run.workspaceRoot,

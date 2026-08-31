@@ -251,6 +251,7 @@ function SeaTalkDraft({ bridge, agentRuns, instanceId, config, context, replyTar
         instanceId,
         title: '生成 SeaTalk 草稿',
         mode: 'detached',
+        workspaceAccess: 'read-only',
         workspaceRoot: context.workspaceRoot,
         prompt: draftPrompt(intent, context),
       })

@@ -2,6 +2,7 @@ import type { ThreadCodexSettings } from '../../core/domain/codex'
 import type { PluginInstanceRecord } from '../../extensions/types'
 
 export type QuickAgentRunMode = 'yolo' | 'auto-review' | 'manual'
+export type QuickAgentWorkspaceAccess = 'read-only' | 'shared-write' | 'isolated-delivery'
 
 export interface QuickAgentJob {
   id: string
@@ -10,6 +11,7 @@ export interface QuickAgentJob {
   model: string
   effort: string
   mode: QuickAgentRunMode
+  workspaceAccess: QuickAgentWorkspaceAccess
 }
 
 export interface QuickAgentConfig {
@@ -23,6 +25,7 @@ export const DEFAULT_QUICK_AGENT_JOB: QuickAgentJob = {
   model: 'gpt-5.6-luna',
   effort: 'max',
   mode: 'yolo',
+  workspaceAccess: 'isolated-delivery',
 }
 
 export function newQuickAgentJob(): QuickAgentJob {
@@ -33,6 +36,7 @@ export function newQuickAgentJob(): QuickAgentJob {
     model: 'gpt-5.6-luna',
     effort: 'max',
     mode: 'yolo',
+    workspaceAccess: 'read-only',
   }
 }
 
@@ -58,13 +62,17 @@ export function readQuickAgentConfig(value: Readonly<Record<string, unknown>>): 
     if (typeof value.id !== 'string' || !value.id || seen.has(value.id)) return []
     if (typeof value.name !== 'string' || typeof value.prompt !== 'string' || typeof value.model !== 'string' || typeof value.effort !== 'string') return []
     const mode = isRunMode(value.mode) ? value.mode : 'yolo'
+    const workspaceAccess = isWorkspaceAccess(value.workspaceAccess) ? value.workspaceAccess : 'shared-write'
     seen.add(value.id)
-    return [{ id: value.id, name: value.name, prompt: value.prompt, model: value.model, effort: value.effort, mode }]
+    return [{ id: value.id, name: value.name, prompt: value.prompt, model: value.model, effort: value.effort, mode, workspaceAccess }]
   })
   return { jobs }
 }
 
 export function settingsForMode(job: QuickAgentJob): ThreadCodexSettings {
+  if (job.workspaceAccess === 'read-only') {
+    return { model: job.model, effort: job.effort, serviceTier: null, approvalPolicy: 'on-request', approvalsReviewer: 'user', sandboxMode: 'read-only' }
+  }
   if (job.mode === 'yolo') {
     return { model: job.model, effort: job.effort, serviceTier: null, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access' }
   }
@@ -82,4 +90,8 @@ export function runModeLabel(mode: QuickAgentRunMode): string {
 
 function isRunMode(value: unknown): value is QuickAgentRunMode {
   return value === 'yolo' || value === 'auto-review' || value === 'manual'
+}
+
+function isWorkspaceAccess(value: unknown): value is QuickAgentWorkspaceAccess {
+  return value === 'read-only' || value === 'shared-write' || value === 'isolated-delivery'
 }

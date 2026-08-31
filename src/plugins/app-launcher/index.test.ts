@@ -5,7 +5,11 @@ import { appLauncherDefaultInstance, appLauncherPlugin } from './index'
 
 describe('app launcher plugin', () => {
   it('registers a header action backed by the restricted launcher service', async () => {
-    const service: AppLauncherService = { open: async () => undefined }
+    const service: AppLauncherService = {
+      open: async () => undefined,
+      deliveryContext: async () => ({ branch: 'feature', remoteUrl: null, reviewUrl: null, reviewLabel: null }),
+      openUrl: async () => undefined,
+    }
     const host = new PluginHost([appLauncherPlugin], {
       storage: () => ({ async get<T>() { return null as T | null }, async set() {} }),
       services: { 'harness.appLauncher': service },

@@ -1,22 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ApprovalPolicy, CodexConfig, CodexModel, McpRuntimeStatus, McpServerStatus, ThreadCodexSettings } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
+import { appServer } from '../../core/runtime/appServerClient'
 import { startupRuntimeStatus } from './mcpStatus'
 
 export type { ThreadCodexSettings } from '../../core/domain/codex'
-
-interface ConfigReadResponse {
-  config: CodexConfig
-}
-
-interface ModelListResponse {
-  data: CodexModel[]
-  nextCursor: string | null
-}
-
-interface McpServerListResponse {
-  data: McpServerStatus[]
-}
 
 interface McpStartupUpdate {
   runtimeStatus: McpRuntimeStatus
@@ -41,8 +29,8 @@ export function useCodexCore() {
     setError(null)
     try {
       const [modelResult, configResult] = await Promise.all([
-        runtime.request<ModelListResponse>('model/list', { limit: 100, includeHidden: false }),
-        runtime.request<ConfigReadResponse>('config/read', { includeLayers: false }),
+        appServer.listModels(),
+        appServer.readConfig(),
       ])
       setModels(modelResult.data.filter((model) => !model.hidden))
       setConfig(configResult.config)
@@ -59,10 +47,7 @@ export function useCodexCore() {
     setMcpLoading(true)
     setMcpError(null)
     try {
-      const result = await runtime.request<McpServerListResponse>('mcpServerStatus/list', {
-        limit: 100,
-        detail: 'toolsAndAuthOnly',
-      })
+      const result = await appServer.listMcpServers()
       setMcpServers(result.data)
     } catch (nextError) {
       setMcpError(messageOf(nextError))
@@ -94,7 +79,7 @@ export function useCodexCore() {
   const reloadMcp = useCallback(async () => {
     setMcpError(null)
     try {
-      await runtime.request('config/mcpServer/reload')
+      await appServer.reloadMcpServers()
       await refreshMcp()
     } catch (nextError) {
       setMcpError(messageOf(nextError))
@@ -120,7 +105,7 @@ export function useCodexCore() {
     const serviceTierChanged = patch.serviceTier !== undefined || previous.serviceTier !== next.serviceTier
     setThreadSettings((current) => ({ ...current, [threadId]: next }))
     try {
-      await runtime.request('thread/settings/update', {
+      await appServer.updateThreadSettings({
         threadId,
         ...(patch.model !== undefined ? { model: next.model } : {}),
         ...(patch.effort !== undefined ? { effort: next.effort } : {}),
@@ -141,7 +126,7 @@ export function useCodexCore() {
     if (defaultsToPersist.length === 0) return
 
     try {
-      await Promise.all(defaultsToPersist.map(({ keyPath, value }) => runtime.request('config/value/write', { keyPath, value, mergeStrategy: 'upsert' })))
+      await Promise.all(defaultsToPersist.map(({ keyPath, value }) => appServer.writeConfigValue(keyPath, value)))
       setConfig((current) => ({
         ...current,
         ...(patch.model !== undefined ? { model: next.model } : {}),
@@ -160,8 +145,8 @@ export function useCodexCore() {
       const clearUnsupportedTier = configuredTier !== null && selectedModel !== null && selectedModel !== undefined
         && !selectedModel.serviceTiers?.some((tier) => tier.id === configuredTier)
       await Promise.all([
-        runtime.request('config/value/write', { keyPath: key, value, mergeStrategy: 'upsert' }),
-        ...(clearUnsupportedTier ? [runtime.request('config/value/write', { keyPath: 'service_tier', value: 'default', mergeStrategy: 'upsert' })] : []),
+        appServer.writeConfigValue(key, value),
+        ...(clearUnsupportedTier ? [appServer.writeConfigValue('service_tier', 'default')] : []),
       ])
       setConfig((current) => ({ ...current, [key]: value, ...(clearUnsupportedTier ? { service_tier: 'default' } : {}) }))
     } catch (nextError) {

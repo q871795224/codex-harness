@@ -4,6 +4,7 @@ import { usePluginHost } from '../../core/plugins/react'
 import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, HarnessActionId, HarnessActionShortcuts, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
+import { appServer } from '../../core/runtime/appServerClient'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 import type { useCodexCore } from '../codex/useCodexCore'
 import { mcpNeedsAttention, mcpStatusLabel } from '../codex/mcpStatus'
@@ -342,7 +343,7 @@ function SkillsSettings({ workspaceRoot }: { workspaceRoot: string | null }) {
         setSkills([])
         return
       }
-      const skillResult = await runtime.request<{ data: Array<{ skills: CodexSkill[]; errors: Array<{ path: string; message: string }> }> }>('skills/list', { cwds: [workspaceRoot], forceReload })
+      const skillResult = await appServer.listSkills(workspaceRoot, forceReload)
       setSkills(skillResult.data.flatMap((entry) => entry.skills))
       setScanErrors(skillResult.data.flatMap((entry) => entry.errors ?? []))
     } catch (nextError) {
@@ -357,7 +358,7 @@ function SkillsSettings({ workspaceRoot }: { workspaceRoot: string | null }) {
   const toggleSkill = async (skill: CodexSkill) => {
     setError(null)
     try {
-      await runtime.request('skills/config/write', { path: skill.path, enabled: !skill.enabled })
+      await appServer.setSkillEnabled(skill.path, !skill.enabled)
       await loadSkills(true)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError))

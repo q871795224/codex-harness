@@ -19,7 +19,7 @@ export const quickAgentPlugin: HarnessPlugin = {
     id: 'builtin.quick-agent',
     name: '快捷 Agent',
     description: '在独立会话中使用预设模型和权限执行固定 Job。',
-    version: '1.0.4',
+    version: '1.1.0',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace'],
   },
@@ -41,6 +41,7 @@ export const quickAgentPlugin: HarnessPlugin = {
           instanceId: ctx.instanceId,
           title: job.name,
           mode: 'detached',
+          workspaceAccess: job.workspaceAccess,
           workspaceRoot: checkoutRoot,
           parentThreadId: threadId,
           prompt: job.prompt,
@@ -129,6 +130,9 @@ function JobEditor({ job, models, onChange }: {
         </select></label>
         <label><span>运行模式</span><select value={job.mode} onChange={(event) => onChange({ mode: event.target.value as QuickAgentRunMode })}>
           <option value="yolo">YOLO</option><option value="auto-review">Auto-review</option><option value="manual">Manual</option>
+        </select></label>
+        <label><span>工作区</span><select value={job.workspaceAccess} onChange={(event) => onChange({ workspaceAccess: event.target.value as QuickAgentJob['workspaceAccess'] })}>
+          <option value="read-only">只读（可并发）</option><option value="shared-write">共享写入（互斥）</option><option value="isolated-delivery">隔离交付（新 worktree）</option>
         </select></label>
       </div>
     </article>

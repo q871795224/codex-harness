@@ -9,9 +9,10 @@
 - 每个会话有 `对话` 与 `轨迹` Tab。
 - 支持 App Server 原生插话、服务器队列、停止与审批卡片。
 - 支持从指定 turn 分支为新会话；分支复制对话历史，但不会复制或回滚工作目录中的文件。
-- Codex 原生子 Agent 活动会展示目标会话与运行状态，并可跳转到子 Agent 会话。
+- Codex 原生子 Agent 活动会按会话汇总状态、任务和待审批数，可跳转或停止仍在运行的子 Agent。
 - 输入框支持图片 / 文件、模型、推理强度、审批模式和上下文窗口；模型、Skills 与 MCP 默认项在设置中管理。
 - Codex 回复中的本地文件链接和文件修改列表可直接跳转到 GoLand；不在 Harness 内重复实现 diff。
+- 会话标题栏可打开 GoLand、复制当前分支，并从 `origin` 跳转到 GitHub PR 或 GitLab MR 创建页。
 - 本地 UI 状态只保存到 `~/.codex-harness/state.sqlite`，不复制会话正文或凭据。
 
 当前不做：内置 diff、会话 revert、任意 shell hook、外部 Harness 插件市场。
@@ -21,7 +22,7 @@
 - Harness 已加载随 App 发布的内置插件；外部 Harness 插件需等待独立 WebView 权限隔离完成，Codex 插件继续由 App Server 管理。
 - 插件实例可归属于全局、workspace 或 thread，并拥有独立启停、配置和本地 KV。
 - “轨迹”已作为首个内置插件通过 `conversation.tabs` slot 接入。
-- “临时 Agent”通过独立 child thread 支持后台运行与人工确认回传，运行索引不保存会话正文。
+- “临时 Agent”通过独立 child thread 支持后台运行与人工确认回传，运行索引不保存会话正文。快捷 Agent 可声明只读、共享写入或隔离交付；共享目录的并发写任务会被拦截，隔离交付使用独立 Git worktree。
 - “SeaTalk Bridge”复用本机 companion，提供内存 Inbox、Codex 草稿、编辑预览和显式确认发送；凭据仍由 companion 管理。
 - “会话启动器”通过 `newThreadPanels` slot 在空白新会话中展示 Codex Radar 模型表，并将 YOLO、Auto-review 或 Manual 模式作为完整的审批 reviewer 与 sandbox 组合写入 App Server。
 
@@ -63,6 +64,6 @@ pnpm tauri:build:dev
 
 ## 分层
 
-`src-tauri/src/app_server.rs` 是唯一接触 Unix socket WebSocket 和 JSON-RPC 的 native bridge；React 只通过 Tauri IPC 调用它。功能代码按 `src/features` 分组，插件契约位于 `src/extensions/types.ts`，内核与 React host 位于 `src/core/plugins/`，随 App 发布的内置插件位于 `src/plugins/`。当前不加载任何外部插件。
+`src-tauri/src/app_server.rs` 是唯一接触 Unix socket WebSocket 和 JSON-RPC 的 native bridge；React 只通过 Tauri IPC 和 `src/core/runtime/appServerClient.ts` 的类型化方法调用它。功能代码按 `src/features` 分组，插件契约位于 `src/extensions/types.ts`，内核与 React host 位于 `src/core/plugins/`，随 App 发布的内置插件位于 `src/plugins/`。当前不加载任何外部插件。
 
 DeepSeek Harness 仅作为 MIT 许可的交互参考；本项目未复制其源代码。

@@ -3,6 +3,7 @@ import { ChevronDown, FileText, Image, Plus, Send, ShieldOff, Sparkles, Square, 
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
+import { appServer, type FuzzyFileSearchResult } from '../../core/runtime/appServerClient'
 import {
   absoluteMentionPath,
   activeComposerTrigger,
@@ -62,13 +63,6 @@ export interface ComposerDraft {
   text: string
   collapsedPastes: CollapsedPaste[]
   attachments: ComposerAttachment[]
-}
-
-interface FuzzyFileSearchResult {
-  root: string
-  path: string
-  match_type: 'file' | 'directory'
-  file_name: string
 }
 
 interface ComposerSuggestion {
@@ -169,7 +163,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
     let disposed = false
     setSuggestionBusy(true)
     setSuggestionError(null)
-    void runtime.request<{ data: Array<{ skills: CodexSkill[] }> }>('skills/list', { cwds: [workspaceRoot] })
+    void appServer.listSkills(workspaceRoot)
       .then((result) => {
         if (disposed) return
         setSkills(result.data.flatMap((entry) => entry.skills))
@@ -190,11 +184,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
     const timeout = window.setTimeout(() => {
       setSuggestionBusy(true)
       setSuggestionError(null)
-      void runtime.request<{ files: FuzzyFileSearchResult[] }>('fuzzyFileSearch', {
-        query: triggerQuery,
-        roots: [workspaceRoot],
-        cancellationToken: crypto.randomUUID(),
-      }).then((result) => {
+      void appServer.fuzzyFileSearch(triggerQuery, [workspaceRoot], crypto.randomUUID()).then((result) => {
         if (!disposed) setFileMatches(result.files)
       }).catch((error) => {
         if (!disposed) setSuggestionError(error instanceof Error ? error.message : String(error))
@@ -286,7 +276,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
     }
     setActionError(null)
     try {
-      const result = await runtime.request<{ data: Array<{ skills: CodexSkill[] }> }>('skills/list', { cwds: [workspaceRoot] })
+      const result = await appServer.listSkills(workspaceRoot)
       const skill = result.data.flatMap((entry) => entry.skills)
         .find((candidate) => candidate.enabled && candidate.name === skillName)
       if (!skill) {

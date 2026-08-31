@@ -58,6 +58,7 @@ pub struct PluginRunInput {
     pub run_id: String,
     pub instance_id: String,
     pub mode: String,
+    pub workspace_access: String,
     pub status: String,
     pub title: String,
     pub workspace_root: String,
@@ -75,6 +76,7 @@ pub struct PluginRun {
     pub run_id: String,
     pub instance_id: String,
     pub mode: String,
+    pub workspace_access: String,
     pub status: String,
     pub title: String,
     pub workspace_root: String,
@@ -150,6 +152,7 @@ impl HarnessStore {
               run_id TEXT PRIMARY KEY NOT NULL,
               instance_id TEXT NOT NULL,
               mode TEXT NOT NULL CHECK(mode IN ('detached', 'delegated')),
+              workspace_access TEXT NOT NULL DEFAULT 'shared-write' CHECK(workspace_access IN ('read-only', 'shared-write', 'isolated-delivery')),
               status TEXT NOT NULL CHECK(status IN ('starting', 'running', 'waitingApproval', 'completed', 'failed', 'cancelled')),
               title TEXT NOT NULL,
               workspace_root TEXT NOT NULL,
@@ -174,6 +177,7 @@ impl HarnessStore {
             )
             .map_err(|error| format!("无法初始化 Codex Harness 本地状态库: {error}"))?;
         migrate_plugin_instances_allow_multiple_per_scope(&mut connection)?;
+        migrate_plugin_runs_workspace_access(&connection)?;
 
         Ok(Self {
             connection: Mutex::new(connection),
@@ -512,7 +516,7 @@ impl HarnessStore {
             .map_err(|_| "本地状态库锁不可用".to_string())?;
         let mut statement = connection
             .prepare(
-                "SELECT run_id, instance_id, mode, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at FROM plugin_runs ORDER BY updated_at DESC, run_id",
+                "SELECT run_id, instance_id, mode, workspace_access, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at FROM plugin_runs ORDER BY updated_at DESC, run_id",
             )
             .map_err(|error| format!("无法读取插件任务: {error}"))?;
         let rows = statement
@@ -533,10 +537,10 @@ impl HarnessStore {
             .execute(
                 r#"
                 INSERT INTO plugin_runs (
-                  run_id, instance_id, mode, status, title, workspace_root,
+                  run_id, instance_id, mode, workspace_access, status, title, workspace_root,
                   parent_thread_id, child_thread_id, turn_id, error_summary,
                   created_at, updated_at, completed_at, returned_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, ?12, ?13)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13, ?14)
                 ON CONFLICT(run_id) DO UPDATE SET
                   status = excluded.status,
                   title = excluded.title,
@@ -552,6 +556,7 @@ impl HarnessStore {
                     input.run_id,
                     input.instance_id,
                     input.mode,
+                    input.workspace_access,
                     input.status,
                     input.title,
                     input.workspace_root,
@@ -567,7 +572,7 @@ impl HarnessStore {
             .map_err(|error| format!("无法保存插件任务: {error}"))?;
         connection
             .query_row(
-                "SELECT run_id, instance_id, mode, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at FROM plugin_runs WHERE run_id = ?1",
+                "SELECT run_id, instance_id, mode, workspace_access, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at FROM plugin_runs WHERE run_id = ?1",
                 [&input.run_id],
                 plugin_run_from_row,
             )
@@ -641,6 +646,25 @@ fn migrate_plugin_instances_allow_multiple_per_scope(
     Ok(())
 }
 
+fn migrate_plugin_runs_workspace_access(connection: &Connection) -> Result<(), String> {
+    let exists: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('plugin_runs') WHERE name = 'workspace_access'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("无法读取插件任务表结构: {error}"))?;
+    if exists == 0 {
+        connection
+            .execute(
+                "ALTER TABLE plugin_runs ADD COLUMN workspace_access TEXT NOT NULL DEFAULT 'shared-write' CHECK(workspace_access IN ('read-only', 'shared-write', 'isolated-delivery'))",
+                [],
+            )
+            .map_err(|error| format!("无法迁移插件任务工作区模式: {error}"))?;
+    }
+    Ok(())
+}
+
 fn plugin_instance_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginInstance> {
     let raw_scope_key: String = row.get(3)?;
     let raw_config: String = row.get(5)?;
@@ -671,6 +695,15 @@ fn validate_plugin_run(input: &PluginRunInput) -> Result<(), String> {
         return Err(format!("不支持的插件任务模式: {}", input.mode));
     }
     if !matches!(
+        input.workspace_access.as_str(),
+        "read-only" | "shared-write" | "isolated-delivery"
+    ) {
+        return Err(format!(
+            "不支持的插件任务工作区模式: {}",
+            input.workspace_access
+        ));
+    }
+    if !matches!(
         input.status.as_str(),
         "starting" | "running" | "waitingApproval" | "completed" | "failed" | "cancelled"
     ) {
@@ -687,17 +720,18 @@ fn plugin_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginRun> {
         run_id: row.get(0)?,
         instance_id: row.get(1)?,
         mode: row.get(2)?,
-        status: row.get(3)?,
-        title: row.get(4)?,
-        workspace_root: row.get(5)?,
-        parent_thread_id: row.get(6)?,
-        child_thread_id: row.get(7)?,
-        turn_id: row.get(8)?,
-        error_summary: row.get(9)?,
-        created_at: row.get(10)?,
-        updated_at: row.get(11)?,
-        completed_at: row.get(12)?,
-        returned_at: row.get(13)?,
+        workspace_access: row.get(3)?,
+        status: row.get(4)?,
+        title: row.get(5)?,
+        workspace_root: row.get(6)?,
+        parent_thread_id: row.get(7)?,
+        child_thread_id: row.get(8)?,
+        turn_id: row.get(9)?,
+        error_summary: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
+        completed_at: row.get(13)?,
+        returned_at: row.get(14)?,
     })
 }
 
@@ -978,6 +1012,49 @@ mod tests {
     }
 
     #[test]
+    fn migrates_legacy_plugin_runs_to_shared_write_access() {
+        let directory = TestDir::new();
+        fs::create_dir_all(&directory.0).expect("creates legacy store directory");
+        let legacy =
+            Connection::open(directory.0.join("state.sqlite")).expect("opens legacy store");
+        legacy
+            .execute_batch(
+                r#"
+                CREATE TABLE plugin_runs (
+                  run_id TEXT PRIMARY KEY NOT NULL,
+                  instance_id TEXT NOT NULL,
+                  mode TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  workspace_root TEXT NOT NULL,
+                  parent_thread_id TEXT,
+                  child_thread_id TEXT,
+                  turn_id TEXT,
+                  error_summary TEXT,
+                  created_at INTEGER NOT NULL,
+                  updated_at INTEGER NOT NULL,
+                  completed_at INTEGER,
+                  returned_at INTEGER
+                );
+                INSERT INTO plugin_runs VALUES (
+                  'legacy-run', 'legacy-agent', 'detached', 'completed', '旧任务', '/repo',
+                  NULL, 'child-1', 'turn-1', NULL, 10, 20, 20, NULL
+                );
+                "#,
+            )
+            .expect("creates legacy plugin run");
+        drop(legacy);
+
+        let store = HarnessStore::open_at(directory.0.clone()).expect("migrates legacy store");
+        let runs = store
+            .list_plugin_runs()
+            .expect("lists migrated plugin runs");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].run_id, "legacy-run");
+        assert_eq!(runs[0].workspace_access, "shared-write");
+    }
+
+    #[test]
     fn rejects_scoped_plugin_without_owner() {
         let directory = TestDir::new();
         let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
@@ -1020,6 +1097,7 @@ mod tests {
             run_id: "run-1".to_string(),
             instance_id: "temporary-agent".to_string(),
             mode: "delegated".to_string(),
+            workspace_access: "shared-write".to_string(),
             status: "starting".to_string(),
             title: "检查发布状态".to_string(),
             workspace_root: "/workspace/project".to_string(),

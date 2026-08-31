@@ -9,6 +9,7 @@ const job = (overrides: Partial<QuickAgentJob> = {}): QuickAgentJob => ({
   model: 'gpt-5.6-luna',
   effort: 'max',
   mode: 'yolo',
+  workspaceAccess: 'shared-write',
   ...overrides,
 })
 
@@ -18,10 +19,12 @@ describe('quick agent config', () => {
     expect(config.jobs).toEqual([job()])
   })
 
-  it('defaults legacy jobs to YOLO', () => {
+  it('defaults legacy jobs to YOLO with shared workspace access', () => {
     const value = { ...job() } as Record<string, unknown>
     delete value.mode
+    delete value.workspaceAccess
     expect(readQuickAgentConfig({ jobs: [value] }).jobs[0].mode).toBe('yolo')
+    expect(readQuickAgentConfig({ jobs: [value] }).jobs[0].workspaceAccess).toBe('shared-write')
   })
 
   it('keeps the first job available for one-job plugin instances', () => {
@@ -49,5 +52,6 @@ describe('quick agent config', () => {
     expect(settingsForMode(job())).toMatchObject({ approvalPolicy: 'never', sandboxMode: 'danger-full-access' })
     expect(settingsForMode(job({ mode: 'auto-review' }))).toMatchObject({ approvalPolicy: 'on-request', approvalsReviewer: 'auto_review' })
     expect(settingsForMode(job({ mode: 'manual' }))).toMatchObject({ approvalPolicy: 'on-request', approvalsReviewer: 'user' })
+    expect(settingsForMode(job({ workspaceAccess: 'read-only' }))).toMatchObject({ sandboxMode: 'read-only', approvalPolicy: 'on-request' })
   })
 })

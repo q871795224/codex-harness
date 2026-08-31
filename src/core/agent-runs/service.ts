@@ -4,6 +4,7 @@ import type { AgentRun, AgentRunService, AgentRunTransport, StartAgentRunInput }
 export class AgentRunCoordinator implements AgentRunService {
   private runs: AgentRun[] = []
   private readonly listeners = new Set<() => void>()
+  private readonly pendingWriterRoots = new Set<string>()
   private initializePromise: Promise<void> | null = null
 
   constructor(
@@ -29,26 +30,46 @@ export class AgentRunCoordinator implements AgentRunService {
     if (!prompt) throw new Error('任务内容不能为空')
     if (!input.workspaceRoot) throw new Error('任务必须指定 workspace')
     if (input.mode === 'delegated' && !input.parentThreadId) throw new Error('委派任务必须指定父会话')
+    if (input.workspaceAccess !== 'read-only') {
+      const conflict = this.runs.find((candidate) => isRunning(candidate)
+        && candidate.workspaceRoot === input.workspaceRoot
+        && candidate.workspaceAccess !== 'read-only')
+      if (input.workspaceAccess !== 'isolated-delivery' && (conflict || this.pendingWriterRoots.has(input.workspaceRoot))) {
+        const title = conflict ? `“${conflict.title}”` : '另一个任务'
+        throw new Error(`${title}正在写入同一工作目录；请等待任务完成，或改用隔离交付。`)
+      }
+    }
 
-    let run = await this.persist({
-      runId: crypto.randomUUID(),
-      instanceId: input.instanceId,
-      mode: input.mode,
-      status: 'starting',
-      title: runTitle(input.title?.trim() || prompt),
-      workspaceRoot: input.workspaceRoot,
-      parentThreadId: input.parentThreadId ?? null,
-      childThreadId: null,
-      turnId: null,
-      errorSummary: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      completedAt: null,
-      returnedAt: null,
-    })
+    const reservesSharedRoot = input.workspaceAccess === 'shared-write'
+    if (reservesSharedRoot) this.pendingWriterRoots.add(input.workspaceRoot)
+    let run: AgentRun
+    let workspaceRoot: string
+    try {
+      const runId = crypto.randomUUID()
+      workspaceRoot = await this.transport.prepareWorkspace(input.workspaceRoot, input.workspaceAccess, runId)
+      run = await this.persist({
+        runId,
+        instanceId: input.instanceId,
+        mode: input.mode,
+        workspaceAccess: input.workspaceAccess,
+        status: 'starting',
+        title: runTitle(input.title?.trim() || prompt),
+        workspaceRoot,
+        parentThreadId: input.parentThreadId ?? null,
+        childThreadId: null,
+        turnId: null,
+        errorSummary: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        completedAt: null,
+        returnedAt: null,
+      })
+    } finally {
+      if (reservesSharedRoot) this.pendingWriterRoots.delete(input.workspaceRoot)
+    }
 
     try {
-      const childThreadId = await this.transport.startThread(input.workspaceRoot)
+      const childThreadId = await this.transport.startThread(workspaceRoot)
       run = await this.persist({ ...run, childThreadId, updatedAt: Date.now() })
       if (input.settings) await this.transport.configureThread(childThreadId, input.settings)
       const turnId = await this.transport.startTurn(childThreadId, prompt)

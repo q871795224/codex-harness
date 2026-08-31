@@ -398,6 +398,19 @@ fn register_workspace(state: State<'_, AppState>, path: String) -> Result<Worksp
 }
 
 #[tauri::command]
+fn workspace_delivery_context(
+    cwd: String,
+) -> Result<git_workspace::WorkspaceDeliveryContext, String> {
+    git_workspace::delivery_context(&cwd)
+}
+
+#[tauri::command]
+fn create_agent_worktree(cwd: String, run_id: String) -> Result<String, String> {
+    let data_dir = store::harness_data_dir()?;
+    git_workspace::create_agent_worktree(&cwd, &run_id, &data_dir)
+}
+
+#[tauri::command]
 async fn map_thread_workspaces(
     state: State<'_, AppState>,
     paths: Vec<String>,
@@ -606,6 +619,8 @@ pub fn run() {
             skip_codex_update,
             list_workspaces,
             register_workspace,
+            workspace_delivery_context,
+            create_agent_worktree,
             map_thread_workspaces,
             list_thread_states,
             set_thread_state,

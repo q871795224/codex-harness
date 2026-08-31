@@ -4,7 +4,7 @@ import { quickActionRunsStatus, quickActionRunStatus, runsForQuickAction, should
 
 function run(status: AgentRunStatus, overrides: Partial<AgentRun> = {}): AgentRun {
   return {
-    runId: 'run-1', instanceId: 'quick-agent', mode: 'detached', status,
+    runId: 'run-1', instanceId: 'quick-agent', mode: 'detached', workspaceAccess: 'shared-write', status,
     title: '常用任务', workspaceRoot: '/repo', parentThreadId: null,
     childThreadId: 'thread-1', turnId: 'turn-1', errorSummary: null,
     createdAt: 1, updatedAt: 1, completedAt: null, returnedAt: null,

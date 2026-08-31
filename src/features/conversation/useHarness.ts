@@ -4,9 +4,7 @@ import type {
   AppearancePreferences,
   ApprovalRequest,
   ActivePermissionProfile,
-  ApprovalPolicy,
   Badge,
-  ApprovalsReviewer,
   FollowUpMode,
   FontSize,
   FontSizeArea,
@@ -59,6 +57,7 @@ import {
 } from '../../core/domain/codex'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
 import { diagnosticErrorCode, runtime, type ClientDiagnostic } from '../../core/runtime/bridge'
+import { appServer, type ResumeThreadResponse as ResumeResponse, type StartThreadResponse, type ThreadSettingsResponse } from '../../core/runtime/appServerClient'
 import { defaultHarnessActionShortcuts, normalizeHarnessActionShortcuts } from '../actions/harnessActions'
 import {
   defaultConversationStatsPreferences,
@@ -103,50 +102,6 @@ const defaultKeyboardPreferences: KeyboardPreferences = {
   sendShortcut: 'mod-enter',
   followUpMode: 'queue',
   actionShortcuts: defaultHarnessActionShortcuts,
-}
-
-interface ThreadSettingsResponse {
-  approvalPolicy: ApprovalPolicy
-  approvalsReviewer: ApprovalsReviewer
-  model: string
-  reasoningEffort: string | null
-  serviceTier: string | null
-  sandbox: SandboxPolicy
-}
-
-interface ResumeResponse extends ThreadSettingsResponse {
-  thread: Thread
-  initialTurnsPage?: { data: Turn[]; nextCursor: string | null } | null
-  runtimeWorkspaceRoots: string[]
-  activePermissionProfile: ActivePermissionProfile | null
-}
-
-interface ThreadListResponse {
-  data: Thread[]
-  nextCursor: string | null
-}
-
-interface TurnsPageResponse {
-  data: Turn[]
-  nextCursor: string | null
-}
-
-interface QueueListResponse {
-  data: QueuedSubmission[]
-}
-
-interface StartTurnResponse {
-  turn: Turn
-}
-
-interface StartThreadResponse extends ThreadSettingsResponse {
-  thread: Thread
-  runtimeWorkspaceRoots: string[]
-  activePermissionProfile: ActivePermissionProfile | null
-}
-
-interface ForkThreadResponse extends ThreadSettingsResponse {
-  thread: Thread
 }
 
 interface TitleGenerator {
@@ -662,7 +617,7 @@ export function useHarness() {
   }, [])
 
   const refreshThreads = useCallback(async (mode: ViewMode = viewMode, searchTerm = '') => {
-    const response = await runtime.request<ThreadListResponse>('thread/list', {
+    const response = await appServer.listThreads({
       // The state DB already backs normal Codex session navigation. Avoid the
       // expensive JSONL scan-and-repair path on every Harness refresh.
       limit: 100,
@@ -692,7 +647,7 @@ export function useHarness() {
     let cursor: string | null = null
 
     do {
-      const response: ThreadListResponse = await runtime.request<ThreadListResponse>('thread/list', {
+      const response = await appServer.listThreads({
         cursor,
         limit: 100,
         sortKey: 'recency_at',
@@ -709,7 +664,7 @@ export function useHarness() {
 
   const loadQueue = useCallback(async (threadId: string) => {
     try {
-      const response = await runtime.request<QueueListResponse>('thread/queue/list', { threadId, limit: 100 })
+      const response = await appServer.listQueue(threadId)
       setQueues((current) => ({ ...current, [threadId]: response.data }))
     } catch (error) {
       notify(`无法读取排队消息：${messageOf(error)}`, 'error')
@@ -733,7 +688,7 @@ export function useHarness() {
       delete next[threadId]
       return next
     })
-    void runtime.request('thread/delete', { threadId }).catch((error) => {
+    void appServer.deleteThread(threadId).catch((error) => {
       notify(`无法清理空白会话：${messageOf(error)}`, 'error')
       void refreshThreads()
     })
@@ -755,7 +710,7 @@ export function useHarness() {
     setBusy((current) => ({ ...current, [`load:${threadId}`]: true }))
     try {
       const listedThread = threadsRef.current.find((thread) => thread.id === threadId)
-      const response = await runtime.request<ResumeResponse>('thread/resume', {
+      const response: ResumeResponse = await appServer.resumeThread({
         threadId,
         ...(listedThread ? { cwd: listedThread.cwd, runtimeWorkspaceRoots: [listedThread.cwd] } : {}),
         // Match the CLI's bounded history strategy: hydrate only the newest
@@ -821,10 +776,7 @@ export function useHarness() {
     if (!sourceThreadId || forkingTurnId) return
     setForkingTurnId(turnId)
     try {
-      const response = await runtime.request<ForkThreadResponse>('thread/fork', {
-        threadId: sourceThreadId,
-        lastTurnId: turnId,
-      })
+      const response = await appServer.forkThread(sourceThreadId, turnId)
       upsertThread(response.thread)
       await mapThreadRoots([response.thread])
       await selectThread(response.thread.id)
@@ -843,7 +795,7 @@ export function useHarness() {
 
     setBusy((current) => ({ ...current, olderTurns: true }))
     try {
-      const response = await runtime.request<TurnsPageResponse>('thread/turns/list', {
+      const response = await appServer.listTurns({
         threadId,
         cursor,
         limit: 5,
@@ -891,7 +843,7 @@ export function useHarness() {
     setBusy((current) => ({ ...current, createThread: true }))
     try {
       const yolo = yoloModeSettings(true)
-      const response = await runtime.request<StartThreadResponse>('thread/start', {
+      const response: StartThreadResponse = await appServer.startThread({
         cwd: workspaceRoot,
         runtimeWorkspaceRoots: [workspaceRoot],
         approvalPolicy: yolo.approvalPolicy,
@@ -956,8 +908,8 @@ export function useHarness() {
       const nextCwd = workspace.checkoutRoot
       const detail = detailsRef.current[threadId]
       const overrides = threadPermissionOverrides(detail, currentThread.cwd, nextCwd)
-      await runtime.request('thread/settings/update', { threadId, cwd: nextCwd, ...overrides })
-      await runtime.request('thread/metadata/update', {
+      await appServer.updateThreadSettings({ threadId, cwd: nextCwd, ...overrides })
+      await appServer.updateThreadMetadata({
         threadId,
         gitInfo: { branch: workspace.branch, sha: workspace.sha },
       }).catch(() => undefined)
@@ -1064,7 +1016,7 @@ export function useHarness() {
     let generatorThreadId: string | null = null
     let stage = 'thread/start'
     try {
-      const response = await runtime.request<StartThreadResponse>('thread/start', {
+      const response: StartThreadResponse = await appServer.startThread({
         cwd: thread.cwd,
         runtimeWorkspaceRoots: [thread.cwd],
         model: settings.model,
@@ -1093,7 +1045,7 @@ export function useHarness() {
       })
 
       stage = 'turn/start'
-      await runtime.request<StartTurnResponse>('turn/start', {
+      await appServer.startTurn({
         threadId: response.thread.id,
         clientUserMessageId: newClientId(),
         input: [textInput(prompt)],
@@ -1141,7 +1093,7 @@ export function useHarness() {
     try {
       const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
       const detail = detailsRef.current[threadId]
-      const response = await runtime.request<StartTurnResponse>('turn/start', {
+      const response = await appServer.startTurn({
         threadId,
         clientUserMessageId: newClientId(),
         input: inputs ?? (text ? [textInput(text)] : []),
@@ -1188,7 +1140,7 @@ export function useHarness() {
 
       const clientUserMessageId = newClientId()
       if (mode === 'queue') {
-        await runtime.request('thread/queue/add', {
+        await appServer.addQueue({
           threadId,
           clientUserMessageId,
           input,
@@ -1197,7 +1149,7 @@ export function useHarness() {
         return
       }
 
-      await runtime.request('turn/steer', {
+      await appServer.steerTurn({
         threadId,
         expectedTurnId: activeTurnId,
         clientUserMessageId,
@@ -1245,7 +1197,7 @@ export function useHarness() {
     if (steers.length > 0) pendingRestartRef.current[threadId] = steers
     setBusy((current) => ({ ...current, stop: true }))
     try {
-      await runtime.request('turn/interrupt', { threadId, turnId })
+      await appServer.interruptTurn(threadId, turnId)
     } catch (error) {
       delete pendingRestartRef.current[threadId]
       notify(`无法停止当前轮：${messageOf(error)}`, 'error')
@@ -1254,11 +1206,24 @@ export function useHarness() {
     }
   }, [notify, pendingSteers])
 
+  const interruptAgentThread = useCallback(async (threadId: string) => {
+    const turnId = activeTurnIdsRef.current[threadId]
+    if (!turnId) {
+      notify('子 Agent 当前没有可停止的运行轮次。', 'error')
+      return
+    }
+    try {
+      await appServer.interruptTurn(threadId, turnId)
+    } catch (error) {
+      notify(`无法停止子 Agent：${messageOf(error)}`, 'error')
+    }
+  }, [notify])
+
   const editQueue = useCallback(async (queueId: string, text: string) => {
     const threadId = selectedThreadIdRef.current
     if (!threadId || !text.trim()) return
     try {
-      await runtime.request('thread/queue/update', { threadId, queuedSubmissionId: queueId, input: [textInput(text.trim())] })
+      await appServer.updateQueue(threadId, queueId, [textInput(text.trim())])
       await loadQueue(threadId)
     } catch (error) {
       notify(`无法修改排队消息：${messageOf(error)}`, 'error')
@@ -1269,7 +1234,7 @@ export function useHarness() {
     const threadId = selectedThreadIdRef.current
     if (!threadId) return
     try {
-      await runtime.request('thread/queue/delete', { threadId, queuedSubmissionId: queueId })
+      await appServer.deleteQueue(threadId, queueId)
       setQueues((current) => ({ ...current, [threadId]: (current[threadId] ?? []).filter((item) => item.id !== queueId) }))
     } catch (error) {
       notify(`无法撤回排队消息：${messageOf(error)}`, 'error')
@@ -1288,16 +1253,16 @@ export function useHarness() {
     try {
       // App Server has no atomic promote operation. Delete first avoids a duplicated follow-up;
       // on a failed steer we immediately restore the same server-owned queue entry.
-      await runtime.request('thread/queue/delete', { threadId, queuedSubmissionId: queue.id })
+      await appServer.deleteQueue(threadId, queue.id)
       try {
-        await runtime.request('turn/steer', {
+        await appServer.steerTurn({
           threadId,
           expectedTurnId: activeTurnId,
           clientUserMessageId: queue.clientUserMessageId,
           input: queue.input,
         })
       } catch (error) {
-        await runtime.request('thread/queue/add', {
+        await appServer.addQueue({
           threadId,
           clientUserMessageId: queue.clientUserMessageId,
           input: queue.input,
@@ -1324,7 +1289,7 @@ export function useHarness() {
     const queue = queues[threadId] ?? []
     if (queue.length === 0) return
     try {
-      const response = await runtime.request<StartTurnResponse>('thread/queue/start', { threadId, queuedSubmissionId: queue[0].id })
+      const response = await appServer.startQueue(threadId, queue[0].id)
       setActiveTurn(threadId, response.turn.id, true)
     } catch (error) {
       notify(`无法继续队列：${messageOf(error)}`, 'error')
@@ -1333,7 +1298,7 @@ export function useHarness() {
 
   const renameThread = useCallback(async (threadId: string, name: string) => {
     try {
-      await runtime.request('thread/name/set', { threadId, name: name.trim() })
+      await appServer.renameThread(threadId, name.trim())
       updateThread(threadId, (thread) => ({ ...thread, name: name.trim() || null }))
       updateDetail(threadId, (detail) => ({ ...detail, thread: { ...detail.thread, name: name.trim() || null } }))
     } catch (error) {
@@ -1343,7 +1308,7 @@ export function useHarness() {
 
   const archiveThread = useCallback(async (threadId: string) => {
     try {
-      await runtime.request('thread/archive', { threadId })
+      await appServer.archiveThread(threadId)
       setThreads((current) => current.filter((thread) => thread.id !== threadId))
       if (selectedThreadIdRef.current === threadId) setSelectedThreadId(null)
       notify('已归档会话')
@@ -1368,7 +1333,7 @@ export function useHarness() {
       let failedCount = 0
       for (const thread of candidates) {
         try {
-          await runtime.request('thread/archive', { threadId: thread.id })
+          await appServer.archiveThread(thread.id)
           archivedIds.add(thread.id)
         } catch {
           failedCount += 1
@@ -1400,7 +1365,7 @@ export function useHarness() {
 
   const unarchiveThread = useCallback(async (threadId: string) => {
     try {
-      await runtime.request('thread/unarchive', { threadId })
+      await appServer.unarchiveThread(threadId)
       setThreads((current) => current.filter((thread) => thread.id !== threadId))
       if (selectedThreadIdRef.current === threadId) setSelectedThreadId(null)
       notify('已恢复会话')
@@ -1495,7 +1460,7 @@ export function useHarness() {
         return true
       }
       const nameSetStartedAt = performance.now()
-      void runtime.request('thread/name/set', { threadId: target.id, name: title }).then(() => {
+      void appServer.renameThread(target.id, title).then(() => {
         updateThread(target.id, (thread) => thread.name?.trim() ? thread : { ...thread, name: title })
         updateDetail(target.id, (detail) => detail.thread.name?.trim()
           ? detail
@@ -1863,6 +1828,7 @@ export function useHarness() {
     currentTokenUsage,
     currentTaskPlan,
     activeTurnId,
+    activeTurnIds,
     currentForeignActive,
     isCurrentWorking: Boolean(activeTurnId),
     selectThread,
@@ -1878,6 +1844,7 @@ export function useHarness() {
     sendMessage,
     continueAfterFailure,
     stopTurn,
+    interruptAgentThread,
     editQueue,
     removeQueue,
     promoteQueue,

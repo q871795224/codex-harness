@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FitAddon } from '@xterm/addon-fit'
-import { Terminal as XtermTerminal } from '@xterm/xterm'
+import type { FitAddon } from '@xterm/addon-fit'
+import type { Terminal as XtermTerminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { ExternalLink, LoaderCircle, RotateCcw, SquareTerminal } from 'lucide-react'
 import type { TerminalEvent, TerminalService } from '../../core/terminal/types'
@@ -212,7 +212,7 @@ export const terminalPlugin: HarnessPlugin = {
     id: 'builtin.terminal',
     name: '终端',
     description: '在当前工作目录中运行快速、纯文本提示符的本机 shell。',
-    version: '1.0.4',
+    version: '1.0.5',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
     permissions: ['process:terminal'],
@@ -329,62 +329,71 @@ function TerminalCanvas({ controller, session }: {
   useEffect(() => {
     const container = containerRef.current
     if (!container) return undefined
-    const terminal = new XtermTerminal({
-      allowProposedApi: false,
-      convertEol: false,
-      cursorBlink: true,
-      cursorStyle: 'bar',
-      disableStdin: session.status !== 'running',
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      fontSize: 12,
-      lineHeight: 1.28,
-      scrollback: 10_000,
-      theme: {
-        background: '#111417',
-        foreground: '#cdd3d7',
-        cursor: '#7fc7a4',
-        cursorAccent: '#111417',
-        selectionBackground: '#355247',
-        black: '#23282d',
-        red: '#e06c75',
-        green: '#8bc49b',
-        yellow: '#d8b66f',
-        blue: '#7fa7d8',
-        magenta: '#bd95c8',
-        cyan: '#77bfc0',
-        white: '#d6dadd',
-        brightBlack: '#626a71',
-      },
-    })
-    const fit = new FitAddon()
-    terminal.loadAddon(fit)
-    terminal.open(container)
-    terminal.write(session.output)
-    const removeListener = controller.subscribe(session, (data) => {
-      terminal.options.disableStdin = session.status !== 'running'
-      if (data) terminal.write(data)
-      else fitTerminal(fit, terminal, controller, session)
-      if (session.status === 'running') terminal.focus()
-    })
-    const input = terminal.onData((data) => {
-      if (session.status === 'running') void controller.write(session, data)
-    })
-    const observer = new ResizeObserver(() => fitTerminal(fit, terminal, controller, session))
-    observer.observe(container)
-    const focus = () => {
-      if (session.status === 'running') terminal.focus()
-    }
-    container.addEventListener('pointerdown', focus, true)
-    requestAnimationFrame(() => {
-      fitTerminal(fit, terminal, controller, session)
-      if (session.status === 'running') terminal.focus()
-    })
+    let disposed = false
+    let cleanup: (() => void) | undefined
+    void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]).then(([xterm, addon]) => {
+      if (disposed) return
+      const terminal = new xterm.Terminal({
+        allowProposedApi: false,
+        convertEol: false,
+        cursorBlink: true,
+        cursorStyle: 'bar',
+        disableStdin: session.status !== 'running',
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        fontSize: 12,
+        lineHeight: 1.28,
+        scrollback: 10_000,
+        theme: {
+          background: '#111417',
+          foreground: '#cdd3d7',
+          cursor: '#7fc7a4',
+          cursorAccent: '#111417',
+          selectionBackground: '#355247',
+          black: '#23282d',
+          red: '#e06c75',
+          green: '#8bc49b',
+          yellow: '#d8b66f',
+          blue: '#7fa7d8',
+          magenta: '#bd95c8',
+          cyan: '#77bfc0',
+          white: '#d6dadd',
+          brightBlack: '#626a71',
+        },
+      })
+      const fit = new addon.FitAddon()
+      terminal.loadAddon(fit)
+      terminal.open(container)
+      terminal.write(session.output)
+      const removeListener = controller.subscribe(session, (data) => {
+        terminal.options.disableStdin = session.status !== 'running'
+        if (data) terminal.write(data)
+        else fitTerminal(fit, terminal, controller, session)
+        if (session.status === 'running') terminal.focus()
+      })
+      const input = terminal.onData((data) => {
+        if (session.status === 'running') void controller.write(session, data)
+      })
+      const observer = new ResizeObserver(() => fitTerminal(fit, terminal, controller, session))
+      observer.observe(container)
+      const focus = () => {
+        if (session.status === 'running') terminal.focus()
+      }
+      container.addEventListener('pointerdown', focus, true)
+      requestAnimationFrame(() => {
+        fitTerminal(fit, terminal, controller, session)
+        if (session.status === 'running') terminal.focus()
+      })
+      cleanup = () => {
+        observer.disconnect()
+        container.removeEventListener('pointerdown', focus, true)
+        input.dispose()
+        removeListener()
+        terminal.dispose()
+      }
+    }).catch((error) => console.error('terminal renderer failed to load', error))
     return () => {
-      observer.disconnect()
-      container.removeEventListener('pointerdown', focus, true)
-      input.dispose()
-      removeListener()
-      terminal.dispose()
+      disposed = true
+      cleanup?.()
     }
   }, [controller, session])
 
