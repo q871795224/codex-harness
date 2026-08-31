@@ -1,4 +1,5 @@
 import type { AppServerEvent, ThreadCodexSettings } from '../domain/codex'
+import type { WorkspaceDeliveryContext } from '../app-launcher/types'
 
 export type AgentRunMode = 'detached' | 'delegated'
 export type AgentWorkspaceAccess = 'read-only' | 'shared-write' | 'isolated-delivery'
@@ -20,6 +21,7 @@ export interface AgentRun {
   updatedAt: number
   completedAt: number | null
   returnedAt: number | null
+  workspaceRemovedAt: number | null
 }
 
 export interface StartAgentRunInput {
@@ -41,6 +43,9 @@ export interface AgentRunService {
   cancel(runId: string): Promise<void>
   loadResult(runId: string): Promise<string>
   returnToParent(runId: string): Promise<void>
+  openWorkspace(runId: string): Promise<void>
+  deliveryContext(runId: string): Promise<WorkspaceDeliveryContext>
+  removeWorkspace(runId: string): Promise<void>
   openThread(threadId: string): void
   handleEvent(event: AppServerEvent): void
 }
@@ -60,4 +65,7 @@ export interface AgentRunTransport {
   interruptTurn(threadId: string, turnId: string): Promise<void>
   inspectThread(threadId: string): Promise<ThreadInspection>
   readLastAgentMessage(threadId: string): Promise<string>
+  openWorkspace(workspaceRoot: string): Promise<void>
+  deliveryContext(workspaceRoot: string): Promise<WorkspaceDeliveryContext>
+  removeWorkspace(workspaceRoot: string, runId: string): Promise<void>
 }

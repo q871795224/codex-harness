@@ -68,6 +68,7 @@ pub struct PluginRunInput {
     pub error_summary: Option<String>,
     pub completed_at: Option<i64>,
     pub returned_at: Option<i64>,
+    pub workspace_removed_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +89,7 @@ pub struct PluginRun {
     pub updated_at: i64,
     pub completed_at: Option<i64>,
     pub returned_at: Option<i64>,
+    pub workspace_removed_at: Option<i64>,
 }
 
 pub struct HarnessStore {
@@ -164,6 +166,7 @@ impl HarnessStore {
               updated_at INTEGER NOT NULL,
               completed_at INTEGER,
               returned_at INTEGER,
+              workspace_removed_at INTEGER,
               FOREIGN KEY(instance_id) REFERENCES plugin_instances(instance_id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS plugin_runs_instance_updated
@@ -178,6 +181,7 @@ impl HarnessStore {
             .map_err(|error| format!("无法初始化 Codex Harness 本地状态库: {error}"))?;
         migrate_plugin_instances_allow_multiple_per_scope(&mut connection)?;
         migrate_plugin_runs_workspace_access(&connection)?;
+        migrate_plugin_runs_workspace_removed_at(&connection)?;
 
         Ok(Self {
             connection: Mutex::new(connection),
@@ -516,7 +520,7 @@ impl HarnessStore {
             .map_err(|_| "本地状态库锁不可用".to_string())?;
         let mut statement = connection
             .prepare(
-                "SELECT run_id, instance_id, mode, workspace_access, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at FROM plugin_runs ORDER BY updated_at DESC, run_id",
+                "SELECT run_id, instance_id, mode, workspace_access, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at, workspace_removed_at FROM plugin_runs ORDER BY updated_at DESC, run_id",
             )
             .map_err(|error| format!("无法读取插件任务: {error}"))?;
         let rows = statement
@@ -539,8 +543,8 @@ impl HarnessStore {
                 INSERT INTO plugin_runs (
                   run_id, instance_id, mode, workspace_access, status, title, workspace_root,
                   parent_thread_id, child_thread_id, turn_id, error_summary,
-                  created_at, updated_at, completed_at, returned_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13, ?14)
+                  created_at, updated_at, completed_at, returned_at, workspace_removed_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13, ?14, ?15)
                 ON CONFLICT(run_id) DO UPDATE SET
                   status = excluded.status,
                   title = excluded.title,
@@ -550,7 +554,8 @@ impl HarnessStore {
                   error_summary = excluded.error_summary,
                   updated_at = excluded.updated_at,
                   completed_at = excluded.completed_at,
-                  returned_at = excluded.returned_at
+                  returned_at = excluded.returned_at,
+                  workspace_removed_at = excluded.workspace_removed_at
                 "#,
                 params![
                     input.run_id,
@@ -567,12 +572,13 @@ impl HarnessStore {
                     now,
                     input.completed_at,
                     input.returned_at,
+                    input.workspace_removed_at,
                 ],
             )
             .map_err(|error| format!("无法保存插件任务: {error}"))?;
         connection
             .query_row(
-                "SELECT run_id, instance_id, mode, workspace_access, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at FROM plugin_runs WHERE run_id = ?1",
+                "SELECT run_id, instance_id, mode, workspace_access, status, title, workspace_root, parent_thread_id, child_thread_id, turn_id, error_summary, created_at, updated_at, completed_at, returned_at, workspace_removed_at FROM plugin_runs WHERE run_id = ?1",
                 [&input.run_id],
                 plugin_run_from_row,
             )
@@ -665,6 +671,25 @@ fn migrate_plugin_runs_workspace_access(connection: &Connection) -> Result<(), S
     Ok(())
 }
 
+fn migrate_plugin_runs_workspace_removed_at(connection: &Connection) -> Result<(), String> {
+    let exists: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('plugin_runs') WHERE name = 'workspace_removed_at'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("无法读取插件任务表结构: {error}"))?;
+    if exists == 0 {
+        connection
+            .execute(
+                "ALTER TABLE plugin_runs ADD COLUMN workspace_removed_at INTEGER",
+                [],
+            )
+            .map_err(|error| format!("无法迁移插件任务 worktree 状态: {error}"))?;
+    }
+    Ok(())
+}
+
 fn plugin_instance_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginInstance> {
     let raw_scope_key: String = row.get(3)?;
     let raw_config: String = row.get(5)?;
@@ -732,6 +757,7 @@ fn plugin_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginRun> {
         updated_at: row.get(12)?,
         completed_at: row.get(13)?,
         returned_at: row.get(14)?,
+        workspace_removed_at: row.get(15)?,
     })
 }
 
@@ -1052,6 +1078,7 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].run_id, "legacy-run");
         assert_eq!(runs[0].workspace_access, "shared-write");
+        assert_eq!(runs[0].workspace_removed_at, None);
     }
 
     #[test]
@@ -1107,6 +1134,7 @@ mod tests {
             error_summary: None,
             completed_at: None,
             returned_at: None,
+            workspace_removed_at: None,
         };
         let created = store.upsert_plugin_run(&run).expect("creates plugin run");
         assert_eq!(created.status, "starting");
@@ -1116,9 +1144,11 @@ mod tests {
         run.child_thread_id = Some("child-1".to_string());
         run.turn_id = Some("turn-1".to_string());
         run.completed_at = Some(42);
+        run.workspace_removed_at = Some(43);
         let completed = store.upsert_plugin_run(&run).expect("completes plugin run");
         assert_eq!(completed.created_at, created.created_at);
         assert_eq!(completed.completed_at, Some(42));
+        assert_eq!(completed.workspace_removed_at, Some(43));
         assert_eq!(
             store.list_plugin_runs().expect("lists plugin runs").len(),
             1

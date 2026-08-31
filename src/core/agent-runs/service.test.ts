@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentRun, AgentRunTransport, ThreadInspection } from './types'
-import { AgentRunCoordinator } from './service'
+import { AgentRunCoordinator, isolatedAgentBranch } from './service'
 
 class FakeTransport implements AgentRunTransport {
   runs: AgentRun[] = []
@@ -25,6 +25,9 @@ class FakeTransport implements AgentRunTransport {
   async interruptTurn() {}
   async inspectThread() { return this.inspection }
   async readLastAgentMessage() { return this.result }
+  async openWorkspace(_workspaceRoot: string) {}
+  async deliveryContext(_workspaceRoot: string) { return { branch: 'codex-harness/test', remoteUrl: null, reviewUrl: null, reviewLabel: null } }
+  async removeWorkspace(_workspaceRoot: string, _runId: string) {}
 }
 
 describe('AgentRunCoordinator', () => {
@@ -142,6 +145,36 @@ describe('AgentRunCoordinator', () => {
     expect(run.workspaceRoot).toBe('/repo-isolated')
     expect(transport.startedWorkspaces).toEqual(['/repo-isolated'])
   })
+
+  it('opens, describes, and removes a completed isolated workspace', async () => {
+    const transport = new FakeTransport()
+    const calls: string[] = []
+    transport.openWorkspace = async (workspaceRoot) => { calls.push(`open:${workspaceRoot}`) }
+    transport.removeWorkspace = async (workspaceRoot, runId) => { calls.push(`remove:${workspaceRoot}:${runId}`) }
+    transport.runs = [makeRun({ runId: 'isolated-1', workspaceAccess: 'isolated-delivery', workspaceRoot: '/repo-isolated', status: 'completed', completedAt: 10 })]
+    const service = new AgentRunCoordinator(transport, () => undefined)
+
+    await service.openWorkspace('isolated-1')
+    await expect(service.deliveryContext('isolated-1')).resolves.toMatchObject({ branch: 'codex-harness/test' })
+    await service.removeWorkspace('isolated-1')
+
+    expect(calls).toEqual(['open:/repo-isolated', 'remove:/repo-isolated:isolated-1'])
+    expect(service.snapshot()[0].workspaceRemovedAt).not.toBeNull()
+    await expect(service.openWorkspace('isolated-1')).rejects.toThrow('已清理')
+    await expect(service.deliveryContext('isolated-1')).resolves.toMatchObject({ branch: 'codex-harness/isolated' })
+  })
+
+  it('uses the same stable branch name as the native worktree creator', () => {
+    expect(isolatedAgentBranch('12345678-1234-1234-1234-123456789abc')).toBe('codex-harness/12345678')
+  })
+
+  it('does not remove a running isolated workspace', async () => {
+    const transport = new FakeTransport()
+    transport.runs = [makeRun({ workspaceAccess: 'isolated-delivery' })]
+    const service = new AgentRunCoordinator(transport, () => undefined)
+
+    await expect(service.removeWorkspace('run-1')).rejects.toThrow('仍在运行')
+  })
 })
 
 function makeRun(overrides: Partial<AgentRun> = {}): AgentRun {
@@ -161,6 +194,7 @@ function makeRun(overrides: Partial<AgentRun> = {}): AgentRun {
     updatedAt: 1,
     completedAt: null,
     returnedAt: null,
+    workspaceRemovedAt: null,
     ...overrides,
   }
 }

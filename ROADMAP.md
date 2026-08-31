@@ -32,6 +32,7 @@ Codex Harness 是 Codex App Server 上的本地工作台，重点是会话组织
 - 为快捷 Agent Job 声明运行模式：只读、共享工作区写入、隔离交付。
 - 同一 cwd 已有写任务时，对第二个写任务给出明确冲突提示；不能把“不同会话”误认为“文件已隔离”。
 - 只有隔离交付场景需要自动 worktree；不建设通用 Worktree Center。
+- 快捷 Agent 运行记录承载隔离交付闭环：打开子会话或 GoLand、复制分支、手动清理干净的 worktree；清理不使用 `--force` 且保留分支。
 
 ### Agent Activity
 
@@ -41,7 +42,7 @@ Codex Harness 是 Codex App Server 上的本地工作台，重点是会话组织
 
 ### 工程质量
 
-- 将 App Server method string 收口到类型化 facade，业务组件不再直接发送任意协议方法；后续继续拆分 `useHarness.ts` 的事件 reducer 和会话操作。
+- 将 App Server method string 收口到类型化 facade，业务组件不再直接发送任意协议方法；ThreadDetail 事件更新已抽成纯 reducer，后续继续拆分其余会话操作。
 - 为 fork、事件 reducer、并发写入保护和 IPC 错误分支增加测试；逐步提高覆盖率阈值。
 - 按真实 bundle profile 延迟加载设置页、Terminal/xterm 和 API Workbench sandbox；继续以首屏成本而非 warning 数量决定后续拆分。
 - 启用 Tauri CSP：生产 WebView 只允许本地资源与 IPC，开发态额外允许 localhost/HMR；API Workbench 脚本执行所需的 `unsafe-eval` 明确保留。

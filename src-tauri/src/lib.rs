@@ -411,6 +411,12 @@ fn create_agent_worktree(cwd: String, run_id: String) -> Result<String, String> 
 }
 
 #[tauri::command]
+fn remove_agent_worktree(cwd: String, run_id: String) -> Result<(), String> {
+    let data_dir = store::harness_data_dir()?;
+    git_workspace::remove_agent_worktree(&cwd, &run_id, &data_dir)
+}
+
+#[tauri::command]
 async fn map_thread_workspaces(
     state: State<'_, AppState>,
     paths: Vec<String>,
@@ -621,6 +627,7 @@ pub fn run() {
             register_workspace,
             workspace_delivery_context,
             create_agent_worktree,
+            remove_agent_worktree,
             map_thread_workspaces,
             list_thread_states,
             set_thread_state,

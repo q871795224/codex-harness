@@ -109,13 +109,7 @@ pub fn delivery_context(path: &str) -> Result<WorkspaceDeliveryContext, String> 
 }
 
 pub fn create_agent_worktree(cwd: &str, run_id: &str, data_dir: &Path) -> Result<String, String> {
-    if run_id.is_empty()
-        || !run_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    {
-        return Err("Agent Run ID 格式无效".to_string());
-    }
+    validate_run_id(run_id)?;
     let workspace = resolve_workspace(cwd)?;
     let target = data_dir.join("agent-worktrees").join(run_id);
     if target.exists() {
@@ -148,6 +142,54 @@ pub fn create_agent_worktree(cwd: &str, run_id: &str, data_dir: &Path) -> Result
     fs::canonicalize(&target)
         .map(|path| path.to_string_lossy().into_owned())
         .map_err(|error| format!("无法解析隔离 worktree: {error}"))
+}
+
+pub fn remove_agent_worktree(cwd: &str, run_id: &str, data_dir: &Path) -> Result<(), String> {
+    validate_run_id(run_id)?;
+    let resolved_expected = data_dir
+        .canonicalize()
+        .map_err(|error| format!("无法访问 Harness 数据目录: {error}"))?
+        .join("agent-worktrees")
+        .join(run_id);
+    let resolved_cwd = if Path::new(cwd).exists() {
+        fs::canonicalize(cwd).map_err(|error| format!("无法访问隔离 worktree: {error}"))?
+    } else {
+        PathBuf::from(cwd)
+    };
+    if resolved_cwd != resolved_expected {
+        return Err("隔离 worktree 路径不匹配".to_string());
+    }
+    if !resolved_expected.exists() {
+        return Ok(());
+    }
+    let workspace = resolve_workspace(cwd)?;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&workspace.root)
+        .args(["worktree", "remove"])
+        .arg(&resolved_expected)
+        .output()
+        .map_err(|error| format!("无法清理隔离 worktree: {error}"))?;
+    if !output.status.success() {
+        let reason = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        return Err(if reason.is_empty() {
+            "无法清理隔离 worktree；请确认没有未提交改动".to_string()
+        } else {
+            format!("无法清理隔离 worktree: {reason}")
+        });
+    }
+    Ok(())
+}
+
+fn validate_run_id(run_id: &str) -> Result<(), String> {
+    if run_id.is_empty()
+        || !run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        return Err("Agent Run ID 格式无效".to_string());
+    }
+    Ok(())
 }
 
 fn review_url(remote: &str, branch: &str) -> Option<(String, String)> {
@@ -389,5 +431,38 @@ mod tests {
             git_optional(Path::new(&worktree), ["branch", "--show-current"]).as_deref(),
             Some("codex-harness/12345678")
         );
+    }
+
+    #[test]
+    fn safely_removes_only_clean_agent_worktrees() {
+        let repository = TestDir::new();
+        let data = TestDir::new();
+        init_git(&repository.0);
+        git_command(
+            &repository.0,
+            &["config", "user.name", "Codex Harness Test"],
+        );
+        git_command(
+            &repository.0,
+            &["config", "user.email", "test@example.invalid"],
+        );
+        git_command(&repository.0, &["commit", "--allow-empty", "-m", "initial"]);
+
+        let run_id = "87654321-1234-1234-1234-123456789abc";
+        let worktree = create_agent_worktree(repository.0.to_str().unwrap(), run_id, &data.0)
+            .expect("creates isolated worktree");
+        fs::write(Path::new(&worktree).join("dirty.txt"), "keep me")
+            .expect("writes untracked worktree file");
+        assert!(remove_agent_worktree(&worktree, run_id, &data.0).is_err());
+        assert!(Path::new(&worktree).is_dir());
+
+        fs::remove_file(Path::new(&worktree).join("dirty.txt")).expect("cleans fixture");
+        remove_agent_worktree(&worktree, run_id, &data.0).expect("removes clean worktree");
+        assert!(!Path::new(&worktree).exists());
+        assert!(git_optional(
+            &repository.0,
+            ["branch", "--list", "codex-harness/87654321"]
+        )
+        .is_some());
     }
 }

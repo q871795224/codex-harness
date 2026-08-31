@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { Bot, Check, ChevronDown, ChevronRight, CircleAlert, LoaderCircle, Play } from 'lucide-react'
+import { Bot, Check, ChevronDown, ChevronRight, CircleAlert, Copy, LoaderCircle, Play, SquareCode, Trash2 } from 'lucide-react'
 import type { AgentRun, AgentRunService } from '../agent-runs/types'
 import type { QuickActionProps } from '../../extensions/types'
 import type { ResolvedContribution } from './runtime'
@@ -16,6 +16,7 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
   const [open, setOpen] = useState(false)
   const [startingId, setStartingId] = useState<string | null>(null)
   const [expandedInstanceId, setExpandedInstanceId] = useState<string | null>(null)
+  const [runActionId, setRunActionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const runs = useSyncExternalStore(agentRuns.subscribe, agentRuns.snapshot)
   const hasActiveRuns = runs.some(isActiveRun)
@@ -37,6 +38,33 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
       setError(messageOf(nextError))
     } finally {
       setStartingId(null)
+    }
+  }
+
+  const copyBranch = async (run: AgentRun) => {
+    setRunActionId(`copy:${run.runId}`)
+    setError(null)
+    try {
+      const delivery = await agentRuns.deliveryContext(run.runId)
+      if (!delivery.branch) throw new Error('当前 worktree 没有可复制的分支')
+      await navigator.clipboard.writeText(delivery.branch)
+    } catch (nextError) {
+      setError(messageOf(nextError))
+    } finally {
+      setRunActionId(null)
+    }
+  }
+
+  const removeWorkspace = async (run: AgentRun) => {
+    if (!window.confirm('移除这个隔离 worktree？未提交改动会阻止清理，分支会保留。')) return
+    setRunActionId(`remove:${run.runId}`)
+    setError(null)
+    try {
+      await agentRuns.removeWorkspace(run.runId)
+    } catch (nextError) {
+      setError(messageOf(nextError))
+    } finally {
+      setRunActionId(null)
     }
   }
 
@@ -90,21 +118,34 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
                       </button>
                     )}
                   </div>
-                  {expanded && activeCount > 1 && (
+                  {expanded && (
                     <div className="quick-action-runs">
-                      {activeRuns.map((run, index) => (
-                        <button
-                          key={run.runId}
-                          type="button"
-                          disabled={!run.childThreadId}
-                          onClick={() => run.childThreadId && agentRuns.openThread(run.childThreadId)}
-                          title={run.childThreadId ? '打开独立会话' : '独立会话正在创建'}
-                        >
-                          <span>#{activeRuns.length - index}</span>
-                          <strong>{quickActionRunLabel(run.status)}</strong>
-                          {isActiveRun(run) && <small>{formatElapsed(now - run.createdAt)}</small>}
-                        </button>
-                      ))}
+                      {actionRuns.slice(0, 5).map((run, index) => {
+                        const isolated = run.workspaceAccess === 'isolated-delivery'
+                        const workspaceAvailable = isolated && !run.workspaceRemovedAt
+                        return (
+                          <div className="quick-action-run" key={run.runId}>
+                            <button
+                              className="quick-action-run-thread"
+                              type="button"
+                              disabled={!run.childThreadId}
+                              onClick={() => run.childThreadId && agentRuns.openThread(run.childThreadId)}
+                              title={run.childThreadId ? '打开独立会话' : '独立会话正在创建'}
+                            >
+                              <span>#{actionRuns.length - index}</span>
+                              <strong>{quickActionRunLabel(run.status)}</strong>
+                              {isActiveRun(run) ? <small>{formatElapsed(now - run.createdAt)}</small> : run.workspaceRemovedAt ? <small>已清理</small> : null}
+                            </button>
+                            {isolated && (
+                              <div className="quick-action-run-tools">
+                                {workspaceAvailable && <button type="button" disabled={runActionId !== null} onClick={() => void agentRuns.openWorkspace(run.runId).catch((nextError) => setError(messageOf(nextError)))} title="在 GoLand 中打开 worktree" aria-label="在 GoLand 中打开 worktree"><SquareCode size={11} /></button>}
+                                <button type="button" disabled={runActionId !== null} onClick={() => void copyBranch(run)} title="复制隔离分支" aria-label="复制隔离分支">{runActionId === `copy:${run.runId}` ? <LoaderCircle className="spin" size={11} /> : <Copy size={11} />}</button>
+                                {workspaceAvailable && isTerminalRun(run) && <button type="button" disabled={runActionId !== null} onClick={() => void removeWorkspace(run)} title="安全清理 worktree（保留分支）" aria-label="安全清理 worktree">{runActionId === `remove:${run.runId}` ? <LoaderCircle className="spin" size={11} /> : <Trash2 size={11} />}</button>}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -152,7 +193,7 @@ export function quickActionRunStatus(run: AgentRun | undefined, starting: boolea
 }
 
 export function shouldShowRunGroup(runs: AgentRun[]): boolean {
-  return runs.filter(isActiveRun).length > 1
+  return runs.length > 0
 }
 
 function quickActionStatusLabel(status: 'idle' | 'running' | 'completed' | 'failed'): string {
@@ -173,6 +214,10 @@ function quickActionRunLabel(status: AgentRun['status']): string {
 
 function isActiveRun(run: AgentRun): boolean {
   return run.status === 'starting' || run.status === 'running' || run.status === 'waitingApproval'
+}
+
+function isTerminalRun(run: AgentRun): boolean {
+  return run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled'
 }
 
 function formatElapsed(milliseconds: number): string {

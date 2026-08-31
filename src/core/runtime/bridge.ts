@@ -313,6 +313,10 @@ export const runtime = {
     return invoke<string>('create_agent_worktree', { cwd, runId })
   },
 
+  removeAgentWorktree(cwd: string, runId: string): Promise<void> {
+    return invoke<void>('remove_agent_worktree', { cwd, runId })
+  },
+
   upsertPluginRun(run: AgentRun): Promise<AgentRun> {
     return invoke<AgentRun>('upsert_plugin_run', {
       input: {
@@ -329,6 +333,7 @@ export const runtime = {
         errorSummary: run.errorSummary,
         completedAt: run.completedAt,
         returnedAt: run.returnedAt,
+        workspaceRemovedAt: run.workspaceRemovedAt,
       },
     })
   },

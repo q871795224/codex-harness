@@ -7,7 +7,7 @@ function run(status: AgentRunStatus, overrides: Partial<AgentRun> = {}): AgentRu
     runId: 'run-1', instanceId: 'quick-agent', mode: 'detached', workspaceAccess: 'shared-write', status,
     title: '常用任务', workspaceRoot: '/repo', parentThreadId: null,
     childThreadId: 'thread-1', turnId: 'turn-1', errorSummary: null,
-    createdAt: 1, updatedAt: 1, completedAt: null, returnedAt: null,
+    createdAt: 1, updatedAt: 1, completedAt: null, returnedAt: null, workspaceRemovedAt: null,
     ...overrides,
   }
 }
@@ -39,9 +39,9 @@ describe('quickActionRunStatus', () => {
     expect(runsForQuickAction(runs, 'quick-agent', null)).toEqual([])
   })
 
-  it('only groups multiple concurrent runs', () => {
-    expect(shouldShowRunGroup([run('running')])).toBe(false)
-    expect(shouldShowRunGroup([run('running'), run('completed')])).toBe(false)
-    expect(shouldShowRunGroup([run('running'), run('waitingApproval')])).toBe(true)
+  it('keeps run history expandable after completion', () => {
+    expect(shouldShowRunGroup([])).toBe(false)
+    expect(shouldShowRunGroup([run('running')])).toBe(true)
+    expect(shouldShowRunGroup([run('completed')])).toBe(true)
   })
 })

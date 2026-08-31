@@ -19,7 +19,6 @@ import type {
   ThreadCodexSettings,
   ThreadDetail,
   ThreadItem,
-  ThreadItemEntry,
   ThreadSort,
   ThreadTokenUsage,
   TurnPlanStep,
@@ -67,12 +66,12 @@ import {
 import {
   activateTurn,
   completeTurn,
-  completedForeignActive,
   deriveForeignActive,
   ownsStartedTurn,
   syncResumedTurn,
   type ActiveTurnOwnership,
 } from './turnOwnership'
+import { reduceThreadDetailEvent } from './conversationEventReducer'
 
 type ViewMode = 'active' | 'archived'
 
@@ -179,31 +178,6 @@ function recordTitleDiagnostic(diagnostic: Omit<ClientDiagnostic, 'area'>): void
 
 function isMissingRollout(error: unknown): boolean {
   return messageOf(error).toLowerCase().includes('no rollout found')
-}
-
-function upsertItem(items: ThreadItemEntry[], turnId: string, nextItem: ThreadItem): ThreadItemEntry[] {
-  const id = typeof nextItem.id === 'string' ? nextItem.id : null
-  if (!id) return [...items, { turnId, item: nextItem }]
-  const found = items.findIndex((entry) => entry.item.id === id)
-  if (found < 0) return [...items, { turnId, item: nextItem }]
-  const copy = [...items]
-  copy[found] = { turnId, item: { ...copy[found].item, ...nextItem } }
-  return copy
-}
-
-function upsertTurn(turns: Turn[], nextTurn: Turn): Turn[] {
-  const index = turns.findIndex((turn) => turn.id === nextTurn.id)
-  if (index < 0) return [...turns, nextTurn]
-  const copy = [...turns]
-  const current = copy[index]
-  copy[index] = {
-    ...current,
-    ...nextTurn,
-    // A turn/started event can arrive without items for a turn that was already
-    // hydrated from history. Do not throw that known history away.
-    items: nextTurn.items.length > 0 ? nextTurn.items : current.items,
-  }
-  return copy
 }
 
 function parseNavigationPreferences(raw: string | null): NavigationPreferences {
@@ -315,10 +289,6 @@ function parseTokenUsage(value: unknown): ThreadTokenUsage | null {
     ? Math.max(0, raw.modelContextWindow)
     : null
   return { total, last, modelContextWindow }
-}
-
-function updateItem(items: ThreadItemEntry[], itemId: string, update: (item: ThreadItem) => ThreadItem): ThreadItemEntry[] {
-  return items.map((entry) => entry.item.id === itemId ? { ...entry, item: update(entry.item) } : entry)
 }
 
 export function useHarness() {
@@ -1540,14 +1510,13 @@ export function useHarness() {
           return next
         })
         updateThread(threadId, (thread) => ({ ...thread, cwd, gitInfo: null }))
-        updateDetail(threadId, (detail) => ({
-          ...detail,
-          thread: { ...detail.thread, cwd, gitInfo: null },
-          runtimeWorkspaceRoots: [cwd],
-          sandbox: sandbox ?? detail.sandbox,
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, {
+          type: 'settingsUpdated',
+          cwd,
+          sandbox,
           activePermissionProfile: profile,
-          model: model ?? detail.model,
-          threadSettings: Object.keys(nextThreadSettings).length > 0 ? { ...(detail.threadSettings ?? {}), ...nextThreadSettings } : detail.threadSettings,
+          model,
+          threadSettings: nextThreadSettings,
         }))
         const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
         if (thread) void mapThreadRoots([{ ...thread, cwd }])
@@ -1562,7 +1531,7 @@ export function useHarness() {
         updateThread(threadId, (thread) => status.type === 'active'
           ? touchThreadActivity({ ...thread, status })
           : { ...thread, status })
-        updateDetail(threadId, (detail) => ({ ...detail, thread: { ...detail.thread, status } }))
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'statusChanged', status }))
         if (status.type === 'systemError') persistBadge(threadId, 'error')
       }
       return
@@ -1573,7 +1542,7 @@ export function useHarness() {
       const name = typeof params.threadName === 'string' ? params.threadName : null
       if (threadId) {
         updateThread(threadId, (thread) => ({ ...thread, name }))
-        updateDetail(threadId, (detail) => ({ ...detail, thread: { ...detail.thread, name } }))
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'nameUpdated', name }))
       }
       return
     }
@@ -1610,11 +1579,7 @@ export function useHarness() {
           ownedActiveThreads: ownedActiveThreadsRef.current,
         }, threadId, turn.id, locallyStartingRef.current.has(threadId))
         setActiveTurn(threadId, turn.id, owned)
-        updateDetail(threadId, (detail) => ({
-          ...detail,
-          turns: upsertTurn(detail.turns, turn),
-          items: turn.items.reduce((items, item) => upsertItem(items, turn.id, item), detail.items),
-        }))
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'turnStarted', turn }))
       }
       return
     }
@@ -1624,7 +1589,7 @@ export function useHarness() {
       const turnId = typeof params.turnId === 'string' ? params.turnId : null
       const item = toThreadItem(params.item)
       if (threadId && turnId && item) {
-        updateDetail(threadId, (detail) => ({ ...detail, items: upsertItem(detail.items, turnId, item) }))
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'itemUpserted', turnId, item }))
         if (item.type === 'userMessage') {
           const clientId = typeof item.clientId === 'string' ? item.clientId : null
           if (clientId) {
@@ -1643,10 +1608,7 @@ export function useHarness() {
       const itemId = typeof params.itemId === 'string' ? params.itemId : null
       const delta = typeof params.delta === 'string' ? params.delta : ''
       if (threadId && itemId) {
-        updateDetail(threadId, (detail) => ({
-          ...detail,
-          items: updateItem(detail.items, itemId, (item) => ({ ...item, text: `${item.text ?? ''}${delta}` })),
-        }))
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'agentMessageDelta', itemId, delta }))
       }
       return
     }
@@ -1656,10 +1618,7 @@ export function useHarness() {
       const itemId = typeof params.itemId === 'string' ? params.itemId : null
       const delta = typeof params.delta === 'string' ? params.delta : ''
       if (threadId && itemId) {
-        updateDetail(threadId, (detail) => ({
-          ...detail,
-          items: updateItem(detail.items, itemId, (item) => ({ ...item, aggregatedOutput: `${item.aggregatedOutput ?? ''}${delta}` })),
-        }))
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'commandOutputDelta', itemId, delta }))
       }
       return
     }
@@ -1669,13 +1628,7 @@ export function useHarness() {
       const turn = params.turn as Turn | undefined
       if (threadId && turn) {
         const completedThread = threadsRef.current.find((thread) => thread.id === threadId)
-        updateDetail(threadId, (detail) => ({
-          ...detail,
-          turns: upsertTurn(detail.turns, turn),
-          items: turn.items.reduce((items, item) => upsertItem(items, turn.id, item), detail.items),
-          activeTurnId: detail.activeTurnId === turn.id ? null : detail.activeTurnId,
-          foreignActive: completedForeignActive(detail.activeTurnId, detail.foreignActive, turn.id),
-        }))
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'turnCompleted', turn }))
         commitTurnOwnership(completeTurn({
           activeTurnIds: activeTurnIdsRef.current,
           ownedActiveThreads: ownedActiveThreadsRef.current,

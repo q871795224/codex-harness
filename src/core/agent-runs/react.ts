@@ -34,6 +34,9 @@ export function useAgentRunService(
       interruptTurn: (threadId, turnId) => runtime.interruptCodexTurn(threadId, turnId),
       inspectThread: (threadId) => runtime.inspectCodexThread(threadId),
       readLastAgentMessage: (threadId) => runtime.readLastAgentMessage(threadId),
+      openWorkspace: (workspaceRoot) => runtime.openWorkspaceApp('goland', workspaceRoot),
+      deliveryContext: (workspaceRoot) => runtime.workspaceDeliveryContext(workspaceRoot),
+      removeWorkspace: (workspaceRoot, runId) => runtime.removeAgentWorktree(workspaceRoot, runId),
     }
     serviceRef.current = new AgentRunCoordinator(transport, (threadId) => { void selectThreadRef.current(threadId) })
   }

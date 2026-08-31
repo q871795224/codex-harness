@@ -63,6 +63,7 @@ export class AgentRunCoordinator implements AgentRunService {
         updatedAt: Date.now(),
         completedAt: null,
         returnedAt: null,
+        workspaceRemovedAt: null,
       })
     } finally {
       if (reservesSharedRoot) this.pendingWriterRoots.delete(input.workspaceRoot)
@@ -116,6 +117,35 @@ export class AgentRunCoordinator implements AgentRunService {
       '请结合当前主会话目标继续处理。',
     ].join('\n'))
     await this.persist({ ...run, returnedAt: Date.now(), updatedAt: Date.now() })
+  }
+
+  async openWorkspace(runId: string): Promise<void> {
+    await this.initialize()
+    const run = this.requireIsolatedWorkspace(runId)
+    await this.transport.openWorkspace(run.workspaceRoot)
+  }
+
+  async deliveryContext(runId: string) {
+    await this.initialize()
+    const run = this.requireRun(runId)
+    if (run.workspaceAccess !== 'isolated-delivery') throw new Error('该任务没有隔离 worktree')
+    if (run.workspaceRemovedAt) {
+      return {
+        branch: isolatedAgentBranch(run.runId),
+        remoteUrl: null,
+        reviewUrl: null,
+        reviewLabel: null,
+      }
+    }
+    return this.transport.deliveryContext(run.workspaceRoot)
+  }
+
+  async removeWorkspace(runId: string): Promise<void> {
+    await this.initialize()
+    const run = this.requireIsolatedWorkspace(runId)
+    if (isRunning(run)) throw new Error('任务仍在运行，不能清理 worktree')
+    await this.transport.removeWorkspace(run.workspaceRoot, run.runId)
+    await this.persist({ ...run, workspaceRemovedAt: Date.now(), updatedAt: Date.now() })
   }
 
   openThread(threadId: string): void {
@@ -184,6 +214,13 @@ export class AgentRunCoordinator implements AgentRunService {
     return run
   }
 
+  private requireIsolatedWorkspace(runId: string): AgentRun {
+    const run = this.requireRun(runId)
+    if (run.workspaceAccess !== 'isolated-delivery') throw new Error('该任务没有隔离 worktree')
+    if (run.workspaceRemovedAt) throw new Error('隔离 worktree 已清理')
+    return run
+  }
+
   private async persist(run: AgentRun): Promise<AgentRun> {
     const saved = await this.transport.saveRun(run)
     this.runs = [saved, ...this.runs.filter((candidate) => candidate.runId !== saved.runId)]
@@ -194,6 +231,10 @@ export class AgentRunCoordinator implements AgentRunService {
   private emit(): void {
     for (const listener of this.listeners) listener()
   }
+}
+
+export function isolatedAgentBranch(runId: string): string {
+  return `codex-harness/${runId.replaceAll('-', '').slice(0, 8)}`
 }
 
 function isRunning(run: AgentRun): boolean {
