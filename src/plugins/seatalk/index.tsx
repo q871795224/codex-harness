@@ -27,7 +27,7 @@ export const seaTalkPlugin: HarnessPlugin = {
     id: 'builtin.seatalk',
     name: 'SeaTalk Bridge',
     description: '通过本机 bridge 接收 SeaTalk 消息，并以可编辑草稿和显式确认方式发送。',
-    version: '1.0.0',
+    version: '1.0.1',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
     permissions: ['localhost:bridge-agent'],
