@@ -88,6 +88,7 @@ import {
   THREAD_TITLE_GENERATION_KEY,
   togglePinnedIdentifier,
 } from './harnessBootstrap'
+import { subscribeHarnessRuntime } from './harnessSubscriptions'
 import {
   isFirstUserTurn,
   resolveNewThreadWorkspaceRoot,
@@ -1480,8 +1481,6 @@ export function useHarness() {
 
   useEffect(() => {
     let disposed = false
-    let unlistenEvents: (() => void) | undefined
-    let unlistenTransport: (() => void) | undefined
     const bootstrap = async () => {
       try {
         const restored = await loadHarnessBootstrap(runtime)
@@ -1509,14 +1508,17 @@ export function useHarness() {
       }
     }
     void bootstrap()
-    void runtime.listenEvents(handleEvent).then((unlisten) => { unlistenEvents = unlisten })
-    void runtime.listenTransport((event) => {
-      if (event.kind === 'disconnected') notify(String(event.message ?? 'Codex App Server 连接已断开。'), 'error')
-    }).then((unlisten) => { unlistenTransport = unlisten })
+    const unsubscribe = subscribeHarnessRuntime(
+      runtime,
+      handleEvent,
+      (event) => {
+        if (event.kind === 'disconnected') notify(String(event.message ?? 'Codex App Server 连接已断开。'), 'error')
+      },
+      (error) => notify(`无法监听 App Server：${messageOf(error)}`, 'error'),
+    )
     return () => {
       disposed = true
-      unlistenEvents?.()
-      unlistenTransport?.()
+      unsubscribe()
     }
   }, [handleEvent, notify, refreshThreads, selectThread])
 
