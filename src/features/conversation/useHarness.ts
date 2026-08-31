@@ -3,7 +3,6 @@ import type {
   AppServerEvent,
   AppearancePreferences,
   ApprovalRequest,
-  ActivePermissionProfile,
   Badge,
   FollowUpMode,
   FontSize,
@@ -16,9 +15,7 @@ import type {
   PendingSteer,
   QueuedSubmission,
   Thread,
-  ThreadCodexSettings,
   ThreadDetail,
-  ThreadItem,
   ThreadSort,
   ThreadTokenUsage,
   TurnPlanStep,
@@ -30,7 +27,6 @@ import type {
   Workspace,
   WorkspaceSort,
   SendShortcut,
-  SandboxPolicy,
 } from '../../core/domain/codex'
 import { yoloModeSettings } from '../codex/yoloMode'
 import {
@@ -72,13 +68,21 @@ import {
   type ActiveTurnOwnership,
 } from './turnOwnership'
 import { reduceThreadDetailEvent } from './conversationEventReducer'
+import {
+  eventPermissionProfile,
+  eventSandboxPolicy,
+  eventThreadId,
+  eventThreadItem,
+  eventThreadSettings,
+  parseEventTokenUsage,
+  parseEventTurnPlan,
+} from './conversationEventParser'
 import { approvalResponse, isApprovalRequestMethod } from './approvalFlow'
 import {
   isFirstUserTurn,
   resolveNewThreadWorkspaceRoot,
   resumedThreadDetail,
   runtimeThreadSettings,
-  sandboxModeForPolicy,
   shouldDiscardDraftThread,
   startedThreadDetail,
   threadPermissionOverrides,
@@ -128,30 +132,6 @@ interface TitleGenerator {
 interface HookToast {
   kind: 'error' | 'info'
   message: string
-}
-
-function eventThreadId(params: JsonObject): string | null {
-  const value = params.threadId ?? params.conversationId
-  return typeof value === 'string' ? value : null
-}
-
-function toThreadItem(value: unknown): ThreadItem | null {
-  if (!value || typeof value !== 'object' || !('type' in value)) return null
-  return value as ThreadItem
-}
-
-function eventThreadSettings(value: JsonObject): Partial<ThreadCodexSettings> {
-  const settings: Partial<ThreadCodexSettings> = {}
-  if (typeof value.model === 'string') settings.model = value.model
-  if (typeof value.effort === 'string') settings.effort = value.effort
-  if (typeof value.serviceTier === 'string' || value.serviceTier === null) settings.serviceTier = value.serviceTier
-  if (value.approvalPolicy === 'untrusted' || value.approvalPolicy === 'on-request' || value.approvalPolicy === 'never') {
-    settings.approvalPolicy = value.approvalPolicy
-  }
-  if (value.approvalsReviewer === 'user' || value.approvalsReviewer === 'auto_review') settings.approvalsReviewer = value.approvalsReviewer
-  const sandbox = value.sandboxPolicy as SandboxPolicy | undefined
-  if (sandbox) settings.sandboxMode = sandboxModeForPolicy(sandbox)
-  return settings
 }
 
 function newClientId(): string {
@@ -246,35 +226,6 @@ export function parseThreadTitleGenerationSettings(raw: string | null): ThreadTi
   } catch {
     return DEFAULT_THREAD_TITLE_GENERATION
   }
-}
-
-function parseTokenUsage(value: unknown): ThreadTokenUsage | null {
-  if (!value || typeof value !== 'object') return null
-  const raw = value as JsonObject
-  const breakdown = (candidate: unknown) => {
-    if (!candidate || typeof candidate !== 'object') return null
-    const source = candidate as JsonObject
-    const number = (key: string, fallback = 0) => {
-      const next = source[key]
-      return typeof next === 'number' && Number.isFinite(next) ? Math.max(0, next) : fallback
-    }
-    if (typeof source.totalTokens !== 'number') return null
-    return {
-      totalTokens: number('totalTokens'),
-      inputTokens: number('inputTokens'),
-      cachedInputTokens: number('cachedInputTokens'),
-      cacheWriteInputTokens: number('cacheWriteInputTokens'),
-      outputTokens: number('outputTokens'),
-      reasoningOutputTokens: number('reasoningOutputTokens'),
-    }
-  }
-  const total = breakdown(raw.total)
-  const last = breakdown(raw.last)
-  if (!total || !last) return null
-  const modelContextWindow = typeof raw.modelContextWindow === 'number' && Number.isFinite(raw.modelContextWindow)
-    ? Math.max(0, raw.modelContextWindow)
-    : null
-  return { total, last, modelContextWindow }
 }
 
 export function useHarness() {
@@ -1313,7 +1264,7 @@ export function useHarness() {
     if (method === 'item/agentMessage/delta' && typeof params.delta === 'string') {
       generator.text += params.delta
     } else if (method === 'item/completed') {
-      const item = toThreadItem(params.item)
+      const item = eventThreadItem(params.item)
       if (item?.type === 'agentMessage') generator.text = itemText(item) || generator.text
     } else if (method === 'turn/completed') {
       const turn = params.turn as Turn | undefined
@@ -1440,8 +1391,8 @@ export function useHarness() {
       const settings = params.threadSettings as JsonObject | undefined
       const cwd = typeof settings?.cwd === 'string' ? settings.cwd : null
       if (threadId && cwd && settings) {
-        const sandbox = settings?.sandboxPolicy as SandboxPolicy | undefined
-        const profile = (settings?.activePermissionProfile ?? null) as ActivePermissionProfile | null
+        const sandbox = eventSandboxPolicy(settings.sandboxPolicy)
+        const profile = eventPermissionProfile(settings.activePermissionProfile)
         const model = typeof settings?.model === 'string' ? settings.model : null
         const nextThreadSettings = eventThreadSettings(settings)
         threadMappingVersionsRef.current[threadId] = (threadMappingVersionsRef.current[threadId] ?? 0) + 1
@@ -1495,7 +1446,7 @@ export function useHarness() {
 
     if (method === 'thread/tokenUsage/updated') {
       const threadId = eventThreadId(params)
-      const tokenUsage = parseTokenUsage(params.tokenUsage)
+      const tokenUsage = parseEventTokenUsage(params.tokenUsage)
       if (threadId && tokenUsage) {
         setThreadTokenUsages((current) => ({ ...current, [threadId]: tokenUsage }))
       }
@@ -1504,14 +1455,7 @@ export function useHarness() {
 
     if (method === 'turn/plan/updated') {
       const threadId = eventThreadId(params)
-      const plan = Array.isArray(params.plan)
-        ? params.plan.filter((step): step is TurnPlanStep => {
-          if (!step || typeof step !== 'object') return false
-          const candidate = step as Partial<TurnPlanStep>
-          return typeof candidate.step === 'string'
-            && (candidate.status === 'pending' || candidate.status === 'inProgress' || candidate.status === 'completed')
-        })
-        : null
+      const plan = parseEventTurnPlan(params.plan)
       if (threadId && plan) setThreadPlans((current) => ({ ...current, [threadId]: plan }))
       return
     }
@@ -1533,7 +1477,7 @@ export function useHarness() {
     if (method === 'item/started' || method === 'item/completed') {
       const threadId = eventThreadId(params)
       const turnId = typeof params.turnId === 'string' ? params.turnId : null
-      const item = toThreadItem(params.item)
+      const item = eventThreadItem(params.item)
       if (threadId && turnId && item) {
         updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'itemUpserted', turnId, item }))
         if (item.type === 'userMessage') {
