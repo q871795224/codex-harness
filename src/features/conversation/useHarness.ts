@@ -89,6 +89,7 @@ import {
 } from './harnessBootstrap'
 import { subscribeHarnessRuntime } from './harnessSubscriptions'
 import { archiveThreadsBefore, listThreadPage, type ThreadViewMode } from './threadCatalog'
+import { prependOlderTurns } from './threadHistory'
 import {
   isFirstUserTurn,
   resolveNewThreadWorkspaceRoot,
@@ -573,15 +574,7 @@ export function useHarness() {
         itemsView: 'full',
       })
       if (selectedThreadIdRef.current !== threadId) return
-      const olderItems = [...response.data]
-        .reverse()
-        .flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item })))
-      updateDetail(threadId, (detail) => ({
-        ...detail,
-        turns: [...response.data].reverse().concat(detail.turns),
-        items: [...olderItems, ...detail.items],
-        nextTurnsCursor: response.nextCursor,
-      }))
+      updateDetail(threadId, (detail) => prependOlderTurns(detail, response))
     } catch (error) {
       notify(`无法加载更早消息：${messageOf(error)}`, 'error')
     } finally {
