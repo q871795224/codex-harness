@@ -4,6 +4,7 @@
 # JavaScript / Vite
 node_modules/
 dist/
+coverage/
 
 # Rust / Tauri
 src-tauri/target/

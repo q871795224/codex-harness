@@ -143,6 +143,8 @@ export type ThreadStatus =
 
 export interface Thread {
   id: string
+  sessionId?: string
+  forkedFromId?: string | null
   preview: string
   cwd: string
   name: string | null
@@ -287,6 +289,11 @@ export interface ThreadItem extends JsonObject {
   exitCode?: number | null
   durationMs?: number | null
   changes?: Array<{ path?: string; kind?: string; [key: string]: unknown }>
+  tool?: string
+  prompt?: string | null
+  senderThreadId?: string
+  receiverThreadIds?: string[]
+  agentsStates?: Record<string, { status?: string; message?: string | null }>
 }
 
 export interface ThreadItemEntry {

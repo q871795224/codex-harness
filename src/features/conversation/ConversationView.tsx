@@ -15,6 +15,7 @@ import {
   FileCode2,
   FileText,
   GitBranch,
+  GitFork,
   Image,
   Pencil,
   Pin,
@@ -44,10 +45,11 @@ interface ConversationHeaderProps {
   onUnarchive: () => void
   onTogglePinned: () => void
   onChooseWorkspace: () => void
+  onOpenThread?: (threadId: string) => void
   headerActions?: ReactNode
 }
 
-export function ConversationHeader({ thread, workspace, gitContextResolved, archived, pinned, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, headerActions }: ConversationHeaderProps) {
+export function ConversationHeader({ thread, workspace, gitContextResolved, archived, pinned, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -92,6 +94,11 @@ export function ConversationHeader({ thread, workspace, gitContextResolved, arch
         <div className="thread-context">
           <span><GitBranch size={13} />{workspace?.name ?? '未分组'}</span>
           <span>{threadGitContextLabel(thread.gitInfo, gitContextResolved)}</span>
+          {thread.forkedFromId && (
+            <button type="button" className="thread-origin" onClick={() => onOpenThread?.(thread.forkedFromId!)} title="打开分支来源会话">
+              <GitFork size={12} />来自 {thread.forkedFromId.slice(0, 8)}
+            </button>
+          )}
           <button
             type="button"
             className="thread-path"
@@ -145,6 +152,7 @@ export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode 
 interface ConversationViewProps {
   items: ThreadItemEntry[]
   turns: Turn[]
+  cwd: string
   approvals: ApprovalRequest[]
   workspace: Workspace | null
   workspaces: Workspace[]
@@ -158,6 +166,9 @@ interface ConversationViewProps {
   onScrollPosition: (scrollTop: number) => void
   onWorkspaceChange: (workspaceRoot: string) => void
   onChooseWorkspace: () => void
+  onForkTurn?: (turnId: string) => void
+  forkingTurnId?: string | null
+  onOpenThread?: (threadId: string) => void
   newThreadPanels?: ReactNode
   rawMode: boolean
   working: boolean
@@ -168,7 +179,7 @@ interface ConversationViewProps {
   continueDisabled?: boolean
 }
 
-export function ConversationView({ items, turns, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
+export function ConversationView({ items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -269,6 +280,8 @@ export function ConversationView({ items, turns, approvals, workspace, workspace
               agentText={row.agentText}
               showAgentLabel={row.showAgentLabel}
               rawMode
+              cwd={cwd}
+              onOpenThread={onOpenThread}
               workingStartedAt={index === workingMessageIndex ? workingStartedAt : undefined}
             />
           )) : transcriptTurns.map((turn) => (
@@ -279,6 +292,10 @@ export function ConversationView({ items, turns, approvals, workspace, workspace
               workingStartedAt={workingStartedAt}
               canContinue={Boolean(onContinueAfterFailure) && !working && !continueDisabled && latestTurnId === turn.turnId}
               onContinue={onContinueAfterFailure}
+              cwd={cwd}
+              onOpenThread={onOpenThread}
+              onFork={onForkTurn}
+              forking={forkingTurnId === turn.turnId}
             />
           ))}
           {rawMode && turns.filter((turn) => turn.status === 'failed').map((turn) => (
@@ -324,12 +341,16 @@ export function latestAgentMessageIndex(rows: Array<{ entry: ThreadItemEntry }>,
   return -1
 }
 
-function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onContinue }: {
+function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking }: {
   turn: TranscriptTurn
   working: boolean
   workingStartedAt: number | null
   canContinue: boolean
   onContinue?: () => void
+  cwd: string
+  onOpenThread?: (threadId: string) => void
+  onFork?: (turnId: string) => void
+  forking: boolean
 }) {
   const processRows = turn.processRows.filter(isRenderableProcessRow)
   return (
@@ -339,6 +360,8 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
           key={transcriptRowKey(row, index)}
           entry={row.entry}
           rawMode={false}
+          cwd={cwd}
+          onOpenThread={onOpenThread}
         />
       ))}
       {(processRows.length > 0 || turn.finalRows.length > 0) && (
@@ -350,6 +373,8 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
               hasFinalAnswer={turn.finalRows.length > 0}
               working={working}
               workingStartedAt={workingStartedAt}
+              cwd={cwd}
+              onOpenThread={onOpenThread}
             />
           )}
           {turn.finalRows.length > 0 && (
@@ -365,6 +390,8 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
                   agentText={row.agentText}
                   showAgentLabel={false}
                   rawMode={false}
+                  cwd={cwd}
+                  onOpenThread={onOpenThread}
                 />
               ))}
               {working && <WorkingStatus startedAt={workingStartedAt} />}
@@ -373,6 +400,13 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
         </div>
       )}
       {turn.status === 'failed' && <TurnFailureNotice error={turn.error} canContinue={canContinue} onContinue={onContinue} />}
+      {onFork && turn.status !== 'inProgress' && (
+        <div className="turn-actions">
+          <button type="button" onClick={() => onFork(turn.turnId)} disabled={forking} title="复制到这一轮为止的对话历史；代码文件仍与当前会话共用同一工作目录">
+            <GitFork size={13} />{forking ? '正在分支…' : '从这里分支'}
+          </button>
+        </div>
+      )}
     </section>
   )
 }
@@ -396,12 +430,14 @@ function TurnFailureNotice({ error, canContinue, onContinue }: {
   )
 }
 
-function ProcessGroup({ rows, status, hasFinalAnswer, working, workingStartedAt }: {
+function ProcessGroup({ rows, status, hasFinalAnswer, working, workingStartedAt, cwd, onOpenThread }: {
   rows: TranscriptItem[]
   status: Turn['status'] | undefined
   hasFinalAnswer: boolean
   working: boolean
   workingStartedAt: number | null
+  cwd: string
+  onOpenThread?: (threadId: string) => void
 }) {
   const keepOpen = working || !hasFinalAnswer || status === 'failed' || status === 'interrupted'
   const [open, setOpen] = useState(keepOpen)
@@ -429,6 +465,8 @@ function ProcessGroup({ rows, status, hasFinalAnswer, working, workingStartedAt 
               agentText={row.agentText}
               showAgentLabel={false}
               rawMode={false}
+              cwd={cwd}
+              onOpenThread={onOpenThread}
             />
           ))}
           {working && <WorkingStatus startedAt={workingStartedAt} />}
@@ -454,12 +492,16 @@ const ThreadItemView = memo(function ThreadItemView({
   showAgentLabel = true,
   rawMode,
   workingStartedAt,
+  cwd,
+  onOpenThread,
 }: {
   entry: ThreadItemEntry
   agentText?: string
   showAgentLabel?: boolean
   rawMode: boolean
   workingStartedAt?: number | null
+  cwd: string
+  onOpenThread?: (threadId: string) => void
 }) {
   const { item } = entry
   if (item.type === 'userMessage') {
@@ -483,7 +525,7 @@ const ThreadItemView = memo(function ThreadItemView({
     return (
       <article className="message agent-message">
         {showAgentLabel && <div className="message-label"><Bot size={15} />Codex</div>}
-        <MessageBody text={agentText ?? item.text ?? ''} raw={rawMode} />
+        <MessageBody text={agentText ?? item.text ?? ''} raw={rawMode} cwd={cwd} />
         {workingStartedAt !== undefined && <WorkingStatus startedAt={workingStartedAt} />}
       </article>
     )
@@ -492,13 +534,14 @@ const ThreadItemView = memo(function ThreadItemView({
     return (
       <article className="message plan-message">
         <div className="message-label"><Command size={14} />计划</div>
-        <MessageBody text={item.text ?? ''} raw={rawMode} />
+        <MessageBody text={item.text ?? ''} raw={rawMode} cwd={cwd} />
       </article>
     )
   }
   if (item.type === 'commandExecution') return <CommandItem item={item} />
-  if (item.type === 'fileChange') return <FileChangeItem item={item} />
+  if (item.type === 'fileChange') return <FileChangeItem item={item} cwd={cwd} />
   if (item.type === 'mcpToolCall') return <McpItem item={item} />
+  if (item.type === 'collabAgentToolCall') return <CollabAgentItem item={item} onOpenThread={onOpenThread} />
   if (['reasoning', 'rawResponse', 'internal'].includes(item.type)) return null
   return <GenericActivityItem item={item} />
 })
@@ -525,11 +568,11 @@ function GenericActivityItem({ item }: { item: ThreadItemEntry['item'] }) {
   )
 }
 
-function MessageBody({ text, raw }: { text: string; raw: boolean }) {
+function MessageBody({ text, raw, cwd }: { text: string; raw: boolean; cwd: string }) {
   if (raw) return <pre className="raw-response">{text}</pre>
   return (
     <div className="markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: MarkdownLink, pre: MarkdownCodeBlock }}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: (props) => <MarkdownLink {...props} cwd={cwd} />, pre: MarkdownCodeBlock }}>{text}</ReactMarkdown>
     </div>
   )
 }
@@ -578,8 +621,19 @@ async function writeClipboard(text: string): Promise<void> {
   if (!copied) throw new Error('clipboard unavailable')
 }
 
-function MarkdownLink({ href, children, ...props }: ComponentPropsWithoutRef<'a'>) {
-  if (!href || !isExternalWebUrl(href)) return <span className="local-link" title={href}>{href || children}</span>
+function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWithoutRef<'a'> & { cwd: string }) {
+  const local = href ? parseLocalFileReference(href) : null
+  if (local) return (
+    <button
+      type="button"
+      className="local-link"
+      title={`在 GoLand 中打开 ${local.path}${local.line ? `:${local.line}` : ''}`}
+      onClick={() => void runtime.openWorkspacePath('goland', cwd, local.path, local.line).catch(() => undefined)}
+    >
+      {children}
+    </button>
+  )
+  if (!href || !isExternalWebUrl(href)) return <span className="local-link-label" title={href}>{children || href}</span>
   const showDestination = markdownLinkLabel(children) !== href
   return (
     <a
@@ -594,6 +648,42 @@ function MarkdownLink({ href, children, ...props }: ComponentPropsWithoutRef<'a'
       {children}{showDestination && <span className="link-destination"> ({href})</span>}
     </a>
   )
+}
+
+export interface LocalFileReference {
+  path: string
+  line?: number
+}
+
+export function parseLocalFileReference(value: string): LocalFileReference | null {
+  let decoded: string
+  try {
+    decoded = decodeURI(value)
+  } catch {
+    return null
+  }
+  if (decoded.startsWith('file://')) {
+    try {
+      const url = new URL(decoded)
+      decoded = decodeURIComponent(url.pathname) + url.hash
+    } catch {
+      return null
+    }
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(decoded)) return null
+  const hashLine = decoded.match(/^(.*)#L(\d+)$/)
+  if (hashLine) return { path: hashLine[1], line: positiveLine(hashLine[2]) }
+  const suffixLine = decoded.match(/^(.*?):(\d+)(?::\d+)?$/)
+  if (suffixLine) return { path: suffixLine[1], line: positiveLine(suffixLine[2]) }
+  if (decoded.startsWith('/') || decoded.startsWith('./') || decoded.startsWith('../') || /^[\w@.-]+\//.test(decoded)) {
+    return { path: decoded }
+  }
+  return null
+}
+
+function positiveLine(value: string): number | undefined {
+  const line = Number(value)
+  return Number.isSafeInteger(line) && line > 0 ? line : undefined
 }
 
 function markdownLinkLabel(children: ComponentPropsWithoutRef<'a'>['children']): string {
@@ -633,7 +723,7 @@ function CommandItem({ item }: { item: ThreadItemEntry['item'] }) {
   )
 }
 
-function FileChangeItem({ item }: { item: ThreadItemEntry['item'] }) {
+function FileChangeItem({ item, cwd }: { item: ThreadItemEntry['item']; cwd: string }) {
   const [open, setOpen] = useState(false)
   const changes = Array.isArray(item.changes) ? item.changes : []
   return (
@@ -646,11 +736,63 @@ function FileChangeItem({ item }: { item: ThreadItemEntry['item'] }) {
       </button>
       {open && (
         <div className="tool-card-body file-list">
-          {changes.length ? changes.map((change, index) => <code key={`${String(change.path)}:${index}`}>{String(change.path ?? '未知文件')}</code>) : <p className="tool-empty">App Server 未提供可展示的文件列表</p>}
+          {changes.length ? changes.map((change, index) => {
+            const path = String(change.path ?? '')
+            return path ? (
+              <button key={`${path}:${index}`} type="button" onClick={() => void runtime.openWorkspacePath('goland', cwd, path).catch(() => undefined)} title="在 GoLand 中打开">
+                <code>{path}</code>
+              </button>
+            ) : <code key={`unknown:${index}`}>未知文件</code>
+          }) : <p className="tool-empty">App Server 未提供可展示的文件列表</p>}
         </div>
       )}
     </article>
   )
+}
+
+function CollabAgentItem({ item, onOpenThread }: { item: ThreadItemEntry['item']; onOpenThread?: (threadId: string) => void }) {
+  const receiverIds = Array.isArray(item.receiverThreadIds) ? item.receiverThreadIds : []
+  const states = item.agentsStates ?? {}
+  const prompt = typeof item.prompt === 'string' ? item.prompt.trim() : ''
+  return (
+    <article className={`tool-card agent-activity-card ${item.status === 'failed' ? 'failed' : ''}`}>
+      <div className="tool-card-head static-head">
+        <GitFork size={14} />
+        <span>{collabToolLabel(item.tool)}</span>
+        <span>{activityStatusLabel(item.status)}</span>
+      </div>
+      {(prompt || receiverIds.length > 0) && (
+        <div className="tool-card-body agent-activity-body">
+          {prompt && <p>{truncate(prompt, 180)}</p>}
+          {receiverIds.map((threadId) => {
+            const state = states[threadId]
+            return (
+              <button key={threadId} type="button" onClick={() => onOpenThread?.(threadId)} disabled={!onOpenThread} title="打开子 Agent 会话">
+                <span>{threadId.slice(0, 12)}</span>
+                <small>{activityStatusLabel(state?.status)}</small>
+                {state?.message && <em>{truncate(state.message, 80)}</em>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </article>
+  )
+}
+
+export function collabToolLabel(tool: unknown): string {
+  const labels: Record<string, string> = {
+    spawnAgent: '启动子 Agent', sendInput: '发送子 Agent 输入', resumeAgent: '恢复子 Agent', wait: '等待子 Agent',
+    closeAgent: '关闭子 Agent', sendMessage: '通知子 Agent', followupTask: '追加子 Agent 任务', interruptAgent: '中断子 Agent', listAgents: '查看 Agent',
+  }
+  return labels[String(tool)] ?? '协作 Agent'
+}
+
+export function activityStatusLabel(status: unknown): string {
+  const labels: Record<string, string> = {
+    pendingInit: '初始化中', inProgress: '进行中', running: '运行中', completed: '已完成', failed: '失败', errored: '出错', interrupted: '已中断', shutdown: '已关闭', notFound: '未找到',
+  }
+  return labels[String(status)] ?? String(status ?? '')
 }
 
 function McpItem({ item }: { item: ThreadItemEntry['item'] }) {

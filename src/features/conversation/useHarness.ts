@@ -145,6 +145,10 @@ interface StartThreadResponse extends ThreadSettingsResponse {
   activePermissionProfile: ActivePermissionProfile | null
 }
 
+interface ForkThreadResponse extends ThreadSettingsResponse {
+  thread: Thread
+}
+
 interface TitleGenerator {
   targetThreadId: string
   attemptId: string
@@ -388,6 +392,7 @@ export function useHarness() {
   const [viewMode, setViewMode] = useState<ViewMode>('active')
   const [toast, setToast] = useState<HookToast | null>(null)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [forkingTurnId, setForkingTurnId] = useState<string | null>(null)
 
   const selectedThreadIdRef = useRef<string | null>(null)
   const threadsRef = useRef<Thread[]>([])
@@ -810,6 +815,26 @@ export function useHarness() {
     }
     await selectThread(threadId)
   }, [refreshThreads, selectThread])
+
+  const forkThreadAtTurn = useCallback(async (turnId: string) => {
+    const sourceThreadId = selectedThreadIdRef.current
+    if (!sourceThreadId || forkingTurnId) return
+    setForkingTurnId(turnId)
+    try {
+      const response = await runtime.request<ForkThreadResponse>('thread/fork', {
+        threadId: sourceThreadId,
+        lastTurnId: turnId,
+      })
+      upsertThread(response.thread)
+      await mapThreadRoots([response.thread])
+      await selectThread(response.thread.id)
+      notify('已创建分支会话。对话历史已复制，代码文件仍与来源会话共用同一工作目录。')
+    } catch (error) {
+      notify(`无法创建分支会话：${messageOf(error)}`, 'error')
+    } finally {
+      setForkingTurnId(null)
+    }
+  }, [forkingTurnId, mapThreadRoots, notify, selectThread, upsertThread])
 
   const loadOlderTurns = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -1832,6 +1857,7 @@ export function useHarness() {
     viewMode,
     toast,
     busy,
+    forkingTurnId,
     currentThread,
     currentDetail,
     currentTokenUsage,
@@ -1841,6 +1867,7 @@ export function useHarness() {
     isCurrentWorking: Boolean(activeTurnId),
     selectThread,
     openThread,
+    forkThreadAtTurn,
     onTurnCompleted,
     loadOlderTurns,
     chooseWorkspace,

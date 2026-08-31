@@ -217,6 +217,16 @@ fn open_workspace_app(app_id: String, cwd: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_workspace_path(
+    app_id: String,
+    cwd: String,
+    path: String,
+    line: Option<u32>,
+) -> Result<(), String> {
+    app_launcher::open_path(&app_id, &cwd, &path, line)
+}
+
+#[tauri::command]
 async fn request_system_notification_permission(
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
@@ -627,6 +637,7 @@ pub fn run() {
             terminal_close,
             terminal_open_iterm,
             open_workspace_app,
+            open_workspace_path,
             request_system_notification_permission,
             send_system_notification,
             api_workbench_load,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
-import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
+import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
 import { formatWorkingElapsed } from './ConversationStats'
 import { isFirstUserTurn, parseThreadTitleGenerationSettings, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
 
@@ -46,6 +46,29 @@ describe('markdown links', () => {
     expect(isExternalWebUrl('http://localhost:1420')).toBe(true)
     expect(isExternalWebUrl('/workspace/readme.md')).toBe(false)
     expect(isExternalWebUrl('javascript:alert(1)')).toBe(false)
+  })
+
+  it('parses local file links with line and column locations', () => {
+    expect(parseLocalFileReference('/repo/src/main.go:42')).toEqual({ path: '/repo/src/main.go', line: 42 })
+    expect(parseLocalFileReference('src/main.go:42:7')).toEqual({ path: 'src/main.go', line: 42 })
+    expect(parseLocalFileReference('file:///repo/My%20File.go#L9')).toEqual({ path: '/repo/My File.go', line: 9 })
+    expect(parseLocalFileReference('../shared/types.ts')).toEqual({ path: '../shared/types.ts' })
+  })
+
+  it('does not treat web, command, or bare labels as local files', () => {
+    expect(parseLocalFileReference('https://example.com/file.go:42')).toBeNull()
+    expect(parseLocalFileReference('javascript:alert(1)')).toBeNull()
+    expect(parseLocalFileReference('README')).toBeNull()
+  })
+})
+
+describe('native sub-agent activity', () => {
+  it('uses readable labels for collaboration tools and states', () => {
+    expect(collabToolLabel('spawnAgent')).toBe('启动子 Agent')
+    expect(collabToolLabel('followupTask')).toBe('追加子 Agent 任务')
+    expect(collabToolLabel('futureTool')).toBe('协作 Agent')
+    expect(activityStatusLabel('pendingInit')).toBe('初始化中')
+    expect(activityStatusLabel('errored')).toBe('出错')
   })
 })
 

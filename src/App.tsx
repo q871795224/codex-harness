@@ -419,6 +419,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
               onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
               onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
               onTogglePinned={() => harness.toggleThreadPinned(harness.currentThread!.id)}
+              onOpenThread={(threadId) => void harness.openThread(threadId)}
               onChooseWorkspace={() => {
                 const threadId = harness.currentThread!.id
                 void harness.chooseWorkspace().then((selected) => selected
@@ -480,6 +481,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
               <ConversationView
                 items={harness.currentDetail?.items ?? []}
                 turns={harness.currentDetail?.turns ?? []}
+                cwd={harness.currentThread.cwd}
                 approvals={currentApprovals}
                 workspace={workspace}
                 workspaces={harness.workspaces}
@@ -500,6 +502,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
                     : undefined)
                 }}
+                onForkTurn={canMutate && !harness.isCurrentWorking ? (turnId) => void harness.forkThreadAtTurn(turnId) : undefined}
+                forkingTurnId={harness.forkingTurnId}
+                onOpenThread={(threadId) => void harness.openThread(threadId)}
                 newThreadPanels={codexUpdate.loading ? null : codexUpdate.visible && codexUpdate.status ? (
                   <CodexUpdatePanel
                     status={codexUpdate.status}

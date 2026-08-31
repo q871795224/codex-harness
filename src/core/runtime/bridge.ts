@@ -218,6 +218,10 @@ export const runtime = {
     return invoke<void>('open_workspace_app', { appId, cwd })
   },
 
+  openWorkspacePath(appId: WorkspaceAppId, cwd: string, path: string, line?: number): Promise<void> {
+    return invoke<void>('open_workspace_path', { appId, cwd, path, line: line ?? null })
+  },
+
   async listenTerminalEvents(handler: (event: TerminalEvent) => void): Promise<() => void> {
     return listen<TerminalEvent>('harness-terminal', (event) => handler(event.payload))
   },
