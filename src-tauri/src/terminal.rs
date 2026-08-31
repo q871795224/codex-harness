@@ -12,6 +12,13 @@ use std::{
 use tauri::{AppHandle, Emitter};
 
 const TERMINAL_EVENT: &str = "harness-terminal";
+const CLEAN_SHELL_NAME: &str = "codex-harness";
+
+#[derive(Debug, PartialEq)]
+struct ShellLaunch {
+    args: Vec<String>,
+    prompt: Option<&'static str>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,7 +36,11 @@ pub struct TerminalSessionInfo {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 enum TerminalEvent {
     Output { session_id: String, data: String },
     Exit { session_id: String },
@@ -80,12 +91,17 @@ impl TerminalManager {
                 )
             })?;
         let shell = login_shell();
+        let launch = shell_launch(&shell);
         let mut command = CommandBuilder::new(&shell);
-        command.arg("-l");
-        command.arg("-i");
+        for arg in &launch.args {
+            command.arg(arg);
+        }
         command.cwd(&input.cwd);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
+        if let Some(prompt) = launch.prompt {
+            command.env("PS1", prompt);
+        }
 
         let child = pair.slave.spawn_command(command).map_err(|error| {
             self.failure(
@@ -335,6 +351,45 @@ fn login_shell() -> String {
         .unwrap_or_else(|| "/bin/zsh".to_string())
 }
 
+fn shell_launch(shell: &str) -> ShellLaunch {
+    let shell_name = Path::new(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    match shell_name {
+        "zsh" => ShellLaunch {
+            args: [
+                "-l".to_string(),
+                "-c".to_string(),
+                "exec \"$1\" -d -f -i".to_string(),
+                CLEAN_SHELL_NAME.to_string(),
+                shell.to_string(),
+            ]
+            .into(),
+            prompt: Some("%1~ %# "),
+        },
+        "bash" => ShellLaunch {
+            args: [
+                "-l".to_string(),
+                "-c".to_string(),
+                "exec \"$1\" --noprofile --norc -i".to_string(),
+                CLEAN_SHELL_NAME.to_string(),
+                shell.to_string(),
+            ]
+            .into(),
+            prompt: Some("\\W \\$ "),
+        },
+        "fish" => ShellLaunch {
+            args: ["--no-config".to_string(), "--interactive".to_string()].into(),
+            prompt: None,
+        },
+        _ => ShellLaunch {
+            args: ["-l".to_string(), "-i".to_string()].into(),
+            prompt: Some("$ "),
+        },
+    }
+}
+
 fn pty_size(cols: u16, rows: u16) -> PtySize {
     PtySize {
         rows: rows.max(2),
@@ -371,6 +426,23 @@ mod tests {
     #[test]
     fn rejects_missing_working_directory() {
         assert!(validate_cwd("/definitely/not/a/real/codex-harness-path").is_err());
+    }
+
+    #[test]
+    fn launches_zsh_with_login_environment_and_without_interactive_config() {
+        let launch = shell_launch("/bin/zsh");
+
+        assert_eq!(
+            launch.args,
+            [
+                "-l",
+                "-c",
+                "exec \"$1\" -d -f -i",
+                "codex-harness",
+                "/bin/zsh"
+            ]
+        );
+        assert_eq!(launch.prompt, Some("%1~ %# "));
     }
 
     #[test]

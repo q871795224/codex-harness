@@ -15,10 +15,10 @@ describe('terminal plugin', () => {
   it('keeps startup feedback visible for control-only shell output', () => {
     expect(hasVisibleTerminalOutput('\u001b[?2004h\r\n')).toBe(false)
     expect(hasVisibleTerminalOutput('\u001b[32m❯\u001b[0m ')).toBe(true)
-    expect(shouldShowTerminalStartup('starting', '', null, 20_000)).toBe(true)
-    expect(shouldShowTerminalStartup('running', '\u001b[?2004h\r\n', null, 2_999)).toBe(true)
-    expect(shouldShowTerminalStartup('running', '\u001b[?2004h\r\n', null, 3_000)).toBe(false)
-    expect(shouldShowTerminalStartup('running', 'prompt', null, 10)).toBe(false)
+    expect(shouldShowTerminalStartup('starting', '', null)).toBe(true)
+    expect(shouldShowTerminalStartup('starting', '\u001b[?2004h\r\n', null)).toBe(true)
+    expect(shouldShowTerminalStartup('running', '\u001b[?2004h\r\n', null)).toBe(false)
+    expect(shouldShowTerminalStartup('running', 'prompt', null)).toBe(false)
   })
 
   it('replays output that arrives before the create response', async () => {
@@ -42,7 +42,7 @@ describe('terminal plugin', () => {
     expect(session.output).toBe('prompt')
   })
 
-  it('flushes input typed while the native session is starting', async () => {
+  it('drops input typed while the native session is starting', async () => {
     let resolveCreate!: (value: TerminalSessionInfo) => void
     const writes: string[] = []
     const create = new Promise<TerminalSessionInfo>((resolve) => { resolveCreate = resolve })
@@ -62,6 +62,12 @@ describe('terminal plugin', () => {
     await create
     await Promise.resolve()
     await Promise.resolve()
+    expect(writes).toEqual([])
+    expect(session.status).toBe('starting')
+
+    controller.handleEvent({ type: 'output', sessionId: 'session-1', data: 'project % ' })
+    expect(session.status).toBe('running')
+    await controller.write(session, 'pwd\r')
     expect(writes).toEqual(['pwd\r'])
   })
 })

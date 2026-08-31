@@ -2,12 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal as XtermTerminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { ExternalLink, RotateCcw, SquareTerminal } from 'lucide-react'
+import { ExternalLink, LoaderCircle, RotateCcw, SquareTerminal } from 'lucide-react'
 import type { TerminalEvent, TerminalService } from '../../core/terminal/types'
 import type { ConversationTabProps, HarnessPlugin, PluginInstanceRecord } from '../../extensions/types'
 
 const MAX_OUTPUT_CHARS = 2_000_000
-const TERMINAL_STARTUP_OUTPUT_GRACE_MS = 3_000
 const TERMINAL_SLOW_CREATE_MS = 5_000
 
 export type SessionStatus = 'starting' | 'running' | 'exited' | 'failed'
@@ -23,7 +22,6 @@ interface ManagedTerminalSession {
   requestedAt: number
   runningAt: number | null
   receivedOutput: boolean
-  pendingInput: string
   listeners: Set<(data: string) => void>
 }
 
@@ -48,7 +46,6 @@ export class TerminalController {
       requestedAt: Date.now(),
       runningAt: null,
       receivedOutput: false,
-      pendingInput: '',
       listeners: new Set(),
     }
     this.sessions.set(key, session)
@@ -84,6 +81,15 @@ export class TerminalController {
         })
       }
       session.output = appendTerminalOutput(session.output, event.data)
+      if (session.status === 'starting' && hasVisibleTerminalOutput(session.output)) {
+        session.status = 'running'
+        void this.recordDiagnostic({
+          level: 'info',
+          event: 'ui.ready',
+          durationMs: Date.now() - session.requestedAt,
+          status: session.status,
+        })
+      }
       this.notify(session, event.data)
       return
     }
@@ -105,10 +111,7 @@ export class TerminalController {
   }
 
   async write(session: ManagedTerminalSession, data: string): Promise<void> {
-    if (!session.id) {
-      if (session.status === 'starting') session.pendingInput += data
-      return
-    }
+    if (!session.id || session.status !== 'running') return
     try {
       await this.service.write(session.id, data)
     } catch (error) {
@@ -157,14 +160,13 @@ export class TerminalController {
       const created = await this.service.create(session.cwd, 100, 30)
       session.id = created.sessionId
       session.shell = created.shell
-      session.status = 'running'
       session.runningAt = Date.now()
       void this.recordDiagnostic({
         level: 'info',
         event: 'ui.created',
         durationMs: session.runningAt - session.requestedAt,
         stage: 'create',
-        status: session.status,
+        status: 'starting',
       })
       console.info('[terminal] created', {
         sessionId: created.sessionId,
@@ -172,11 +174,6 @@ export class TerminalController {
         elapsedMs: session.runningAt - session.requestedAt,
       })
       this.notify(session, '')
-      if (session.pendingInput) {
-        const pendingInput = session.pendingInput
-        session.pendingInput = ''
-        await this.service.write(created.sessionId, pendingInput)
-      }
       const pending = this.pendingEvents.get(created.sessionId) ?? []
       this.pendingEvents.delete(created.sessionId)
       for (const event of pending) this.handleEvent(event)
@@ -214,8 +211,8 @@ export const terminalPlugin: HarnessPlugin = {
     schemaVersion: 1,
     id: 'builtin.terminal',
     name: '终端',
-    description: '在当前工作目录中运行本机 login shell。',
-    version: '1.0.3',
+    description: '在当前工作目录中运行快速、纯文本提示符的本机 shell。',
+    version: '1.0.4',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
     permissions: ['process:terminal'],
@@ -257,9 +254,9 @@ export function hasVisibleTerminalOutput(output: string): boolean {
     .length > 0
 }
 
-export function shouldShowTerminalStartup(status: SessionStatus, output: string, error: string | null, runningForMs: number): boolean {
+export function shouldShowTerminalStartup(status: SessionStatus, output: string, error: string | null): boolean {
   if (error || status === 'failed' || status === 'exited' || hasVisibleTerminalOutput(output)) return false
-  return status === 'starting' || runningForMs < TERMINAL_STARTUP_OUTPUT_GRACE_MS
+  return status === 'starting'
 }
 
 function TerminalTab({ controller, service, context }: {
@@ -301,7 +298,7 @@ function TerminalTab({ controller, service, context }: {
           <code>{cwd}</code>
         </div>
         <div className="terminal-actions">
-          <span>{session.shell ? `${shortPath(session.shell)} · login shell` : 'starting shell…'}</span>
+          <span>{session.shell ? `${shortPath(session.shell)} · 轻量 shell` : '正在创建终端'}</span>
           <button type="button" onClick={() => void service.openIterm(cwd)} title="在 iTerm2 中打开当前目录"><ExternalLink size={13} />iTerm2</button>
           <button type="button" onClick={() => void restart()} title="重新启动终端"><RotateCcw size={13} />重启</button>
         </div>
@@ -321,11 +318,7 @@ function TerminalCanvas({ controller, session }: {
 
   useEffect(() => {
     if (session.error || hasVisibleTerminalOutput(session.output)) return undefined
-    const deadline = session.status === 'starting'
-      ? session.requestedAt + TERMINAL_SLOW_CREATE_MS
-      : session.status === 'running' && session.runningAt
-        ? session.runningAt + TERMINAL_STARTUP_OUTPUT_GRACE_MS
-        : null
+    const deadline = session.status === 'starting' ? session.requestedAt + TERMINAL_SLOW_CREATE_MS : null
     if (!deadline) return undefined
     const remaining = deadline - Date.now()
     if (remaining <= 0) return undefined
@@ -341,6 +334,7 @@ function TerminalCanvas({ controller, session }: {
       convertEol: false,
       cursorBlink: true,
       cursorStyle: 'bar',
+      disableStdin: session.status !== 'running',
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       fontSize: 12,
       lineHeight: 1.28,
@@ -367,17 +361,23 @@ function TerminalCanvas({ controller, session }: {
     terminal.open(container)
     terminal.write(session.output)
     const removeListener = controller.subscribe(session, (data) => {
+      terminal.options.disableStdin = session.status !== 'running'
       if (data) terminal.write(data)
       else fitTerminal(fit, terminal, controller, session)
+      if (session.status === 'running') terminal.focus()
     })
-    const input = terminal.onData((data) => void controller.write(session, data))
+    const input = terminal.onData((data) => {
+      if (session.status === 'running') void controller.write(session, data)
+    })
     const observer = new ResizeObserver(() => fitTerminal(fit, terminal, controller, session))
     observer.observe(container)
-    const focus = () => terminal.focus()
+    const focus = () => {
+      if (session.status === 'running') terminal.focus()
+    }
     container.addEventListener('pointerdown', focus, true)
     requestAnimationFrame(() => {
       fitTerminal(fit, terminal, controller, session)
-      terminal.focus()
+      if (session.status === 'running') terminal.focus()
     })
     return () => {
       observer.disconnect()
@@ -388,17 +388,23 @@ function TerminalCanvas({ controller, session }: {
     }
   }, [controller, session])
 
-  const runningForMs = session.runningAt ? Date.now() - session.runningAt : 0
-  const showStartup = shouldShowTerminalStartup(session.status, session.output, session.error, runningForMs)
+  const showStartup = shouldShowTerminalStartup(session.status, session.output, session.error)
   const slowCreate = session.status === 'starting' && Date.now() - session.requestedAt >= TERMINAL_SLOW_CREATE_MS
 
   return (
-    <div className="terminal-canvas" aria-label="终端输入区域">
+    <div
+      className={`terminal-canvas${showStartup ? ' loading' : ''}`}
+      aria-busy={showStartup}
+      aria-label={showStartup ? '终端正在启动，暂不可输入' : '终端输入区域'}
+    >
       <div ref={containerRef} className="terminal-surface" />
       {showStartup && (
         <div className="terminal-starting" aria-live="polite">
-          <span>{slowCreate ? '终端创建时间较长，请尝试重启' : session.status === 'starting' ? '正在创建终端…' : `正在启动 ${shortPath(session.shell)}…`}</span>
-          <code>{session.cwd}</code>
+          <LoaderCircle size={18} aria-hidden="true" />
+          <div>
+            <strong>{slowCreate ? '终端启动时间较长' : '正在启动终端'}</strong>
+            <span>{slowCreate ? '可以尝试重新启动' : '正在准备命令行环境，启动期间暂不可输入'}</span>
+          </div>
         </div>
       )}
     </div>
