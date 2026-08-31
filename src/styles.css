@@ -98,6 +98,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 }
 .app-shell[data-flavor='dev'] { --flavor-glow-primary: 8, 151, 86; --flavor-glow-secondary: 154, 239, 188; }
 .native-titlebar-drag-region { position: absolute; z-index: 39; top: 0; right: 0; left: 76px; height: 28px; }
+.app-shell[data-tab-focused='true'] .sidebar,
+.app-shell[data-tab-focused='true'] .app-sidebar-toggle,
+.app-shell[data-tab-focused='true'] .thread-header,
+.app-shell[data-tab-focused='true'] .tab-bar,
+.app-shell[data-tab-focused='true'] .composer-collapse-toggle,
+.app-shell[data-tab-focused='true'] .composer-collapsed-handle,
+.app-shell[data-tab-focused='true'] .input-column,
+.app-shell[data-tab-focused='true'] .quick-action-dock,
+.app-shell[data-tab-focused='true'] .quick-command-dock { display: none; }
 
 .sidebar {
   position: relative;

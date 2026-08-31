@@ -8,6 +8,7 @@ export const harnessActionDefinitions: Array<{ id: HarnessActionId; label: strin
   })),
   { id: 'sidebar.toggle', label: '收起或展开侧边栏' },
   { id: 'composer.focus', label: '回到输入框' },
+  { id: 'tab.focus.toggle', label: '切换当前 Tab 全屏' },
 ]
 
 export const defaultHarnessActionShortcuts: HarnessActionShortcuts = Object.fromEntries([
@@ -15,6 +16,7 @@ export const defaultHarnessActionShortcuts: HarnessActionShortcuts = Object.from
   ...Array.from({ length: 9 }, (_, index) => [`thread.select.${index + 1}`, `Mod+${index + 1}`]),
   ['sidebar.toggle', 'Mod+B'],
   ['composer.focus', 'Escape'],
+  ['tab.focus.toggle', 'F11'],
 ]) as HarnessActionShortcuts
 
 export interface ShortcutKeyEvent {
@@ -40,6 +42,7 @@ export function shortcutFromEvent(event: ShortcutKeyEvent): string | null {
   const key = normalizeKey(event.key)
   if (!key) return null
   if (key === 'Escape') return 'Escape'
+  if (/^F(?:[1-9]|1[0-2])$/.test(key) && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) return key
   if (!event.metaKey && !event.ctrlKey && !event.altKey) return null
   return [
     event.metaKey ? 'Mod' : null,

@@ -605,7 +605,7 @@ function ShortcutRecorder({ action, shortcuts, onChange }: {
           event.stopPropagation()
           const shortcut = shortcutFromEvent(event)
           if (!shortcut) {
-            setError('请使用组合键或 Esc')
+            setError('请使用组合键、功能键或 Esc')
             return
           }
           const conflict = conflictingAction(shortcuts, action.id, shortcut)

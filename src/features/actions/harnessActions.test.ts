@@ -19,10 +19,12 @@ describe('Harness action shortcuts', () => {
     expect(actionForShortcut(key('3', { metaKey: true }), defaultHarnessActionShortcuts)).toBe('thread.select.3')
     expect(threadIndexForAction('thread.select.3')).toBe(2)
     expect(actionForShortcut(key('Escape'), defaultHarnessActionShortcuts)).toBe('composer.focus')
+    expect(actionForShortcut(key('F11'), defaultHarnessActionShortcuts)).toBe('tab.focus.toggle')
   })
 
-  it('records only Escape or modified shortcuts', () => {
+  it('records Escape, function keys, or modified shortcuts', () => {
     expect(shortcutFromEvent(key('b', { metaKey: true, shiftKey: true }))).toBe('Mod+Shift+B')
+    expect(shortcutFromEvent(key('F11'))).toBe('F11')
     expect(shortcutFromEvent(key('b'))).toBeNull()
     expect(shortcutFromEvent(key('Shift', { shiftKey: true }))).toBeNull()
   })
@@ -31,6 +33,7 @@ describe('Harness action shortcuts', () => {
     const shortcuts = normalizeHarnessActionShortcuts({ 'thread.new': 'Mod+N' })
     expect(shortcuts['thread.new']).toBe('Mod+N')
     expect(shortcuts['sidebar.toggle']).toBe('Mod+B')
+    expect(shortcuts['tab.focus.toggle']).toBe('F11')
     expect(conflictingAction(shortcuts, 'thread.new', 'Mod+B')).toBe('sidebar.toggle')
     expect(formatShortcut('Mod+Shift+B')).toBe('⌘⇧B')
   })
