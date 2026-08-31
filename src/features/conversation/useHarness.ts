@@ -56,7 +56,7 @@ import {
 } from '../../core/domain/codex'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
 import { diagnosticErrorCode, runtime, type ClientDiagnostic } from '../../core/runtime/bridge'
-import { appServer, type ResumeThreadResponse as ResumeResponse, type StartThreadResponse, type ThreadSettingsResponse } from '../../core/runtime/appServerClient'
+import { appServer, type StartThreadResponse } from '../../core/runtime/appServerClient'
 import { defaultHarnessActionShortcuts, normalizeHarnessActionShortcuts } from '../actions/harnessActions'
 import {
   defaultConversationStatsPreferences,
@@ -72,6 +72,19 @@ import {
   type ActiveTurnOwnership,
 } from './turnOwnership'
 import { reduceThreadDetailEvent } from './conversationEventReducer'
+import {
+  isFirstUserTurn,
+  resolveNewThreadWorkspaceRoot,
+  resumedThreadDetail,
+  runtimeThreadSettings,
+  sandboxModeForPolicy,
+  shouldDiscardDraftThread,
+  startedThreadDetail,
+  threadPermissionOverrides,
+  threadTitlePrompt,
+  threadTurnContext,
+} from './threadLifecycle'
+import { promoteQueuedSubmission } from './turnQueue'
 
 type ViewMode = 'active' | 'archived'
 
@@ -125,19 +138,6 @@ function toThreadItem(value: unknown): ThreadItem | null {
   return value as ThreadItem
 }
 
-function runtimeThreadSettings(response: ThreadSettingsResponse): Partial<ThreadCodexSettings> {
-  return {
-    model: response.model,
-    ...(response.reasoningEffort ? { effort: response.reasoningEffort } : {}),
-    // Older App Server versions may omit this newly added field. Treat that as
-    // the standard tier instead of letting an undefined value leak into state.
-    serviceTier: response.serviceTier ?? null,
-    approvalPolicy: response.approvalPolicy,
-    approvalsReviewer: response.approvalsReviewer,
-    sandboxMode: sandboxModeForPolicy(response.sandbox),
-  }
-}
-
 function eventThreadSettings(value: JsonObject): Partial<ThreadCodexSettings> {
   const settings: Partial<ThreadCodexSettings> = {}
   if (typeof value.model === 'string') settings.model = value.model
@@ -152,24 +152,8 @@ function eventThreadSettings(value: JsonObject): Partial<ThreadCodexSettings> {
   return settings
 }
 
-function sandboxModeForPolicy(policy: SandboxPolicy): ThreadCodexSettings['sandboxMode'] {
-  if (policy.type === 'dangerFullAccess') return 'danger-full-access'
-  if (policy.type === 'readOnly') return 'read-only'
-  return 'workspace-write'
-}
-
 function newClientId(): string {
   return crypto.randomUUID()
-}
-
-function findActiveTurn(turns: Turn[]): string | null {
-  return turns.find((turn) => turn.status === 'inProgress')?.id ?? null
-}
-
-export function isFirstUserTurn(detail: ThreadDetail | undefined): boolean {
-  if (!detail) return false
-  return !detail.items.some((entry) => entry.item.type === 'userMessage')
-    && !detail.turns.some((turn) => turn.items.some((item) => item.type === 'userMessage'))
 }
 
 function recordTitleDiagnostic(diagnostic: Omit<ClientDiagnostic, 'area'>): void {
@@ -680,17 +664,15 @@ export function useHarness() {
     setBusy((current) => ({ ...current, [`load:${threadId}`]: true }))
     try {
       const listedThread = threadsRef.current.find((thread) => thread.id === threadId)
-      const response: ResumeResponse = await appServer.resumeThread({
+      const response = await appServer.resumeThread({
         threadId,
         ...(listedThread ? { cwd: listedThread.cwd, runtimeWorkspaceRoots: [listedThread.cwd] } : {}),
         // Match the CLI's bounded history strategy: hydrate only the newest
         // page first, then let the user explicitly ask for older history.
         initialTurnsPage: { limit: 5, sortDirection: 'desc', itemsView: 'full' },
       })
-      const initialTurns = response.initialTurnsPage?.data ?? response.thread.turns ?? []
-      const turns = response.initialTurnsPage ? [...initialTurns].reverse() : initialTurns
-      const items = turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item })))
-      const activeTurnId = findActiveTurn(turns)
+      const resumedDetail = resumedThreadDetail(response)
+      const activeTurnId = resumedDetail.activeTurnId
       const ownership = syncResumedTurn({
         activeTurnIds: activeTurnIdsRef.current,
         ownedActiveThreads: ownedActiveThreadsRef.current,
@@ -700,17 +682,8 @@ export function useHarness() {
       setDetails((current) => ({
         ...current,
         [threadId]: {
-          thread: response.thread,
-          turns,
-          items,
-          nextTurnsCursor: response.initialTurnsPage?.nextCursor ?? null,
-          activeTurnId,
+          ...resumedDetail,
           foreignActive: activeTurnId !== null && !owned,
-          runtimeWorkspaceRoots: response.runtimeWorkspaceRoots,
-          sandbox: response.sandbox,
-          activePermissionProfile: response.activePermissionProfile,
-          model: response.model,
-          threadSettings: runtimeThreadSettings(response),
         },
       }))
       upsertThread(response.thread)
@@ -834,13 +807,7 @@ export function useHarness() {
       // persisted rollout yet, and App Server correctly rejects that request.
       setDetails((current) => ({
         ...current,
-        [response.thread.id]: emptyThreadDetail(response.thread, {
-          runtimeWorkspaceRoots: response.runtimeWorkspaceRoots,
-          sandbox: response.sandbox,
-          activePermissionProfile: response.activePermissionProfile,
-          model: response.model,
-          threadSettings: runtimeThreadSettings(response),
-        }),
+        [response.thread.id]: startedThreadDetail(response),
       }))
     } catch (error) {
       notify(`无法${operation}会话：${messageOf(error)}`, 'error')
@@ -1221,28 +1188,9 @@ export function useHarness() {
     }
     setBusy((current) => ({ ...current, [`promote:${queue.id}`]: true }))
     try {
-      // App Server has no atomic promote operation. Delete first avoids a duplicated follow-up;
-      // on a failed steer we immediately restore the same server-owned queue entry.
-      await appServer.deleteQueue(threadId, queue.id)
-      try {
-        await appServer.steerTurn({
-          threadId,
-          expectedTurnId: activeTurnId,
-          clientUserMessageId: queue.clientUserMessageId,
-          input: queue.input,
-        })
-      } catch (error) {
-        await appServer.addQueue({
-          threadId,
-          clientUserMessageId: queue.clientUserMessageId,
-          input: queue.input,
-        }).catch(() => undefined)
-        throw error
-      }
-      const text = queue.input.map((input) => input.type === 'text' ? input.text : '').filter(Boolean).join('\n')
+      const pending = await promoteQueuedSubmission(appServer, threadId, activeTurnId, queue)
       setPendingSteers((current) => ({
-        ...current,
-        [threadId]: [...(current[threadId] ?? []), { clientUserMessageId: queue.clientUserMessageId, text, createdAt: Date.now() }],
+        ...current, [threadId]: [...(current[threadId] ?? []), pending],
       }))
       setQueues((current) => ({ ...current, [threadId]: (current[threadId] ?? []).filter((item) => item.id !== queue.id) }))
     } catch (error) {
@@ -1849,45 +1797,6 @@ export function useHarness() {
       }
     },
   }
-}
-
-export function resolveNewThreadWorkspaceRoot(
-  selectedThreadId: string | null,
-  threads: Thread[],
-  fallbackWorkspaceRoot: string | null,
-): string | null {
-  return (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId)?.cwd : null) ?? fallbackWorkspaceRoot
-}
-
-export function threadTurnContext(detail: ThreadDetail | undefined, cwd: string): JsonObject {
-  return {
-    cwd,
-    runtimeWorkspaceRoots: [cwd],
-    ...threadPermissionOverrides(detail, detail?.thread.cwd ?? cwd, cwd),
-  }
-}
-
-export function threadPermissionOverrides(
-  detail: ThreadDetail | undefined,
-  previousCwd: string,
-  nextCwd: string,
-): JsonObject {
-  if (detail?.activePermissionProfile) return { permissions: detail.activePermissionProfile.id }
-  if (!detail?.sandbox) return {}
-  if (detail.sandbox.type === 'externalSandbox' && previousCwd !== nextCwd) {
-    throw new Error('当前会话由外部 sandbox 管理，不能在原会话中扩大可写目录；请在目标目录新建会话。')
-  }
-  return { sandboxPolicy: rebaseSandboxPolicy(detail.sandbox, previousCwd, nextCwd) }
-}
-
-export function threadTitlePrompt(userText: string): string | null {
-  const text = userText.trim()
-  if (!text) return null
-  return `Generate a title for this user's request:\n\nUser: ${text.slice(0, 8_000)}`
-}
-
-export function shouldDiscardDraftThread(unstarted: boolean, hasContent: boolean): boolean {
-  return unstarted && !hasContent
 }
 
 function isApprovalRequest(method: string): boolean {

@@ -3,7 +3,8 @@ import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
 import { formatWorkingElapsed } from './ConversationStats'
-import { isFirstUserTurn, parseThreadTitleGenerationSettings, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
+import { parseThreadTitleGenerationSettings } from './useHarness'
+import { isFirstUserTurn, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './threadLifecycle'
 
 function makeThread(cwd: string): Thread {
   return {
