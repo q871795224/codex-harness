@@ -15,6 +15,42 @@ export interface TurnQueueTransport {
   }): Promise<unknown>
 }
 
+export type ActiveTurnSubmissionResult =
+  | { kind: 'queued' }
+  | { kind: 'steered'; pending: PendingSteer }
+
+export async function submitActiveTurnInput(
+  transport: TurnQueueTransport,
+  params: {
+    threadId: string
+    activeTurnId: string
+    clientUserMessageId: string
+    input: UserInput[]
+    mode: 'interject' | 'queue'
+  },
+  now = Date.now(),
+): Promise<ActiveTurnSubmissionResult> {
+  if (params.mode === 'queue') {
+    await transport.addQueue({
+      threadId: params.threadId,
+      clientUserMessageId: params.clientUserMessageId,
+      input: params.input,
+    })
+    return { kind: 'queued' }
+  }
+
+  await transport.steerTurn({
+    threadId: params.threadId,
+    expectedTurnId: params.activeTurnId,
+    clientUserMessageId: params.clientUserMessageId,
+    input: params.input,
+  })
+  return {
+    kind: 'steered',
+    pending: pendingSteer(params.clientUserMessageId, params.input, now),
+  }
+}
+
 export async function promoteQueuedSubmission(
   transport: TurnQueueTransport,
   threadId: string,
@@ -41,9 +77,17 @@ export async function promoteQueuedSubmission(
     throw error
   }
 
-  const text = queue.input
+  return pendingSteer(queue.clientUserMessageId, queue.input, now)
+}
+
+export function restartInputs(restarts: PendingSteer[]): UserInput[] {
+  return restarts.flatMap((steer) => steer.input)
+}
+
+function pendingSteer(clientUserMessageId: string, input: UserInput[], createdAt: number): PendingSteer {
+  const text = input
     .map((input) => input.type === 'text' ? input.text : '')
     .filter(Boolean)
     .join('\n')
-  return { clientUserMessageId: queue.clientUserMessageId, text, createdAt: now }
+  return { clientUserMessageId, text: text.trim() || '附件', input, createdAt }
 }

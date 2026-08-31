@@ -414,6 +414,7 @@ export interface ThreadUiState {
 export interface PendingSteer {
   clientUserMessageId: string
   text: string
+  input: UserInput[]
   createdAt: number
 }
 

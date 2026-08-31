@@ -72,6 +72,7 @@ import {
   type ActiveTurnOwnership,
 } from './turnOwnership'
 import { reduceThreadDetailEvent } from './conversationEventReducer'
+import { approvalResponse, isApprovalRequestMethod } from './approvalFlow'
 import {
   isFirstUserTurn,
   resolveNewThreadWorkspaceRoot,
@@ -83,8 +84,9 @@ import {
   threadPermissionOverrides,
   threadTitlePrompt,
   threadTurnContext,
+  turnStartRequest,
 } from './threadLifecycle'
-import { promoteQueuedSubmission } from './turnQueue'
+import { promoteQueuedSubmission, restartInputs, submitActiveTurnInput } from './turnQueue'
 
 type ViewMode = 'active' | 'archived'
 
@@ -1030,12 +1032,13 @@ export function useHarness() {
     try {
       const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
       const detail = detailsRef.current[threadId]
-      const response = await appServer.startTurn({
+      const response = await appServer.startTurn(turnStartRequest(
         threadId,
-        clientUserMessageId: newClientId(),
-        input: inputs ?? (text ? [textInput(text)] : []),
-        ...(thread ? threadTurnContext(detail, thread.cwd) : {}),
-      })
+        newClientId(),
+        inputs ?? (text ? [textInput(text)] : []),
+        thread,
+        detail,
+      ))
       setActiveTurn(threadId, response.turn.id, true)
       return response.turn.id
     } finally {
@@ -1076,25 +1079,20 @@ export function useHarness() {
       }
 
       const clientUserMessageId = newClientId()
-      if (mode === 'queue') {
-        await appServer.addQueue({
-          threadId,
-          clientUserMessageId,
-          input,
-        })
+      const result = await submitActiveTurnInput(appServer, {
+        threadId,
+        activeTurnId,
+        clientUserMessageId,
+        input,
+        mode,
+      })
+      if (result.kind === 'queued') {
         await loadQueue(threadId)
         return
       }
-
-      await appServer.steerTurn({
-        threadId,
-        expectedTurnId: activeTurnId,
-        clientUserMessageId,
-        input,
-      })
       setPendingSteers((current) => ({
         ...current,
-        [threadId]: [...(current[threadId] ?? []), { clientUserMessageId, text: text.trim() || '附件', createdAt: Date.now() }],
+        [threadId]: [...(current[threadId] ?? []), result.pending],
       }))
     } catch (error) {
       notify(`无法发送消息：${messageOf(error)}`, 'error')
@@ -1294,7 +1292,7 @@ export function useHarness() {
 
   const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
     try {
-      await runtime.respond(request.id, approvalResult(request.method, decision))
+      await runtime.respond(request.id, approvalResponse(request.method, decision))
       setApprovals((current) => ({
         ...current,
         [request.threadId]: (current[request.threadId] ?? []).filter((item) => item.id !== request.id),
@@ -1418,7 +1416,7 @@ export function useHarness() {
 
     if (handleTitleGeneratorEvent(method, params)) return
 
-    if (event.id !== undefined && isApprovalRequest(method)) {
+    if (event.id !== undefined && isApprovalRequestMethod(method)) {
       const threadId = eventThreadId(params)
       if (threadId) {
         const request: ApprovalRequest = { id: event.id, method, params, threadId }
@@ -1598,7 +1596,7 @@ export function useHarness() {
         if (restarts?.length) {
           delete pendingRestartRef.current[threadId]
           setPendingSteers((current) => ({ ...current, [threadId]: [] }))
-          void startTurn(threadId, null, restarts.map((steer) => textInput(steer.text))).catch((error) => {
+          void startTurn(threadId, null, restartInputs(restarts)).catch((error) => {
             notify(`插话未能在停止后继续发送：${messageOf(error)}`, 'error')
           })
         }
@@ -1797,21 +1795,6 @@ export function useHarness() {
       }
     },
   }
-}
-
-function isApprovalRequest(method: string): boolean {
-  return method === 'execCommandApproval'
-    || method === 'applyPatchApproval'
-    || method.endsWith('/requestApproval')
-    || method === 'item/tool/requestUserInput'
-}
-
-function approvalResult(method: string, decision: unknown): JsonObject {
-  if (method === 'execCommandApproval' || method === 'applyPatchApproval') {
-    return { decision: decision === 'accept' ? 'approved' : { denied: { rejection: 'Denied in Codex Harness' } } }
-  }
-  if (method === 'item/tool/requestUserInput') return { answers: {} }
-  return { decision }
 }
 
 function messageOf(error: unknown): string {

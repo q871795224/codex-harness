@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { QueuedSubmission } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
-import { promoteQueuedSubmission, type TurnQueueTransport } from './turnQueue'
+import { promoteQueuedSubmission, restartInputs, submitActiveTurnInput, type TurnQueueTransport } from './turnQueue'
 
 function queue(): QueuedSubmission {
   return {
@@ -33,6 +33,7 @@ describe('queued turn promotion', () => {
     await expect(promoteQueuedSubmission(client, 'thread-1', 'turn-1', queue(), 42)).resolves.toEqual({
       clientUserMessageId: 'message-1',
       text: 'first\nsecond',
+      input: queue().input,
       createdAt: 42,
     })
     expect(calls).toEqual(['delete', 'steer'])
@@ -59,5 +60,52 @@ describe('queued turn promotion', () => {
     vi.mocked(client.addQueue).mockRejectedValue(new Error('restore failed'))
 
     await expect(promoteQueuedSubmission(client, 'thread-1', 'turn-1', queue())).rejects.toBe(failure)
+  })
+})
+
+describe('active turn submission', () => {
+  it('adds queue mode to the server queue without steering', async () => {
+    const client = transport()
+
+    await expect(submitActiveTurnInput(client, {
+      threadId: 'thread-1',
+      activeTurnId: 'turn-1',
+      clientUserMessageId: 'message-1',
+      input: queue().input,
+      mode: 'queue',
+    })).resolves.toEqual({ kind: 'queued' })
+    expect(client.addQueue).toHaveBeenCalledWith({
+      threadId: 'thread-1', clientUserMessageId: 'message-1', input: queue().input,
+    })
+    expect(client.steerTurn).not.toHaveBeenCalled()
+  })
+
+  it('records the original structured input for an interjection', async () => {
+    const client = transport()
+
+    const result = await submitActiveTurnInput(client, {
+      threadId: 'thread-1',
+      activeTurnId: 'turn-1',
+      clientUserMessageId: 'message-1',
+      input: queue().input,
+      mode: 'interject',
+    }, 42)
+
+    expect(result).toEqual({
+      kind: 'steered',
+      pending: { clientUserMessageId: 'message-1', text: 'first\nsecond', input: queue().input, createdAt: 42 },
+    })
+    expect(client.steerTurn).toHaveBeenCalledWith({
+      threadId: 'thread-1', expectedTurnId: 'turn-1', clientUserMessageId: 'message-1', input: queue().input,
+    })
+    expect(client.addQueue).not.toHaveBeenCalled()
+  })
+
+  it('restarts stopped interjections without losing attachments or mentions', () => {
+    const input = queue().input
+    expect(restartInputs([
+      { clientUserMessageId: 'message-1', text: 'first', input, createdAt: 1 },
+      { clientUserMessageId: 'message-2', text: 'again', input: [textInput('again')], createdAt: 2 },
+    ])).toEqual([...input, textInput('again')])
   })
 })

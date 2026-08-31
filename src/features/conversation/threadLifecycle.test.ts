@@ -6,6 +6,7 @@ import {
   runtimeThreadSettings,
   startedThreadDetail,
   threadPermissionOverrides,
+  turnStartRequest,
 } from './threadLifecycle'
 
 function thread(overrides: Partial<Thread> = {}): Thread {
@@ -107,5 +108,24 @@ describe('thread workspace permissions', () => {
     const detail = startedThreadDetail({ ...response(), sandbox: { type: 'externalSandbox', networkAccess: false } })
 
     expect(() => threadPermissionOverrides(detail, '/repo', '/repo/worktree')).toThrow('不能在原会话中扩大可写目录')
+  })
+
+  it('builds a turn request with the current checkout and permission context', () => {
+    const currentThread = thread({ cwd: '/repo/worktree' })
+    const detail = startedThreadDetail({
+      ...response(),
+      thread: currentThread,
+      activePermissionProfile: { id: 'profile-1', extends: null },
+    })
+    const input = [{ type: 'localImage' as const, path: '/tmp/image.png' }]
+
+    expect(turnStartRequest('thread-1', 'message-1', input, currentThread, detail)).toEqual({
+      threadId: 'thread-1',
+      clientUserMessageId: 'message-1',
+      input,
+      cwd: '/repo/worktree',
+      runtimeWorkspaceRoots: ['/repo/worktree'],
+      permissions: 'profile-1',
+    })
   })
 })

@@ -4,6 +4,7 @@ import type {
   Thread,
   ThreadCodexSettings,
   ThreadDetail,
+  UserInput,
 } from '../../core/domain/codex'
 import { emptyThreadDetail, rebaseSandboxPolicy } from '../../core/domain/codex'
 import type { ResumeThreadResponse, StartThreadResponse, ThreadSettingsResponse } from '../../core/runtime/appServerClient'
@@ -64,6 +65,21 @@ export function threadTurnContext(detail: ThreadDetail | undefined, cwd: string)
     cwd,
     runtimeWorkspaceRoots: [cwd],
     ...threadPermissionOverrides(detail, detail?.thread.cwd ?? cwd, cwd),
+  }
+}
+
+export function turnStartRequest(
+  threadId: string,
+  clientUserMessageId: string,
+  input: UserInput[],
+  thread: Thread | undefined,
+  detail: ThreadDetail | undefined,
+): JsonObject {
+  return {
+    threadId,
+    clientUserMessageId,
+    input,
+    ...(thread ? threadTurnContext(detail, thread.cwd) : {}),
   }
 }
 
