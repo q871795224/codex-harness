@@ -22,7 +22,6 @@ import type {
   ThreadUiState,
   Theme,
   ThreadTitleGenerationSettings,
-  Turn,
   UserInput,
   Workspace,
   WorkspaceSort,
@@ -34,13 +33,11 @@ import {
   defaultFontSizePreferences,
   emptyThreadDetail,
   isActive,
-  itemText,
   normalizeFontSize,
   normalizeFollowUpMode,
   normalizeSendShortcut,
   normalizeSidebarWidth,
   normalizeTheme,
-  parseGeneratedThreadTitle,
   rebaseSandboxPolicy,
   textInput,
   threadTitle,
@@ -71,6 +68,7 @@ import {
   eventThreadId,
   eventThreadItem,
   eventThreadSettings,
+  eventTurn,
   parseEventTokenUsage,
   parseEventTurnPlan,
 } from './conversationEventParser'
@@ -90,6 +88,7 @@ import {
 import { subscribeHarnessRuntime } from './harnessSubscriptions'
 import { archiveThreadsBefore, listThreadPage, type ThreadViewMode } from './threadCatalog'
 import { prependOlderTurns } from './threadHistory'
+import { reduceTitleGeneratorEvent, type TitleGeneratorState } from './titleGenerator'
 import {
   isFirstUserTurn,
   resolveNewThreadWorkspaceRoot,
@@ -107,13 +106,6 @@ import { promoteQueuedSubmission, restartInputs, submitActiveTurnInput } from '.
 export { parseThreadTitleGenerationSettings } from './harnessBootstrap'
 
 type ViewMode = ThreadViewMode
-
-interface TitleGenerator {
-  targetThreadId: string
-  attemptId: string
-  text: string
-  startedAt: number
-}
 
 interface HookToast {
   kind: 'error' | 'info'
@@ -174,7 +166,7 @@ export function useHarness() {
   const threadMappingVersionsRef = useRef<Record<string, number>>({})
   const generatingTitlesRef = useRef(new Set<string>())
   const attemptedTitleThreadsRef = useRef(new Set<string>())
-  const titleGeneratorsRef = useRef(new Map<string, TitleGenerator>())
+  const titleGeneratorsRef = useRef(new Map<string, TitleGeneratorState>())
   const threadTitleGenerationRef = useRef(threadTitleGeneration)
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
 
@@ -1119,16 +1111,11 @@ export function useHarness() {
     const generator = titleGeneratorsRef.current.get(generatorThreadId)
     if (!generator) return false
 
-    if (method === 'item/agentMessage/delta' && typeof params.delta === 'string') {
-      generator.text += params.delta
-    } else if (method === 'item/completed') {
-      const item = eventThreadItem(params.item)
-      if (item?.type === 'agentMessage') generator.text = itemText(item) || generator.text
-    } else if (method === 'turn/completed') {
-      const turn = params.turn as Turn | undefined
-      const fallback = turn?.items.find((item) => item.type === 'agentMessage')
-      const generatedText = generator.text || (fallback ? itemText(fallback) : '')
-      const title = parseGeneratedThreadTitle(generatedText)
+    const result = reduceTitleGeneratorEvent(generator, method, params)
+    if (result.kind === 'pending') {
+      titleGeneratorsRef.current.set(generatorThreadId, result.state)
+    } else {
+      const { generatedText, title, turn } = result
       recordTitleDiagnostic({
         level: 'info',
         event: 'generation.completed',
@@ -1320,7 +1307,7 @@ export function useHarness() {
 
     if (method === 'turn/started') {
       const threadId = eventThreadId(params)
-      const turn = params.turn as Turn | undefined
+      const turn = eventTurn(params.turn)
       if (threadId && turn) {
         const owned = ownsStartedTurn({
           activeTurnIds: activeTurnIdsRef.current,
@@ -1373,7 +1360,7 @@ export function useHarness() {
 
     if (method === 'turn/completed') {
       const threadId = eventThreadId(params)
-      const turn = params.turn as Turn | undefined
+      const turn = eventTurn(params.turn)
       if (threadId && turn) {
         const completedThread = threadsRef.current.find((thread) => thread.id === threadId)
         updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'turnCompleted', turn }))

@@ -47,6 +47,7 @@ Codex Harness 是 Codex App Server 上的本地工作台，重点是会话组织
 - App Server 事件与传输监听统一管理生命周期；组件卸载后才完成注册的监听器会立即注销，避免页面重挂载后的重复事件。
 - 会话目录读取统一使用 state DB 分页参数；批量归档返回成功与失败明细，单个失败不会中断其余候选会话。
 - 历史 turn 分页按 App Server 的倒序页转换为 UI 时间顺序后再合并，并独立验证游标与消息归属。
+- 标题生成的流式 delta、完成 item 与 turn 回退统一通过纯状态转换处理；异常 turn payload 不再中断事件循环。
 - 为 fork、事件 reducer、并发写入保护和 IPC 错误分支增加测试；覆盖率门禁固定统计全部 `src` 生产源码，不随测试的间接 import 变化，并在真实基线上逐步提高。
 - 按真实 bundle profile 延迟加载设置页、Terminal/xterm 和 API Workbench sandbox；继续以首屏成本而非 warning 数量决定后续拆分。
 - 启用 Tauri CSP：生产 WebView 只允许本地资源与 IPC，开发态额外允许 localhost/HMR；API Workbench 脚本执行所需的 `unsafe-eval` 明确保留。

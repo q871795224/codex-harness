@@ -5,6 +5,7 @@ import type {
   ThreadCodexSettings,
   ThreadItem,
   ThreadTokenUsage,
+  Turn,
   TurnPlanStep,
 } from '../../core/domain/codex'
 import { sandboxModeForPolicy } from './threadLifecycle'
@@ -18,6 +19,16 @@ export function eventThreadItem(value: unknown): ThreadItem | null {
   if (!value || typeof value !== 'object') return null
   const item = value as JsonObject
   return typeof item.type === 'string' ? item as ThreadItem : null
+}
+
+export function eventTurn(value: unknown): Turn | null {
+  if (!value || typeof value !== 'object') return null
+  const turn = value as JsonObject
+  if (typeof turn.id !== 'string'
+    || (turn.status !== 'completed' && turn.status !== 'interrupted' && turn.status !== 'failed' && turn.status !== 'inProgress')
+    || !Array.isArray(turn.items)
+    || !turn.items.every((item) => eventThreadItem(item) !== null)) return null
+  return value as Turn
 }
 
 export function eventThreadSettings(value: JsonObject): Partial<ThreadCodexSettings> {

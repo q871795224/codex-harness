@@ -5,6 +5,7 @@ import {
   eventThreadId,
   eventThreadItem,
   eventThreadSettings,
+  eventTurn,
   parseEventTokenUsage,
   parseEventTurnPlan,
 } from './conversationEventParser'
@@ -20,6 +21,14 @@ describe('conversation event parsing', () => {
     expect(eventThreadItem({ id: 'item-1', type: 'agentMessage' })).toEqual({ id: 'item-1', type: 'agentMessage' })
     expect(eventThreadItem({ type: 42 })).toBeNull()
     expect(eventThreadItem(null)).toBeNull()
+  })
+
+  it('requires a turn with a known status and valid items', () => {
+    const turn = { id: 'turn-1', status: 'completed', items: [{ type: 'agentMessage' }] }
+    expect(eventTurn(turn)).toBe(turn)
+    expect(eventTurn({ ...turn, status: 'unknown' })).toBeNull()
+    expect(eventTurn({ ...turn, items: [{ type: 42 }] })).toBeNull()
+    expect(eventTurn(null)).toBeNull()
   })
 
   it('keeps only recognized thread settings', () => {
