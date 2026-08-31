@@ -26,6 +26,7 @@ import type { UsageSnapshot } from '../usage/types'
 import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-workbench/types'
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId } from '../app-launcher/types'
+import type { CodexUpdateStatus } from '../codex-update/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -108,6 +109,18 @@ export const runtime = {
 
   getRuntimeVersions(): Promise<RuntimeVersions> {
     return invoke<RuntimeVersions>('runtime_versions')
+  },
+
+  codexUpdateStatus(force = false): Promise<CodexUpdateStatus> {
+    return invoke<CodexUpdateStatus>('codex_update_status', { force })
+  },
+
+  installCodexUpdate(): Promise<CodexUpdateStatus> {
+    return invoke<CodexUpdateStatus>('install_codex_update')
+  },
+
+  skipCodexUpdate(version: string): Promise<CodexUpdateStatus> {
+    return invoke<CodexUpdateStatus>('skip_codex_update', { version })
   },
 
   recordClientDiagnostic(diagnostic: ClientDiagnostic): Promise<void> {

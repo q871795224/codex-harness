@@ -326,6 +326,7 @@ export function useHarness() {
   const [threads, setThreads] = useState<Thread[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [threadRoots, setThreadRoots] = useState<Record<string, string | null>>({})
+  const [threadGitCwds, setThreadGitCwds] = useState<Record<string, string>>({})
   const [threadStates, setThreadStates] = useState<Record<string, ThreadUiState>>({})
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
   const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
@@ -356,6 +357,7 @@ export function useHarness() {
   const ownedActiveThreadsRef = useRef<Record<string, boolean>>({})
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
   const detailsRef = useRef<Record<string, ThreadDetail>>({})
+  const threadMappingVersionsRef = useRef<Record<string, number>>({})
   const generatingTitlesRef = useRef(new Set<string>())
   const attemptedTitleThreadsRef = useRef(new Set<string>())
   const titleGeneratorsRef = useRef(new Map<string, TitleGenerator>())
@@ -550,12 +552,49 @@ export function useHarness() {
   const mapThreadRoots = useCallback(async (nextThreads: Thread[]) => {
     const paths = [...new Set(nextThreads.map((thread) => thread.cwd).filter(Boolean))]
     if (paths.length === 0) return
+    const mappings = new Map(nextThreads.map((thread) => {
+      const version = (threadMappingVersionsRef.current[thread.id] ?? 0) + 1
+      threadMappingVersionsRef.current[thread.id] = version
+      return [thread.id, { cwd: thread.cwd, version }]
+    }))
     try {
       const mapped = await runtime.mapThreadWorkspaces(paths)
       setThreadRoots((current) => {
         const next = { ...current }
-        for (const thread of nextThreads) next[thread.id] = mapped[thread.cwd]?.root ?? null
+        for (const [threadId, mapping] of mappings) {
+          if (threadMappingVersionsRef.current[threadId] !== mapping.version) continue
+          next[threadId] = mapped[mapping.cwd]?.root ?? null
+        }
         return next
+      })
+      setThreadGitCwds((current) => {
+        const next = { ...current }
+        for (const [threadId, mapping] of mappings) {
+          if (threadMappingVersionsRef.current[threadId] !== mapping.version) continue
+          next[threadId] = mapping.cwd
+        }
+        return next
+      })
+      setThreads((current) => current.map((thread) => {
+        const mapping = mappings.get(thread.id)
+        if (!mapping || threadMappingVersionsRef.current[thread.id] !== mapping.version || thread.cwd !== mapping.cwd) return thread
+        const workspace = mapped[mapping.cwd]
+        return { ...thread, gitInfo: workspace ? { branch: workspace.branch, sha: workspace.sha } : null }
+      }))
+      setDetails((current) => {
+        let changed = false
+        const next = { ...current }
+        for (const [threadId, mapping] of mappings) {
+          const detail = next[threadId]
+          if (!detail || threadMappingVersionsRef.current[threadId] !== mapping.version || detail.thread.cwd !== mapping.cwd) continue
+          const workspace = mapped[mapping.cwd]
+          next[threadId] = {
+            ...detail,
+            thread: { ...detail.thread, gitInfo: workspace ? { branch: workspace.branch, sha: workspace.sha } : null },
+          }
+          changed = true
+        }
+        return changed ? next : current
       })
       const discovered = Object.values(mapped).filter((workspace): workspace is Workspace => workspace !== null)
       if (discovered.length > 0) {
@@ -586,6 +625,16 @@ export function useHarness() {
       ...(searchTerm.trim() ? { searchTerm: searchTerm.trim() } : {}),
     })
     setThreads(response.data)
+    setThreadRoots((current) => {
+      const next = { ...current }
+      for (const thread of response.data) delete next[thread.id]
+      return next
+    })
+    setThreadGitCwds((current) => {
+      const next = { ...current }
+      for (const thread of response.data) delete next[thread.id]
+      return next
+    })
     void mapThreadRoots(response.data)
     return response.data
   }, [mapThreadRoots, viewMode])
@@ -691,6 +740,7 @@ export function useHarness() {
         },
       }))
       upsertThread(response.thread)
+      void mapThreadRoots([response.thread])
       await loadQueue(threadId)
     } catch (error) {
       const thread = threadsRef.current.find((item) => item.id === threadId)
@@ -704,7 +754,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
     }
-  }, [commitTurnOwnership, discardEmptyDraftThread, loadQueue, markThreadRead, notify, upsertThread])
+  }, [commitTurnOwnership, discardEmptyDraftThread, loadQueue, mapThreadRoots, markThreadRead, notify, upsertThread])
 
   const openThread = useCallback(async (threadId: string) => {
     const activeThreads = await refreshThreads('active')
@@ -838,6 +888,7 @@ export function useHarness() {
         gitInfo: { branch: workspace.branch, sha: workspace.sha },
       }).catch(() => undefined)
       setThreadRoots((current) => ({ ...current, [threadId]: workspace.root }))
+      setThreadGitCwds((current) => ({ ...current, [threadId]: nextCwd }))
       setSelectedWorkspaceRoot(workspace.root)
       updateThread(threadId, (thread) => ({
         ...thread,
@@ -1415,10 +1466,21 @@ export function useHarness() {
         const sandbox = settings?.sandboxPolicy as SandboxPolicy | undefined
         const profile = (settings?.activePermissionProfile ?? null) as ActivePermissionProfile | null
         const model = typeof settings?.model === 'string' ? settings.model : null
-        updateThread(threadId, (thread) => ({ ...thread, cwd }))
+        threadMappingVersionsRef.current[threadId] = (threadMappingVersionsRef.current[threadId] ?? 0) + 1
+        setThreadRoots((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        setThreadGitCwds((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        updateThread(threadId, (thread) => ({ ...thread, cwd, gitInfo: null }))
         updateDetail(threadId, (detail) => ({
           ...detail,
-          thread: { ...detail.thread, cwd },
+          thread: { ...detail.thread, cwd, gitInfo: null },
           runtimeWorkspaceRoots: [cwd],
           sandbox: sandbox ?? detail.sandbox,
           activePermissionProfile: profile,
@@ -1679,6 +1741,7 @@ export function useHarness() {
     threads,
     workspaces,
     threadRoots,
+    threadGitCwds,
     threadStates,
     details,
     threadTokenUsages,

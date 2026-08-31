@@ -485,7 +485,7 @@ dependencies = [
 
 [[package]]
 name = "codex-harness"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "block2",
  "futures-util",
@@ -496,6 +496,7 @@ dependencies = [
  "portable-pty",
  "reqwest",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

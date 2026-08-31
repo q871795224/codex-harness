@@ -2,6 +2,7 @@ mod api_workbench;
 mod app_launcher;
 mod app_server;
 mod codex_radar;
+mod codex_update;
 mod diagnostics;
 mod git_workspace;
 mod harness_files;
@@ -38,6 +39,7 @@ struct AppState {
     store: HarnessStore,
     terminal: Arc<terminal::TerminalManager>,
     api_workbench: api_workbench::ApiWorkbenchStore,
+    codex_update: tokio::sync::Mutex<()>,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
 }
@@ -339,6 +341,37 @@ fn runtime_versions() -> app_server::RuntimeVersions {
 }
 
 #[tauri::command]
+async fn codex_update_status(
+    state: State<'_, AppState>,
+    force: bool,
+) -> Result<codex_update::CodexUpdateStatus, String> {
+    let _guard = state.codex_update.lock().await;
+    Ok(codex_update::status(&state.store, &state.diagnostics, force).await)
+}
+
+#[tauri::command]
+async fn install_codex_update(
+    state: State<'_, AppState>,
+) -> Result<codex_update::CodexUpdateStatus, String> {
+    let _guard = state.codex_update.lock().await;
+    codex_update::install(
+        &state.store,
+        state.diagnostics.clone(),
+        state.app_server.clone(),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn skip_codex_update(
+    state: State<'_, AppState>,
+    version: String,
+) -> Result<codex_update::CodexUpdateStatus, String> {
+    let _guard = state.codex_update.lock().await;
+    codex_update::skip_version(&state.store, &state.diagnostics, &version)
+}
+
+#[tauri::command]
 fn list_workspaces(state: State<'_, AppState>) -> Result<Vec<Workspace>, String> {
     state.store.list_workspaces()
 }
@@ -545,6 +578,7 @@ pub fn run() {
                 store,
                 terminal: Arc::new(terminal::TerminalManager::default()),
                 api_workbench,
+                codex_update: tokio::sync::Mutex::new(()),
                 usage_refresh: tokio::sync::Mutex::new(()),
                 workspace_cache: Arc::new(Mutex::new(HashMap::new())),
             });
@@ -556,6 +590,9 @@ pub fn run() {
             record_client_diagnostic,
             open_diagnostics_directory,
             runtime_versions,
+            codex_update_status,
+            install_codex_update,
+            skip_codex_update,
             list_workspaces,
             register_workspace,
             map_thread_workspaces,

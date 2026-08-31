@@ -33,6 +33,7 @@ import { WorkingStatus } from './ConversationStats'
 interface ConversationHeaderProps {
   thread: Thread
   workspace: Workspace | null
+  gitContextResolved: boolean
   archived: boolean
   pinned: boolean
   workspaceChanging: boolean
@@ -45,7 +46,7 @@ interface ConversationHeaderProps {
   headerActions?: ReactNode
 }
 
-export function ConversationHeader({ thread, workspace, archived, pinned, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, headerActions }: ConversationHeaderProps) {
+export function ConversationHeader({ thread, workspace, gitContextResolved, archived, pinned, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -89,7 +90,7 @@ export function ConversationHeader({ thread, workspace, archived, pinned, worksp
         )}
         <div className="thread-context">
           <span><GitBranch size={13} />{workspace?.name ?? '未分组'}</span>
-          {thread.gitInfo?.branch && <span>{thread.gitInfo.branch}</span>}
+          <span>{threadGitContextLabel(thread.gitInfo, gitContextResolved)}</span>
           <button
             type="button"
             className="thread-path"
@@ -125,6 +126,12 @@ export function ConversationHeader({ thread, workspace, archived, pinned, worksp
       </div>
     </header>
   )
+}
+
+export function threadGitContextLabel(thread: Thread['gitInfo'], resolved: boolean): string {
+  if (!resolved) return '-'
+  if (thread?.branch) return thread.branch
+  return thread?.sha?.slice(0, 7) ?? '-'
 }
 
 export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode = 0): 'save' | 'cancel' | null {

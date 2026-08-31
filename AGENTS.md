@@ -14,11 +14,13 @@
 - Skill 的发现、解析、启停状态和最终列表以共享 App Server daemon 为准，前端不要自行扫描或解析 `SKILL.md`。
 - MCP 是共享 App Server daemon 的全局配置：应用核心启动时加载一次，仅在用户手动 reload 时刷新；打开设置页不重复请求。Harness 必须结合 `config/read`、`mcpServerStatus/list` 和 `mcpServer/startupStatus/updated` 区分启用状态与实际运行状态，并向用户展示启动失败和认证异常；不得把“已启用”当作“已连接”。
 - Codex 原生能力（模型、推理强度、审批、上下文、附件、Skills 与 MCP）属于 Harness 核心，不通过 Harness 插件 contribution 实现；默认项和管理入口放在设置界面，会话级覆盖放在输入框。
+- Codex 更新属于 Harness 核心：每天启动时至多检查一次 OpenAI Codex 最新稳定版并把结果持久化到 `state.sqlite`；安装必须调用 Harness 当前实际选中的 `codex update`，随后重启共享 App Server daemon、重新 initialize 并校验 CLI/App Server 版本，不能更新 Codex App 或其他封装 CLI。
 - 新会话空白区的增强 UI 使用 `newThreadPanels` 插件 slot；插件通过宿主传入的类型化会话设置更新函数修改模型、推理强度、审批 reviewer 和 sandbox，不能自行连接 App Server。
 - Codex Radar 网络请求由 Rust 原生层的固定域名客户端完成并缓存，内置会话启动器插件只能通过 `harness.codexRadar` service 读取整理后的模型指标。
 - 本机 Agent 用量由 Rust 原生层统一采集并持久化到状态库：Codex Business/Personal 历史数据通过 `ccusage` 读取，Codex 额度协议封装在 `src-tauri/src/app_server.rs`，AIS 只访问固定 Compass 域名；内置用量插件只能通过 `harness.usage` service 读取缓存或触发固定刷新，不能读取凭据或直接执行命令。
 - 图片使用 App Server 的 `localImage` 输入，普通文件使用结构化路径 mention；附件只保留在输入草稿和 Codex 会话中，不写入 Harness 状态库。
 - 输入框斜杠命令先由 `src/features/conversation/composerCommands.ts` 做精确匹配并在本地执行，不能发送到 App Server；消息中的 HTTP(S) 链接统一经 `src/core/runtime/bridge.ts` 调用系统浏览器打开，不能让 Harness WebView 导航离开应用。
+- macOS 系统通知默认使用 `src-tauri/Info.plist` 中的 `NSUserNotificationAlertStyle=alert`，让通知保留到用户处理；用户仍可在系统通知设置中覆盖展示样式。
 
 ## 本地状态与安全
 

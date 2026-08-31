@@ -22,6 +22,8 @@ import { QueueDock } from './features/conversation/QueueDock'
 import { PluginSettingsDialog, SettingsDialog } from './features/settings/SettingsDialog'
 import { useHarness } from './features/conversation/useHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
+import { useCodexUpdate } from './features/codex/useCodexUpdate'
+import { CodexUpdatePanel } from './features/codex/CodexUpdatePanel'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
 import { conversationTabSupportsFocus } from './features/conversation/tabFocus'
 import { actionForShortcut, threadIndexForAction } from './features/actions/harnessActions'
@@ -124,6 +126,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   codex: ReturnType<typeof useCodexCore>
 }) {
   const plugins = usePluginHost()
+  const codexUpdate = useCodexUpdate(harness.selectedThreadId, codex.reload)
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
   const [focusedTab, setFocusedTab] = useState<string | null>(null)
@@ -332,7 +335,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const currentActiveTurn = harness.activeTurnId
     ? harness.currentDetail?.turns.find((turn) => turn.id === harness.activeTurnId) ?? null
     : null
-  const canMutate = !harness.currentForeignActive
+  const canMutate = !harness.currentForeignActive && !codexUpdate.updating
 
   return (
     <div
@@ -395,6 +398,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
             <ConversationHeader
               thread={harness.currentThread}
               workspace={workspace}
+              gitContextResolved={harness.threadGitCwds[harness.currentThread.id] === harness.currentThread.cwd}
               archived={harness.viewMode === 'archived'}
               pinned={harness.navigation.pinnedThreadIds.includes(harness.currentThread.id)}
               workspaceChanging={Boolean(harness.busy.threadWorkspace)}
@@ -484,7 +488,16 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
                     : undefined)
                 }}
-                newThreadPanels={newThreadPanels.map((panel) => (
+                newThreadPanels={codexUpdate.loading ? null : codexUpdate.visible && codexUpdate.status ? (
+                  <CodexUpdatePanel
+                    status={codexUpdate.status}
+                    updating={codexUpdate.updating}
+                    error={codexUpdate.error}
+                    onInstall={() => void codexUpdate.install()}
+                    onDefer={codexUpdate.defer}
+                    onSkip={() => void codexUpdate.skip()}
+                  />
+                ) : newThreadPanels.map((panel) => (
                   <PluginNewThreadPanel
                     key={`${panel.pluginId}:${panel.contribution.id}`}
                     panel={panel}
@@ -551,10 +564,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 <Composer
                   key={harness.currentThread.id}
                   initialDraft={composerDrafts[harness.currentThread.id]}
-                  disabled={harness.currentForeignActive || Boolean(harness.busy.composer)}
+                  disabled={codexUpdate.updating || harness.currentForeignActive || Boolean(harness.busy.composer)}
                   working={harness.isCurrentWorking}
                   foreignActive={harness.currentForeignActive}
-                  busy={Boolean(harness.busy.composer || harness.busy.stop)}
+                  busy={codexUpdate.updating || Boolean(harness.busy.composer || harness.busy.stop)}
                   contextUsage={harness.currentTokenUsage}
                   workspaceRoot={harness.currentThread?.cwd ?? workspace?.root ?? null}
                   sendShortcut={harness.keyboard.sendShortcut}
@@ -564,7 +577,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   settings={codex.settingsForThread(harness.selectedThreadId)}
                   rawMode={rawMode}
                   followUpMode={harness.keyboard.followUpMode}
-                  settingsDisabled={codex.loading}
+                  settingsDisabled={codex.loading || codexUpdate.updating}
                   onSettingsChange={(patch) => harness.selectedThreadId ? codex.updateThreadSettings(harness.selectedThreadId, patch) : undefined}
                   onFollowUpModeChange={harness.setFollowUpMode}
                   onSend={(input, mode) => {

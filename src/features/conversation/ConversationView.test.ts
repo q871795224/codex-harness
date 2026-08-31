@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
-import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, titleEditorKeyAction } from './ConversationView'
+import { CHOOSE_WORKSPACE_VALUE, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
 import { formatWorkingElapsed } from './ConversationStats'
 import { isFirstUserTurn, parseThreadTitleGenerationSettings, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './useHarness'
 
@@ -25,6 +25,18 @@ describe('titleEditorKeyAction', () => {
   it('saves or cancels outside IME composition', () => {
     expect(titleEditorKeyAction('Enter', false)).toBe('save')
     expect(titleEditorKeyAction('Escape', false)).toBe('cancel')
+  })
+})
+
+describe('thread Git context', () => {
+  it('uses the resolved branch, detached commit, or a non-Git placeholder', () => {
+    expect(threadGitContextLabel({ branch: 'main', sha: 'abcdef0123456789' }, true)).toBe('main')
+    expect(threadGitContextLabel({ branch: null, sha: 'c8f2f1ecd9682c007d9dd732190306333a45c65f' }, true)).toBe('c8f2f1e')
+    expect(threadGitContextLabel(null, true)).toBe('-')
+  })
+
+  it('does not render stale Git metadata before the current CWD is resolved', () => {
+    expect(threadGitContextLabel({ branch: 'main', sha: 'abcdef0123456789' }, false)).toBe('-')
   })
 })
 

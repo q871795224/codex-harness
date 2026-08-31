@@ -41,11 +41,19 @@ pub struct RuntimeVersions {
     pub codex_cli: Option<String>,
 }
 
+#[derive(Debug)]
+pub(crate) struct CodexCommandSummary {
+    pub exit_code: Option<i32>,
+    pub stdout_bytes: usize,
+    pub stderr_bytes: usize,
+}
+
 #[derive(Clone)]
 struct Connection {
     outgoing: mpsc::Sender<String>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>,
     alive: Arc<AtomicBool>,
+    intentional_disconnect: Arc<AtomicBool>,
 }
 
 pub struct AppServerManager {
@@ -103,6 +111,22 @@ impl AppServerManager {
         let connection = self.connection().await?;
         self.send_frame(&connection, json!({ "id": id, "result": result }))
             .await
+    }
+
+    pub(crate) async fn restart_after_update(&self) -> Result<(), String> {
+        let previous = self.connection.lock().await.take();
+        if let Some(connection) = previous {
+            connection.alive.store(false, Ordering::Relaxed);
+            connection
+                .intentional_disconnect
+                .store(true, Ordering::Relaxed);
+        }
+
+        tauri::async_runtime::spawn_blocking(restart_daemon)
+            .await
+            .map_err(|error| format!("等待 Codex App Server 重启任务失败: {error}"))??;
+
+        self.connection().await.map(|_| ())
     }
 
     async fn connection(&self) -> Result<Connection, String> {
@@ -187,6 +211,8 @@ impl AppServerManager {
         let alive = Arc::new(AtomicBool::new(true));
         let writer_alive = alive.clone();
         let reader_alive = alive.clone();
+        let intentional_disconnect = Arc::new(AtomicBool::new(false));
+        let reader_intentional_disconnect = intentional_disconnect.clone();
         let app = self.app.clone();
         let writer_diagnostics = self.diagnostics.clone();
         let reader_diagnostics = self.diagnostics.clone();
@@ -268,13 +294,15 @@ impl AppServerManager {
                             "connection.disconnected",
                             json!({ "errorCode": error_code(&error.to_string()) }),
                         );
-                        let _ = app.emit(
-                            "app-server:transport",
-                            json!({
-                                "kind": "disconnected",
-                                "message": format!("Codex App Server 连接已断开: {error}")
-                            }),
-                        );
+                        if !reader_intentional_disconnect.load(Ordering::Relaxed) {
+                            let _ = app.emit(
+                                "app-server:transport",
+                                json!({
+                                    "kind": "disconnected",
+                                    "message": format!("Codex App Server 连接已断开: {error}")
+                                }),
+                            );
+                        }
                         break;
                     }
                 }
@@ -286,19 +314,22 @@ impl AppServerManager {
             for (_, sender) in waiters.drain() {
                 let _ = sender.send(Err("Codex App Server 连接已关闭。请重试。".to_string()));
             }
-            let _ = app.emit(
-                "app-server:transport",
-                json!({
-                    "kind": "disconnected",
-                    "message": "Codex App Server 连接已关闭。"
-                }),
-            );
+            if !reader_intentional_disconnect.load(Ordering::Relaxed) {
+                let _ = app.emit(
+                    "app-server:transport",
+                    json!({
+                        "kind": "disconnected",
+                        "message": "Codex App Server 连接已关闭。"
+                    }),
+                );
+            }
         });
 
         Connection {
             outgoing,
             pending,
             alive,
+            intentional_disconnect,
         }
     }
 
@@ -387,6 +418,54 @@ pub fn runtime_versions() -> RuntimeVersions {
     }
 }
 
+pub(crate) fn codex_binary_paths() -> (Option<String>, Option<String>) {
+    let selected = find_codex_binary().ok();
+    let resolved = selected
+        .as_ref()
+        .and_then(|path| fs::canonicalize(path).ok());
+    (
+        selected.map(|path| path.display().to_string()),
+        resolved.map(|path| path.display().to_string()),
+    )
+}
+
+pub(crate) fn update_codex_cli() -> Result<CodexCommandSummary, String> {
+    let codex = find_codex_binary()?;
+    let output = codex_command(&codex)
+        .arg("update")
+        .output()
+        .map_err(|error| format!("无法运行 Codex CLI 更新: {error}"))?;
+    let summary = CodexCommandSummary {
+        exit_code: output.status.code(),
+        stdout_bytes: output.stdout.len(),
+        stderr_bytes: output.stderr.len(),
+    };
+    if !output.status.success() {
+        return Err(format!(
+            "Codex CLI 更新失败: {}",
+            command_error_detail(&output.stderr, &output.stdout)
+        ));
+    }
+    Ok(summary)
+}
+
+fn restart_daemon() -> Result<(), String> {
+    let codex = find_codex_binary()?;
+    let mut command = codex_command(&codex);
+    command.args(["app-server", "daemon", "restart"]);
+    raise_open_file_limit(&mut command);
+    let output = command
+        .output()
+        .map_err(|error| format!("无法重启 Codex App Server: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "无法重启 Codex App Server: {}",
+            command_error_detail(&output.stderr, &output.stdout)
+        ));
+    }
+    Ok(())
+}
+
 fn daemon_info(codex: &Path) -> Result<DaemonInfo, String> {
     let output = codex_command(codex)
         .args(["app-server", "daemon", "version"])
@@ -413,6 +492,16 @@ fn cli_version(codex: &Path) -> Result<String, String> {
 
 fn parse_cli_version(output: &str) -> Option<String> {
     output.split_whitespace().last().map(ToOwned::to_owned)
+}
+
+fn command_error_detail(stderr: &[u8], stdout: &[u8]) -> String {
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+    let detail = String::from_utf8_lossy(detail);
+    let trimmed = detail.trim();
+    if trimmed.is_empty() {
+        return "命令没有返回错误详情".to_string();
+    }
+    trimmed.chars().take(1200).collect()
 }
 
 fn codex_command(codex: &Path) -> Command {
