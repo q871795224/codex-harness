@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TerminalService, TerminalSessionInfo } from '../../core/terminal/types'
-import { appendTerminalOutput, TerminalController, terminalPlugin } from './index'
+import { appendTerminalOutput, hasVisibleTerminalOutput, TerminalController, terminalPlugin } from './index'
 
 describe('terminal plugin', () => {
   it('registers as a native-process plugin', () => {
@@ -10,6 +10,11 @@ describe('terminal plugin', () => {
 
   it('keeps only the configured terminal scrollback text', () => {
     expect(appendTerminalOutput('abc', 'def', 4)).toBe('cdef')
+  })
+
+  it('keeps startup feedback visible for control-only shell output', () => {
+    expect(hasVisibleTerminalOutput('\u001b[?2004h\r\n')).toBe(false)
+    expect(hasVisibleTerminalOutput('\u001b[32m❯\u001b[0m ')).toBe(true)
   })
 
   it('replays output that arrives before the create response', async () => {

@@ -29,6 +29,7 @@ interface ComposerProps {
   workspaceRoot: string | null
   sendShortcut: SendShortcut
   focusRequest: number
+  autoFocus?: boolean
   models: CodexModel[]
   settings: ThreadCodexSettings
   rawMode: boolean
@@ -40,6 +41,7 @@ interface ComposerProps {
   onCommand: (command: ComposerCommand) => Promise<void> | void
   onStop: () => Promise<void> | void
   onDraftChange?: (draft: ComposerDraft, hasContent: boolean) => void
+  onCollapse?: () => void
   actions?: (api: ComposerActionApi) => ReactNode
 }
 
@@ -76,7 +78,7 @@ interface ComposerSuggestion {
   complete?: boolean
 }
 
-export function Composer({ initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, models, settings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, actions }: ComposerProps) {
+export function Composer({ initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions }: ComposerProps) {
   const [text, setText] = useState(initialDraft?.text ?? '')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
@@ -93,6 +95,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
   const [composing, setComposing] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const previousFocusRequestRef = useRef(focusRequest)
   const onDraftChangeRef = useRef(onDraftChange)
   const selectedModel = models.find((model) => model.model === settings.model) ?? models[0] ?? null
   const imageUnsupported = attachments.some((item) => item.kind === 'image') && selectedModel !== null && !selectedModel.inputModalities.includes('image')
@@ -130,8 +133,12 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
     onDraftChangeRef.current?.({ text, collapsedPastes, attachments }, hasContent)
   }, [attachments, collapsedPastes, hasContent, text])
 
-  useEffect(() => { ref.current?.focus() }, [disabled])
-  useEffect(() => { ref.current?.focus() }, [focusRequest])
+  useEffect(() => { if (autoFocus) ref.current?.focus() }, [autoFocus, disabled])
+  useEffect(() => {
+    const explicitlyRequested = focusRequest !== previousFocusRequestRef.current
+    previousFocusRequestRef.current = focusRequest
+    if (autoFocus || explicitlyRequested) ref.current?.focus()
+  }, [autoFocus, focusRequest])
 
   useEffect(() => {
     if (!working) setModeOpen(false)
@@ -433,6 +440,11 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
               <option value="never">Never</option>
             </select>
           </div>
+          {onCollapse && (
+            <button type="button" className="composer-collapse-toggle expanded" onClick={onCollapse} aria-label="向下收起对话输入框" title="向下收起对话输入框">
+              <ChevronDown size={12} />
+            </button>
+          )}
           <div className="composer-actions">
             {rawMode && <span className="composer-raw-mode" title="输入 /raw 返回渲染视图">RAW</span>}
             {actions?.({ disabled: disabled || busy, insertSkillPrompt })}

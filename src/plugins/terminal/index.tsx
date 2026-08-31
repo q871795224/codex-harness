@@ -151,7 +151,7 @@ export const terminalPlugin: HarnessPlugin = {
     id: 'builtin.terminal',
     name: '终端',
     description: '在当前工作目录中运行本机 login shell。',
-    version: '1.0.0',
+    version: '1.0.1',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
     permissions: ['process:terminal'],
@@ -185,6 +185,13 @@ export const terminalDefaultInstance: PluginInstanceRecord = {
 
 export function appendTerminalOutput(current: string, data: string, limit = MAX_OUTPUT_CHARS): string {
   return `${current}${data}`.slice(-limit)
+}
+
+export function hasVisibleTerminalOutput(output: string): boolean {
+  return output
+    .replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)?)/g, '')
+    .replace(/[\x00-\x20\x7f]/g, '')
+    .length > 0
 }
 
 function TerminalTab({ controller, service, context }: {
@@ -284,21 +291,31 @@ function TerminalCanvas({ controller, session }: {
     const observer = new ResizeObserver(() => fitTerminal(fit, terminal, controller, session))
     observer.observe(container)
     const focus = () => terminal.focus()
-    container.addEventListener('pointerdown', focus)
+    container.addEventListener('pointerdown', focus, true)
     requestAnimationFrame(() => {
       fitTerminal(fit, terminal, controller, session)
       terminal.focus()
     })
     return () => {
       observer.disconnect()
-      container.removeEventListener('pointerdown', focus)
+      container.removeEventListener('pointerdown', focus, true)
       input.dispose()
       removeListener()
       terminal.dispose()
     }
   }, [controller, session])
 
-  return <div ref={containerRef} className="terminal-canvas" aria-label="终端输入区域" />
+  return (
+    <div className="terminal-canvas" aria-label="终端输入区域">
+      <div ref={containerRef} className="terminal-surface" />
+      {!hasVisibleTerminalOutput(session.output) && !session.error && (
+        <div className="terminal-starting" aria-live="polite">
+          <span>{session.status === 'starting' ? '正在创建终端…' : `正在启动 ${shortPath(session.shell)}…`}</span>
+          <code>{session.cwd}</code>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function fitTerminal(

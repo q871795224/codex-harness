@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
@@ -480,16 +480,18 @@ function HarnessShell({ harness, agentRuns, codex }: {
               />
             ) : null}
 
-            {harness.viewMode === 'active' && composerCollapsible && (
-              <button
-                className={`composer-collapse-toggle ${composerCollapsed ? 'collapsed' : 'expanded'}`}
-                type="button"
-                onClick={() => setCollapsedComposerKeys((current) => ({ ...current, [composerCollapseKey]: !composerCollapsed }))}
-                aria-label={composerCollapsed ? '展开对话输入框' : '向下收起对话输入框'}
-                title={composerCollapsed ? '展开对话输入框' : '向下收起对话输入框'}
-              >
-                {composerCollapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-              </button>
+            {harness.viewMode === 'active' && composerCollapsible && composerCollapsed && (
+              <div className="composer-collapsed-handle">
+                <button
+                  className="composer-collapse-toggle collapsed"
+                  type="button"
+                  onClick={() => setCollapsedComposerKeys((current) => ({ ...current, [composerCollapseKey]: false }))}
+                  aria-label="展开对话输入框"
+                  title="展开对话输入框"
+                >
+                  <ChevronUp size={12} />
+                </button>
+              </div>
             )}
 
             {composerVisible && (
@@ -516,6 +518,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   workspaceRoot={harness.currentThread?.cwd ?? workspace?.root ?? null}
                   sendShortcut={harness.keyboard.sendShortcut}
                   focusRequest={composerFocusRequest}
+                  autoFocus={!composerCollapsible}
                   models={codex.models}
                   settings={codex.settingsForThread(harness.selectedThreadId)}
                   rawMode={rawMode}
@@ -538,6 +541,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     else if (command.name === 'permissions' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { approvalPolicy: command.approvalPolicy })
                   }}
                   onStop={harness.stopTurn}
+                  onCollapse={composerCollapsible
+                    ? () => setCollapsedComposerKeys((current) => ({ ...current, [composerCollapseKey]: true }))
+                    : undefined}
                   actions={(api) => composerActions.map((action) => (
                     <PluginComposerAction
                       key={`${action.pluginId}:${action.contribution.id}`}
