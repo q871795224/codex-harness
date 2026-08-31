@@ -12,7 +12,7 @@ import type { HarnessFilesService, HarnessInstructionConfig } from './core/harne
 import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
-import { resolveQuickPanelAnchor } from './core/plugins/quickPanelLayout'
+import { resolveQuickPanelAnchor, shouldShowQuickPanels } from './core/plugins/quickPanelLayout'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
@@ -23,6 +23,7 @@ import { PluginSettingsDialog, SettingsDialog } from './features/settings/Settin
 import { useHarness } from './features/conversation/useHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
+import { conversationTabSupportsFocus } from './features/conversation/tabFocus'
 import { actionForShortcut, threadIndexForAction } from './features/actions/harnessActions'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 import type { UsageService } from './core/usage/types'
@@ -172,12 +173,14 @@ function HarnessShell({ harness, agentRuns, codex }: {
     workspaceRoot: workspace?.root ?? null,
   })
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
-  const tabFocused = focusedTab === tab && Boolean(selectedPluginTab?.contribution.focusable)
-  const composerCollapsible = Boolean(selectedPluginTab?.contribution.collapsibleComposer)
+  const tabFocusable = conversationTabSupportsFocus(selectedPluginTab?.contribution ?? null)
+  const tabFocused = focusedTab === tab && tabFocusable
+  const composerCollapsible = selectedPluginTab !== null
   const composerCollapseKey = `${harness.selectedThreadId ?? 'none'}:${tab}`
   const composerCollapsed = composerCollapsible && Boolean(collapsedComposerKeys[composerCollapseKey])
   const composerVisible = harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
   const quickPanelBottom = resolveQuickPanelAnchor(composerVisible, quickActionBottom)
+  const quickPanelsVisible = shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
   const orderedTabIds = orderConversationTabs(
     ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
@@ -230,8 +233,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
   }, [selectedPluginTab, tab])
 
   useEffect(() => {
-    if (focusedTab && (!selectedPluginTab?.contribution.focusable || focusedTab !== tab)) setFocusedTab(null)
-  }, [focusedTab, selectedPluginTab, tab])
+    if (focusedTab && (!tabFocusable || focusedTab !== tab)) setFocusedTab(null)
+  }, [focusedTab, tab, tabFocusable])
 
   useEffect(() => {
     void runtime.setWindowTheme(harness.appearance.theme).catch(() => undefined)
@@ -247,10 +250,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
     if (actionId === 'thread.new') void harness.createThread()
     else if (actionId === 'sidebar.toggle') harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)
     else if (actionId === 'composer.focus') setComposerFocusRequest((current) => current + 1)
-    else if (actionId === 'tab.focus.toggle' && selectedPluginTab?.contribution.focusable) {
+    else if (actionId === 'tab.focus.toggle' && tabFocusable) {
       setFocusedTab((current) => current === tab ? null : tab)
     }
-  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.setSidebarCollapsed, selectedPluginTab, tab, visibleThreadIds])
+  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.setSidebarCollapsed, tab, tabFocusable, visibleThreadIds])
 
   useEffect(() => {
     if (settingsOpen || pluginsOpen) return undefined
@@ -587,7 +590,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
           </Fragment>
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread()} onWorkspace={() => void harness.chooseWorkspace()} />}
       </main>
-      {harness.currentThread && harness.viewMode === 'active' && (
+      {quickPanelsVisible && harness.currentThread && (
         <>
           <QuickCommandPanel commands={quickCommands} anchorBottom={quickPanelBottom} />
           <QuickActionPanel

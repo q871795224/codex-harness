@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TerminalService, TerminalSessionInfo } from '../../core/terminal/types'
-import { appendTerminalOutput, hasVisibleTerminalOutput, TerminalController, terminalPlugin } from './index'
+import { appendTerminalOutput, hasVisibleTerminalOutput, shouldShowTerminalStartup, TerminalController, terminalPlugin } from './index'
 
 describe('terminal plugin', () => {
   it('registers as a native-process plugin', () => {
@@ -15,6 +15,10 @@ describe('terminal plugin', () => {
   it('keeps startup feedback visible for control-only shell output', () => {
     expect(hasVisibleTerminalOutput('\u001b[?2004h\r\n')).toBe(false)
     expect(hasVisibleTerminalOutput('\u001b[32m❯\u001b[0m ')).toBe(true)
+    expect(shouldShowTerminalStartup('starting', '', null, 20_000)).toBe(true)
+    expect(shouldShowTerminalStartup('running', '\u001b[?2004h\r\n', null, 2_999)).toBe(true)
+    expect(shouldShowTerminalStartup('running', '\u001b[?2004h\r\n', null, 3_000)).toBe(false)
+    expect(shouldShowTerminalStartup('running', 'prompt', null, 10)).toBe(false)
   })
 
   it('replays output that arrives before the create response', async () => {

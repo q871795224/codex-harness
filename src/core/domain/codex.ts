@@ -228,12 +228,22 @@ export interface CodexSkill {
 
 export interface McpServerStatus {
   name: string
-  runtimeStatus: string | { state?: string; [key: string]: unknown } | null
+  runtimeStatus: McpRuntimeStatus | null
   pluginId: string | null
   tools: Record<string, unknown>
   resources: unknown[]
   authStatus: string | { state?: string; [key: string]: unknown }
+  startupError?: string | null
 }
+
+export type McpRuntimeStatus =
+  | 'notStarted'
+  | 'starting'
+  | 'connected'
+  | 'authenticationRequired'
+  | 'failed'
+  | 'cancelled'
+  | 'disabled'
 
 export interface Turn {
   id: string

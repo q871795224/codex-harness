@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { ApprovalPolicy, CodexConfig, CodexModel, McpServerStatus, ThreadCodexSettings } from '../../core/domain/codex'
+import type { ApprovalPolicy, CodexConfig, CodexModel, McpRuntimeStatus, McpServerStatus, ThreadCodexSettings } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
+import { startupRuntimeStatus } from './mcpStatus'
 
 export type { ThreadCodexSettings } from '../../core/domain/codex'
 
@@ -17,6 +18,11 @@ interface McpServerListResponse {
   data: McpServerStatus[]
 }
 
+interface McpStartupUpdate {
+  runtimeStatus: McpRuntimeStatus
+  error: string | null
+}
+
 const FALLBACK_APPROVAL: ApprovalPolicy = 'on-request'
 
 export function useCodexCore() {
@@ -24,6 +30,7 @@ export function useCodexCore() {
   const [config, setConfig] = useState<CodexConfig>({ model: null, model_reasoning_effort: null, approval_policy: null })
   const [threadSettings, setThreadSettings] = useState<Record<string, ThreadCodexSettings>>({})
   const [mcpServers, setMcpServers] = useState<McpServerStatus[]>([])
+  const [mcpStartupUpdates, setMcpStartupUpdates] = useState<Record<string, McpStartupUpdate>>({})
   const [mcpLoading, setMcpLoading] = useState(true)
   const [mcpError, setMcpError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -65,6 +72,24 @@ export function useCodexCore() {
   }, [])
 
   useEffect(() => { void refreshMcp() }, [refreshMcp])
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void runtime.listenEvents((event) => {
+      if (event.method !== 'mcpServer/startupStatus/updated') return
+      const name = typeof event.params?.name === 'string' ? event.params.name : null
+      const status = startupRuntimeStatus(event.params?.status)
+      if (!name || !status) return
+      setMcpStartupUpdates((current) => ({
+        ...current,
+        [name]: {
+          runtimeStatus: status,
+          error: typeof event.params?.error === 'string' ? event.params.error : null,
+        },
+      }))
+    }).then((next) => { unlisten = next })
+    return () => { unlisten?.() }
+  }, [])
 
   const reloadMcp = useCallback(async () => {
     setMcpError(null)
@@ -114,7 +139,12 @@ export function useCodexCore() {
     }
   }, [])
 
-  return { models, config, defaults, loading, error, reload, settingsForThread, updateThreadSettings, updateDefault, mcpServers, mcpLoading, mcpError, reloadMcp }
+  const displayedMcpServers = useMemo(() => mcpServers.map((server) => {
+    const update = mcpStartupUpdates[server.name]
+    return update ? { ...server, runtimeStatus: update.runtimeStatus, startupError: update.error } : server
+  }), [mcpServers, mcpStartupUpdates])
+
+  return { models, config, defaults, loading, error, reload, settingsForThread, updateThreadSettings, updateDefault, mcpServers: displayedMcpServers, mcpLoading, mcpError, reloadMcp }
 }
 
 function resolveDefaults(models: CodexModel[], config: CodexConfig): ThreadCodexSettings {

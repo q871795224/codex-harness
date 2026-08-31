@@ -7,8 +7,10 @@ import type { TerminalEvent, TerminalService } from '../../core/terminal/types'
 import type { ConversationTabProps, HarnessPlugin, PluginInstanceRecord } from '../../extensions/types'
 
 const MAX_OUTPUT_CHARS = 2_000_000
+const TERMINAL_STARTUP_OUTPUT_GRACE_MS = 3_000
+const TERMINAL_SLOW_CREATE_MS = 5_000
 
-type SessionStatus = 'starting' | 'running' | 'exited' | 'failed'
+export type SessionStatus = 'starting' | 'running' | 'exited' | 'failed'
 
 interface ManagedTerminalSession {
   key: string
@@ -18,6 +20,9 @@ interface ManagedTerminalSession {
   output: string
   status: SessionStatus
   error: string | null
+  requestedAt: number
+  runningAt: number | null
+  receivedOutput: boolean
   pendingInput: string
   listeners: Set<(data: string) => void>
 }
@@ -40,6 +45,9 @@ export class TerminalController {
       output: '',
       status: 'starting',
       error: null,
+      requestedAt: Date.now(),
+      runningAt: null,
+      receivedOutput: false,
       pendingInput: '',
       listeners: new Set(),
     }
@@ -61,10 +69,19 @@ export class TerminalController {
       return
     }
     if (event.type === 'output') {
+      if (!session.receivedOutput) {
+        session.receivedOutput = true
+        console.info('[terminal] first output', {
+          sessionId: event.sessionId,
+          bytes: event.data.length,
+          elapsedMs: Date.now() - session.requestedAt,
+        })
+      }
       session.output = appendTerminalOutput(session.output, event.data)
       this.notify(session, event.data)
       return
     }
+    console.info('[terminal] exited', { sessionId: event.sessionId, elapsedMs: Date.now() - session.requestedAt })
     session.status = 'exited'
     session.id = null
     this.notify(session, '')
@@ -115,11 +132,25 @@ export class TerminalController {
   }
 
   private async start(session: ManagedTerminalSession): Promise<void> {
+    console.info('[terminal] create requested', { key: session.key, cwd: session.cwd })
+    const slowCreateTimer = globalThis.setTimeout(() => {
+      console.warn('[terminal] create is taking longer than expected', {
+        key: session.key,
+        cwd: session.cwd,
+        elapsedMs: Date.now() - session.requestedAt,
+      })
+    }, TERMINAL_SLOW_CREATE_MS)
     try {
       const created = await this.service.create(session.cwd, 100, 30)
       session.id = created.sessionId
       session.shell = created.shell
       session.status = 'running'
+      session.runningAt = Date.now()
+      console.info('[terminal] created', {
+        sessionId: created.sessionId,
+        shell: created.shell,
+        elapsedMs: session.runningAt - session.requestedAt,
+      })
       this.notify(session, '')
       if (session.pendingInput) {
         const pendingInput = session.pendingInput
@@ -131,12 +162,15 @@ export class TerminalController {
       for (const event of pending) this.handleEvent(event)
     } catch (error) {
       this.fail(session, error)
+    } finally {
+      globalThis.clearTimeout(slowCreateTimer)
     }
   }
 
   private fail(session: ManagedTerminalSession, error: unknown): void {
     session.status = 'failed'
     session.error = messageOf(error)
+    console.error('[terminal] failed', { key: session.key, error: session.error, elapsedMs: Date.now() - session.requestedAt })
     this.notify(session, '')
   }
 
@@ -151,7 +185,7 @@ export const terminalPlugin: HarnessPlugin = {
     id: 'builtin.terminal',
     name: '终端',
     description: '在当前工作目录中运行本机 login shell。',
-    version: '1.0.1',
+    version: '1.0.2',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
     permissions: ['process:terminal'],
@@ -167,7 +201,6 @@ export const terminalPlugin: HarnessPlugin = {
       label: '终端',
       order: 40,
       icon: SquareTerminal,
-      collapsibleComposer: true,
       render: (props) => <TerminalTab controller={controller} service={service} context={props} />,
     })
   },
@@ -192,6 +225,11 @@ export function hasVisibleTerminalOutput(output: string): boolean {
     .replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)?)/g, '')
     .replace(/[\x00-\x20\x7f]/g, '')
     .length > 0
+}
+
+export function shouldShowTerminalStartup(status: SessionStatus, output: string, error: string | null, runningForMs: number): boolean {
+  if (error || status === 'failed' || status === 'exited' || hasVisibleTerminalOutput(output)) return false
+  return status === 'starting' || runningForMs < TERMINAL_STARTUP_OUTPUT_GRACE_MS
 }
 
 function TerminalTab({ controller, service, context }: {
@@ -249,6 +287,21 @@ function TerminalCanvas({ controller, session }: {
   session: ManagedTerminalSession
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [, setStartupClock] = useState(0)
+
+  useEffect(() => {
+    if (session.error || hasVisibleTerminalOutput(session.output)) return undefined
+    const deadline = session.status === 'starting'
+      ? session.requestedAt + TERMINAL_SLOW_CREATE_MS
+      : session.status === 'running' && session.runningAt
+        ? session.runningAt + TERMINAL_STARTUP_OUTPUT_GRACE_MS
+        : null
+    if (!deadline) return undefined
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return undefined
+    const timer = window.setTimeout(() => setStartupClock((current) => current + 1), remaining)
+    return () => window.clearTimeout(timer)
+  }, [session.error, session.output, session.requestedAt, session.runningAt, session.status])
 
   useEffect(() => {
     const container = containerRef.current
@@ -305,12 +358,16 @@ function TerminalCanvas({ controller, session }: {
     }
   }, [controller, session])
 
+  const runningForMs = session.runningAt ? Date.now() - session.runningAt : 0
+  const showStartup = shouldShowTerminalStartup(session.status, session.output, session.error, runningForMs)
+  const slowCreate = session.status === 'starting' && Date.now() - session.requestedAt >= TERMINAL_SLOW_CREATE_MS
+
   return (
     <div className="terminal-canvas" aria-label="终端输入区域">
       <div ref={containerRef} className="terminal-surface" />
-      {!hasVisibleTerminalOutput(session.output) && !session.error && (
+      {showStartup && (
         <div className="terminal-starting" aria-live="polite">
-          <span>{session.status === 'starting' ? '正在创建终端…' : `正在启动 ${shortPath(session.shell)}…`}</span>
+          <span>{slowCreate ? '终端创建时间较长，请尝试重启' : session.status === 'starting' ? '正在创建终端…' : `正在启动 ${shortPath(session.shell)}…`}</span>
           <code>{session.cwd}</code>
         </div>
       )}

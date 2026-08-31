@@ -6,6 +6,7 @@ import { DEFAULT_FONT_SIZES, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN
 import { runtime } from '../../core/runtime/bridge'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 import type { useCodexCore } from '../codex/useCodexCore'
+import { mcpNeedsAttention, mcpStatusLabel } from '../codex/mcpStatus'
 import { conflictingAction, formatShortcut, harnessActionDefinitions, shortcutFromEvent } from '../actions/harnessActions'
 import { ConversationStats } from '../conversation/ConversationStats'
 import {
@@ -375,15 +376,21 @@ function SkillsSettings({ workspaceRoot }: { workspaceRoot: string | null }) {
 }
 
 function McpSettings({ codex }: { codex: ReturnType<typeof useCodexCore> }) {
+  const attentionCount = codex.mcpServers.filter((server) => {
+    const enabled = codex.config.mcp_servers?.[server.name]?.enabled !== false
+    return enabled && mcpNeedsAttention(server.runtimeStatus)
+  }).length
   return (
     <div className="settings-section codex-settings">
       <section className="codex-setting-card">
-        <div className="settings-section-title"><Server size={17} /><div><h3>已配置服务</h3><p>显示 Codex 全局配置中的 MCP 服务及运行状态。</p></div><button type="button" className="codex-refresh-button" disabled={codex.mcpLoading} onClick={() => void codex.reloadMcp()}><RefreshCw size={14} /></button></div>
+        <div className="settings-section-title"><Server size={17} /><div><h3>已配置服务</h3><p>{attentionCount > 0 ? `${attentionCount} 个 MCP 服务需要处理。` : '显示 Codex 全局配置中的 MCP 服务及运行状态。'}</p></div><button type="button" className="codex-refresh-button" disabled={codex.mcpLoading} onClick={() => void codex.reloadMcp()}><RefreshCw size={14} /></button></div>
         <div className="codex-inventory-list">
           {codex.mcpServers.map((server) => {
             const toolCount = Object.keys(server.tools ?? {}).length
             const enabled = codex.config.mcp_servers?.[server.name]?.enabled !== false
-            return <div className="codex-inventory-row" key={server.name}><div><strong>{server.name}</strong><small>{toolCount} 个工具{server.pluginId ? ` · 插件：${server.pluginId}` : ''}</small></div><span className={`codex-runtime-status ${enabled ? 'enabled' : 'disabled'}`}>{enabled ? '已启用' : '已停用'}</span></div>
+            const status = enabled ? server.runtimeStatus ?? 'notStarted' : 'disabled'
+            const detail = `${toolCount} 个工具${server.pluginId ? ` · 插件：${server.pluginId}` : ''}${server.startupError ? ` · ${server.startupError}` : ''}`
+            return <div className="codex-inventory-row" key={server.name}><div><strong>{server.name}</strong><small title={server.startupError ?? undefined}>{detail}</small></div><span className={`codex-runtime-status ${status}`}>{mcpStatusLabel(status)}</span></div>
           })}
           {!codex.mcpLoading && codex.mcpServers.length === 0 && <div className="codex-empty">没有配置 MCP 服务。</div>}
         </div>
