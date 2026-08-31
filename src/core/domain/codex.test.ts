@@ -18,6 +18,7 @@ import {
   parseThreadCreditUsage,
   rebaseSandboxPolicy,
   sortThreads,
+  sortWorkspaces,
   sortWorkspacesByRecentThread,
   textInput,
   threadTitle,
@@ -237,6 +238,17 @@ describe('thread list activity', () => {
       .toEqual(['newest', 'newer', 'old'])
   })
 
+  it('keeps a user-pinned thread above the normal sort result', () => {
+    const active = makeThread({ id: 'active', updatedAt: 30, recencyAt: 30, status: { type: 'active', activeFlags: [] } })
+    const pinned = makeThread({ id: 'pinned', updatedAt: 10, recencyAt: 10 })
+    const recent = makeThread({ id: 'recent', updatedAt: 20, recencyAt: 20 })
+
+    expect(sortThreads([active, pinned, recent], 'recent', [], ['pinned']).map((thread) => thread.id))
+      .toEqual(['pinned', 'active', 'recent'])
+    expect(sortThreads([active, pinned, recent], 'manual', ['recent', 'active'], ['pinned']).map((thread) => thread.id))
+      .toEqual(['pinned', 'recent', 'active'])
+  })
+
   it('updates both server timestamps when local turn activity arrives', () => {
     const touched = touchThreadActivity(makeThread({ updatedAt: 10, recencyAt: 12 }), 30)
 
@@ -288,5 +300,33 @@ describe('sortWorkspacesByRecentThread', () => {
       threads,
       { alpha: alpha.root, beta: beta.root },
     ).map((workspace) => workspace.root)).toEqual([beta.root, alpha.root])
+  })
+})
+
+describe('sortWorkspaces', () => {
+  it('keeps pinned workspaces above both stable and recent workspace order', () => {
+    const alpha = makeWorkspace('/work/alpha')
+    const beta = makeWorkspace('/work/beta')
+    const gamma = makeWorkspace('/work/gamma')
+    const threads = [
+      makeThread({ id: 'alpha', updatedAt: 30, recencyAt: 30 }),
+      makeThread({ id: 'beta', updatedAt: 20, recencyAt: 20 }),
+    ]
+
+    expect(sortWorkspaces(
+      [alpha, beta, gamma],
+      'stable',
+      threads,
+      { alpha: alpha.root, beta: beta.root },
+      [gamma.root],
+    ).map((workspace) => workspace.root)).toEqual([gamma.root, alpha.root, beta.root])
+
+    expect(sortWorkspaces(
+      [alpha, beta, gamma],
+      'recent',
+      threads,
+      { alpha: alpha.root, beta: beta.root },
+      [gamma.root],
+    ).map((workspace) => workspace.root)).toEqual([gamma.root, alpha.root, beta.root])
   })
 })

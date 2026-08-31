@@ -22,6 +22,8 @@ import {
   LayoutList,
   ListTree,
   LoaderCircle,
+  Pin,
+  PinOff,
   RefreshCw,
   Search,
   Settings2,
@@ -36,7 +38,7 @@ import type {
   Workspace,
   WorkspaceSort,
 } from '../../core/domain/codex'
-import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sortThreads, sortWorkspacesByRecentThread } from '../../core/domain/codex'
+import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sortThreads, sortWorkspaces } from '../../core/domain/codex'
 import { relativeTime, truncate } from '../../core/domain/format'
 import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
 import harnessIcon from '../../../icon/codex-harness.svg'
@@ -54,6 +56,8 @@ interface SidebarProps {
   threadSort: ThreadSort
   workspaceSort: WorkspaceSort
   manualThreadOrder: string[]
+  pinnedThreadIds: string[]
+  pinnedWorkspaceRoots: string[]
   sidebarWidth: number
   sidebarCollapsed: boolean
   creatingThread: boolean
@@ -69,6 +73,8 @@ interface SidebarProps {
   onThreadSort: (sort: ThreadSort) => void
   onWorkspaceSort: (sort: WorkspaceSort) => void
   onManualThreadOrder: (order: string[]) => void
+  onToggleThreadPinned: (threadId: string) => void
+  onToggleWorkspacePinned: (workspaceRoot: string) => void
   onSidebarWidth: (width: number) => void
   onOpenSettings: () => void
   onOpenPlugins: () => void
@@ -86,6 +92,8 @@ export function Sidebar({
   threadSort,
   workspaceSort,
   manualThreadOrder,
+  pinnedThreadIds,
+  pinnedWorkspaceRoots,
   sidebarWidth,
   sidebarCollapsed,
   creatingThread,
@@ -101,6 +109,8 @@ export function Sidebar({
   onThreadSort,
   onWorkspaceSort,
   onManualThreadOrder,
+  onToggleThreadPinned,
+  onToggleWorkspacePinned,
   onSidebarWidth,
   onOpenSettings,
   onOpenPlugins,
@@ -193,15 +203,13 @@ export function Sidebar({
   }, [onSidebarWidth, resizing])
 
   const orderedThreads = useMemo(
-    () => sortThreads(threads, threadSort, dragPreviewOrder ?? manualThreadOrder),
-    [dragPreviewOrder, manualThreadOrder, threadSort, threads],
+    () => sortThreads(threads, threadSort, dragPreviewOrder ?? manualThreadOrder, pinnedThreadIds),
+    [dragPreviewOrder, manualThreadOrder, pinnedThreadIds, threadSort, threads],
   )
 
   const orderedWorkspaces = useMemo(
-    () => workspaceSort === 'recent'
-      ? sortWorkspacesByRecentThread(workspaces, threads, threadRoots)
-      : workspaces,
-    [threadRoots, threads, workspaceSort, workspaces],
+    () => sortWorkspaces(workspaces, workspaceSort, threads, threadRoots, pinnedWorkspaceRoots),
+    [pinnedWorkspaceRoots, threadRoots, threads, workspaceSort, workspaces],
   )
 
   const grouped = useMemo(() => {
@@ -324,12 +332,14 @@ export function Sidebar({
       groupKey={groupKey}
       visibleCount={visibleCounts[groupKey]}
       manualSort={threadSort === 'manual'}
+      pinnedThreadIds={pinnedThreadIds}
       draggedThreadId={draggedThreadId}
       threadDrop={threadDrop}
       onPointerStart={startThreadDrag}
       onPointerMove={previewThreadDrag}
       onPointerFinish={finishThreadDrag}
       suppressClick={() => suppressThreadClick.current}
+      onTogglePinned={onToggleThreadPinned}
       onShowMore={() => setVisibleCounts((current) => ({
         ...current,
         [groupKey]: visibleThreads(items, current[groupKey]).length + 5,
@@ -450,23 +460,32 @@ export function Sidebar({
             {orderedWorkspaces.map((workspace) => {
               const isExpanded = expanded[workspace.root] ?? true
               const workspaceThreads = grouped.byRoot.get(workspace.root) ?? []
+              const pinned = pinnedWorkspaceRoots.includes(workspace.root)
               return (
                 <section className="workspace-group" key={workspace.root}>
-                  <button
-                    type="button"
-                    className={`workspace-row ${highlightedWorkspaceRoot === workspace.root ? 'selected' : ''}`}
-                    onClick={() => {
-                      setHighlightedWorkspaceRoot(workspace.root)
-                      onSelectWorkspace(workspace.root)
-                      setExpanded((current) => ({ ...current, [workspace.root]: !(current[workspace.root] ?? true) }))
-                    }}
-                    title={workspace.root}
-                  >
-                    {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                    <FolderGit2 size={16} />
-                    <span>{workspace.name}</span>
-                    <em>{workspaceThreads.length || ''}</em>
-                  </button>
+                  <div className="workspace-row-shell">
+                    <button
+                      type="button"
+                      className={`workspace-row ${highlightedWorkspaceRoot === workspace.root ? 'selected' : ''}${pinned ? ' pinned' : ''}`}
+                      onClick={() => {
+                        setHighlightedWorkspaceRoot(workspace.root)
+                        onSelectWorkspace(workspace.root)
+                        setExpanded((current) => ({ ...current, [workspace.root]: !(current[workspace.root] ?? true) }))
+                      }}
+                      title={workspace.root}
+                    >
+                      {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                      {pinned && <i className="pinned-marker" aria-hidden />}
+                      <FolderGit2 size={16} />
+                      <span>{workspace.name}</span>
+                      <em>{workspaceThreads.length || ''}</em>
+                    </button>
+                    <SidebarPinButton
+                      pinned={pinned}
+                      subject="工作区"
+                      onToggle={() => onToggleWorkspacePinned(workspace.root)}
+                    />
+                  </div>
                   {isExpanded && renderThreadList(workspaceThreads, workspace.root)}
                 </section>
               )
@@ -544,12 +563,14 @@ function ThreadList({
   groupKey,
   visibleCount,
   manualSort,
+  pinnedThreadIds,
   draggedThreadId,
   threadDrop,
   onPointerStart,
   onPointerMove,
   onPointerFinish,
   suppressClick,
+  onTogglePinned,
   onShowMore,
 }: {
   threads: Thread[]
@@ -559,12 +580,14 @@ function ThreadList({
   groupKey: string
   visibleCount: number | undefined
   manualSort: boolean
+  pinnedThreadIds: string[]
   draggedThreadId: string | null
   threadDrop: { id: string; edge: 'before' | 'after' } | null
   onPointerStart: (event: ReactPointerEvent<HTMLButtonElement>, threadId: string, groupKey: string) => void
   onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void
   onPointerFinish: (event: ReactPointerEvent<HTMLButtonElement>, commit: boolean) => void
   suppressClick: () => boolean
+  onTogglePinned: (threadId: string) => void
   onShowMore: () => void
 }) {
   if (threads.length === 0) return <p className="empty-thread-list">暂无会话</p>
@@ -573,26 +596,34 @@ function ThreadList({
     <div className="thread-list" data-workspace-group={groupKey}>
       {shownThreads.map((thread) => {
         const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null)
+        const pinned = pinnedThreadIds.includes(thread.id)
         return (
-          <button
-            key={thread.id}
-            type="button"
-            data-thread-sort-id={thread.id}
-            className={`thread-row ${selectedThreadId === thread.id ? 'selected' : ''} ${manualSort ? 'manual-sort' : ''}${draggedThreadId === thread.id ? ' dragging' : ''}${threadDrop?.id === thread.id && draggedThreadId !== thread.id ? ` drop-${threadDrop.edge}` : ''}`}
-            onClick={(event) => {
-              if (suppressClick()) event.preventDefault()
-              else onSelect(thread.id)
-            }}
-            onPointerDown={(event) => onPointerStart(event, thread.id, groupKey)}
-            onPointerMove={onPointerMove}
-            onPointerUp={(event) => onPointerFinish(event, true)}
-            onPointerCancel={(event) => onPointerFinish(event, false)}
-            title={thread.name || thread.preview || '新会话'}
-          >
-            <StatusDot badge={badge} />
-            <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
-            <time>{isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
-          </button>
+          <div className="thread-row-shell" key={thread.id}>
+            <button
+              type="button"
+              data-thread-sort-id={thread.id}
+              className={`thread-row ${selectedThreadId === thread.id ? 'selected' : ''} ${manualSort ? 'manual-sort' : ''}${pinned ? ' pinned' : ''}${draggedThreadId === thread.id ? ' dragging' : ''}${threadDrop?.id === thread.id && draggedThreadId !== thread.id ? ` drop-${threadDrop.edge}` : ''}`}
+              onClick={(event) => {
+                if (suppressClick()) event.preventDefault()
+                else onSelect(thread.id)
+              }}
+              onPointerDown={(event) => onPointerStart(event, thread.id, groupKey)}
+              onPointerMove={onPointerMove}
+              onPointerUp={(event) => onPointerFinish(event, true)}
+              onPointerCancel={(event) => onPointerFinish(event, false)}
+              title={thread.name || thread.preview || '新会话'}
+            >
+              {pinned && <i className="pinned-marker" aria-hidden />}
+              <StatusDot badge={badge} />
+              <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
+              <time>{isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
+            </button>
+            <SidebarPinButton
+              pinned={pinned}
+              subject="会话"
+              onToggle={() => onTogglePinned(thread.id)}
+            />
+          </div>
         )
       })}
       {shownThreads.length < threads.length && (
@@ -601,6 +632,22 @@ function ThreadList({
         </button>
       )}
     </div>
+  )
+}
+
+function SidebarPinButton({ pinned, subject, onToggle }: { pinned: boolean; subject: string; onToggle: () => void }) {
+  const label = `${pinned ? '取消置顶' : '置顶'}${subject}`
+  return (
+    <button
+      type="button"
+      className={`sidebar-row-pin ${pinned ? 'pinned' : ''}`}
+      title={label}
+      aria-label={label}
+      aria-pressed={pinned}
+      onClick={onToggle}
+    >
+      {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+    </button>
   )
 }
 

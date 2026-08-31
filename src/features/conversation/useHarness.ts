@@ -84,6 +84,8 @@ const defaultNavigationPreferences: NavigationPreferences = {
   sort: 'recent',
   manualThreadOrder: [],
   workspaceSort: 'stable',
+  pinnedThreadIds: [],
+  pinnedWorkspaceRoots: [],
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   sidebarCollapsed: false,
 }
@@ -214,12 +216,25 @@ function parseNavigationPreferences(raw: string | null): NavigationPreferences {
         ? [...new Set(value.manualThreadOrder.filter((id): id is string => typeof id === 'string'))].slice(0, 500)
         : [],
       workspaceSort: value.workspaceSort === 'recent' ? 'recent' : 'stable',
+      pinnedThreadIds: parsePinnedIdentifiers(value.pinnedThreadIds),
+      pinnedWorkspaceRoots: parsePinnedIdentifiers(value.pinnedWorkspaceRoots),
       sidebarWidth: normalizeSidebarWidth(value.sidebarWidth),
       sidebarCollapsed: value.sidebarCollapsed === true,
     }
   } catch {
     return defaultNavigationPreferences
   }
+}
+
+function parsePinnedIdentifiers(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((id): id is string => typeof id === 'string' && id.length > 0))].slice(0, 500)
+}
+
+function togglePinnedIdentifier(identifiers: string[], identifier: string): string[] {
+  return identifiers.includes(identifier)
+    ? identifiers.filter((item) => item !== identifier)
+    : [identifier, ...identifiers].slice(0, 500)
 }
 
 function parseAppearancePreferences(raw: string | null): AppearancePreferences {
@@ -401,6 +416,20 @@ export function useHarness() {
     updateNavigation((current) => ({
       ...current,
       manualThreadOrder: [...new Set(manualThreadOrder.filter((id) => Boolean(id)))].slice(0, 500),
+    }))
+  }, [updateNavigation])
+
+  const toggleThreadPinned = useCallback((threadId: string) => {
+    updateNavigation((current) => ({
+      ...current,
+      pinnedThreadIds: togglePinnedIdentifier(current.pinnedThreadIds, threadId),
+    }))
+  }, [updateNavigation])
+
+  const toggleWorkspacePinned = useCallback((workspaceRoot: string) => {
+    updateNavigation((current) => ({
+      ...current,
+      pinnedWorkspaceRoots: togglePinnedIdentifier(current.pinnedWorkspaceRoots, workspaceRoot),
     }))
   }, [updateNavigation])
 
@@ -1698,6 +1727,8 @@ export function useHarness() {
     setThreadSort,
     setWorkspaceSort,
     setManualThreadOrder,
+    toggleThreadPinned,
+    toggleWorkspacePinned,
     setSidebarWidth,
     setSidebarCollapsed,
     setFontSize,

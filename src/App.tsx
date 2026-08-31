@@ -360,6 +360,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
         threadSort={harness.navigation.sort}
         workspaceSort={harness.navigation.workspaceSort}
         manualThreadOrder={harness.navigation.manualThreadOrder}
+        pinnedThreadIds={harness.navigation.pinnedThreadIds}
+        pinnedWorkspaceRoots={harness.navigation.pinnedWorkspaceRoots}
         sidebarWidth={harness.navigation.sidebarWidth}
         sidebarCollapsed={harness.navigation.sidebarCollapsed}
         creatingThread={Boolean(harness.busy.createThread)}
@@ -375,6 +377,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onThreadSort={harness.setThreadSort}
         onWorkspaceSort={harness.setWorkspaceSort}
         onManualThreadOrder={harness.setManualThreadOrder}
+        onToggleThreadPinned={harness.toggleThreadPinned}
+        onToggleWorkspacePinned={harness.toggleWorkspacePinned}
         onSidebarWidth={harness.setSidebarWidth}
         onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
         onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
@@ -392,11 +396,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
               thread={harness.currentThread}
               workspace={workspace}
               archived={harness.viewMode === 'archived'}
+              pinned={harness.navigation.pinnedThreadIds.includes(harness.currentThread.id)}
               workspaceChanging={Boolean(harness.busy.threadWorkspace)}
               canChangeWorkspace={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
               onRename={(name) => void harness.renameThread(harness.currentThread!.id, name)}
               onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
               onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
+              onTogglePinned={() => harness.toggleThreadPinned(harness.currentThread!.id)}
               onChooseWorkspace={() => {
                 const threadId = harness.currentThread!.id
                 void harness.chooseWorkspace().then((selected) => selected

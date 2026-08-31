@@ -16,6 +16,8 @@ import {
   GitBranch,
   Image,
   Pencil,
+  Pin,
+  PinOff,
   ShieldAlert,
   Terminal,
   UserRound,
@@ -32,16 +34,18 @@ interface ConversationHeaderProps {
   thread: Thread
   workspace: Workspace | null
   archived: boolean
+  pinned: boolean
   workspaceChanging: boolean
   canChangeWorkspace: boolean
   onRename: (name: string) => void
   onArchive: () => void
   onUnarchive: () => void
+  onTogglePinned: () => void
   onChooseWorkspace: () => void
   headerActions?: ReactNode
 }
 
-export function ConversationHeader({ thread, workspace, archived, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onChooseWorkspace, headerActions }: ConversationHeaderProps) {
+export function ConversationHeader({ thread, workspace, archived, pinned, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -98,15 +102,27 @@ export function ConversationHeader({ thread, workspace, archived, workspaceChang
           {headerActions && <span className="thread-header-actions">{headerActions}</span>}
         </div>
       </div>
-      <button
-        type="button"
-        className="header-action"
-        onClick={archived ? onUnarchive : onArchive}
-        title={archived ? '恢复会话' : '归档会话'}
-      >
-        {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-        {archived ? '恢复' : '归档'}
-      </button>
+      <div className="thread-header-primary-actions">
+        <button
+          type="button"
+          className={`header-action ${pinned ? 'pinned' : ''}`}
+          onClick={onTogglePinned}
+          title={pinned ? '取消置顶会话' : '置顶会话'}
+          aria-pressed={pinned}
+        >
+          {pinned ? <PinOff size={16} /> : <Pin size={16} />}
+          {pinned ? '取消置顶' : '置顶'}
+        </button>
+        <button
+          type="button"
+          className="header-action"
+          onClick={archived ? onUnarchive : onArchive}
+          title={archived ? '恢复会话' : '归档会话'}
+        >
+          {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+          {archived ? '恢复' : '归档'}
+        </button>
+      </div>
     </header>
   )
 }

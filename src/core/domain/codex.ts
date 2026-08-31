@@ -19,6 +19,8 @@ export interface NavigationPreferences {
   sort: ThreadSort
   manualThreadOrder: string[]
   workspaceSort: WorkspaceSort
+  pinnedThreadIds: string[]
+  pinnedWorkspaceRoots: string[]
   sidebarWidth: number
   sidebarCollapsed: boolean
 }
@@ -453,7 +455,7 @@ export function touchThreadActivity(thread: Thread, timestamp = Math.floor(Date.
   return { ...thread, updatedAt: timestamp, recencyAt: timestamp }
 }
 
-export function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: string[]): Thread[] {
+export function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: string[], pinnedThreadIds: string[] = []): Thread[] {
   const byRecentActivity = (left: Thread, right: Thread) => {
     const activeDifference = Number(isActive(right.status)) - Number(isActive(left.status))
     if (activeDifference !== 0) return activeDifference
@@ -462,10 +464,10 @@ export function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: st
     return rightDate - leftDate
   }
   const recentFirst = [...threads].sort(byRecentActivity)
-  if (sort === 'recent') return recentFirst
+  if (sort === 'recent') return prioritizePinned(recentFirst, pinnedThreadIds, (thread) => thread.id)
 
   const ranks = new Map(manualOrder.map((id, index) => [id, index]))
-  return recentFirst.sort((left, right) => {
+  const manuallyOrdered = recentFirst.sort((left, right) => {
     const leftRank = ranks.get(left.id)
     const rightRank = ranks.get(right.id)
     if (leftRank === undefined && rightRank === undefined) return 0
@@ -473,6 +475,7 @@ export function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: st
     if (rightRank === undefined) return 1
     return leftRank - rightRank
   })
+  return prioritizePinned(manuallyOrdered, pinnedThreadIds, (thread) => thread.id)
 }
 
 export function threadsOlderThan(threads: Thread[], cutoff: number): Thread[] {
@@ -501,4 +504,26 @@ export function sortWorkspacesByRecentThread(
     if (leftRecency !== rightRecency) return rightRecency - leftRecency
     return (stableIndex.get(left.root) ?? 0) - (stableIndex.get(right.root) ?? 0)
   })
+}
+
+export function sortWorkspaces(
+  workspaces: Workspace[],
+  sort: WorkspaceSort,
+  threads: Thread[],
+  threadRoots: Record<string, string | null>,
+  pinnedWorkspaceRoots: string[] = [],
+): Workspace[] {
+  const ordered = sort === 'recent'
+    ? sortWorkspacesByRecentThread(workspaces, threads, threadRoots)
+    : [...workspaces]
+  return prioritizePinned(ordered, pinnedWorkspaceRoots, (workspace) => workspace.root)
+}
+
+function prioritizePinned<T>(items: T[], pinnedKeys: string[], keyFor: (item: T) => string): T[] {
+  const pinned = new Set(pinnedKeys)
+  if (pinned.size === 0) return items
+  return [
+    ...items.filter((item) => pinned.has(keyFor(item))),
+    ...items.filter((item) => !pinned.has(keyFor(item))),
+  ]
 }
