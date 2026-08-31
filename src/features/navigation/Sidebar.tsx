@@ -414,7 +414,6 @@ export function Sidebar({
                     <button type="button" className={workspaceSort === 'recent' ? 'selected' : ''} onClick={() => { onWorkspaceSort('recent'); setOptionsOpen(false) }}>
                       <Clock3 size={15} />最近会话
                     </button>
-                    {workspaceSort === 'recent' && <small>按每个工作区最新会话的时间排列。</small>}
                   </>
                 )}
                 <p>会话排序</p>
@@ -424,7 +423,6 @@ export function Sidebar({
                 <button type="button" className={threadSort === 'manual' ? 'selected' : ''} onClick={() => { onThreadSort('manual'); setOptionsOpen(false) }}>
                   手动排序
                 </button>
-                {threadSort === 'manual' && <small>拖拽会话即可调整顺序</small>}
               </div>
             )}
           </div>

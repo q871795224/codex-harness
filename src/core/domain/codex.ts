@@ -266,6 +266,7 @@ export interface ThreadItem extends JsonObject {
   type: string
   id?: string
   text?: string
+  phase?: 'commentary' | 'final_answer' | null
   content?: UserInput[]
   command?: string
   cwd?: string

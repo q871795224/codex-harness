@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -19,11 +19,12 @@ import {
   ShieldAlert,
   Terminal,
   UserRound,
+  Wrench,
 } from 'lucide-react'
-import type { ApprovalRequest, Thread, ThreadItemEntry, Workspace } from '../../core/domain/codex'
+import type { ApprovalRequest, Thread, ThreadItemEntry, Turn, Workspace } from '../../core/domain/codex'
 import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
-import { groupTranscriptItems } from './transcript'
+import { groupTranscriptTurns, summarizeProcessRows, type TranscriptItem, type TranscriptTurn } from './transcript'
 import { runtime } from '../../core/runtime/bridge'
 import { WorkingStatus } from './ConversationStats'
 
@@ -117,6 +118,7 @@ export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode 
 
 interface ConversationViewProps {
   items: ThreadItemEntry[]
+  turns: Turn[]
   approvals: ApprovalRequest[]
   workspace: Workspace | null
   workspaces: Workspace[]
@@ -138,7 +140,7 @@ interface ConversationViewProps {
   onRawModeToggle: () => void
 }
 
-export function ConversationView({ items, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle }: ConversationViewProps) {
+export function ConversationView({ items, turns, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -174,10 +176,12 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
     followingLatest.current = true
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
-  const transcriptRows = rawMode
-    ? items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
-    : groupTranscriptItems(items)
-  const workingMessageIndex = working ? latestAgentMessageIndex(transcriptRows, workingTurnId) : -1
+  const rawTranscriptRows = items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
+  const turnStatuses: Record<string, Turn['status']> = Object.fromEntries(turns.map((turn) => [turn.id, turn.status]))
+  if (workingTurnId) turnStatuses[workingTurnId] = 'inProgress'
+  const transcriptTurns = rawMode ? [] : groupTranscriptTurns(items, turnStatuses)
+  const workingMessageIndex = rawMode && working ? latestAgentMessageIndex(rawTranscriptRows, workingTurnId) : -1
+  const activeTurnHasContent = transcriptTurns.some((turn) => turn.turnId === workingTurnId && (turn.processRows.length > 0 || turn.finalRows.length > 0))
 
   return (
     <section className="conversation-pane" aria-label="对话内容">
@@ -227,17 +231,24 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
               {newThreadPanels}
             </div>
           )}
-          {transcriptRows.map((row, index) => (
+          {rawMode ? rawTranscriptRows.map((row, index) => (
             <ThreadItemView
-              key={`${row.entry.turnId}:${row.entry.item.id ?? index}`}
+              key={transcriptRowKey(row, index)}
               entry={row.entry}
               agentText={row.agentText}
               showAgentLabel={row.showAgentLabel}
-              rawMode={rawMode}
+              rawMode
               workingStartedAt={index === workingMessageIndex ? workingStartedAt : undefined}
             />
+          )) : transcriptTurns.map((turn) => (
+            <TranscriptTurnView
+              key={turn.turnId}
+              turn={turn}
+              working={working && turn.turnId === workingTurnId}
+              workingStartedAt={workingStartedAt}
+            />
           ))}
-          {working && workingMessageIndex < 0 && (
+          {working && (rawMode ? workingMessageIndex < 0 : !activeTurnHasContent) && (
             <article className="message agent-message working-message">
               <div className="message-label"><Bot size={15} />Codex</div>
               <WorkingStatus startedAt={workingStartedAt} />
@@ -255,6 +266,10 @@ export function ConversationView({ items, approvals, workspace, workspaces, work
   )
 }
 
+function transcriptRowKey(row: TranscriptItem, index: number): string {
+  return `${row.entry.turnId}:${row.entry.item.id ?? index}`
+}
+
 export function isNearConversationBottom(scroll: Pick<HTMLElement, 'scrollTop' | 'clientHeight' | 'scrollHeight'>): boolean {
   return scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop <= 48
 }
@@ -266,6 +281,98 @@ export function latestAgentMessageIndex(rows: Array<{ entry: ThreadItemEntry }>,
     if (row.entry.turnId === turnId && row.entry.item.type === 'agentMessage') return index
   }
   return -1
+}
+
+function TranscriptTurnView({ turn, working, workingStartedAt }: { turn: TranscriptTurn; working: boolean; workingStartedAt: number | null }) {
+  const processRows = turn.processRows.filter(isRenderableProcessRow)
+  return (
+    <section className={`conversation-turn${working ? ' running' : ''}`} data-turn-id={turn.turnId}>
+      {turn.userRows.map((row, index) => (
+        <ThreadItemView
+          key={transcriptRowKey(row, index)}
+          entry={row.entry}
+          rawMode={false}
+        />
+      ))}
+      {(processRows.length > 0 || turn.finalRows.length > 0) && (
+        <div className="assistant-turn">
+          {processRows.length > 0 && (
+            <ProcessGroup
+              rows={processRows}
+              status={turn.status}
+              hasFinalAnswer={turn.finalRows.length > 0}
+              working={working}
+              workingStartedAt={workingStartedAt}
+            />
+          )}
+          {turn.finalRows.length > 0 && (
+            <section className="final-answer" aria-label="Codex 最终回答">
+              <div className="final-answer-heading">
+                <span><Bot size={15} />Codex</span>
+                <small>最终回答</small>
+              </div>
+              {turn.finalRows.map((row, index) => (
+                <ThreadItemView
+                  key={transcriptRowKey(row, index)}
+                  entry={row.entry}
+                  agentText={row.agentText}
+                  showAgentLabel={false}
+                  rawMode={false}
+                />
+              ))}
+              {working && <WorkingStatus startedAt={workingStartedAt} />}
+            </section>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ProcessGroup({ rows, status, hasFinalAnswer, working, workingStartedAt }: {
+  rows: TranscriptItem[]
+  status: Turn['status'] | undefined
+  hasFinalAnswer: boolean
+  working: boolean
+  workingStartedAt: number | null
+}) {
+  const keepOpen = working || !hasFinalAnswer || status === 'failed' || status === 'interrupted'
+  const [open, setOpen] = useState(keepOpen)
+
+  useEffect(() => {
+    if (keepOpen) setOpen(true)
+    else setOpen(false)
+  }, [keepOpen])
+
+  const state = working ? 'running' : status === 'failed' ? 'failed' : status === 'interrupted' ? 'interrupted' : 'completed'
+  return (
+    <section className={`process-group ${state}`}>
+      <button type="button" className="process-group-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span className="process-group-title">{working ? 'Codex 正在执行' : status === 'failed' ? '执行失败' : status === 'interrupted' ? '执行已中断' : '执行过程'}</span>
+        <span className="process-group-summary">{summarizeProcessRows(rows)}</span>
+        {state !== 'completed' && <small>{state === 'running' ? '运行中' : state === 'failed' ? '失败' : '已中断'}</small>}
+      </button>
+      {open && (
+        <div className="process-group-body">
+          {rows.map((row, index) => (
+            <ThreadItemView
+              key={transcriptRowKey(row, index)}
+              entry={row.entry}
+              agentText={row.agentText}
+              showAgentLabel={false}
+              rawMode={false}
+            />
+          ))}
+          {working && <WorkingStatus startedAt={workingStartedAt} />}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function isRenderableProcessRow(row: TranscriptItem): boolean {
+  return !['reasoning', 'rawResponse', 'internal'].includes(row.entry.item.type)
 }
 
 export const CHOOSE_WORKSPACE_VALUE = '__choose_workspace__'
@@ -325,9 +432,31 @@ const ThreadItemView = memo(function ThreadItemView({
   if (item.type === 'commandExecution') return <CommandItem item={item} />
   if (item.type === 'fileChange') return <FileChangeItem item={item} />
   if (item.type === 'mcpToolCall') return <McpItem item={item} />
-  // Reasoning and internal raw response payloads intentionally do not enter the chat transcript.
-  return null
+  if (['reasoning', 'rawResponse', 'internal'].includes(item.type)) return null
+  return <GenericActivityItem item={item} />
 })
+
+function GenericActivityItem({ item }: { item: ThreadItemEntry['item'] }) {
+  const labels: Record<string, string> = {
+    webSearch: '网页搜索',
+    dynamicToolCall: '工具调用',
+    collabAgentToolCall: '协作 Agent',
+    imageGeneration: '图片生成',
+    imageView: '查看图片',
+    contextCompaction: '整理上下文',
+    enteredReviewMode: '进入代码审查',
+    exitedReviewMode: '完成代码审查',
+  }
+  return (
+    <article className="tool-card activity-card">
+      <div className="tool-card-head static-head">
+        <Wrench size={14} />
+        <span>{labels[item.type] ?? `活动：${item.type}`}</span>
+        <span>{item.status ?? ''}</span>
+      </div>
+    </article>
+  )
+}
 
 function MessageBody({ text, raw }: { text: string; raw: boolean }) {
   if (raw) return <pre className="raw-response">{text}</pre>

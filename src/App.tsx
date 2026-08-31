@@ -436,6 +436,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
             {tab === 'chat' ? (
               <ConversationView
                 items={harness.currentDetail?.items ?? []}
+                turns={harness.currentDetail?.turns ?? []}
                 approvals={currentApprovals}
                 workspace={workspace}
                 workspaces={harness.workspaces}
