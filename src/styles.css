@@ -140,13 +140,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .brand-name strong { margin-left: 4px; padding: 2px 4px; border-radius: 3px; background: #202228; color: #fff; font-size: 8px; letter-spacing: .055em; vertical-align: 2px; }
 .brand-version { margin-left: auto; color: #a0a4ad; font-size: 10px; }
 
+.new-chat-split { position: relative; display: flex; margin: 0 12px 13px; }
 .new-chat-button {
-  display: flex; align-items: center; justify-content: center; gap: 7px; height: 38px; margin: 0 12px 13px;
-  border: 1px solid #dcdfe4; border-radius: 11px; background: #fff; color: #25272e; font-size: 14px; font-weight: 640;
+  display: flex; flex: 1; align-items: center; justify-content: center; gap: 7px; height: 38px; margin: 0;
+  border: 1px solid #dcdfe4; border-radius: 11px 0 0 11px; background: #fff; color: #25272e; font-size: 14px; font-weight: 640;
   cursor: pointer; box-shadow: 0 1px 1px rgba(24, 28, 35, .025);
 }
 .new-chat-button:hover:not(:disabled) { border-color: #bfc4cc; background: #fdfdfd; }
 .new-chat-button:disabled { color: #9297a1; cursor: wait; }
+.new-chat-provider { display: grid; flex: 0 0 35px; place-items: center; width: 35px; height: 38px; padding: 0; border: 1px solid #dcdfe4; border-left: 0; border-radius: 0 11px 11px 0; background: #fff; color: #727986; cursor: pointer; }
+.new-chat-provider:hover { background: #f7f8fa; color: #303640; }
+.new-chat-provider-menu { position: absolute; z-index: 24; top: 43px; right: 0; left: 0; display: grid; gap: 2px; padding: 5px; border: 1px solid #dfe2e8; border-radius: 10px; background: rgba(255, 255, 255, .98); box-shadow: 0 10px 28px rgba(25, 32, 44, .16); backdrop-filter: blur(12px); }
+.new-chat-provider-menu button { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 6px 9px; border: 0; border-radius: 7px; background: transparent; color: #424955; cursor: pointer; text-align: left; }
+.new-chat-provider-menu button:hover:not(:disabled) { background: #f0f3fb; color: #314cae; }
+.new-chat-provider-menu button:disabled { cursor: not-allowed; opacity: .48; }
+.new-chat-provider-menu button span { display: grid; gap: 2px; }
+.new-chat-provider-menu button strong { font-size: 12px; }
+.new-chat-provider-menu button small { color: #89909b; font-size: 9px; }
+.thread-provider-mark { flex: 0 0 auto; color: #c46d38; }
 
 .sidebar-search { position: relative; display: flex; flex: 1; align-items: center; gap: 7px; height: 29px; min-width: 0; padding: 0 7px; border: 1px solid #e4e6ea; border-radius: 7px; color: #999ea8; background: #fdfdfd; }
 .sidebar-search:focus-within { border-color: #bdc8f7; background: #fff; box-shadow: 0 0 0 3px rgba(105, 130, 245, .08); }
@@ -965,6 +976,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .app-shell[data-theme='dark'] .boot-error,
 .app-shell[data-theme='dark'] .launch-screen { color: #959ca8; }
 .app-shell[data-theme='dark'] .new-chat-button,
+.app-shell[data-theme='dark'] .new-chat-provider,
+.app-shell[data-theme='dark'] .new-chat-provider-menu,
 .app-shell[data-theme='dark'] .sidebar-search,
 .app-shell[data-theme='dark'] .header-action,
 .app-shell[data-theme='dark'] .thread-context-action,
@@ -1001,6 +1014,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .app-shell[data-theme='dark'] .seatalk-confirm button,
 .app-shell[data-theme='dark'] .toast { border-color: #373b44; background: #23262c; color: #cbd0d9; }
 .app-shell[data-theme='dark'] .new-chat-button:hover:not(:disabled),
+.app-shell[data-theme='dark'] .new-chat-provider:hover,
 .app-shell[data-theme='dark'] .sidebar-search:focus-within,
 .app-shell[data-theme='dark'] .settings-close:hover,
 .app-shell[data-theme='dark'] .theme-options > button:hover,
@@ -1009,6 +1023,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .app-shell[data-theme='dark'] .shortcut-setting-row > button.recording,
 .app-shell[data-theme='dark'] .settings-open-logs:hover,
 .app-shell[data-theme='dark'] .settings-versions-refresh:hover:not(:disabled) { border-color: #59647f; background: #2a2e36; }
+.app-shell[data-theme='dark'] .new-chat-provider-menu button { color: #cbd0d9; }
+.app-shell[data-theme='dark'] .new-chat-provider-menu button:hover:not(:disabled) { background: #303540; color: #aebefc; }
+.app-shell[data-theme='dark'] .new-chat-provider-menu button small { color: #858d99; }
 .app-shell[data-theme='dark'] .sidebar-search input,
 .app-shell[data-theme='dark'] .thread-title-editor,
 .app-shell[data-theme='dark'] .settings-row select,

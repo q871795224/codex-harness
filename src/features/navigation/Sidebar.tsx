@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  Sparkles,
   SlidersHorizontal,
 } from 'lucide-react'
 import type {
@@ -65,7 +66,8 @@ interface SidebarProps {
   onSelectThread: (threadId: string) => void
   onSelectWorkspace: (root: string) => void
   onArchiveOldThreads: () => void
-  onNewThread: () => void
+  onNewThread: (provider?: 'codex' | 'claude') => void
+  claudeAvailable?: boolean
   onSearch: (term: string) => void
   onRefresh: () => void
   onViewMode: (mode: 'active' | 'archived') => void
@@ -102,6 +104,7 @@ export function Sidebar({
   onSelectWorkspace,
   onArchiveOldThreads,
   onNewThread,
+  claudeAvailable = false,
   onSearch,
   onRefresh,
   onViewMode,
@@ -123,6 +126,7 @@ export function Sidebar({
   const [highlightedWorkspaceRoot, setHighlightedWorkspaceRoot] = useState<string | null>(null)
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
   const [optionsOpen, setOptionsOpen] = useState(false)
+  const [newThreadMenuOpen, setNewThreadMenuOpen] = useState(false)
   const [resizing, setResizing] = useState(false)
   const [previewWidth, setPreviewWidth] = useState<number | null>(null)
   const [dragPreviewOrder, setDragPreviewOrder] = useState<string[] | null>(null)
@@ -363,10 +367,21 @@ export function Sidebar({
         <span className="brand-version">{isDevelopmentFlavor ? `DEV · v${harnessVersion}` : `v${harnessVersion}`}</span>
       </div>
 
-      <button className="new-chat-button" type="button" onClick={onNewThread} disabled={creatingThread}>
-        {creatingThread ? <LoaderCircle size={16} className="spin" /> : <CirclePlus size={17} />}
-        新会话
-      </button>
+      <div className="new-chat-split">
+        <button className="new-chat-button" type="button" onClick={() => onNewThread('codex')} disabled={creatingThread}>
+          {creatingThread ? <LoaderCircle size={16} className="spin" /> : <CirclePlus size={17} />}
+          新会话
+        </button>
+        <button className="new-chat-provider" type="button" onClick={() => setNewThreadMenuOpen((open) => !open)} aria-label="选择会话 Provider" aria-expanded={newThreadMenuOpen}>
+          <ChevronDown size={14} />
+        </button>
+        {newThreadMenuOpen && (
+          <div className="new-chat-provider-menu" role="menu">
+            <button type="button" onClick={() => { setNewThreadMenuOpen(false); onNewThread('codex') }}><CirclePlus size={15} /><span><strong>Codex</strong><small>App Server 原生会话</small></span></button>
+            <button type="button" disabled={!claudeAvailable} onClick={() => { setNewThreadMenuOpen(false); onNewThread('claude') }}><Sparkles size={15} /><span><strong>Claude</strong><small>{claudeAvailable ? 'AIS Switch · Agent SDK' : 'Claude runtime 不可用'}</small></span></button>
+          </div>
+        )}
+      </div>
 
       <div className="sidebar-scroll">
         <div className={`sidebar-section-heading ${searchOpen ? 'searching' : ''}`}>
@@ -614,6 +629,7 @@ function ThreadList({
               title={thread.name || thread.preview || '新会话'}
             >
               {pinned && <i className="pinned-marker" aria-hidden />}
+              {thread.provider === 'claude' && <Sparkles className="thread-provider-mark" size={12} aria-label="Claude 会话" />}
               <StatusDot badge={badge} />
               <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
               <time>{isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>

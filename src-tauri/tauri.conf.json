@@ -51,6 +51,10 @@
     "active": true,
     "targets": ["app"],
     "icon": ["icons/icon.icns"],
+    "resources": {
+      "claude-adapter/adapter.mjs": "claude-adapter/adapter.mjs",
+      "../node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs": "claude-adapter/sdk.mjs"
+    },
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-"

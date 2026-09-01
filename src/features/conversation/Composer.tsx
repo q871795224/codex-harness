@@ -23,6 +23,7 @@ import { fastServiceTier, fastServiceTierTooltip } from '../codex/serviceTier'
 import { isYoloMode, yoloModeSettings } from '../codex/yoloMode'
 
 interface ComposerProps {
+  provider?: 'codex' | 'claude'
   initialDraft?: ComposerDraft
   disabled: boolean
   working: boolean
@@ -74,7 +75,7 @@ interface ComposerSuggestion {
   complete?: boolean
 }
 
-export function Composer({ initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions }: ComposerProps) {
+export function Composer({ provider = 'codex', initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions }: ComposerProps) {
   const [text, setText] = useState(initialDraft?.text ?? '')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
@@ -107,6 +108,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
   const suggestions = useMemo<ComposerSuggestion[]>(() => {
     if (!trigger || suggestionsDismissed) return []
     if (trigger.kind === 'file') {
+      if (provider === 'claude') return []
       return fileMatches
         .filter((match) => match.match_type === 'file')
         .slice(0, 8)
@@ -118,12 +120,13 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
         }))
     }
     if (trigger.kind === 'command') return attachments.length > 0 ? [] : commandSuggestions(trigger.query, models, selectedModel)
+    if (provider === 'claude') return []
     const query = trigger.query.toLocaleLowerCase()
     return skills
       .filter((skill) => skill.enabled && (!query || skill.name.toLocaleLowerCase().includes(query) || skill.description.toLocaleLowerCase().includes(query)))
       .slice(0, 8)
       .map((skill) => ({ kind: 'skill', name: skill.name, path: skill.path, detail: skill.description }))
-  }, [attachments.length, fileMatches, models, selectedModel, skills, suggestionsDismissed, trigger])
+  }, [attachments.length, fileMatches, models, provider, selectedModel, skills, suggestionsDismissed, trigger])
   const suggestionsOpen = Boolean(trigger && !suggestionsDismissed && !(trigger.kind === 'command' && attachments.length > 0))
 
   useLayoutEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
@@ -159,7 +162,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
   }, [workspaceRoot])
 
   useEffect(() => {
-    if (triggerKind !== 'skill' || !workspaceRoot || loadedSkillsRoot === workspaceRoot) return
+    if (provider === 'claude' || triggerKind !== 'skill' || !workspaceRoot || loadedSkillsRoot === workspaceRoot) return
     let disposed = false
     setSuggestionBusy(true)
     setSuggestionError(null)
@@ -172,10 +175,10 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
       .catch((error) => { if (!disposed) setSuggestionError(error instanceof Error ? error.message : String(error)) })
       .finally(() => { if (!disposed) setSuggestionBusy(false) })
     return () => { disposed = true }
-  }, [loadedSkillsRoot, triggerKind, workspaceRoot])
+  }, [loadedSkillsRoot, provider, triggerKind, workspaceRoot])
 
   useEffect(() => {
-    if (triggerKind !== 'file' || !workspaceRoot) {
+    if (provider === 'claude' || triggerKind !== 'file' || !workspaceRoot) {
       setFileMatches([])
       return undefined
     }
@@ -196,7 +199,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
       disposed = true
       window.clearTimeout(timeout)
     }
-  }, [triggerKind, triggerQuery, workspaceRoot])
+  }, [provider, triggerKind, triggerQuery, workspaceRoot])
 
   useEffect(() => { setHighlightedSuggestion(0) }, [triggerKind, triggerQuery])
 
@@ -211,6 +214,10 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
 
   const submit = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return
+    if (provider === 'claude' && working) {
+      setActionError('Claude 一期暂不支持运行中追加消息，请先停止或等待当前任务完成。')
+      return
+    }
     const command = parseComposerCommand(expandedText, attachments.length > 0)
     if (command) {
       if (settingsLocked && ['model', 'reasoning', 'permissions'].includes(command.name)) {
@@ -332,7 +339,7 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
           ref={ref}
           value={text}
           disabled={disabled || busy}
-          placeholder={foreignActive ? '等待其他客户端完成当前轮' : '给 Codex 发送消息'}
+          placeholder={foreignActive ? '等待其他客户端完成当前轮' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
           onChange={(event) => {
             const nextText = event.target.value
             setActionError(null)
@@ -429,12 +436,12 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
         <div className="composer-footer">
           <div className="composer-left-actions">
             <button type="button" className="composer-icon-button" disabled={disabled || busy || attachmentBusy} onClick={() => void addFiles()} title="添加图片或文件" aria-label="添加图片或文件"><Plus size={17} /></button>
-            <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
+            {provider === 'codex' && <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
               <option value="on-request">On request</option>
               <option value="untrusted">Untrusted</option>
               <option value="never">Never</option>
-            </select>
-            <button
+            </select>}
+            {provider === 'codex' && <button
               type="button"
               className={`yolo-mode-button${yoloEnabled ? ' active' : ''}`}
               disabled={settingsLocked}
@@ -444,8 +451,8 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
               aria-pressed={yoloEnabled}
             >
               <ShieldOff size={14} />
-            </button>
-            {fastTier && (
+            </button>}
+            {provider === 'codex' && fastTier && (
               <button
                 type="button"
                 className={`fast-mode-button${fastEnabled ? ' active' : ''}`}
@@ -467,15 +474,15 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
           <div className="composer-actions">
             {rawMode && <span className="composer-raw-mode" title="输入 /raw 返回渲染视图">RAW</span>}
             {actions?.({ disabled: disabled || busy, insertSkillPrompt })}
-            <div className="model-effort-control">
+            {provider === 'codex' && <div className="model-effort-control">
               <select value={settings.model} disabled={settingsLocked || models.length === 0} onChange={(event) => updateSettings({ model: event.target.value })} aria-label="模型" title={selectedModel?.description ?? '模型'}>
                 {models.map((model) => <option key={model.id} value={model.model}>{model.displayName}</option>)}
               </select>
               <select className="effort-select" data-effort={reasoningEffortTone(settings.effort)} value={settings.effort} disabled={settingsLocked || !selectedModel} onChange={(event) => updateSettings({ effort: event.target.value })} aria-label="推理强度" title={`推理强度：${settings.effort}`}>
                 {(selectedModel?.supportedReasoningEfforts ?? []).map((option) => <option key={option.reasoningEffort} value={option.reasoningEffort}>{option.reasoningEffort}</option>)}
               </select>
-            </div>
-            <ContextRing usage={contextUsage} />
+            </div>}
+            {provider === 'codex' && <ContextRing usage={contextUsage} />}
             <div className="send-control">
               <button
                 type="button"
@@ -487,10 +494,10 @@ export function Composer({ initialDraft, disabled, working, foreignActive, busy,
               >
                 {working && !hasContent ? <Square size={13} fill="currentColor" /> : <Send size={17} />}
               </button>
-              {working && !foreignActive && (
+              {provider === 'codex' && working && !foreignActive && (
                 <button type="button" className="follow-up-toggle" disabled={busy} onClick={() => setModeOpen((open) => !open)} title={`默认：${followUpMode === 'queue' ? '排队' : '插话'}`} aria-label="选择后续消息默认行为"><ChevronDown size={13} /></button>
               )}
-              {working && !foreignActive && modeOpen && (
+              {provider === 'codex' && working && !foreignActive && modeOpen && (
                 <div className="follow-up-menu">
                   <button type="button" className={followUpMode === 'queue' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('queue'); setModeOpen(false) }}><strong>默认排队</strong><small>当前回合完成后，开始新的回合</small></button>
                   <button type="button" className={followUpMode === 'interject' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('interject'); setModeOpen(false) }}><strong>默认插话</strong><small>不停止当前回合，追加新的方向</small></button>

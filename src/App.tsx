@@ -19,7 +19,7 @@ import { Composer, type ComposerDraft } from './features/conversation/Composer'
 import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
-import { useHarness } from './features/conversation/useHarness'
+import { useUnifiedHarness } from './features/conversation/useUnifiedHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { useCodexUpdate } from './features/codex/useCodexUpdate'
 import { CodexUpdatePanel } from './features/codex/CodexUpdatePanel'
@@ -37,7 +37,7 @@ const SettingsDialog = lazy(() => import('./features/settings/SettingsDialog').t
 const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDialog').then((module) => ({ default: module.PluginSettingsDialog })))
 
 export default function App() {
-  const harness = useHarness()
+  const harness = useUnifiedHarness()
   const codex = useCodexCore()
   const agentRuns = useAgentRunService(harness.selectThread, harness.startTurnInThread)
   const harnessInstructionConfig = useRef(resolveHarnessInstructionConfig(codex.config))
@@ -125,12 +125,12 @@ export default function App() {
 }
 
 function HarnessShell({ harness, agentRuns, codex }: {
-  harness: ReturnType<typeof useHarness>
+  harness: ReturnType<typeof useUnifiedHarness>
   agentRuns: AgentRunService
   codex: ReturnType<typeof useCodexCore>
 }) {
   const plugins = usePluginHost()
-  const codexUpdate = useCodexUpdate(harness.selectedThreadId, codex.reload)
+  const codexUpdate = useCodexUpdate(harness.selectedProvider === 'codex' ? harness.selectedThreadId : null, codex.reload)
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
   const [focusedTab, setFocusedTab] = useState<string | null>(null)
@@ -158,36 +158,43 @@ function HarnessShell({ harness, agentRuns, codex }: {
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
   )
   const threadCwd = harness.currentThread?.cwd ?? null
-  const threadHeaderActions = plugins.resolvedThreadHeaderActions({
+  const resolvedThreadHeaderActions = plugins.resolvedThreadHeaderActions({
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
-  const pluginTabs = plugins.resolvedTabs({
+  const resolvedPluginTabs = plugins.resolvedTabs({
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
-  const newThreadPanels = plugins.resolvedNewThreadPanels({
+  const resolvedNewThreadPanels = plugins.resolvedNewThreadPanels({
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
-  const composerActions = plugins.resolvedComposerActions({
+  const resolvedComposerActions = plugins.resolvedComposerActions({
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
-  const quickActions = plugins.resolvedQuickActions({
+  const resolvedQuickActions = plugins.resolvedQuickActions({
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
-  const quickCommands = plugins.resolvedQuickCommands({
+  const resolvedQuickCommands = plugins.resolvedQuickCommands({
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  const codexConversation = harness.selectedProvider === 'codex'
+  const threadHeaderActions = codexConversation ? resolvedThreadHeaderActions : []
+  const pluginTabs = codexConversation ? resolvedPluginTabs : []
+  const newThreadPanels = codexConversation ? resolvedNewThreadPanels : []
+  const composerActions = codexConversation ? resolvedComposerActions : []
+  const quickActions = codexConversation ? resolvedQuickActions : []
+  const quickCommands = codexConversation ? resolvedQuickCommands : []
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
   const tabFocusable = conversationTabSupportsFocus(selectedPluginTab?.contribution ?? null)
   const tabFocused = focusedTab === tab && tabFocusable
@@ -196,7 +203,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const composerCollapsed = composerCollapsible && Boolean(collapsedComposerKeys[composerCollapseKey])
   const composerVisible = harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
   const quickPanelBottom = resolveQuickPanelAnchor(composerVisible, quickActionBottom)
-  const quickPanelsVisible = shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
+  const quickPanelsVisible = codexConversation && shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
   const orderedTabIds = orderConversationTabs(
     ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
@@ -207,16 +214,16 @@ function HarnessShell({ harness, agentRuns, codex }: {
   useEffect(() => {
     const threadId = harness.selectedThreadId
     const threadSettings = harness.currentDetail?.threadSettings
-    if (!threadId || !threadSettings) return
+    if (!codexConversation || !threadId || !threadSettings) return
     const signature = JSON.stringify(threadSettings)
     if (syncedThreadSettingsRef.current.get(threadId) === signature) return
     syncedThreadSettingsRef.current.set(threadId, signature)
     codex.syncThreadSettings(threadId, threadSettings)
-  }, [codex.syncThreadSettings, harness.currentDetail?.threadSettings, harness.selectedThreadId])
+  }, [codex.syncThreadSettings, codexConversation, harness.currentDetail?.threadSettings, harness.selectedThreadId])
 
   useEffect(() => {
     const threadId = harness.selectedThreadId
-    if (!threadId) return undefined
+    if (!codexConversation || !threadId) return undefined
     let disposed = false
     void runtime.readThreadCreditUsage(threadId)
       .then((usage) => {
@@ -224,7 +231,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
       })
       .catch(() => undefined)
     return () => { disposed = true }
-  }, [harness.selectedThreadId, latestTurn?.completedAt, latestTurn?.id])
+  }, [codexConversation, harness.selectedThreadId, latestTurn?.completedAt, latestTurn?.id])
 
   useLayoutEffect(() => {
     const column = inputColumnRef.current
@@ -274,13 +281,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
       if (threadId) void harness.selectThread(threadId)
       return
     }
-    if (actionId === 'thread.new') void harness.createThread()
+    if (actionId === 'thread.new') void harness.createThread(harness.selectedProvider)
     else if (actionId === 'sidebar.toggle') harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)
     else if (actionId === 'composer.focus') setComposerFocusRequest((current) => current + 1)
     else if (actionId === 'tab.focus.toggle' && tabFocusable) {
       setFocusedTab((current) => current === tab ? null : tab)
     }
-  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.setSidebarCollapsed, tab, tabFocusable, visibleThreadIds])
+  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.selectedProvider, harness.setSidebarCollapsed, tab, tabFocusable, visibleThreadIds])
 
   useEffect(() => {
     if (settingsOpen || pluginsOpen) return undefined
@@ -387,7 +394,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onSelectThread={(threadId) => void harness.selectThread(threadId)}
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
         onArchiveOldThreads={() => void harness.archiveOldThreads()}
-        onNewThread={() => void harness.createThread()}
+        onNewThread={(provider) => void harness.createThread(provider)}
+        claudeAvailable={Boolean(harness.claudeStatus?.available)}
         onSearch={(term) => void harness.searchThreads(term)}
         onRefresh={() => void harness.refresh()}
         onViewMode={(mode) => void harness.setViewMode(mode)}
@@ -417,13 +425,14 @@ function HarnessShell({ harness, agentRuns, codex }: {
               archived={harness.viewMode === 'archived'}
               pinned={harness.navigation.pinnedThreadIds.includes(harness.currentThread.id)}
               workspaceChanging={Boolean(harness.busy.threadWorkspace)}
-              canChangeWorkspace={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
+              canChangeWorkspace={codexConversation && canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
               onRename={(name) => void harness.renameThread(harness.currentThread!.id, name)}
               onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
               onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
               onTogglePinned={() => harness.toggleThreadPinned(harness.currentThread!.id)}
               onOpenThread={(threadId) => void harness.openThread(threadId)}
               onChooseWorkspace={() => {
+                if (!codexConversation) return
                 const threadId = harness.currentThread!.id
                 void harness.chooseWorkspace().then((selected) => selected
                   ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
@@ -477,7 +486,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   )
                 })}
               </div>
-              <span className="connection-state"><span />本机 App Server</span>
+              <span className={`connection-state ${codexConversation ? '' : 'claude'}`}><span />{codexConversation ? '本机 App Server' : 'Claude · AIS SDK'}</span>
             </div>
 
             {tab === 'chat' ? (
@@ -496,22 +505,23 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
                 onLoadOlderTurns={() => void harness.loadOlderTurns()}
                 onScrollPosition={(scrollTop) => { conversationScrollPositions.current[harness.currentThread!.id] = scrollTop }}
-                onWorkspaceChange={(workspaceRoot) => harness.selectedThreadId
+                onWorkspaceChange={(workspaceRoot) => codexConversation && harness.selectedThreadId
                   ? void harness.changeThreadWorkspace(harness.selectedThreadId, workspaceRoot)
                   : undefined}
                 onChooseWorkspace={() => {
+                  if (!codexConversation) return
                   const threadId = harness.selectedThreadId
                   void harness.chooseWorkspace().then((selected) => selected && threadId
                     ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
                     : undefined)
                 }}
-                onForkTurn={canMutate && !harness.isCurrentWorking ? (turnId) => void harness.forkThreadAtTurn(turnId) : undefined}
+                onForkTurn={codexConversation && canMutate && !harness.isCurrentWorking ? (turnId) => void harness.forkThreadAtTurn(turnId) : undefined}
                 forkingTurnId={harness.forkingTurnId}
                 onOpenThread={(threadId) => void harness.openThread(threadId)}
-                agentApprovalCounts={Object.fromEntries(Object.entries(harness.approvals).map(([threadId, requests]) => [threadId, requests.length]))}
-                activeTurnIds={harness.activeTurnIds}
-                onInterruptAgent={(threadId) => void harness.interruptAgentThread(threadId)}
-                newThreadPanels={codexUpdate.loading ? null : codexUpdate.visible && codexUpdate.status ? (
+                agentApprovalCounts={codexConversation ? Object.fromEntries(Object.entries(harness.approvals).map(([threadId, requests]) => [threadId, requests.length])) : {}}
+                activeTurnIds={codexConversation ? harness.activeTurnIds : {}}
+                onInterruptAgent={codexConversation ? (threadId) => void harness.interruptAgentThread(threadId) : undefined}
+                newThreadPanels={!codexConversation ? null : codexUpdate.loading ? null : codexUpdate.visible && codexUpdate.status ? (
                   <CodexUpdatePanel
                     status={codexUpdate.status}
                     updating={codexUpdate.updating}
@@ -543,7 +553,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 workingTurnId={currentActiveTurn?.id ?? null}
                 workingStartedAt={currentActiveTurn?.startedAt ?? null}
                 onRawModeToggle={() => setRawMode((current) => !current)}
-                onContinueAfterFailure={canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
+                onContinueAfterFailure={codexConversation && canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
                 continueDisabled={Boolean(harness.busy.composer)}
               />
             ) : selectedPluginTab ? (
@@ -589,6 +599,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 />
                 <Composer
                   key={harness.currentThread.id}
+                  provider={harness.selectedProvider}
                   initialDraft={composerDrafts[harness.currentThread.id]}
                   disabled={codexUpdate.updating || harness.currentForeignActive || Boolean(harness.busy.composer)}
                   working={harness.isCurrentWorking}
@@ -599,12 +610,12 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   sendShortcut={harness.keyboard.sendShortcut}
                   focusRequest={composerFocusRequest}
                   autoFocus={!composerCollapsible}
-                  models={codex.models}
+                  models={codexConversation ? codex.models : []}
                   settings={codex.settingsForThread(harness.selectedThreadId)}
                   rawMode={rawMode}
                   followUpMode={harness.keyboard.followUpMode}
-                  settingsDisabled={codex.loading || codexUpdate.updating}
-                  onSettingsChange={(patch) => harness.selectedThreadId ? codex.updateThreadSettings(harness.selectedThreadId, patch) : undefined}
+                  settingsDisabled={!codexConversation || codex.loading || codexUpdate.updating}
+                  onSettingsChange={(patch) => codexConversation && harness.selectedThreadId ? codex.updateThreadSettings(harness.selectedThreadId, patch) : undefined}
                   onFollowUpModeChange={harness.setFollowUpMode}
                   onSend={(input, mode) => {
                     const threadId = harness.currentThread!.id
@@ -616,9 +627,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     if (command.name === 'raw') setRawMode((current) => !current)
                     else if (command.name === 'new') runAction('thread.new')
                     else if (command.name === 'reset') return harness.resetThread()
-                    else if (command.name === 'model' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { model: command.model })
-                    else if (command.name === 'reasoning' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { effort: command.effort })
-                    else if (command.name === 'permissions' && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { approvalPolicy: command.approvalPolicy })
+                    else if (command.name === 'model' && codexConversation && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { model: command.model })
+                    else if (command.name === 'reasoning' && codexConversation && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { effort: command.effort })
+                    else if (command.name === 'permissions' && codexConversation && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { approvalPolicy: command.approvalPolicy })
                   }}
                   onStop={harness.stopTurn}
                   onCollapse={composerCollapsible
@@ -655,7 +666,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
               </div>
             )}
           </Fragment>
-        ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread()} onWorkspace={() => void harness.chooseWorkspace()} />}
+        ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread('codex')} onWorkspace={() => void harness.chooseWorkspace()} />}
       </main>
       {quickPanelsVisible && harness.currentThread && (
         <>

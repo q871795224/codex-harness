@@ -143,6 +143,7 @@ export type ThreadStatus =
 
 export interface Thread {
   id: string
+  provider?: 'codex' | 'claude'
   sessionId?: string
   forkedFromId?: string | null
   preview: string

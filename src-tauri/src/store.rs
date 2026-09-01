@@ -30,6 +30,27 @@ pub struct ThreadUiState {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ClaudeSessionInput {
+    pub id: String,
+    pub provider_session_id: Option<String>,
+    pub cwd: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeSession {
+    pub id: String,
+    pub provider_session_id: Option<String>,
+    pub cwd: String,
+    pub title: String,
+    pub archived: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginInstanceInput {
     pub instance_id: String,
     pub plugin_id: String,
@@ -176,6 +197,17 @@ impl HarnessStore {
               snapshot_json TEXT NOT NULL,
               fetched_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS claude_sessions (
+              session_id TEXT PRIMARY KEY NOT NULL,
+              provider_session_id TEXT,
+              cwd TEXT NOT NULL,
+              title TEXT NOT NULL,
+              archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1)),
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS claude_sessions_archived_updated
+              ON claude_sessions(archived, updated_at DESC);
             "#,
             )
             .map_err(|error| format!("无法初始化 Codex Harness 本地状态库: {error}"))?;
@@ -288,6 +320,83 @@ impl HarnessStore {
             .map_err(|error| format!("无法读取会话显示状态: {error}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|error| format!("无法读取会话显示状态: {error}"))
+    }
+
+    pub fn list_claude_sessions(&self, archived: bool) -> Result<Vec<ClaudeSession>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT session_id, provider_session_id, cwd, title, archived, created_at, updated_at FROM claude_sessions WHERE archived = ?1 ORDER BY updated_at DESC",
+            )
+            .map_err(|error| format!("无法读取 Claude 会话索引: {error}"))?;
+        let rows = statement
+            .query_map([archived], claude_session_from_row)
+            .map_err(|error| format!("无法读取 Claude 会话索引: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("无法读取 Claude 会话索引: {error}"))
+    }
+
+    pub fn upsert_claude_session(
+        &self,
+        input: &ClaudeSessionInput,
+    ) -> Result<ClaudeSession, String> {
+        if input.id.trim().is_empty() || input.cwd.trim().is_empty() {
+            return Err("Claude session id 和 cwd 不能为空".to_string());
+        }
+        let now = now_ms();
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        connection
+            .execute(
+                r#"
+                INSERT INTO claude_sessions (
+                  session_id, provider_session_id, cwd, title, archived, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5)
+                ON CONFLICT(session_id) DO UPDATE SET
+                  provider_session_id = COALESCE(excluded.provider_session_id, claude_sessions.provider_session_id),
+                  cwd = excluded.cwd,
+                  title = excluded.title,
+                  archived = 0,
+                  updated_at = excluded.updated_at
+                "#,
+                params![
+                    input.id,
+                    input.provider_session_id,
+                    input.cwd,
+                    input.title.trim(),
+                    now,
+                ],
+            )
+            .map_err(|error| format!("无法保存 Claude 会话索引: {error}"))?;
+        connection
+            .query_row(
+                "SELECT session_id, provider_session_id, cwd, title, archived, created_at, updated_at FROM claude_sessions WHERE session_id = ?1",
+                [&input.id],
+                claude_session_from_row,
+            )
+            .map_err(|error| format!("无法读取已保存的 Claude 会话索引: {error}"))
+    }
+
+    pub fn set_claude_session_archived(&self, id: &str, archived: bool) -> Result<(), String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        let changed = connection
+            .execute(
+                "UPDATE claude_sessions SET archived = ?2, updated_at = ?3 WHERE session_id = ?1",
+                params![id, archived, now_ms()],
+            )
+            .map_err(|error| format!("无法更新 Claude 会话归档状态: {error}"))?;
+        if changed == 0 {
+            return Err("Claude 会话不存在".to_string());
+        }
+        Ok(())
     }
 
     pub fn set_app_state(&self, key: &str, value: &str) -> Result<(), String> {
@@ -761,6 +870,18 @@ fn plugin_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PluginRun> {
     })
 }
 
+fn claude_session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClaudeSession> {
+    Ok(ClaudeSession {
+        id: row.get(0)?,
+        provider_session_id: row.get(1)?,
+        cwd: row.get(2)?,
+        title: row.get(3)?,
+        archived: row.get(4)?,
+        created_at: row.get(5)?,
+        updated_at: row.get(6)?,
+    })
+}
+
 pub(crate) fn harness_data_dir() -> Result<PathBuf, String> {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
@@ -835,6 +956,38 @@ mod tests {
         assert_eq!(states[0].thread_id, "thread-1");
         assert_eq!(states[0].last_read_at, Some(42));
         assert_eq!(states[0].badge.as_deref(), Some("success"));
+    }
+
+    #[test]
+    fn persists_claude_session_index_without_transcript() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+        let session = store
+            .upsert_claude_session(&ClaudeSessionInput {
+                id: "claude-local-1".to_string(),
+                provider_session_id: None,
+                cwd: "/workspace/project".to_string(),
+                title: "Claude 会话".to_string(),
+            })
+            .expect("stores Claude session");
+        assert_eq!(session.provider_session_id, None);
+
+        let updated = store
+            .upsert_claude_session(&ClaudeSessionInput {
+                id: session.id.clone(),
+                provider_session_id: Some("provider-1".to_string()),
+                cwd: session.cwd.clone(),
+                title: "Claude 会话".to_string(),
+            })
+            .expect("updates provider session id");
+        assert_eq!(updated.provider_session_id.as_deref(), Some("provider-1"));
+        assert_eq!(store.list_claude_sessions(false).unwrap().len(), 1);
+
+        store
+            .set_claude_session_archived(&session.id, true)
+            .expect("archives Claude session");
+        assert!(store.list_claude_sessions(false).unwrap().is_empty());
+        assert_eq!(store.list_claude_sessions(true).unwrap().len(), 1);
     }
 
     #[test]

@@ -18,6 +18,7 @@
     "tauri:build:dev": "tauri build --config src-tauri/tauri.dev.conf.json --target universal-apple-darwin"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.252",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2.0.0",

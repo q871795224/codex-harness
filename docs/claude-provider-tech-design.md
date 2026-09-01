@@ -1,0 +1,291 @@
+# Claude Provider 接入技术设计
+
+状态：AIS SDK Spike 已通过；一期代码已完成，待交互验收
+
+最后更新：2026-09-01
+
+Source of truth：本文档
+
+## 结论
+
+Codex Harness 将 Claude Code 作为原生会话 Provider 接入。Claude Agent SDK 负责会话、上下文、agent loop、工具和权限回调；独立 Node sidecar 负责把 SDK 输入输出转换成精简的 Harness Provider Protocol；Rust 负责 sidecar 生命周期、Tauri IPC、安全边界和本地会话索引；React 只消费类型化的通用会话能力。
+
+一期先验证 AIS Switch 能否让 Claude Agent SDK 经公司中转站完成请求。验证通过后，仅实现创建会话、文本与图片输入、流式回答、基础工具活动、审批、停止和按 session ID 恢复。Provider 未声明的能力不在界面展示。
+
+不把 Claude SDK 事件伪装成完整 Codex App Server JSON-RPC。Codex 与 Claude 分别适配到 Harness 自有的最小协议，避免把 Codex 的 thread、turn、item 语义固化为其他 Provider 的实现要求。
+
+## 背景与目标
+
+公司将部分 Agent 预算从 Codex 转移到由 AIS Switch 提供的 Claude Code 额度。AIS Switch 会配置 Claude Code 使用本机中转地址和公司提供的模型。Harness 需要允许用户在新会话中选择 Codex 或 Claude，让任务直接消耗对应 Provider 的额度。
+
+当前 Harness 以 Codex App Server 为唯一 runtime：
+
+- [`app_server.rs`](../src-tauri/src/app_server.rs) 管理共享 daemon、Unix socket/WebSocket 和 JSON-RPC。
+- [`appServerClient.ts`](../src/core/runtime/appServerClient.ts) 暴露 Codex `thread/*`、`turn/*` 等方法。
+- [`codex.ts`](../src/core/domain/codex.ts) 的会话领域类型沿用 App Server thread、turn、item 结构。
+- [`useHarness.ts`](../src/features/conversation/useHarness.ts) 同时承担会话目录、生命周期、事件处理和输入发送。
+- [`bridge.ts`](../src/core/runtime/bridge.ts) 是 React 调用 Tauri 原生能力的唯一入口。
+
+### 目标
+
+| 目标 | 验收标准 |
+| --- | --- |
+| 验证 AIS Switch | 官方 Claude Agent SDK 能通过现有 AIS 配置完成最小请求，且不读取、输出或持久化 token |
+| 原生 Claude 会话 | 用户能创建、继续、停止和恢复 Claude 会话 |
+| 基础做事能力 | 能展示文本、图片输入、文件读写和命令工具活动，并处理需要人工确认的调用 |
+| Provider 隔离 | Claude 不直接调用 Codex App Server；React 不直接调用 Claude SDK 或子进程 |
+| 渐进兼容 | Codex 现有功能和历史不迁移；Claude 未实现的功能按 capability 隐藏 |
+| 可升级 | Claude SDK 升级集中在 Node sidecar；Harness Provider Protocol 保持小而稳定 |
+
+### 非目标
+
+- 一期不实现 Codex 与 Claude 会话正文互相迁移。
+- 一期不保证 Codex 所有 thread、turn、queue、steer、fork、Skills、MCP 和用量功能在 Claude 上等价。
+- 一期不接入 Claude 子 Agent 活动树或 Quick Agent Job。
+- 一期不把会话正文、凭据或 token 写入 `state.sqlite`。
+- 一期不内置公司中转协议，也不绕过 AIS Switch 直接管理公司凭据。
+
+## 核心设计
+
+### 总体架构
+
+```mermaid
+flowchart LR
+    UI[React 会话 UI] --> Bridge[类型化 bridge]
+    Bridge --> Rust[Tauri / Rust runtime]
+    Rust --> Codex[Codex Provider]
+    Codex --> AppServer[Codex App Server]
+    Rust --> Claude[Claude Provider]
+    Claude --> Sidecar[Node sidecar]
+    Sidecar --> SDK[Claude Agent SDK]
+    SDK --> AIS[AIS Switch]
+    AIS --> Gateway[公司中转站]
+```
+
+Rust 是统一的宿主和安全边界。Node sidecar 只承载 Claude Agent SDK，不提供任意 shell 接口，不访问 Harness SQLite。SDK 继承经过筛选的真实用户环境，并显式使用已解析的 Claude executable 和工作目录。
+
+### Harness Provider Protocol
+
+一期协议只覆盖已承诺的能力。
+
+#### 请求
+
+| 方法 | 关键字段 | 说明 |
+| --- | --- | --- |
+| `initialize` | adapter/version 信息 | sidecar 启动握手与协议版本校验 |
+| `turn/start` | session ID、provider session ID、`cwd`、结构化输入 | 首次发送时创建 SDK 会话；后续使用 `resume` 恢复并开始工作 |
+| `turn/interrupt` | session ID | 通过 SDK cancellation 中断当前 query |
+| `approval/respond` | request ID、allow/deny | 恢复 `canUseTool` 回调 |
+| `shutdown` | 无 | 正常结束 sidecar |
+
+#### 事件
+
+| 事件 | 来源 | UI 行为 |
+| --- | --- | --- |
+| `session/started` | SDK init/result 的 session ID | 建立本地 provider session 索引 |
+| `turn/started` | adapter | 会话进入 working |
+| `message/delta` | SDK stream event | 增量显示回答 |
+| `message/completed` | SDK assistant message | 固化 assistant message |
+| `tool/started` | SDK tool use block | 展示基础工具活动 |
+| `tool/completed` | SDK tool result | 更新工具结果和状态 |
+| `approval/requested` | SDK `canUseTool` | 进入 Harness 审批流 |
+| `turn/completed` | SDK result | 结束 working，记录用量摘要（若有） |
+| `turn/failed` | SDK error/result | 展示可操作错误，不保存凭据或完整响应头 |
+
+协议使用 JSONL，并包含自增 request ID、provider session ID 和 turn ID。sidecar stdout 只输出协议消息；诊断写 stderr，由 Rust 分类和脱敏。
+
+### Provider capability
+
+会话携带 `provider`，统一会话 hook 集中派生 capability。组件根据 capability 决定是否显示入口；一期实现暂在 `useUnifiedHarness` 和 App shell 两处完成 Provider 路由，后续 Provider 增多前再抽取为独立 registry。
+
+```ts
+type ConversationProviderId = 'codex' | 'claude'
+
+interface ConversationCapabilities {
+  images: boolean
+  approvals: boolean
+  interrupt: boolean
+  resume: boolean
+  queue: boolean
+  steer: boolean
+  fork: boolean
+  skills: boolean
+  mcpManagement: boolean
+}
+```
+
+一期 Claude 默认启用 `images`、`approvals`、`interrupt` 和 `resume`；其他能力关闭。Codex capability 由现有能力映射。
+
+### Node sidecar
+
+Node sidecar 使用官方 `@anthropic-ai/claude-agent-sdk` 的 streaming input 模式：
+
+- `query()` 接收 `AsyncIterable<SDKUserMessage>`，支持多轮输入和图片。
+- `canUseTool` 把工具审批转换成 `approval/requested`，等待 Rust 转发用户决定。
+- `AbortController` 处理停止。
+- 从 init/result 事件捕获 session ID；进程重启后使用 `resume` 恢复。
+- `pathToClaudeCodeExecutable` 指向 Harness 解析出的真实 Claude Code，避免 Universal App 捆绑单架构 Claude binary。
+- `env` 以白名单方式继承 `HOME`、`PATH`、`CLAUDE_CONFIG_DIR` 以及 AIS/Claude 所需变量。日志不得包含变量值。
+- `settingSources` 启用 user、project 与 local 配置，使 AIS 和项目 `CLAUDE.md` 正常生效。
+
+一期要求本机 Node.js 18+，并把 adapter 与固定版本 SDK 作为 Tauri resource 打包；已验证 SDK resource 脱离仓库 `node_modules` 后仍能工作。正式发布前仍需决定是否把 Node runtime 固定为随 App 发布的双架构产物，并验证 Universal App 在 Apple Silicon 和 Intel Mac 上均能启动。
+
+### Rust Claude runtime
+
+新增独立模块管理 Claude，不修改 `app_server.rs` 的唯一 Codex 协议职责：
+
+- 解析 Node、sidecar 和 Claude executable。
+- 从真实用户环境构造经过筛选的子进程环境。
+- 启动 sidecar，完成 initialize/version 握手。
+- 维护 request/response、活跃 turn、pending approval 和进程退出状态。
+- 把 provider 事件转换为 Tauri event。
+- App 退出时可停止 sidecar；不能停止 AIS Switch 或修改 AIS 配置。
+
+### 会话状态与持久化
+
+Harness 只保存索引，不保存 Claude 正文：
+
+| 字段 | 保存位置 | 说明 |
+| --- | --- | --- |
+| Harness session ID | `state.sqlite` | 避免与 Codex thread ID 混用 |
+| Provider | `state.sqlite` | `codex` 或 `claude` |
+| Provider session ID | `state.sqlite` | Claude SDK session ID |
+| `cwd`、标题、时间和 UI 状态 | `state.sqlite` | 用于导航和恢复 |
+| 会话正文、tool result | Provider 管理 | Codex rollout 或 Claude SDK session store |
+| AIS token、API key | 不保存 | 继续由 AIS/Claude 配置管理 |
+
+一期 Claude 历史恢复通过 SDK session ID 完成。若 SDK 没有稳定的历史读取 API，Harness 只展示本次加载后的事件，不自行解析私有 JSONL 格式；历史浏览能力延后设计。
+
+### 新会话与界面
+
+新建会话入口增加 Provider 选择，默认仍为 Codex。Claude 会话只显示已实现设置：
+
+- Provider：Claude
+- 工作目录
+- 模型：一期使用 AIS 当前默认值，不先实现模型发现
+- 权限模式
+
+Codex 专属的 reasoning effort、service tier、Skills 和 MCP 管理入口不在 Claude 会话显示。消息列表复用现有视觉组件，Claude adapter 只提供通用 message/tool/approval 数据。
+
+## AIS Switch SDK 验证
+
+### 已确认环境
+
+| 项目 | 当前结果 |
+| --- | --- |
+| AIS Switch | macOS App 已安装，版本 `0.2.4` |
+| Claude Code | 已安装，版本 `2.1.251` |
+| Node | 已安装，满足 SDK `>=18` 要求 |
+| AIS 配置 | Claude user settings 含本机 proxy base URL、auth token 和公司模型映射；本文档不记录值 |
+| Claude Agent SDK | `0.3.252` 已通过独立临时目录验证 |
+
+### 验证结果
+
+2026-09-01 使用官方 Claude Agent SDK `0.3.252`、本机 Claude Code `2.1.251` 和 AIS Switch `0.2.4` 完成验证：
+
+| Case | 结果 | 证据摘要 |
+| --- | --- | --- |
+| 最小 query | 通过 | SDK result 为 `success`，固定响应 `AIS_SDK_OK` |
+| AIS 模型映射 | 通过 | SDK assistant message 报告模型 `moonshotai/kimi-k3` |
+| session resume | 通过 | 使用首次 session ID 得到 `AIS_RESUME_OK`，session ID 保持不变 |
+| 临时文件 Read | 通过 | 收到 `Read` tool use，最终返回 `HARNESS_AIS_READ_OK` |
+| 隔离 SDK resource | 通过 | adapter 与 SDK 脱离 `node_modules` 后返回 `BUNDLED_SDK_OK` |
+| 凭据路径 | 通过 | 沿用 AIS 写入的 user settings，无额外登录或 API key |
+
+Read 首次探针使用 `maxTurns=2` 时因模型重复读取触发 `error_max_turns`；提高到 5 后一次 `Read` 成功。这说明一期不能把 SDK agentic turn 上限设得过低，也需要把 `error_max_turns` 映射为明确的运行错误。
+
+### 验证步骤
+
+1. 在仓库外临时目录安装固定版本 Claude Agent SDK，不修改项目依赖。
+2. 使用 `pathToClaudeCodeExecutable` 指向本机 Claude Code，使用临时空工作目录。
+3. 继承 Claude user settings，禁止工具，发送只要求固定短文本的最小请求。
+4. 记录 SDK init、assistant、result、session ID、model 和错误分类；不记录 token。
+5. 使用第一次得到的 session ID 发送第二个短请求，验证 resume。
+6. 若最小请求成功，再用临时文件验证 Read 工具；不修改真实工作区。
+7. 验证结束后删除临时目录；不改变 AIS Switch 配置。
+
+### 通过标准
+
+- SDK 请求成功并返回预期短文本。
+- 返回模型与 AIS 提供的模型映射兼容，无 `authentication_failed`、`billing_error` 或 `model_not_found`。
+- session ID 可用于第二次 resume。
+- Read 工具仅访问指定临时工作目录并成功返回。
+- 请求期间 AIS Switch 保持运行，SDK 不要求额外 Anthropic 登录或 API key。
+
+任一标准失败则停止一期实现，保留脱敏错误、SDK/Claude/AIS 版本和复现命令，先确认 AIS 配置方式或 SDK 兼容性。
+
+## 分期计划
+
+| 阶段 | 内容 | 完成条件 |
+| --- | --- | --- |
+| Spike（完成） | AIS + SDK 最小请求、resume、Read | 全部通过标准满足 |
+| 一期 A（完成） | sidecar 协议、Rust lifecycle、typed bridge | 可创建、发送、流式显示和停止 |
+| 一期 B（完成代码） | 图片、基础工具卡片和审批 | 图片输入与审批映射已实现，待 UI 人工验收 |
+| 一期 C（完成代码） | provider session 索引和恢复 | 仅持久化索引与 provider session ID，不保存正文 |
+| 后续 | fork、queue/steer、Skills/MCP、用量、Quick Agent | 每项单独设计并由 capability 开启 |
+
+## 测试、灰度与回滚
+
+### 自动化
+
+- Node adapter：当前由真实 AIS smoke 覆盖 query、resume、Read 与隔离 resource；fake SDK 的协议、审批和 cancellation 单元测试作为后续加固项。
+- Rust：状态持久化与脱敏错误边界已有单元测试；fake process 的 request correlation 与异常退出测试作为后续加固项。
+- TypeScript：Claude event reducer 已覆盖流式文本、turn 收口、Bash 与文件修改映射。
+- 集成：真实 AIS Switch 只做显式运行的 smoke test，不进入默认单元测试，不能输出凭据。
+- 完成一期后至少运行 `pnpm test`、`pnpm build` 和 `(cd src-tauri && cargo test)`。
+
+### 灰度
+
+Claude 创建入口由 runtime capability probe 控制：Node、Claude executable 或 adapter 任一不可用时，Provider 菜单显示不可用且禁止创建。当前不读取 AIS endpoint 或 token 来做额外探测，第一次真实 query 的错误通过会话 toast 展示。
+
+### 回滚
+
+移除或禁用 Claude runtime 后创建入口自动不可用，sidecar 仍保持惰性启动。Codex Provider、Codex daemon 和既有会话数据不变。已保存的 Claude session 索引保留，便于后续版本恢复；回滚不删除 Claude SDK session 文件或 AIS 配置。
+
+## 风险与兼容方案
+
+| 风险 | 影响 | 处理 |
+| --- | --- | --- |
+| AIS 只修改某个 CLI wrapper | SDK bundled executable 绕过中转 | 显式传 `pathToClaudeCodeExecutable`，Spike 验证实际路径 |
+| SDK 或 Claude executable 架构不匹配 | Universal App 某一架构无法启动 | sidecar 与 executable 分开解析；发布前验证 arm64/x86_64 |
+| SDK event schema 升级 | UI 事件映射失效 | 固定 SDK 版本、协议版本握手、未知事件忽略并记录类型 |
+| sidecar 退出时有 pending approval | UI 永久等待 | Rust 将该 session/turn 标记失败并清理 pending request |
+| 相同 session 并发恢复 | transcript 交错 | 同一 Claude provider session 同时只允许一个 active owner |
+| 公司模型名不同于 Claude alias | `model_not_found` | 一期沿用 AIS 默认模型；后续从受控配置读取模型列表 |
+| SDK 读取用户或项目配置 | 行为与 Harness 设置冲突 | 明确 setting sources；managed/user deny 规则优先且不可绕过 |
+| 日志泄露中转 token | 凭据泄露 | 环境值永不序列化；错误和 stderr 经过 Rust 脱敏后落盘 |
+
+## 替代方案
+
+| 方案 | 结论 | 原因 |
+| --- | --- | --- |
+| Rust 直接解析 `claude -p --output-format stream-json` | 不采用为主路径 | 可以快速集成，但需要自行维护更多会话、审批和输入控制细节 |
+| Claude 伪装成 Codex App Server | 不采用 | 两边语义不同，长期会形成大量兼容分支 |
+| React 直接调用 SDK | 不采用 | WebView 无法安全管理 Node 子进程、文件权限和凭据 |
+| 仅作为 Quick Agent 子任务 | 后续支持 | 无法让用户直接把主任务切换到 Claude 额度 |
+
+## QA
+
+### 为什么仍需要 Rust，Node sidecar 不能直接连接 React 吗？
+
+Rust 负责应用进程生命周期、IPC、权限边界和脱敏。让 React 直接连接 sidecar 会把子进程协议、路径和潜在凭据暴露给 WebView，也违反 Harness 现有 bridge 约束。
+
+### 使用 SDK 是否仍然会启动 Claude Code executable？
+
+会。TypeScript SDK 自身托管 Claude Code 子进程，并允许指定 executable 路径和环境。Harness 使用 SDK 公共接口，不解析 Claude Code 私有协议。
+
+### 一期为什么不展示全部 Codex 设置？
+
+Claude SDK 与 Codex App Server 支持的设置集合不同。界面按 capability 展示已验证能力，可以避免把“存在设置入口”误认为“Provider 已支持”。
+
+### “绘图”是否等于图片生成？
+
+待确认。SDK 已明确支持图片作为输入；如果目标是生成 PNG 等图片，需要通过 Claude 写 SVG/Mermaid/代码或连接专门的图片工具，不把图片生成列入一期默认能力。
+
+## 参考
+
+- [Codex App Server](https://developers.openai.com/codex/app-server)
+- [Claude Agent SDK TypeScript reference](https://code.claude.com/docs/en/agent-sdk/typescript)
+- [Claude Agent SDK streaming input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode)
+- [Claude Agent SDK sessions](https://code.claude.com/docs/en/agent-sdk/sessions)
+- [Claude Agent SDK approvals and user input](https://code.claude.com/docs/en/agent-sdk/user-input)

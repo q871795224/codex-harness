@@ -27,6 +27,7 @@ import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-wo
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/types'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
+import type { ClaudeAdapterEvent, ClaudeRuntimeStatus, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTurnStartInput } from '../claude/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -96,6 +97,42 @@ export const runtime = {
       }).catch(() => undefined)
       throw error
     }
+  },
+
+  claudeRuntimeStatus(): Promise<ClaudeRuntimeStatus> {
+    return invoke<ClaudeRuntimeStatus>('claude_runtime_status')
+  },
+
+  claudeRequest<T>(method: string, params: JsonObject = {}): Promise<T> {
+    return invoke<T>('claude_runtime_request', { method, params })
+  },
+
+  listClaudeSessions(archived = false): Promise<ClaudeSessionRecord[]> {
+    return invoke<ClaudeSessionRecord[]>('list_claude_sessions', { archived })
+  },
+
+  upsertClaudeSession(input: ClaudeSessionInput): Promise<ClaudeSessionRecord> {
+    return invoke<ClaudeSessionRecord>('upsert_claude_session', { input })
+  },
+
+  setClaudeSessionArchived(sessionId: string, archived: boolean): Promise<void> {
+    return invoke<void>('set_claude_session_archived', { sessionId, archived })
+  },
+
+  startClaudeTurn(input: ClaudeTurnStartInput): Promise<{ accepted: boolean }> {
+    return this.claudeRequest('turn/start', input as unknown as JsonObject)
+  },
+
+  interruptClaudeTurn(sessionId: string): Promise<void> {
+    return this.claudeRequest<void>('turn/interrupt', { sessionId })
+  },
+
+  answerClaudeApproval(requestId: string, allow: boolean, updatedInput?: Record<string, unknown>): Promise<void> {
+    return this.claudeRequest<void>('approval/respond', { requestId, allow, ...(updatedInput ? { updatedInput } : {}) })
+  },
+
+  listenClaudeEvents(handler: (event: ClaudeAdapterEvent) => void): Promise<() => void> {
+    return listen<ClaudeAdapterEvent>('claude:event', (event) => handler(event.payload))
   },
 
   async readThreadCreditUsage(threadId: string): Promise<ThreadCreditUsage | null> {

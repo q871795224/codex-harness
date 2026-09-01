@@ -1,6 +1,7 @@
 mod api_workbench;
 mod app_launcher;
 mod app_server;
+mod claude_runtime;
 mod codex_radar;
 mod codex_update;
 mod diagnostics;
@@ -14,6 +15,7 @@ mod terminal;
 mod usage;
 
 use app_server::AppServerManager;
+use claude_runtime::{ClaudeRuntime, ClaudeRuntimeStatus};
 use codex_radar::{CodexRadarClient, RadarModelTable};
 use diagnostics::DiagnosticLog;
 use local_connector::{
@@ -26,13 +28,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 use store::{
-    HarnessStore, PluginInstance, PluginInstanceInput, PluginRun, PluginRunInput, ThreadUiState,
-    Workspace,
+    ClaudeSession, ClaudeSessionInput, HarnessStore, PluginInstance, PluginInstanceInput,
+    PluginRun, PluginRunInput, ThreadUiState, Workspace,
 };
 use tauri::{Manager, State};
 
 struct AppState {
     app_server: Arc<AppServerManager>,
+    claude_runtime: Arc<ClaudeRuntime>,
     diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
     codex_radar: CodexRadarClient,
@@ -42,6 +45,47 @@ struct AppState {
     codex_update: tokio::sync::Mutex<()>,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
+}
+
+#[tauri::command]
+fn claude_runtime_status(state: State<'_, AppState>) -> ClaudeRuntimeStatus {
+    state.claude_runtime.status()
+}
+
+#[tauri::command]
+async fn claude_runtime_request(
+    state: State<'_, AppState>,
+    method: String,
+    params: Value,
+) -> Result<Value, String> {
+    state.claude_runtime.request(&method, params).await
+}
+
+#[tauri::command]
+fn list_claude_sessions(
+    state: State<'_, AppState>,
+    archived: bool,
+) -> Result<Vec<ClaudeSession>, String> {
+    state.store.list_claude_sessions(archived)
+}
+
+#[tauri::command]
+fn upsert_claude_session(
+    state: State<'_, AppState>,
+    input: ClaudeSessionInput,
+) -> Result<ClaudeSession, String> {
+    state.store.upsert_claude_session(&input)
+}
+
+#[tauri::command]
+fn set_claude_session_archived(
+    state: State<'_, AppState>,
+    session_id: String,
+    archived: bool,
+) -> Result<(), String> {
+    state
+        .store
+        .set_claude_session_archived(&session_id, archived)
 }
 
 #[tauri::command]
@@ -599,9 +643,14 @@ pub fn run() {
                 app.handle().clone(),
                 diagnostics.clone(),
             ));
+            let claude_runtime = Arc::new(ClaudeRuntime::new(
+                app.handle().clone(),
+                diagnostics.clone(),
+            ));
             let terminal = Arc::new(terminal::TerminalManager::new(diagnostics.clone()));
             app.manage(AppState {
                 app_server: manager,
+                claude_runtime,
                 diagnostics,
                 local_connector: LocalConnector::new(),
                 codex_radar: CodexRadarClient::new(),
@@ -617,6 +666,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_server_request,
             app_server_respond,
+            claude_runtime_status,
+            claude_runtime_request,
+            list_claude_sessions,
+            upsert_claude_session,
+            set_claude_session_archived,
             record_client_diagnostic,
             open_diagnostics_directory,
             runtime_versions,
