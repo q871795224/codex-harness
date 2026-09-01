@@ -5,6 +5,31 @@ import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import process from 'node:process'
 
+const ALLOWED_ENVIRONMENT = new Set([
+  'HOME',
+  'PATH',
+  'TMPDIR',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'LANG',
+  'LC_ALL',
+  'CLAUDE_CONFIG_DIR',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'NODE_EXTRA_CA_CERTS',
+  'SSL_CERT_FILE',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'CODEX_HARNESS_CLAUDE_PATH',
+  'CODEX_HARNESS_CLAUDE_SOCKET',
+])
+for (const key of Object.keys(process.env)) {
+  if (!ALLOWED_ENVIRONMENT.has(key)) delete process.env[key]
+}
+
 let sdk
 try {
   sdk = await import('@anthropic-ai/claude-agent-sdk')

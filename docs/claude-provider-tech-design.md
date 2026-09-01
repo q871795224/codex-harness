@@ -10,7 +10,7 @@ Source of truth：本文档
 
 Codex Harness 将 Claude Code 作为原生会话 Provider 接入。Claude Agent SDK 负责会话、上下文、agent loop、工具和权限回调；独立常驻的 Node Provider daemon 负责 SDK 生命周期并把输入输出转换成精简的 Harness Provider Protocol；Rust 通过 Unix socket 连接或启动 daemon，并负责 Tauri IPC、安全边界和本地会话索引；React 只消费类型化的通用会话能力。
 
-Provider daemon 不归属于 Harness 窗口或 WebView。关闭 Harness 不会停止 daemon 或 active query；新 Harness 进程连接同一个 per-user socket，通过事件序号回放恢复 daemon 生命周期内的消息、工具和审批状态。原 foreground SDK adapter 仅作为实验参考保留，不再进入生产 runtime。
+Provider daemon 不归属于 Harness 窗口或 WebView，而是由 macOS launchd 通过 per-user LaunchAgent 管理。用户登录后 daemon 自动启动，异常退出后由 launchd 重新拉起；关闭 Harness 不会停止 daemon 或 active query。新 Harness 进程连接同一个 per-user socket，通过事件序号回放恢复 daemon 生命周期内的消息、工具和审批状态。原 foreground SDK adapter 仅作为实验参考保留，不再进入生产 runtime。
 
 Claude Code Supervisor 已能托管脱离终端的后台 session，但 Agent View 仍标记为 research preview。公开机器接口覆盖后台启动、状态、日志、停止和重新 attach，未覆盖结构化消息流、工具事件和审批响应。本阶段不以 TUI、私有 socket 或内部状态文件作为 Provider 协议，因此暂不替换为 Supervisor-only 实现。
 
@@ -61,12 +61,24 @@ flowchart LR
     Codex --> AppServer[Codex App Server]
     Rust --> Claude[Claude Provider]
     Claude -->|Unix socket| Daemon[Node Provider daemon]
+    Launchd[macOS launchd] -->|RunAtLoad + KeepAlive| Daemon
     Daemon --> SDK[Claude Agent SDK]
     SDK --> AIS[AIS Switch]
     AIS --> Gateway[公司中转站]
 ```
 
 Rust 是统一的宿主和安全边界。Node Provider daemon 只承载 Claude Agent SDK，不提供任意 shell 接口，不访问 Harness SQLite。SDK 继承经过筛选的真实用户环境，并显式使用已解析的 Claude executable 和工作目录。socket 位于 `~/.codex-harness/claude-provider.sock`，目录权限为 `0700`，socket 权限为 `0600`。
+
+### 进程管理与开机自启动
+
+macOS 上使用 label 为 `com.local.codex-harness.claude-provider` 的 per-user LaunchAgent。这里的“开机自启动”准确含义是用户登录图形会话后启动，不安装需要 root 权限的 system daemon：
+
+- Harness 首次运行时把当前版本的 `daemon.mjs` 和固定 SDK 复制到 `~/.codex-harness/claude-provider/`，不让 LaunchAgent 依赖 App bundle 的可变安装路径。
+- LaunchAgent plist 写入 `~/Library/LaunchAgents/`，声明 `RunAtLoad=true`、`KeepAlive=true`、后台进程类型和 10 秒重启节流。
+- plist 只保存 executable、socket、工作目录和 PATH 等非敏感路径，不写入 AIS token、Anthropic API key 或其他凭据；LaunchAgent 通过 `/usr/bin/env -i` 启动，daemon 在加载 SDK 前再次删除非白名单环境变量，AIS 配置继续由 Claude user settings 提供。
+- Harness 启动时更新本地 runtime 文件和 plist。若服务已经由 launchd 加载，只执行非破坏性的 `kickstart`，不会重启正在工作的 daemon。
+- 从旧版按需 daemon 升级时，如果 socket 已被现有 daemon 占用，不中断 active turn；LaunchAgent 已安装但延后到下一次用户登录接管。
+- Rust 连接失败时优先请 launchd 拉起服务；仅在 LaunchAgent 安装或加载不可用时，才使用原来的 detached process 作为兼容兜底。
 
 ### Harness Provider Protocol
 
@@ -135,7 +147,7 @@ Node Provider daemon 使用官方 `@anthropic-ai/claude-agent-sdk` 的 streaming
 - `settingSources` 启用 user、project 与 local 配置，使 AIS 和项目 `CLAUDE.md` 正常生效。
 - 多个 Harness 客户端可连接同一 daemon；客户端断开不触发 query cancellation。
 - daemon 对同一个 Harness session 强制单 active turn，并集中持有 pending approvals。
-- daemon 异常退出后由下一次 Harness 请求重新启动；已退出进程中的 active query 无法恢复。
+- daemon 异常退出后由 launchd 自动重新启动；已退出进程中的 active query 无法恢复。
 
 一期要求本机 Node.js 18+，并把 daemon、保留的 foreground adapter 与固定版本 SDK 作为 Tauri resource 打包；已验证 SDK resource 脱离仓库 `node_modules` 后仍能工作。正式发布前仍需决定是否把 Node runtime 固定为随 App 发布的双架构产物，并验证 Universal App 在 Apple Silicon 和 Intel Mac 上均能启动。
 
@@ -146,6 +158,8 @@ Node Provider daemon 使用官方 `@anthropic-ai/claude-agent-sdk` 的 streaming
 - 解析 Node、daemon 和 Claude executable。
 - 从真实用户环境构造经过筛选的子进程环境。
 - 优先连接既有 per-user daemon；socket 不可用时启动一个不随 Harness 退出的 daemon。
+- 首次启动安装或更新稳定 runtime 副本和 LaunchAgent；后续由 launchd 负责登录启动与异常保活。
+- LaunchAgent 已加载时通过 `kickstart` 恢复服务，不再创建第二个非托管进程。
 - 完成 initialize/version 握手，按最后收到的事件序号补收断线事件。
 - 维护 request/response correlation 和连接状态；活跃 turn 与 pending approval 归 daemon 管理。
 - 把 provider 事件转换为 Tauri event。
@@ -260,6 +274,18 @@ Supervisor 的任务生命周期符合 Harness 方向，但当前公开接口不
 
 探针 job 已通过 `claude rm` 移除；临时工作目录已移入废纸篓。未停止共享 Supervisor，避免影响其他后台 session。
 
+## LaunchAgent 生命周期验证
+
+2026-09-01 在当前 macOS 用户域完成真实验证：
+
+| Case | 结果 | 证据摘要 |
+| --- | --- | --- |
+| 首次注册 | 通过 | `launchctl print gui/<uid>/com.local.codex-harness.claude-provider` 为 `running` |
+| Harness 退出 | 通过 | 关闭 Harness 进程后 daemon PID 和 socket 继续存在 |
+| 异常保活 | 通过 | 终止空闲 daemon 后 launchd 自动生成新 PID，`runs` 从 1 增至 2 |
+| 环境隔离 | 通过 | 实际 Node 进程环境不包含用户 launchd domain 中的无关 token 变量 |
+| AIS 请求 | 通过 | LaunchAgent 的干净环境中返回固定响应 `LAUNCH_AGENT_AIS_OK` |
+
 ## 分期计划
 
 | 阶段 | 内容 | 完成条件 |
@@ -275,7 +301,7 @@ Supervisor 的任务生命周期符合 Harness 方向，但当前公开接口不
 
 ### 自动化
 
-- Node daemon：真实 AIS smoke 已覆盖提交后客户端断开、第二客户端重连、事件回放与同一 turn 完成；fake SDK 的审批和 cancellation 单元测试作为后续加固项。
+- Node daemon：真实 AIS smoke 已覆盖提交后客户端断开、第二客户端重连、事件回放与同一 turn 完成；LaunchAgent plist 单元测试覆盖登录启动、保活、XML 路径转义和凭据不落盘；fake SDK 的审批和 cancellation 单元测试作为后续加固项。
 - Rust：状态持久化与脱敏错误边界已有单元测试；fake process 的 request correlation 与异常退出测试作为后续加固项。
 - TypeScript：Claude event reducer 已覆盖流式文本、turn 收口、Bash 与文件修改映射。
 - 集成：真实 AIS Switch 只做显式运行的 smoke test，不进入默认单元测试，不能输出凭据。
@@ -287,7 +313,7 @@ Claude 创建入口由 runtime capability probe 控制：Node、Claude executabl
 
 ### 回滚
 
-移除或禁用 Claude runtime 后创建入口自动不可用，Provider daemon 仍保持惰性启动。Codex Provider、Codex daemon 和既有会话数据不变。已保存的 Claude session 索引保留，便于后续版本恢复；回滚不删除 Claude SDK session 文件或 AIS 配置。
+回滚 Claude Provider 前必须先确认没有 active turn，再对固定 label 执行 `launchctl bootout`，移除对应 plist 和 `~/.codex-harness/claude-provider/` runtime 副本；不能通过模糊进程匹配停止服务。Codex Provider、Codex daemon 和既有会话数据不变。已保存的 Claude session 索引以及 Claude SDK session 文件保留，回滚不删除 AIS 配置。
 
 ## 风险与兼容方案
 
@@ -296,7 +322,7 @@ Claude 创建入口由 runtime capability probe 控制：Node、Claude executabl
 | AIS 只修改某个 CLI wrapper | SDK bundled executable 绕过中转 | 显式传 `pathToClaudeCodeExecutable`，Spike 验证实际路径 |
 | SDK 或 Claude executable 架构不匹配 | Universal App 某一架构无法启动 | sidecar 与 executable 分开解析；发布前验证 arm64/x86_64 |
 | SDK event schema 升级 | UI 事件映射失效 | 固定 SDK 版本、协议版本握手、未知事件忽略并记录类型 |
-| daemon 异常退出时有 active turn 或 pending approval | 当前 query 丢失、UI 等待 | socket 断开时通知 UI；下一次请求自动重启 daemon，后续补充显式失败收口与进程级恢复 |
+| daemon 异常退出时有 active turn 或 pending approval | 当前 query 丢失、UI 等待 | socket 断开时通知 UI，launchd 自动重启 daemon；后续补充显式失败收口与进程级恢复 |
 | 相同 session 并发恢复 | transcript 交错 | 同一 Claude provider session 同时只允许一个 active owner |
 | 公司模型名不同于 Claude alias | `model_not_found` | 一期沿用 AIS 默认模型；后续从受控配置读取模型列表 |
 | SDK 读取用户或项目配置 | 行为与 Harness 设置冲突 | 明确 setting sources；managed/user deny 规则优先且不可绕过 |

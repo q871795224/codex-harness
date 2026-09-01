@@ -27,6 +27,7 @@ use tokio::{
 
 const PROTOCOL_VERSION: u64 = 2;
 const CONNECT_ATTEMPTS: usize = 50;
+const LAUNCH_AGENT_LABEL: &str = "com.local.codex-harness.claude-provider";
 
 type PendingResponse = oneshot::Sender<Result<Value, String>>;
 
@@ -57,13 +58,28 @@ pub struct ClaudeRuntimeStatus {
 
 impl ClaudeRuntime {
     pub fn new(app: AppHandle, diagnostics: Arc<DiagnosticLog>) -> Self {
-        Self {
+        let runtime = Self {
             app,
-            diagnostics,
+            diagnostics: diagnostics.clone(),
             connection: Mutex::new(None),
             next_id: AtomicU64::new(1),
             latest_event_seq: Arc::new(AtomicU64::new(0)),
+        };
+        match runtime.ensure_launch_agent() {
+            Ok(state) => diagnostics.record(
+                "info",
+                "claude-runtime",
+                "launch-agent.ready",
+                json!({ "state": state }),
+            ),
+            Err(error) => diagnostics.record(
+                "error",
+                "claude-runtime",
+                "launch-agent.install-failed",
+                json!({ "errorLength": error.len() }),
+            ),
         }
+        runtime
     }
 
     pub fn status(&self) -> ClaudeRuntimeStatus {
@@ -103,6 +119,10 @@ impl ClaudeRuntime {
         let socket_path = provider_socket_path()?;
         let stream = match UnixStream::connect(&socket_path).await {
             Ok(stream) => stream,
+            Err(_) if launch_agent_loaded() => {
+                kickstart_launch_agent()?;
+                connect_with_retry(&socket_path).await?
+            }
             Err(_) => {
                 self.spawn_daemon(&socket_path)?;
                 connect_with_retry(&socket_path).await?
@@ -261,6 +281,10 @@ impl ClaudeRuntime {
         );
         Ok(())
     }
+
+    fn ensure_launch_agent(&self) -> Result<&'static str, String> {
+        ensure_launch_agent(&self.app)
+    }
 }
 
 async fn connect_with_retry(socket_path: &Path) -> Result<UnixStream, String> {
@@ -325,6 +349,230 @@ fn provider_error(error: &Value) -> String {
         .collect()
 }
 
+#[cfg(target_os = "macos")]
+fn ensure_launch_agent(app: &AppHandle) -> Result<&'static str, String> {
+    let home = real_home()
+        .ok_or_else(|| "找不到用户 HOME，无法安装 Claude Provider LaunchAgent。".to_string())?;
+    let node = find_node_binary()?;
+    let claude = find_claude_binary()?;
+    let source_daemon = find_daemon(app)?;
+    let source_sdk = find_sdk(app)?;
+    let state_root = home.join(".codex-harness");
+    let state_dir = state_root.join("claude-provider");
+    let log_dir = state_root.join("logs");
+    fs::create_dir_all(&state_root)
+        .map_err(|error| format!("无法创建 Claude Provider 状态目录: {error}"))?;
+    fs::create_dir_all(&state_dir)
+        .map_err(|error| format!("无法创建 Claude Provider runtime 目录: {error}"))?;
+    fs::create_dir_all(&log_dir)
+        .map_err(|error| format!("无法创建 Claude Provider 日志目录: {error}"))?;
+    set_owner_only_directory(&state_root)?;
+    set_owner_only_directory(&state_dir)?;
+    set_owner_only_directory(&log_dir)?;
+    let installed_daemon = state_dir.join("daemon.mjs");
+    let installed_sdk = state_dir.join("sdk.mjs");
+    install_runtime_file(&source_daemon, &installed_daemon)?;
+    install_runtime_file(&source_sdk, &installed_sdk)?;
+
+    let launch_agents_dir = home.join("Library/LaunchAgents");
+    fs::create_dir_all(&launch_agents_dir)
+        .map_err(|error| format!("无法创建 LaunchAgents 目录: {error}"))?;
+    let plist_path = launch_agents_dir.join(format!("{LAUNCH_AGENT_LABEL}.plist"));
+    let socket_path = provider_socket_path()?;
+    let log_path = log_dir.join("claude-provider.log");
+    let path = env::var("PATH")
+        .unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_string());
+    let plist = launch_agent_plist(
+        &node,
+        &installed_daemon,
+        &claude,
+        &socket_path,
+        &home,
+        &state_dir,
+        &log_path,
+        &path,
+    );
+    install_bytes(plist.as_bytes(), &plist_path, 0o644)?;
+
+    if launch_agent_loaded() {
+        kickstart_launch_agent()?;
+        return Ok("loaded");
+    }
+    if std::os::unix::net::UnixStream::connect(&socket_path).is_ok() {
+        // An older on-demand daemon may already own active turns. Keep it alive;
+        // launchd will take ownership on the next user login.
+        return Ok("installed-for-next-login");
+    }
+    let output = std::process::Command::new("/bin/launchctl")
+        .args(["bootstrap", &launch_agent_domain()])
+        .arg(&plist_path)
+        .output()
+        .map_err(|error| format!("无法注册 Claude Provider LaunchAgent: {error}"))?;
+    if output.status.success() || launch_agent_loaded() {
+        return Ok("bootstrapped");
+    }
+    Err(format!(
+        "无法注册 Claude Provider LaunchAgent: {}",
+        String::from_utf8_lossy(&output.stderr)
+            .trim()
+            .chars()
+            .take(1200)
+            .collect::<String>()
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ensure_launch_agent(_app: &AppHandle) -> Result<&'static str, String> {
+    Ok("unsupported-platform")
+}
+
+#[cfg(target_os = "macos")]
+fn launch_agent_loaded() -> bool {
+    std::process::Command::new("/bin/launchctl")
+        .args([
+            "print",
+            &format!("{}/{}", launch_agent_domain(), LAUNCH_AGENT_LABEL),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn launch_agent_loaded() -> bool {
+    false
+}
+
+#[cfg(target_os = "macos")]
+fn kickstart_launch_agent() -> Result<(), String> {
+    let service = format!("{}/{}", launch_agent_domain(), LAUNCH_AGENT_LABEL);
+    let output = std::process::Command::new("/bin/launchctl")
+        .args(["kickstart", &service])
+        .output()
+        .map_err(|error| format!("无法启动 Claude Provider LaunchAgent: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "无法启动 Claude Provider LaunchAgent: {}",
+            String::from_utf8_lossy(&output.stderr)
+                .trim()
+                .chars()
+                .take(1200)
+                .collect::<String>()
+        ))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn kickstart_launch_agent() -> Result<(), String> {
+    Err("当前平台不支持 Claude Provider LaunchAgent。".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn launch_agent_domain() -> String {
+    format!("gui/{}", unsafe { libc::getuid() })
+}
+
+#[cfg(target_os = "macos")]
+fn install_runtime_file(source: &Path, destination: &Path) -> Result<(), String> {
+    let bytes = fs::read(source).map_err(|error| {
+        format!(
+            "无法读取 Claude Provider resource {}: {error}",
+            source.display()
+        )
+    })?;
+    install_bytes(&bytes, destination, 0o600)
+}
+
+#[cfg(target_os = "macos")]
+fn install_bytes(bytes: &[u8], destination: &Path, mode: u32) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    if fs::read(destination).is_ok_and(|current| current == bytes) {
+        fs::set_permissions(destination, fs::Permissions::from_mode(mode))
+            .map_err(|error| format!("无法设置 {} 的权限: {error}", destination.display()))?;
+        return Ok(());
+    }
+    let temporary = destination.with_extension(format!("tmp-{}", std::process::id()));
+    fs::write(&temporary, bytes)
+        .map_err(|error| format!("无法写入 {}: {error}", temporary.display()))?;
+    fs::set_permissions(&temporary, fs::Permissions::from_mode(mode))
+        .map_err(|error| format!("无法设置 {} 的权限: {error}", temporary.display()))?;
+    fs::rename(&temporary, destination)
+        .map_err(|error| format!("无法安装 {}: {error}", destination.display()))
+}
+
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
+fn launch_agent_plist(
+    node: &Path,
+    daemon: &Path,
+    claude: &Path,
+    socket: &Path,
+    home: &Path,
+    working_directory: &Path,
+    log: &Path,
+    path: &str,
+) -> String {
+    let value = |path: &Path| xml_escape(&path.display().to_string());
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{LAUNCH_AGENT_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>-i</string>
+    <string>HOME={}</string>
+    <string>PATH={}</string>
+    <string>CODEX_HARNESS_CLAUDE_PATH={}</string>
+    <string>CODEX_HARNESS_CLAUDE_SOCKET={}</string>
+    <string>{}</string>
+    <string>{}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>{}</string>
+  <key>StandardErrorPath</key>
+  <string>{}</string>
+</dict>
+</plist>
+"#,
+        value(home),
+        xml_escape(path),
+        value(claude),
+        value(socket),
+        value(node),
+        value(daemon),
+        value(working_directory),
+        value(log),
+        value(log),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 fn provider_socket_path() -> Result<PathBuf, String> {
     if let Some(path) = env::var_os("CODEX_HARNESS_CLAUDE_SOCKET").map(PathBuf::from) {
         return Ok(path);
@@ -341,8 +589,8 @@ fn find_daemon(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
     let development = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("claude-adapter/daemon.mjs");
-    if development.is_file() {
-        return Ok(development);
+    if cfg!(debug_assertions) && development.is_file() {
+        return Ok(development.clone());
     }
     if let Ok(resources) = app.path().resource_dir() {
         let bundled = resources.join("claude-adapter/daemon.mjs");
@@ -350,7 +598,32 @@ fn find_daemon(app: &AppHandle) -> Result<PathBuf, String> {
             return Ok(bundled);
         }
     }
+    if development.is_file() {
+        return Ok(development);
+    }
     Err("找不到 Claude Provider daemon。".to_string())
+}
+
+fn find_sdk(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os("CODEX_HARNESS_CLAUDE_SDK_PATH").map(PathBuf::from) {
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    if cfg!(debug_assertions) {
+        let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs");
+        if development.is_file() {
+            return Ok(development);
+        }
+    }
+    if let Ok(resources) = app.path().resource_dir() {
+        let bundled = resources.join("claude-adapter/sdk.mjs");
+        if bundled.is_file() {
+            return Ok(bundled);
+        }
+    }
+    Err("找不到 Claude Agent SDK resource。".to_string())
 }
 
 fn find_node_binary() -> Result<PathBuf, String> {
@@ -444,5 +717,27 @@ mod tests {
             provider_error(&json!({ "message": "model_not_found" })),
             "model_not_found"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn launch_agent_runs_at_login_without_persisting_credentials() {
+        let plist = launch_agent_plist(
+            Path::new("/opt/Node & Tools/node"),
+            Path::new("/Users/test/.codex-harness/claude-provider/daemon.mjs"),
+            Path::new("/Users/test/.local/bin/claude"),
+            Path::new("/Users/test/.codex-harness/claude-provider.sock"),
+            Path::new("/Users/test"),
+            Path::new("/Users/test/.codex-harness/claude-provider"),
+            Path::new("/Users/test/.codex-harness/logs/claude-provider.log"),
+            "/usr/local/bin:/usr/bin:/bin",
+        );
+
+        assert!(plist.contains("<key>RunAtLoad</key>\n  <true/>"));
+        assert!(plist.contains("<key>KeepAlive</key>\n  <true/>"));
+        assert!(plist.contains("<string>/usr/bin/env</string>\n    <string>-i</string>"));
+        assert!(plist.contains("/opt/Node &amp; Tools/node"));
+        assert!(!plist.contains("ANTHROPIC_AUTH_TOKEN"));
+        assert!(!plist.contains("ANTHROPIC_API_KEY"));
     }
 }
