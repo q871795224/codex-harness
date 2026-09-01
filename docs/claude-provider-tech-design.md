@@ -1,6 +1,6 @@
 # Claude Provider 接入技术设计
 
-状态：AIS SDK Spike 已通过；一期代码已完成，待交互验收
+状态：AIS SDK Spike 已通过；Supervisor 已评估，Provider 生命周期待重构
 
 最后更新：2026-09-01
 
@@ -9,6 +9,10 @@ Source of truth：本文档
 ## 结论
 
 Codex Harness 将 Claude Code 作为原生会话 Provider 接入。Claude Agent SDK 负责会话、上下文、agent loop、工具和权限回调；独立 Node sidecar 负责把 SDK 输入输出转换成精简的 Harness Provider Protocol；Rust 负责 sidecar 生命周期、Tauri IPC、安全边界和本地会话索引；React 只消费类型化的通用会话能力。
+
+当前把 Node sidecar 作为 Harness 子进程的实现只用于验证 SDK 与 UI 映射，不作为最终生命周期方案。Harness 退出会终止 active query，不符合“UI 可随时退出，Provider 继续工作”的产品边界。
+
+Claude Code Supervisor 已能托管脱离终端的后台 session，但 Agent View 仍标记为 research preview。公开机器接口覆盖后台启动、状态、日志、停止和重新 attach，未覆盖结构化消息流、工具事件和审批响应。本阶段不以 TUI、私有 socket 或内部状态文件作为 Provider 协议，因此暂不替换为 Supervisor-only 实现。
 
 一期先验证 AIS Switch 能否让 Claude Agent SDK 经公司中转站完成请求。验证通过后，仅实现创建会话、文本与图片输入、流式回答、基础工具活动、审批、停止和按 session ID 恢复。Provider 未声明的能力不在界面展示。
 
@@ -214,6 +218,42 @@ Read 首次探针使用 `maxTurns=2` 时因模型重复读取触发 `error_max_t
 
 任一标准失败则停止一期实现，保留脱敏错误、SDK/Claude/AIS 版本和复现命令，先确认 AIS 配置方式或 SDK 兼容性。
 
+## Claude Supervisor 评估
+
+### 结论
+
+Supervisor 的任务生命周期符合 Harness 方向，但当前公开接口不足以单独承载原生会话 UI。保留 SDK adapter 代码用于既有验证，在 runtime 入口明确标记为实验实现；正式方案需要满足以下任一条件：
+
+1. Claude Supervisor 提供稳定的结构化双向接口，覆盖消息、工具、审批和输入；或
+2. Harness 提供独立于窗口的 Provider daemon，由 daemon 使用 SDK，窗口只负责连接和展示。
+
+### 官方能力与稳定性
+
+| 项目 | 结论 |
+| --- | --- |
+| 生命周期 | per-user supervisor 托管 background session，启动终端退出后继续运行 |
+| 状态发现 | `claude agents --json --all` 提供 job、state、status、waitingFor、session ID 和 cwd |
+| 管理命令 | 提供 `--bg`、`attach`、`logs`、`stop`、`respawn`、`rm` 和 `daemon status` |
+| 会话继续 | `--resume <session-id> --bg <prompt>` 可继续历史，但生成新的 background job 和 session ID |
+| 结果读取 | `logs` 是 ANSI TUI 屏幕流；结构化历史需要 Agent SDK session API 或读取 transcript |
+| 审批和追加输入 | Agent View/attach 支持交互；公开 shell JSON 接口只报告 waiting 状态，不提供结构化审批响应 |
+| 稳定性声明 | Agent View 为 research preview，接口和快捷键可能变化，也可被组织策略禁用 |
+
+### AIS 隔离验证
+
+2026-09-01 使用 Claude Code `2.1.252` 和现有 AIS 配置，在仓库外临时 Git 目录执行：
+
+| Case | 结果 | 证据摘要 |
+| --- | --- | --- |
+| 后台启动 | 通过 | `claude --bg` 返回 short job ID，启动命令退出 |
+| 脱离运行 | 通过 | launcher 进程为 0 时 job 仍为 `working/busy` |
+| 状态收口 | 通过 | 最终转为 `done/idle`，Supervisor daemon 保持可查询 |
+| AIS 请求 | 通过 | 最终 session 消息为 `SUPERVISOR_AIS_OK` |
+| 多轮继续 | 通过但语义变化 | resume 后返回 `SUPERVISOR_FOLLOWUP_OK`，同时产生新的 job/session ID |
+| 结构化历史 | 部分通过 | Agent SDK `getSessionMessages` 可读；Supervisor CLI 本身仅提供 ANSI logs |
+
+探针 job 已通过 `claude rm` 移除；临时工作目录已移入废纸篓。未停止共享 Supervisor，避免影响其他后台 session。
+
 ## 分期计划
 
 | 阶段 | 内容 | 完成条件 |
@@ -222,6 +262,7 @@ Read 首次探针使用 `maxTurns=2` 时因模型重复读取触发 `error_max_t
 | 一期 A（完成） | sidecar 协议、Rust lifecycle、typed bridge | 可创建、发送、流式显示和停止 |
 | 一期 B（完成代码） | 图片、基础工具卡片和审批 | 图片输入与审批映射已实现，待 UI 人工验收 |
 | 一期 C（完成代码） | provider session 索引和恢复 | 仅持久化索引与 provider session ID，不保存正文 |
+| 生命周期重构 | Provider 运行脱离 Harness 窗口；不依赖私有 Claude 协议 | 关闭并重开 Harness 时 active task 继续且 UI 可重连 |
 | 后续 | fork、queue/steer、Skills/MCP、用量、Quick Agent | 每项单独设计并由 capability 开启 |
 
 ## 测试、灰度与回滚
@@ -263,6 +304,7 @@ Claude 创建入口由 runtime capability probe 控制：Node、Claude executabl
 | Claude 伪装成 Codex App Server | 不采用 | 两边语义不同，长期会形成大量兼容分支 |
 | React 直接调用 SDK | 不采用 | WebView 无法安全管理 Node 子进程、文件权限和凭据 |
 | 仅作为 Quick Agent 子任务 | 后续支持 | 无法让用户直接把主任务切换到 Claude 额度 |
+| Claude Supervisor-only | 暂不采用 | 后台生命周期成熟度可用，但公开机器接口缺少结构化消息、工具和审批响应，且仍为 research preview |
 
 ## QA
 

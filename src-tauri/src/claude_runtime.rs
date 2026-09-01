@@ -1,3 +1,8 @@
+//! Experimental foreground runtime used to validate Agent SDK/UI integration.
+//! The adapter is owned by the Harness process, so active turns do not survive an
+//! app exit. Do not treat this as the final Claude Provider lifecycle; see
+//! `docs/claude-provider-tech-design.md` for the Supervisor evaluation.
+
 use crate::diagnostics::DiagnosticLog;
 use serde::Serialize;
 use serde_json::{json, Value};
