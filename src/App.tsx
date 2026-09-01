@@ -281,13 +281,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
       if (threadId) void harness.selectThread(threadId)
       return
     }
-    if (actionId === 'thread.new') void harness.createThread(harness.selectedProvider)
+    if (actionId === 'thread.new') void harness.createThread(harness.newThreadProvider)
     else if (actionId === 'sidebar.toggle') harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)
     else if (actionId === 'composer.focus') setComposerFocusRequest((current) => current + 1)
     else if (actionId === 'tab.focus.toggle' && tabFocusable) {
       setFocusedTab((current) => current === tab ? null : tab)
     }
-  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.selectThread, harness.selectedProvider, harness.setSidebarCollapsed, tab, tabFocusable, visibleThreadIds])
+  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.newThreadProvider, harness.selectThread, harness.setSidebarCollapsed, tab, tabFocusable, visibleThreadIds])
 
   useEffect(() => {
     if (settingsOpen || pluginsOpen) return undefined
@@ -379,6 +379,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         threads={harness.threads}
         threadRoots={harness.threadRoots}
         threadStates={harness.threadStates}
+        workingThreadIds={harness.workingThreadIds}
         selectedThreadId={harness.selectedThreadId}
         viewMode={harness.viewMode}
         navigationLayout={harness.navigation.layout}
@@ -396,6 +397,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
         onArchiveOldThreads={() => void harness.archiveOldThreads()}
         onNewThread={(provider) => void harness.createThread(provider)}
+        newThreadProvider={harness.newThreadProvider}
+        onToggleNewThreadProvider={harness.toggleNewThreadProvider}
         claudeStatus={harness.claudeStatus}
         onSearch={(term) => void harness.searchThreads(term)}
         onRefresh={() => void harness.refresh()}
@@ -541,6 +544,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                       threadId: harness.selectedThreadId,
                       threadCwd,
                       workspaceRoot: workspace?.root ?? null,
+                      isNewThread: Boolean(harness.currentDetail && harness.currentDetail.turns.length === 0 && harness.currentDetail.items.length === 0),
                       models: codex.models,
                       settings: codex.settingsForThread(harness.selectedThreadId),
                       disabled: codex.loading || !harness.selectedThreadId || !canMutate,
@@ -668,7 +672,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
               </div>
             )}
           </Fragment>
-        ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread('codex')} onWorkspace={() => void harness.chooseWorkspace()} />}
+        ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread(harness.newThreadProvider)} onWorkspace={() => void harness.chooseWorkspace()} />}
       </main>
       {quickPanelsVisible && harness.currentThread && (
         <>

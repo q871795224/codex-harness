@@ -52,6 +52,18 @@ export function useUnifiedHarness() {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const previousCodexSelection = useRef<string | null>(null)
   const restoredSelection = useRef(false)
+  const [newThreadProvider, setNewThreadProviderState] = useState<ConversationProvider>('codex')
+  const selectedThreadIdRef = useRef<string | null>(null)
+  const selectionRequestRef = useRef(0)
+
+  useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
+
+  const toggleNewThreadProvider = useCallback(() => {
+    setNewThreadProviderState((current) => {
+      if (current === 'codex') return claude.status?.available ? 'claude' : current
+      return 'codex'
+    })
+  }, [claude.status?.available])
 
   useEffect(() => {
     if (!restoredSelection.current) return
@@ -70,6 +82,7 @@ export function useUnifiedHarness() {
     })
     previousCodexSelection.current = codex.selectedThreadId
     if (codex.selectedThreadId) {
+      selectedThreadIdRef.current = codex.selectedThreadId
       setSelectedThreadId(codex.selectedThreadId)
       void runtime.setAppState(SELECTED_CONVERSATION_KEY, codex.selectedThreadId).catch(() => undefined)
     }
@@ -98,13 +111,17 @@ export function useUnifiedHarness() {
       let restoreSource = 'fallback'
       if (remembered?.startsWith('claude:') && claude.sessions.some((session) => session.id === remembered)) {
         claude.selectSession(remembered)
+        selectedThreadIdRef.current = remembered
         setSelectedThreadId(remembered)
         restoreSource = 'claude-session'
       } else if (remembered && codex.threads.some((thread) => thread.id === remembered)) {
+        selectedThreadIdRef.current = remembered
         setSelectedThreadId(remembered)
         restoreSource = 'codex-unified-state-only'
       } else {
-        setSelectedThreadId(codex.selectedThreadId ?? claude.sessions[0]?.id ?? null)
+        const fallback = codex.selectedThreadId ?? claude.sessions[0]?.id ?? null
+        selectedThreadIdRef.current = fallback
+        setSelectedThreadId(fallback)
       }
       recordWorkspaceContextDiagnostic({
         level: 'info',
@@ -126,6 +143,7 @@ export function useUnifiedHarness() {
     })().catch(() => {
       if (disposed) return
       previousCodexSelection.current = codex.selectedThreadId
+      selectedThreadIdRef.current = codex.selectedThreadId
       setSelectedThreadId(codex.selectedThreadId)
       restoredSelection.current = true
     })
@@ -147,8 +165,18 @@ export function useUnifiedHarness() {
   const currentThread = threads.find((thread) => thread.id === selectedThreadId) ?? null
   const currentDetail = selectedThreadId ? details[selectedThreadId] ?? null : null
   const activeTurnId = selectedThreadId ? activeTurnIds[selectedThreadId] ?? currentDetail?.activeTurnId ?? null : null
+  const workingThreadIds = useMemo(() => {
+    const next: Record<string, boolean> = {}
+    for (const threadId of Object.keys(activeTurnIds)) next[threadId] = true
+    for (const threadId of Object.keys(codex.startingThreadIds)) next[threadId] = true
+    return next
+  }, [activeTurnIds, codex.startingThreadIds])
 
   const selectThread = useCallback(async (threadId: string) => {
+    const requestId = ++selectionRequestRef.current
+    const previousThreadId = selectedThreadIdRef.current
+    selectedThreadIdRef.current = threadId
+    setSelectedThreadId(threadId)
     recordWorkspaceContextDiagnostic({
       level: 'info',
       event: 'conversation.selection.requested',
@@ -156,12 +184,13 @@ export function useUnifiedHarness() {
       context: {
         source: 'useUnifiedHarness.selectThread',
         provider: threadId.startsWith('claude:') ? 'claude' : 'codex',
-        previousUnifiedThreadId: selectedThreadId,
+        previousUnifiedThreadId: previousThreadId,
         codexSelectedThreadIdBefore: codex.selectedThreadId,
       },
     })
     if (threadId.startsWith('claude:')) claude.selectSession(threadId)
     else await codex.selectThread(threadId)
+    if (selectionRequestRef.current !== requestId || selectedThreadIdRef.current !== threadId) return
     recordWorkspaceContextDiagnostic({
       level: 'info',
       event: 'conversation.selection.completed',
@@ -173,11 +202,11 @@ export function useUnifiedHarness() {
         selectionCallCompleted: true,
       },
     })
-    setSelectedThreadId(threadId)
     void runtime.setAppState(SELECTED_CONVERSATION_KEY, threadId).catch(() => undefined)
-  }, [claude, codex, selectedThreadId])
+  }, [claude, codex])
 
   const createThread = useCallback(async (provider: ConversationProvider = 'codex') => {
+    const requestId = ++selectionRequestRef.current
     if (provider === 'codex') {
       await codex.createThread()
       return
@@ -190,7 +219,9 @@ export function useUnifiedHarness() {
     const sessionCwd = cwd
     try {
       const id = await claude.createSession(sessionCwd)
+      if (selectionRequestRef.current !== requestId) return
       claude.selectSession(id)
+      selectedThreadIdRef.current = id
       setSelectedThreadId(id)
       void runtime.setAppState(SELECTED_CONVERSATION_KEY, id).catch(() => undefined)
     } catch {
@@ -261,6 +292,7 @@ export function useUnifiedHarness() {
     details,
     approvals,
     activeTurnIds,
+    workingThreadIds,
     threadRoots,
     threadGitCwds,
     selectedThreadId,
@@ -268,12 +300,14 @@ export function useUnifiedHarness() {
     currentDetail,
     activeTurnId,
     selectedProvider,
+    newThreadProvider,
+    toggleNewThreadProvider,
     capabilities,
     claudeStatus: claude.status,
     currentTokenUsage: selectedProvider === 'claude' ? null : codex.currentTokenUsage,
     currentTaskPlan: selectedProvider === 'claude' ? null : codex.currentTaskPlan,
     currentForeignActive: selectedProvider === 'claude' ? false : codex.currentForeignActive,
-    isCurrentWorking: Boolean(activeTurnId),
+    isCurrentWorking: Boolean(activeTurnId || (selectedThreadId && codex.startingThreadIds[selectedThreadId])),
     busy: selectedProvider === 'claude' ? { ...codex.busy, ...claude.busy } : codex.busy,
     toast: claude.toast ?? codex.toast,
     queues: selectedProvider === 'claude' && selectedThreadId ? { ...codex.queues, [selectedThreadId]: [] } : codex.queues,

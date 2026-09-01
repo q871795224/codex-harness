@@ -7,8 +7,9 @@ export function activityBadge(thread: Thread): Badge {
   return null
 }
 
-export function resolveThreadBadge(thread: Thread, savedBadge: Badge): Badge {
+export function resolveThreadBadge(thread: Thread, savedBadge: Badge, working = false): Badge {
   const activity = activityBadge(thread)
   if (activity) return activity
+  if (working) return 'working'
   return savedBadge === 'working' || savedBadge === 'approval' ? null : savedBadge
 }

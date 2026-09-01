@@ -245,6 +245,7 @@ impl AppServerManager {
         });
 
         tauri::async_runtime::spawn(async move {
+            let mut disconnect_message: Option<String> = None;
             while let Some(next) = reader.next().await {
                 match next {
                     Ok(Message::Text(text)) => match serde_json::from_str::<Value>(&text) {
@@ -312,15 +313,7 @@ impl AppServerManager {
                             "connection.disconnected",
                             json!({ "errorCode": error_code(&error.to_string()) }),
                         );
-                        if !reader_intentional_disconnect.load(Ordering::Relaxed) {
-                            let _ = app.emit(
-                                "app-server:transport",
-                                json!({
-                                    "kind": "disconnected",
-                                    "message": format!("Codex App Server 连接已断开: {error}")
-                                }),
-                            );
-                        }
+                        disconnect_message = Some(format!("Codex App Server 连接已断开: {error}"));
                         break;
                     }
                 }
@@ -337,7 +330,7 @@ impl AppServerManager {
                     "app-server:transport",
                     json!({
                         "kind": "disconnected",
-                        "message": "Codex App Server 连接已关闭。"
+                        "message": disconnect_message.unwrap_or_else(|| "Codex App Server 连接已关闭。".to_string())
                     }),
                 );
             }

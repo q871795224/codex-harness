@@ -52,6 +52,7 @@ interface SidebarProps {
   threads: Thread[]
   threadRoots: Record<string, string | null>
   threadStates: Record<string, ThreadUiState>
+  workingThreadIds: Record<string, boolean>
   selectedThreadId: string | null
   viewMode: 'active' | 'archived'
   navigationLayout: NavigationLayout
@@ -69,6 +70,8 @@ interface SidebarProps {
   onSelectWorkspace: (root: string) => void
   onArchiveOldThreads: () => void
   onNewThread: (provider?: 'codex' | 'claude') => void
+  newThreadProvider: 'codex' | 'claude'
+  onToggleNewThreadProvider: () => void
   claudeStatus?: ClaudeRuntimeStatus | null
   onSearch: (term: string) => void
   onRefresh: () => void
@@ -91,6 +94,7 @@ export function Sidebar({
   threads,
   threadRoots,
   threadStates,
+  workingThreadIds,
   selectedThreadId,
   viewMode,
   navigationLayout,
@@ -108,6 +112,8 @@ export function Sidebar({
   onSelectWorkspace,
   onArchiveOldThreads,
   onNewThread,
+  newThreadProvider,
+  onToggleNewThreadProvider,
   claudeStatus = null,
   onSearch,
   onRefresh,
@@ -131,7 +137,6 @@ export function Sidebar({
   const [highlightedWorkspaceRoot, setHighlightedWorkspaceRoot] = useState<string | null>(null)
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
   const [optionsOpen, setOptionsOpen] = useState(false)
-  const [newThreadMenuOpen, setNewThreadMenuOpen] = useState(false)
   const [resizing, setResizing] = useState(false)
   const [previewWidth, setPreviewWidth] = useState<number | null>(null)
   const [splitResizing, setSplitResizing] = useState(false)
@@ -395,6 +400,7 @@ export function Sidebar({
     <ThreadList
       threads={items}
       states={threadStates}
+      workingThreadIds={workingThreadIds}
       selectedThreadId={selectedThreadId}
       onSelect={onSelectThread}
       groupKey={groupKey}
@@ -432,19 +438,25 @@ export function Sidebar({
       </div>
 
       <div className="new-chat-split">
-        <button className="new-chat-button" type="button" onClick={() => onNewThread('codex')} disabled={creatingThread}>
+        <button className="new-chat-button" type="button" onClick={() => onNewThread(newThreadProvider)} disabled={creatingThread || (newThreadProvider === 'claude' && !claudeAvailable)}>
           {creatingThread ? <LoaderCircle size={16} className="spin" /> : <CirclePlus size={17} />}
           新会话
         </button>
-        <button className="new-chat-provider" type="button" onClick={() => setNewThreadMenuOpen((open) => !open)} aria-label="选择会话 Provider" aria-expanded={newThreadMenuOpen}>
-          <ChevronDown size={14} />
+        <button
+          className="new-chat-provider"
+          type="button"
+          onClick={onToggleNewThreadProvider}
+          disabled={creatingThread || (newThreadProvider === 'codex' && !claudeAvailable)}
+          aria-label={newThreadProvider === 'codex' ? '切换到 Claude 新会话' : '切换到 Codex 新会话'}
+          aria-pressed={newThreadProvider === 'claude'}
+          title={newThreadProvider === 'codex'
+            ? claudeAvailable ? '切换到 Claude 新会话' : 'Claude Provider 不可用'
+            : '切换到 Codex 新会话'}
+        >
+          {newThreadProvider === 'codex'
+            ? <img className="new-chat-provider-icon" src={isDevelopmentFlavor ? harnessDevIcon : harnessIcon} alt="" />
+            : <Sparkles size={16} aria-hidden />}
         </button>
-        {newThreadMenuOpen && (
-          <div className="new-chat-provider-menu" role="menu">
-            <button type="button" onClick={() => { setNewThreadMenuOpen(false); onNewThread('codex') }}><CirclePlus size={15} /><span><strong>Codex</strong><small>App Server 原生会话</small></span></button>
-            <button type="button" disabled={!claudeAvailable} onClick={() => { setNewThreadMenuOpen(false); onNewThread('claude') }}><Sparkles size={15} /><span><strong>Claude</strong><small>{claudeProviderDescription(claudeStatus)}</small></span></button>
-          </div>
-        )}
       </div>
 
       <div className={`sidebar-scroll ${navigationLayout === 'list' && providerSplit.claude.length > 0 ? 'split-mode' : ''}`}>
@@ -555,7 +567,7 @@ export function Sidebar({
               <section className="workspace-group single-list-group sidebar-split-pane" style={{ flexGrow: 1 - displayedSplitRatio, flexBasis: 0 }}>
                 <div className="workspace-row static">
                   <Sparkles size={16} />
-                  <span>Cloud Code</span>
+                  <span>Claude Code</span>
                   <em>{providerSplit.claude.length}</em>
                 </div>
                 {renderThreadList(providerSplit.claude, 'all.claude')}
@@ -683,6 +695,7 @@ export function claudeProviderDescription(status: ClaudeRuntimeStatus | null): s
 function ThreadList({
   threads,
   states,
+  workingThreadIds,
   selectedThreadId,
   onSelect,
   groupKey,
@@ -700,6 +713,7 @@ function ThreadList({
 }: {
   threads: Thread[]
   states: Record<string, ThreadUiState>
+  workingThreadIds: Record<string, boolean>
   selectedThreadId: string | null
   onSelect: (threadId: string) => void
   groupKey: string
@@ -720,7 +734,7 @@ function ThreadList({
   return (
     <div className="thread-list" data-workspace-group={groupKey}>
       {shownThreads.map((thread) => {
-        const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null)
+        const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null, workingThreadIds[thread.id] === true)
         const pinned = pinnedThreadIds.includes(thread.id)
         return (
           <div className="thread-row-shell" key={thread.id}>
@@ -741,7 +755,7 @@ function ThreadList({
               {pinned && <i className="pinned-marker" aria-hidden />}
               <StatusDot badge={badge} />
               <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
-              <time>{isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
+              <time>{workingThreadIds[thread.id] || isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
             </button>
             <SidebarPinButton
               pinned={pinned}

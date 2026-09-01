@@ -12,6 +12,10 @@ describe('resolveThreadBadge', () => {
     expect(resolveThreadBadge(thread({ type: 'active', activeFlags: ['waitingOnApproval'] }), 'working')).toBe('approval')
   })
 
+  it('uses the live turn state when thread metadata has not caught up', () => {
+    expect(resolveThreadBadge(thread({ type: 'idle' }), null, true)).toBe('working')
+  })
+
   it('drops stale transient badges after the thread becomes idle', () => {
     expect(resolveThreadBadge(thread({ type: 'idle' }), 'working')).toBeNull()
     expect(resolveThreadBadge(thread({ type: 'idle' }), 'approval')).toBeNull()

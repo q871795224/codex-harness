@@ -116,6 +116,15 @@ interface HookToast {
   message: string
 }
 
+type DetailDeltaType = 'agentMessageDelta' | 'commandOutputDelta'
+
+interface PendingDetailDelta {
+  threadId: string
+  itemId: string
+  type: DetailDeltaType
+  delta: string
+}
+
 function newClientId(): string {
   return crypto.randomUUID()
 }
@@ -148,6 +157,7 @@ export function useHarness() {
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
   const [pendingSteers, setPendingSteers] = useState<Record<string, PendingSteer[]>>({})
   const [activeTurnIds, setActiveTurnIds] = useState<Record<string, string>>({})
+  const [startingThreadIds, setStartingThreadIds] = useState<Record<string, boolean>>({})
   const [ownedActiveThreads, setOwnedActiveThreads] = useState<Record<string, boolean>>({})
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(null)
@@ -165,8 +175,11 @@ export function useHarness() {
   const draftContentThreadIdsRef = useRef(new Set<string>())
   const activeTurnIdsRef = useRef<Record<string, string>>({})
   const ownedActiveThreadsRef = useRef<Record<string, boolean>>({})
+  const completedTurnIdsRef = useRef(new Map<string, number>())
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
   const detailsRef = useRef<Record<string, ThreadDetail>>({})
+  const pendingDetailDeltasRef = useRef(new Map<string, PendingDetailDelta>())
+  const detailDeltaFrameRef = useRef<number | null>(null)
   const threadMappingVersionsRef = useRef<Record<string, number>>({})
   const generatingTitlesRef = useRef(new Set<string>())
   const attemptedTitleThreadsRef = useRef(new Set<string>())
@@ -191,6 +204,19 @@ export function useHarness() {
     ownedActiveThreadsRef.current = next.ownedActiveThreads
     setActiveTurnIds(next.activeTurnIds)
     setOwnedActiveThreads(next.ownedActiveThreads)
+  }, [])
+
+  const setThreadStarting = useCallback((threadId: string, starting: boolean) => {
+    setStartingThreadIds((current) => {
+      if (starting) {
+        if (current[threadId]) return current
+        return { ...current, [threadId]: true }
+      }
+      if (!current[threadId]) return current
+      const next = { ...current }
+      delete next[threadId]
+      return next
+    })
   }, [])
 
   const notify = useCallback((message: string, kind: HookToast['kind'] = 'info') => {
@@ -319,6 +345,31 @@ export function useHarness() {
     void runtime.setAppState(CONVERSATION_STATS_PREFERENCES_KEY, JSON.stringify(normalized)).catch(() => undefined)
   }, [])
 
+  const handleTransportDisconnect = useCallback(() => {
+    approvalsRef.current = {}
+    setApprovals({})
+    const active = activeTurnIdsRef.current
+    if (Object.keys(active).length === 0) return
+
+    setThreads((current) => current.map((thread) => active[thread.id]
+      ? touchThreadActivity({ ...thread, status: { type: 'active', activeFlags: [] } })
+      : thread))
+    setDetails((current) => {
+      let next = current
+      for (const [threadId, turnId] of Object.entries(active)) {
+        const detail = next[threadId]
+        if (!detail || detail.activeTurnId === turnId) continue
+        if (next === current) next = { ...current }
+        next[threadId] = {
+          ...detail,
+          activeTurnId: turnId,
+          foreignActive: ownedActiveThreadsRef.current[threadId] !== true,
+        }
+      }
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     if (!toast) return undefined
     const timeout = window.setTimeout(() => setToast(null), toast.kind === 'error' ? 6_000 : 3_500)
@@ -344,6 +395,45 @@ export function useHarness() {
       const detail = current[threadId]
       return detail ? { ...current, [threadId]: change(detail) } : current
     })
+  }, [])
+
+  const flushDetailDeltas = useCallback(() => {
+    detailDeltaFrameRef.current = null
+    const pending = [...pendingDetailDeltasRef.current.values()]
+    pendingDetailDeltasRef.current.clear()
+    if (pending.length === 0) return
+    setDetails((current) => {
+      let next = current
+      for (const delta of pending) {
+        const detail = next[delta.threadId]
+        if (!detail) continue
+        const event = delta.type === 'agentMessageDelta'
+          ? { type: 'agentMessageDelta' as const, itemId: delta.itemId, delta: delta.delta }
+          : { type: 'commandOutputDelta' as const, itemId: delta.itemId, delta: delta.delta }
+        const updated = reduceThreadDetailEvent(detail, event)
+        if (next === current) next = { ...current }
+        next[delta.threadId] = updated
+      }
+      return next
+    })
+  }, [])
+
+  const queueDetailDelta = useCallback((threadId: string, type: DetailDeltaType, itemId: string, delta: string) => {
+    if (!delta) return
+    const key = `${type}:${threadId}:${itemId}`
+    const previous = pendingDetailDeltasRef.current.get(key)
+    pendingDetailDeltasRef.current.set(key, previous
+      ? { ...previous, delta: previous.delta + delta }
+      : { threadId, itemId, type, delta })
+    if (detailDeltaFrameRef.current === null) {
+      detailDeltaFrameRef.current = window.requestAnimationFrame(flushDetailDeltas)
+    }
+  }, [flushDetailDeltas])
+
+  useEffect(() => () => {
+    if (detailDeltaFrameRef.current !== null) window.cancelAnimationFrame(detailDeltaFrameRef.current)
+    detailDeltaFrameRef.current = null
+    pendingDetailDeltasRef.current.clear()
   }, [])
 
   const persistBadge = useCallback((threadId: string, badge: Badge, lastReadAt: number | null = null) => {
@@ -851,6 +941,7 @@ export function useHarness() {
   }, [notify, updateDetail, updateThread])
 
   const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
+    setThreadStarting(threadId, false)
     commitTurnOwnership(activateTurn({
       activeTurnIds: activeTurnIdsRef.current,
       ownedActiveThreads: ownedActiveThreadsRef.current,
@@ -858,7 +949,7 @@ export function useHarness() {
     updateDetail(threadId, (detail) => ({ ...detail, activeTurnId: turnId, foreignActive: !owned }))
     updateThread(threadId, (thread) => touchThreadActivity({ ...thread, status: { type: 'active', activeFlags: [] } }))
     persistBadge(threadId, 'working')
-  }, [commitTurnOwnership, persistBadge, updateDetail, updateThread])
+  }, [commitTurnOwnership, persistBadge, setThreadStarting, updateDetail, updateThread])
 
   const maybeGenerateThreadTitle = useCallback(async (threadId: string, userText: string) => {
     const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
@@ -1002,6 +1093,7 @@ export function useHarness() {
     unstartedDraftThreadIdsRef.current.delete(threadId)
     draftContentThreadIdsRef.current.delete(threadId)
     locallyStartingRef.current.add(threadId)
+    setThreadStarting(threadId, true)
     try {
       const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
       const detail = detailsRef.current[threadId]
@@ -1046,12 +1138,13 @@ export function useHarness() {
           turnId: response.turn.id,
         },
       })
-      setActiveTurn(threadId, response.turn.id, true)
+      if (!completedTurnIdsRef.current.delete(response.turn.id)) setActiveTurn(threadId, response.turn.id, true)
       return response.turn.id
     } finally {
       locallyStartingRef.current.delete(threadId)
+      setThreadStarting(threadId, false)
     }
-  }, [setActiveTurn])
+  }, [setActiveTurn, setThreadStarting])
 
   const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue') => {
     const threadId = selectedThreadIdRef.current
@@ -1211,13 +1304,18 @@ export function useHarness() {
     if (!threadId || activeTurnIdsRef.current[threadId]) return
     const queue = queues[threadId] ?? []
     if (queue.length === 0) return
+    locallyStartingRef.current.add(threadId)
+    setThreadStarting(threadId, true)
     try {
       const response = await appServer.startQueue(threadId, queue[0].id)
-      setActiveTurn(threadId, response.turn.id, true)
+      if (!completedTurnIdsRef.current.delete(response.turn.id)) setActiveTurn(threadId, response.turn.id, true)
     } catch (error) {
       notify(`无法继续队列：${messageOf(error)}`, 'error')
+    } finally {
+      locallyStartingRef.current.delete(threadId)
+      setThreadStarting(threadId, false)
     }
-  }, [notify, queues, setActiveTurn])
+  }, [notify, queues, setActiveTurn, setThreadStarting])
 
   const renameThread = useCallback(async (threadId: string, name: string) => {
     try {
@@ -1523,11 +1621,13 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       const turn = eventTurn(params.turn)
       if (threadId && turn) {
-        const owned = ownsStartedTurn({
-          activeTurnIds: activeTurnIdsRef.current,
-          ownedActiveThreads: ownedActiveThreadsRef.current,
-        }, threadId, turn.id, locallyStartingRef.current.has(threadId))
-        setActiveTurn(threadId, turn.id, owned)
+        if (!completedTurnIdsRef.current.has(turn.id)) {
+          const owned = ownsStartedTurn({
+            activeTurnIds: activeTurnIdsRef.current,
+            ownedActiveThreads: ownedActiveThreadsRef.current,
+          }, threadId, turn.id, locallyStartingRef.current.has(threadId))
+          setActiveTurn(threadId, turn.id, owned)
+        }
         updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'turnStarted', turn }))
       }
       return
@@ -1557,7 +1657,7 @@ export function useHarness() {
       const itemId = typeof params.itemId === 'string' ? params.itemId : null
       const delta = typeof params.delta === 'string' ? params.delta : ''
       if (threadId && itemId) {
-        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'agentMessageDelta', itemId, delta }))
+        queueDetailDelta(threadId, 'agentMessageDelta', itemId, delta)
       }
       return
     }
@@ -1567,7 +1667,7 @@ export function useHarness() {
       const itemId = typeof params.itemId === 'string' ? params.itemId : null
       const delta = typeof params.delta === 'string' ? params.delta : ''
       if (threadId && itemId) {
-        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'commandOutputDelta', itemId, delta }))
+        queueDetailDelta(threadId, 'commandOutputDelta', itemId, delta)
       }
       return
     }
@@ -1576,15 +1676,29 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       const turn = eventTurn(params.turn)
       if (threadId && turn) {
+        const now = Date.now()
+        for (const [turnId, completedAt] of completedTurnIdsRef.current) {
+          if (now - completedAt > 60_000) completedTurnIdsRef.current.delete(turnId)
+        }
+        if (completedTurnIdsRef.current.size >= 256) {
+          const oldest = completedTurnIdsRef.current.keys().next().value
+          if (typeof oldest === 'string') completedTurnIdsRef.current.delete(oldest)
+        }
+        completedTurnIdsRef.current.set(turn.id, now)
         const completedThread = threadsRef.current.find((thread) => thread.id === threadId)
+        const activeTurnIdBeforeCompletion = activeTurnIdsRef.current[threadId]
+        const completionMatchesActive = !activeTurnIdBeforeCompletion || activeTurnIdBeforeCompletion === turn.id
         updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'turnCompleted', turn }))
         commitTurnOwnership(completeTurn({
           activeTurnIds: activeTurnIdsRef.current,
           ownedActiveThreads: ownedActiveThreadsRef.current,
         }, threadId, turn.id))
-        updateThread(threadId, (thread) => touchThreadActivity({ ...thread, status: { type: 'idle' } }))
-        const badge: Badge = turn.status === 'failed' ? 'error' : selectedThreadIdRef.current === threadId ? null : 'success'
-        persistBadge(threadId, badge)
+        if (completionMatchesActive) {
+          setThreadStarting(threadId, false)
+          updateThread(threadId, (thread) => touchThreadActivity({ ...thread, status: { type: 'idle' } }))
+          const badge: Badge = turn.status === 'failed' ? 'error' : selectedThreadIdRef.current === threadId ? null : 'success'
+          persistBadge(threadId, badge)
+        }
         if (completedThread && !completedThread.ephemeral) {
           const completedEvent: TurnCompletedEvent = {
             threadId,
@@ -1633,7 +1747,7 @@ export function useHarness() {
         setThreads((current) => current.filter((thread) => thread.id !== threadId))
       }
     }
-  }, [commitTurnOwnership, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, notify, persistBadge, setActiveTurn, startTurn, updateDetail, updateThread, upsertThread])
+  }, [commitTurnOwnership, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, notify, persistBadge, queueDetailDelta, setActiveTurn, setThreadStarting, startTurn, updateDetail, updateThread, upsertThread])
 
   useEffect(() => {
     let disposed = false
@@ -1669,7 +1783,8 @@ export function useHarness() {
       handleEvent,
       (event) => {
         if (event.kind === 'disconnected') {
-          notify(String(event.message ?? 'Codex App Server 连接已断开。'), 'error')
+          handleTransportDisconnect()
+          notify(`${String(event.message ?? 'Codex App Server 连接已断开。')} 正在尝试恢复会话。`, 'error')
           scheduleTransportRecovery()
         }
       },
@@ -1683,7 +1798,7 @@ export function useHarness() {
       }
       unsubscribe()
     }
-  }, [handleEvent, notify, refreshThreads, scheduleTransportRecovery, selectThread])
+  }, [handleEvent, handleTransportDisconnect, notify, refreshThreads, scheduleTransportRecovery, selectThread])
 
   const currentThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
@@ -1717,6 +1832,7 @@ export function useHarness() {
     queues,
     approvals,
     pendingSteers,
+    startingThreadIds,
     selectedThreadId,
     selectedWorkspaceRoot,
     viewMode,

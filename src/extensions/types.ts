@@ -102,6 +102,7 @@ export interface QuickCommandContribution {
 }
 
 export interface NewThreadPanelProps extends PluginViewContext {
+  isNewThread: boolean
   models: CodexModel[]
   settings: ThreadCodexSettings
   disabled: boolean

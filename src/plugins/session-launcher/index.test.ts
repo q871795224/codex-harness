@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ThreadCodexSettings } from '../../core/domain/codex'
-import { launchMode, modePatch } from './index'
+import { defaultRadarRow, launchMode, modePatch, selectedRadarRow, type PickerRow } from './index'
 
 const base: ThreadCodexSettings = {
   model: 'gpt-5.6-sol',
@@ -25,5 +25,23 @@ describe('session launcher modes', () => {
   it('keeps automatic and manual review distinct', () => {
     expect(launchMode({ ...base, ...modePatch('auto-review') })).toBe('auto-review')
     expect(launchMode({ ...base, ...modePatch('manual') })).toBe('manual')
+  })
+})
+
+describe('session launcher model selection', () => {
+  const row = (model: string, effort: string, defaultCursor = false): PickerRow => ({
+    group: 'reference', model, effort, iq: null, price: null, minutes: null,
+    bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor,
+  })
+
+  it('uses the exact session settings when a Radar row matches', () => {
+    const rows = [row('gpt-5.6-sol', 'high'), row('gpt-5.6-terra', 'max', true)]
+    expect(selectedRadarRow(rows, { model: 'gpt-5.6-sol', effort: 'high' })?.model).toBe('gpt-5.6-sol')
+  })
+
+  it('falls back to the Radar default cursor when the session has no matching row', () => {
+    const rows = [row('gpt-5.6-sol', 'high'), row('gpt-5.6-terra', 'max', true)]
+    expect(selectedRadarRow(rows, { model: 'custom', effort: 'high' })).toBeNull()
+    expect(defaultRadarRow(rows)?.model).toBe('gpt-5.6-terra')
   })
 })

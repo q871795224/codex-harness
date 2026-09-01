@@ -29,6 +29,7 @@ import {
 import type { ApprovalRequest, Thread, ThreadItemEntry, Turn, Workspace } from '../../core/domain/codex'
 import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
+import { displayCommand } from './commandDisplay'
 import { groupTranscriptTurns, summarizeProcessRows, type TranscriptItem, type TranscriptTurn } from './transcript'
 import { runtime } from '../../core/runtime/bridge'
 import { WorkingStatus } from './ConversationStats'
@@ -796,12 +797,14 @@ export function isExternalWebUrl(value: string): boolean {
 
 function CommandItem({ item }: { item: ThreadItemEntry['item'] }) {
   const [open, setOpen] = useState(false)
+  const rawCommand = String(item.command ?? '命令')
+  const command = displayCommand(rawCommand)
   const output = typeof item.aggregatedOutput === 'string' ? item.aggregatedOutput : ''
   return (
     <article className={`tool-card command-card ${item.status === 'failed' ? 'failed' : ''}`}>
       <button type="button" className="tool-card-head" onClick={() => setOpen((value) => !value)}>
         <Terminal size={15} />
-        <code>{truncate(String(item.command ?? '命令'), 110)}</code>
+        <code title={rawCommand}>{truncate(command, 110)}</code>
         <span>{item.status === 'inProgress' ? '运行中' : item.exitCode === 0 ? '完成' : item.status ?? ''}</span>
         {item.durationMs !== undefined && <small>{formatDuration(item.durationMs)}</small>}
         {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
@@ -905,6 +908,7 @@ function ApprovalCard({ request, onAnswer }: { request: ApprovalRequest; onAnswe
   const command = typeof params.command === 'string'
     ? params.command
     : Array.isArray(params.command) ? params.command.join(' ') : null
+  const displayedCommand = command ? displayCommand(command) : null
   const reason = typeof params.reason === 'string' ? params.reason : null
   const decisions = request.method === 'item/commandExecution/requestApproval'
     ? Array.isArray(params.availableDecisions) && params.availableDecisions.length > 0 ? params.availableDecisions : ['accept', 'decline']
@@ -915,7 +919,7 @@ function ApprovalCard({ request, onAnswer }: { request: ApprovalRequest; onAnswe
       <div className="approval-icon"><ShieldAlert size={18} /></div>
       <div className="approval-content">
         <h3>{request.method === 'item/fileChange/requestApproval' ? '需要确认文件修改' : request.method === 'item/tool/requestUserInput' ? 'Codex 需要你的输入' : '需要执行审批'}</h3>
-        {command && <code>{command}</code>}
+        {displayedCommand && <code title={command ?? undefined}>{displayedCommand}</code>}
         {reason && <p>{reason}</p>}
         {!command && !reason && <p>App Server 请求确认该操作。</p>}
         <div className="approval-actions">

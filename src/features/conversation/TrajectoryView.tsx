@@ -2,6 +2,7 @@ import { Bot, Command, FileCode2, MessageSquareText, Terminal, Wrench } from 'lu
 import type { ThreadItemEntry } from '../../core/domain/codex'
 import { itemText } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
+import { displayCommand } from './commandDisplay'
 
 export function TrajectoryView({ items }: { items: ThreadItemEntry[] }) {
   const visible = items.filter((entry) => !['reasoning', 'rawResponse'].includes(entry.item.type))
@@ -36,7 +37,7 @@ function trajectoryCopy(item: ThreadItemEntry['item']): { icon: JSX.Element; lab
   if (item.type === 'userMessage') return { icon: <MessageSquareText size={14} />, label: '用户消息', detail: truncate(itemText(item), 180), kind: 'message' }
   if (item.type === 'agentMessage') return { icon: <Bot size={14} />, label: 'Codex 回复', detail: truncate(item.text ?? '', 180), kind: 'agent' }
   if (item.type === 'commandExecution') return {
-    icon: <Terminal size={14} />, label: item.status === 'inProgress' ? '正在执行命令' : '执行命令', detail: truncate(String(item.command ?? ''), 180), meta: formatDuration(item.durationMs), kind: 'command',
+    icon: <Terminal size={14} />, label: item.status === 'inProgress' ? '正在执行命令' : '执行命令', detail: truncate(displayCommand(String(item.command ?? '')), 180), meta: formatDuration(item.durationMs), kind: 'command',
   }
   if (item.type === 'fileChange') return { icon: <FileCode2 size={14} />, label: `文件修改${Array.isArray(item.changes) ? ` · ${item.changes.length} 项` : ''}`, kind: 'files' }
   if (item.type === 'mcpToolCall') return { icon: <Wrench size={14} />, label: '调用 MCP 工具', detail: `${String(item.server ?? '')} / ${String(item.tool ?? '')}`, meta: String(item.status ?? ''), kind: 'tool' }

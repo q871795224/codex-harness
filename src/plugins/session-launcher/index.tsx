@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Gauge, LoaderCircle, RefreshCw, Shield, ShieldCheck, ShieldOff, Sparkles } from 'lucide-react'
 import type { CodexRadarService } from '../../core/codex-radar/types'
 import type { CodexModel, ThreadCodexSettings } from '../../core/domain/codex'
@@ -6,7 +6,7 @@ import type { HarnessPlugin, NewThreadPanelProps, PluginInstanceRecord } from '.
 
 type LaunchMode = 'yolo' | 'auto-review' | 'manual'
 
-interface PickerRow {
+export interface PickerRow {
   group: 'hard' | 'simple' | 'reference' | 'fallback'
   model: string
   effort: string
@@ -28,7 +28,7 @@ export const sessionLauncherPlugin: HarnessPlugin = {
     id: 'builtin.session-launcher',
     name: '会话启动器',
     description: '在新会话中按 Codex Radar 指标选择模型与推理强度，并切换 YOLO、Auto-review 或 Manual 模式。',
-    version: '1.0.4',
+    version: '1.0.5',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
     permissions: ['network:codexradar.com'],
@@ -53,14 +53,17 @@ export const sessionLauncherDefaultInstance: PluginInstanceRecord = {
   updatedAt: 0,
 }
 
-function SessionLauncher({ radar, threadId, models, settings, disabled, onSettingsChange }: NewThreadPanelProps & { radar: CodexRadarService }) {
+function SessionLauncher({ radar, threadId, isNewThread, models, settings, disabled, onSettingsChange }: NewThreadPanelProps & { radar: CodexRadarService }) {
   const [remoteRows, setRemoteRows] = useState<PickerRow[] | null>(null)
   const [fetchedAt, setFetchedAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const defaultInitializedThreads = useRef(new Set<string>())
   const rows = useMemo(() => availableRows(remoteRows, models, settings), [models, remoteRows, settings])
+  const selectedRow = useMemo(() => selectedRadarRow(rows, settings), [rows, settings])
+  const defaultRow = useMemo(() => defaultRadarRow(rows), [rows])
   const mode = threadId && !yoloInitializedThreads.has(threadId) ? 'yolo' : launchMode(settings)
 
   const load = async () => {
@@ -88,8 +91,22 @@ function SessionLauncher({ radar, threadId, models, settings, disabled, onSettin
     }
   }, [disabled, onSettingsChange, settings, threadId])
 
+  useEffect(() => {
+    if (!threadId || !isNewThread || disabled || loading || models.length === 0 || !defaultRow || defaultInitializedThreads.current.has(threadId)) return
+    if (selectedRow) {
+      defaultInitializedThreads.current.add(threadId)
+      return
+    }
+    defaultInitializedThreads.current.add(threadId)
+    void Promise.resolve(onSettingsChange({ model: defaultRow.model, effort: defaultRow.effort })).catch((nextError) => {
+      defaultInitializedThreads.current.delete(threadId)
+      setSettingsError(messageOf(nextError))
+    })
+  }, [defaultRow, disabled, isNewThread, loading, models.length, onSettingsChange, selectedRow, threadId])
+
   const apply = async (patch: Partial<ThreadCodexSettings>) => {
     if (disabled || saving) return
+    if (threadId && (patch.model !== undefined || patch.effort !== undefined)) defaultInitializedThreads.current.delete(threadId)
     setSaving(true)
     setSettingsError(null)
     try {
@@ -121,7 +138,7 @@ function SessionLauncher({ radar, threadId, models, settings, disabled, onSettin
           <thead><tr><th aria-label="selected" /><th>GROUP</th><th>MODEL</th><th>IQ</th><th>COST</th><th>TIME</th></tr></thead>
           <tbody>
             {rows.map((row) => {
-              const selected = row.model === settings.model && row.effort === settings.effort
+              const selected = selectedRow?.model === row.model && selectedRow?.effort === row.effort
               return (
                 <tr key={`${row.model}:${row.effort}`} className={selected ? 'selected' : ''}>
                   <td>{selected ? <Check size={14} /> : null}</td>
@@ -166,7 +183,15 @@ export function launchMode(settings: ThreadCodexSettings): LaunchMode {
   return 'manual'
 }
 
-function availableRows(remoteRows: PickerRow[] | null, models: CodexModel[], settings: ThreadCodexSettings): PickerRow[] {
+export function selectedRadarRow(rows: PickerRow[], settings: Pick<ThreadCodexSettings, 'model' | 'effort'>): PickerRow | null {
+  return rows.find((row) => row.model === settings.model && row.effort === settings.effort) ?? null
+}
+
+export function defaultRadarRow(rows: PickerRow[]): PickerRow | null {
+  return rows.find((row) => row.defaultCursor) ?? rows[0] ?? null
+}
+
+export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel[], settings: ThreadCodexSettings): PickerRow[] {
   if (remoteRows === null) return []
   const supported = remoteRows.filter((row) => modelSupports(models, row.model, row.effort))
   if (supported.length > 0) return supported
