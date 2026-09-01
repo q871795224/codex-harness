@@ -302,10 +302,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .conversation-turn { margin: 0 0 30px; }
 .conversation-turn + .conversation-turn { padding-top: 26px; border-top: 1px solid #eceef2; }
 .conversation-turn > .user-message { margin-bottom: 18px; }
-.turn-actions { display: flex; justify-content: flex-end; margin-top: 11px; }
-.turn-actions button { display: inline-flex; align-items: center; gap: 5px; height: 25px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #9298a2; cursor: pointer; font-size: 10px; }
-.turn-actions button:hover:not(:disabled) { border-color: #d9deee; background: #f7f8fc; color: #5267bd; }
-.turn-actions button:disabled { cursor: wait; opacity: .6; }
+.message-actions { display: flex; align-items: center; gap: 2px; min-height: 22px; margin-top: 4px; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+.user-message .message-actions { justify-content: flex-end; }
+.user-message:hover .message-actions, .final-answer:hover .message-actions, .message-actions:focus-within { opacity: 1; pointer-events: auto; }
+.message-actions button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #9298a2; cursor: pointer; }
+.message-actions button:hover:not(:disabled) { background: #f0f2f6; color: #5267bd; }
+.message-actions button:focus-visible { outline: 2px solid rgba(82, 104, 196, .35); outline-offset: 1px; }
+.message-actions button:disabled { cursor: wait; opacity: .6; }
+.message-actions button.copied { color: #4e8563; }
+.message-actions button.failed { color: #b05252; }
 .assistant-turn { min-width: 0; }
 .process-group { margin: 0 0 18px; overflow: hidden; border: 1px solid #e4e7ec; border-radius: 9px; background: #f8f9fa; }
 .process-group.running { border-color: #e4e7ec; background: #f8f9fa; }
@@ -1085,7 +1090,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .app-shell[data-theme='dark'] .composer-suggestions-state { color: #929aa6; }
 .app-shell[data-theme='dark'] .user-bubble { background: #29303d; color: #e0e3e9; }
 .app-shell[data-theme='dark'] .conversation-turn + .conversation-turn { border-color: #30343b; }
-.app-shell[data-theme='dark'] .turn-actions button:hover:not(:disabled) { border-color: #414858; background: #252a35; color: #aab8ef; }
+.app-shell[data-theme='dark'] .message-actions button:hover:not(:disabled) { background: #303640; color: #aab8ef; }
+.app-shell[data-theme='dark'] .message-actions button.copied { color: #8fc4a3; }
+.app-shell[data-theme='dark'] .message-actions button.failed { color: #dc9797; }
 .app-shell[data-theme='dark'] .process-group { border-color: #353941; background: #202329; }
 .app-shell[data-theme='dark'] .process-group.running { border-color: #353941; background: #202329; }
 .app-shell[data-theme='dark'] .process-group.failed { border-color: #654141; background: #2d2224; }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
-import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
+import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, copyableTranscriptText, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
 import { formatWorkingElapsed } from './ConversationStats'
 import { parseThreadTitleGenerationSettings } from './useHarness'
 import { isFirstUserTurn, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './threadLifecycle'
@@ -77,6 +77,15 @@ describe('conversation scrolling', () => {
   it('keeps following content only while the viewport is near the bottom', () => {
     expect(isNearConversationBottom({ scrollTop: 452, clientHeight: 500, scrollHeight: 1_000 })).toBe(true)
     expect(isNearConversationBottom({ scrollTop: 400, clientHeight: 500, scrollHeight: 1_000 })).toBe(false)
+  })
+})
+
+describe('message copying', () => {
+  it('copies final answer fragments as Markdown paragraphs', () => {
+    expect(copyableTranscriptText([
+      { entry: { turnId: 'turn-1', item: { type: 'agentMessage', text: '第一段' } }, agentText: '第一段' },
+      { entry: { turnId: 'turn-1', item: { type: 'agentMessage', text: '**第二段**' } }, agentText: '**第二段**' },
+    ])).toBe('第一段\n\n**第二段**')
   })
 })
 

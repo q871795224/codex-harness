@@ -444,18 +444,18 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
                 />
               ))}
               {working && <WorkingStatus startedAt={workingStartedAt} />}
+              {!working && turn.status !== 'inProgress' && (
+                <MessageActions
+                  copyText={copyableTranscriptText(turn.finalRows)}
+                  onFork={onFork ? () => onFork(turn.turnId) : undefined}
+                  forking={forking}
+                />
+              )}
             </section>
           )}
         </div>
       )}
       {turn.status === 'failed' && <TurnFailureNotice error={turn.error} canContinue={canContinue} onContinue={onContinue} />}
-      {onFork && turn.status !== 'inProgress' && (
-        <div className="turn-actions">
-          <button type="button" onClick={() => onFork(turn.turnId)} disabled={forking} title="复制到这一轮为止的对话历史；代码文件仍与当前会话共用同一工作目录">
-            <GitFork size={13} />{forking ? '正在分支…' : '从这里分支'}
-          </button>
-        </div>
-      )}
     </section>
   )
 }
@@ -567,6 +567,7 @@ const ThreadItemView = memo(function ThreadItemView({
             return <span key={`${path}:${index}`} title={path}>{attachment.type === 'mention' ? <FileText size={13} /> : <Image size={13} />}{name}</span>
           })}</div>}
         </div>
+        {text && <MessageActions copyText={text} />}
       </article>
     ) : null
   }
@@ -594,6 +595,49 @@ const ThreadItemView = memo(function ThreadItemView({
   if (['reasoning', 'rawResponse', 'internal'].includes(item.type)) return null
   return <GenericActivityItem item={item} />
 })
+
+function MessageActions({ copyText, onFork, forking = false }: {
+  copyText?: string
+  onFork?: () => void
+  forking?: boolean
+}) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const canCopy = Boolean(copyText?.trim())
+  if (!canCopy && !onFork) return null
+
+  const copy = async () => {
+    if (!copyText) return
+    try {
+      await writeClipboard(copyText)
+      setCopyState('copied')
+    } catch {
+      setCopyState('failed')
+    }
+    window.setTimeout(() => setCopyState('idle'), 1_500)
+  }
+
+  return (
+    <div className="message-actions">
+      {canCopy && (
+        <button type="button" className={copyState} onClick={() => void copy()} aria-label="复制消息" title={copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}>
+          {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
+        </button>
+      )}
+      {onFork && (
+        <button type="button" onClick={onFork} disabled={forking} aria-label="从此处开始分叉" title="复制到这一轮为止的对话历史；代码文件仍与当前会话共用同一工作目录">
+          <GitFork size={13} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+export function copyableTranscriptText(rows: TranscriptItem[]): string {
+  return rows
+    .map((row) => row.agentText ?? row.entry.item.text ?? '')
+    .filter((text) => text.trim().length > 0)
+    .join('\n\n')
+}
 
 function GenericActivityItem({ item }: { item: ThreadItemEntry['item'] }) {
   const labels: Record<string, string> = {
