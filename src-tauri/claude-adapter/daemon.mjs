@@ -1,9 +1,9 @@
-// Experimental foreground adapter retained as a protocol reference and fallback.
-// Codex Harness no longer uses this entry point; production traffic goes through
-// daemon.mjs so Claude turns are not owned by the Harness app lifecycle.
+import net from 'node:net'
 import { createInterface } from 'node:readline'
-import { readFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { dirname } from 'node:path'
+import process from 'node:process'
 
 let sdk
 try {
@@ -13,25 +13,38 @@ try {
 }
 const { query } = sdk
 
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
+const MAX_REPLAY_EVENTS = 5_000
+const socketPath = process.env.CODEX_HARNESS_CLAUDE_SOCKET
+const lockPath = `${socketPath}.lock`
+const claudePath = process.env.CODEX_HARNESS_CLAUDE_PATH || undefined
 const activeTurns = new Map()
 const pendingApprovals = new Map()
-let claudePath = process.env.CODEX_HARNESS_CLAUDE_PATH || undefined
+const clients = new Set()
+const replayEvents = []
+let nextSequence = 1
+let stopping = false
+let lockHandle
 
-function send(message) {
-  process.stdout.write(`${JSON.stringify(message)}\n`)
+if (!socketPath) throw new Error('CODEX_HARNESS_CLAUDE_SOCKET is required')
+
+function send(client, message) {
+  if (!client.destroyed) client.write(`${JSON.stringify(message)}\n`)
 }
 
-function respond(id, result) {
-  send({ id, result })
+function respond(client, id, result) {
+  send(client, { id, result })
 }
 
-function fail(id, error) {
-  send({ id, error: { message: errorMessage(error) } })
+function fail(client, id, error) {
+  send(client, { id, error: { message: errorMessage(error) } })
 }
 
 function emit(method, params) {
-  send({ method, params })
+  const message = { method, params, seq: nextSequence++ }
+  replayEvents.push(message)
+  if (replayEvents.length > MAX_REPLAY_EVENTS) replayEvents.shift()
+  for (const client of clients) send(client, message)
 }
 
 function errorMessage(error) {
@@ -94,6 +107,7 @@ function approvalRequest(sessionId, turnId, toolName, input, context) {
     }
     context?.signal?.addEventListener('abort', abort, { once: true })
     pendingApprovals.set(requestId, {
+      sessionId,
       resolve: (decision) => {
         context?.signal?.removeEventListener('abort', abort)
         resolve(decision)
@@ -157,6 +171,7 @@ async function startTurn(params) {
   const abortController = new AbortController()
   activeTurns.set(sessionId, { turnId, abortController })
   emit('turn/started', { sessionId, turnId })
+  emit('message/user', { sessionId, turnId, itemId: `${turnId}:user`, content: params.input ?? [] })
 
   let providerSessionId = params.providerSessionId ?? null
   try {
@@ -217,16 +232,33 @@ async function startTurn(params) {
   }
 }
 
-async function handle(request) {
+function activeTurnSnapshot() {
+  return [...activeTurns.entries()].map(([sessionId, active]) => ({ sessionId, turnId: active.turnId }))
+}
+
+async function handle(client, request) {
   const { id, method, params = {} } = request
   if (method === 'initialize') {
-    claudePath = params.claudePath || claudePath
-    respond(id, { protocolVersion: PROTOCOL_VERSION, adapterVersion: '0.1.0' })
+    const lastEventSeq = Number.isSafeInteger(params.lastEventSeq) ? params.lastEventSeq : 0
+    respond(client, id, {
+      protocolVersion: PROTOCOL_VERSION,
+      daemonVersion: '0.2.0',
+      daemonPid: process.pid,
+      latestEventSeq: nextSequence - 1,
+      activeTurns: activeTurnSnapshot(),
+    })
+    for (const event of replayEvents) {
+      if (event.seq > lastEventSeq) send(client, event)
+    }
+    return
+  }
+  if (method === 'runtime/status') {
+    respond(client, id, { daemonPid: process.pid, latestEventSeq: nextSequence - 1, activeTurns: activeTurnSnapshot() })
     return
   }
   if (method === 'turn/start') {
     if (activeTurns.has(params.sessionId)) throw new Error('该 Claude 会话已有运行中的 turn')
-    respond(id, { accepted: true })
+    respond(client, id, { accepted: true })
     void startTurn(params)
     return
   }
@@ -234,7 +266,7 @@ async function handle(request) {
     const active = activeTurns.get(params.sessionId)
     if (!active) throw new Error('Claude 会话当前没有运行中的 turn')
     active.abortController.abort()
-    respond(id, {})
+    respond(client, id, {})
     return
   }
   if (method === 'approval/respond') {
@@ -244,32 +276,99 @@ async function handle(request) {
     pending.resolve(params.allow
       ? { behavior: 'allow', updatedInput: params.updatedInput ?? params.input ?? {} }
       : { behavior: 'deny', message: params.message || 'User declined in Codex Harness' })
-    respond(id, {})
+    respond(client, id, {})
     return
   }
   if (method === 'shutdown') {
-    for (const active of activeTurns.values()) active.abortController.abort()
-    respond(id, {})
-    process.exitCode = 0
-    process.stdin.pause()
+    respond(client, id, {})
+    void stopDaemon()
     return
   }
-  throw new Error(`未知 Claude adapter 方法: ${method}`)
+  throw new Error(`未知 Claude Provider 方法: ${method}`)
 }
 
-const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
-lines.on('line', (line) => {
-  if (!line.trim()) return
-  let request
+async function socketIsReachable() {
+  return new Promise((resolve) => {
+    const probe = net.createConnection(socketPath)
+    probe.once('connect', () => {
+      probe.destroy()
+      resolve(true)
+    })
+    probe.once('error', () => resolve(false))
+  })
+}
+
+function processIsAlive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false
   try {
-    request = JSON.parse(line)
+    process.kill(pid, 0)
+    return true
   } catch (error) {
-    send({ error: { message: `无效 JSON: ${errorMessage(error)}` } })
-    return
+    return error?.code === 'EPERM'
   }
-  void handle(request).catch((error) => fail(request.id, error))
+}
+
+async function acquireLock() {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      lockHandle = await open(lockPath, 'wx', 0o600)
+      await lockHandle.writeFile(String(process.pid))
+      return
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      const owner = Number.parseInt(await readFile(lockPath, 'utf8').catch(() => ''), 10)
+      if (processIsAlive(owner)) throw new Error(`Claude Provider daemon is already starting or running (pid ${owner})`)
+      await rm(lockPath, { force: true })
+    }
+  }
+  throw new Error('无法取得 Claude Provider daemon lock')
+}
+
+async function prepareSocket() {
+  await mkdir(dirname(socketPath), { recursive: true, mode: 0o700 })
+  if (await socketIsReachable()) throw new Error('Claude Provider daemon is already running')
+  await acquireLock()
+  if (await socketIsReachable()) throw new Error('Claude Provider daemon is already running')
+  await rm(socketPath, { force: true })
+}
+
+const server = net.createServer((client) => {
+  clients.add(client)
+  client.on('close', () => clients.delete(client))
+  const lines = createInterface({ input: client, crlfDelay: Infinity })
+  lines.on('line', (line) => {
+    if (!line.trim()) return
+    let request
+    try {
+      request = JSON.parse(line)
+    } catch (error) {
+      send(client, { error: { message: `无效 JSON: ${errorMessage(error)}` } })
+      return
+    }
+    void handle(client, request).catch((error) => fail(client, request.id, error))
+  })
 })
 
-lines.on('close', () => {
+async function stopDaemon() {
+  if (stopping) return
+  stopping = true
   for (const active of activeTurns.values()) active.abortController.abort()
+  for (const client of clients) client.end()
+  server.close()
+}
+
+await prepareSocket()
+server.listen(socketPath, async () => {
+  await chmod(socketPath, 0o600)
+})
+
+process.on('SIGINT', () => void stopDaemon())
+process.on('SIGTERM', () => void stopDaemon())
+server.on('close', () => {
+  void (async () => {
+    await rm(socketPath, { force: true }).catch(() => undefined)
+    await lockHandle?.close().catch(() => undefined)
+    await rm(lockPath, { force: true }).catch(() => undefined)
+    process.exit(0)
+  })()
 })

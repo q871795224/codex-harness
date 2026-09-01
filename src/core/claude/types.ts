@@ -38,4 +38,5 @@ export interface ClaudeTurnStartInput {
 
 export interface ClaudeAdapterEvent extends AppServerEvent {
   method: string
+  seq?: number
 }

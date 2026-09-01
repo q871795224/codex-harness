@@ -12,6 +12,7 @@ interface ClaudeToast {
 
 export function useClaudeHarness() {
   const [status, setStatus] = useState<ClaudeRuntimeStatus | null>(null)
+  const [loaded, setLoaded] = useState(false)
   const [sessions, setSessions] = useState<ClaudeSessionRecord[]>([])
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
   const [activeTurnIds, setActiveTurnIds] = useState<Record<string, string>>({})
@@ -33,6 +34,7 @@ export function useClaudeHarness() {
 
   const refresh = useCallback(async (archived = false) => {
     const next = await runtime.listClaudeSessions(archived)
+    sessionsRef.current = next
     setSessions(next)
     return next
   }, [])
@@ -46,7 +48,11 @@ export function useClaudeHarness() {
       cwd: current.cwd,
       title: current.title,
     })
-    setSessions((sessions) => sessions.map((session) => session.id === saved.id ? saved : session))
+    setSessions((sessions) => {
+      const next = sessions.map((session) => session.id === saved.id ? saved : session)
+      sessionsRef.current = next
+      return next
+    })
   }, [])
 
   const handleEvent = useCallback((event: ClaudeAdapterEvent) => {
@@ -72,11 +78,15 @@ export function useClaudeHarness() {
           reason: `Claude 请求使用 ${toolName}`,
         },
       }
-      setApprovals((current) => ({ ...current, [sessionId]: [...(current[sessionId] ?? []), request] }))
+      setApprovals((current) => ({
+        ...current,
+        [sessionId]: [...(current[sessionId] ?? []).filter((item) => item.id !== request.id), request],
+      }))
       return
     }
     setDetails((current) => {
-      const detail = current[sessionId]
+      const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+      const detail = current[sessionId] ?? (session ? emptyThreadDetail(sessionThread(session)) : null)
       if (!detail) return current
       return { ...current, [sessionId]: reduceClaudeEvent(detail, event) }
     })
@@ -100,19 +110,43 @@ export function useClaudeHarness() {
   useEffect(() => {
     let disposed = false
     let unlisten: (() => void) | undefined
-    void Promise.all([runtime.claudeRuntimeStatus(), runtime.listClaudeSessions(false)])
-      .then(([nextStatus, nextSessions]) => {
+    void (async () => {
+      try {
+        const dispose = await runtime.listenClaudeEvents(handleEvent)
+        if (disposed) {
+          dispose()
+          return
+        }
+        unlisten = dispose
+        const [nextStatus, nextSessions] = await Promise.all([
+          runtime.claudeRuntimeStatus(),
+          runtime.listClaudeSessions(false),
+        ])
         if (disposed) return
+        sessionsRef.current = nextSessions
         setStatus(nextStatus)
         setSessions(nextSessions)
-      })
-      .catch((error) => {
+        setDetails((current) => {
+          const next = { ...current }
+          for (const session of nextSessions) {
+            next[session.id] ??= emptyThreadDetail(sessionThread(session))
+          }
+          return next
+        })
+        if (nextStatus.available) {
+          const provider = await runtime.claudeRequest<{
+            activeTurns?: Array<{ sessionId: string, turnId: string }>
+          }>('runtime/status')
+          if (!disposed && provider.activeTurns) {
+            setActiveTurnIds(Object.fromEntries(provider.activeTurns.map((turn) => [turn.sessionId, turn.turnId])))
+          }
+        }
+      } catch (error) {
         if (!disposed) setStatus({ available: false, nodePath: null, claudePath: null, adapterPath: null, error: messageOf(error) })
-      })
-    void runtime.listenClaudeEvents(handleEvent).then((dispose) => {
-      if (disposed) dispose()
-      else unlisten = dispose
-    })
+      } finally {
+        if (!disposed) setLoaded(true)
+      }
+    })()
     return () => {
       disposed = true
       unlisten?.()
@@ -144,7 +178,11 @@ export function useClaudeHarness() {
         cwd,
         title: 'Claude 会话',
       })
-      setSessions((current) => [session, ...current.filter((candidate) => candidate.id !== session.id)])
+      setSessions((current) => {
+        const next = [session, ...current.filter((candidate) => candidate.id !== session.id)]
+        sessionsRef.current = next
+        return next
+      })
       setDetails((current) => ({ ...current, [session.id]: emptyThreadDetail(sessionThread(session)) }))
       return session.id
     } catch (error) {
@@ -160,7 +198,7 @@ export function useClaudeHarness() {
     if (!session || input.length === 0) return
     if (activeTurnIds[sessionId]) throw new Error('Claude 会话当前正在运行')
     const turnId = `claude-turn:${crypto.randomUUID()}`
-    const userItemId = `claude-user:${crypto.randomUUID()}`
+    const userItemId = `${turnId}:user`
     const startedAt = Date.now()
     const newTurn: Turn = {
       id: turnId,
@@ -254,17 +292,26 @@ export function useClaudeHarness() {
       cwd: session.cwd,
       title: title.trim() || 'Claude 会话',
     })
-    setSessions((current) => current.map((candidate) => candidate.id === saved.id ? saved : candidate))
+    setSessions((current) => {
+      const next = current.map((candidate) => candidate.id === saved.id ? saved : candidate)
+      sessionsRef.current = next
+      return next
+    })
   }, [])
 
   const setArchived = useCallback(async (sessionId: string, archived: boolean) => {
     await runtime.setClaudeSessionArchived(sessionId, archived)
-    setSessions((current) => current.filter((session) => session.id !== sessionId))
+    setSessions((current) => {
+      const next = current.filter((session) => session.id !== sessionId)
+      sessionsRef.current = next
+      return next
+    })
     notify(archived ? '已归档 Claude 会话' : '已恢复 Claude 会话')
   }, [notify])
 
   return {
     status,
+    loaded,
     sessions,
     threads,
     details,

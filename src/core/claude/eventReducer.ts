@@ -1,4 +1,4 @@
-import type { JsonObject, ThreadDetail, ThreadItem, Turn } from '../domain/codex'
+import type { JsonObject, ThreadDetail, ThreadItem, Turn, UserInput } from '../domain/codex'
 import { reduceThreadDetailEvent } from '../../features/conversation/conversationEventReducer'
 import type { ClaudeAdapterEvent } from './types'
 
@@ -12,6 +12,15 @@ export function reduceClaudeEvent(detail: ThreadDetail, event: ClaudeAdapterEven
       ...reduceThreadDetailEvent(detail, { type: 'turnStarted', turn: turn(detail, turnId, 'inProgress') }),
       activeTurnId: turnId,
     }
+  }
+  if (event.method === 'message/user') {
+    const itemId = stringParam(params, 'itemId')
+    if (!itemId || !Array.isArray(params.content)) return detail
+    return reduceThreadDetailEvent(detail, {
+      type: 'itemUpserted',
+      turnId,
+      item: { id: itemId, type: 'userMessage', content: params.content as UserInput[] },
+    })
   }
   if (event.method === 'message/delta') {
     const itemId = stringParam(params, 'itemId')

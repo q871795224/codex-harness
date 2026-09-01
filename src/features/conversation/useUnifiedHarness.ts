@@ -5,6 +5,7 @@ import { useClaudeHarness } from '../claude/useClaudeHarness'
 import { useHarness } from './useHarness'
 
 export type ConversationProvider = 'codex' | 'claude'
+const SELECTED_CONVERSATION_KEY = 'selectedConversationId'
 
 export interface ConversationCapabilities {
   images: boolean
@@ -53,20 +54,40 @@ export function useUnifiedHarness() {
   const restoredSelection = useRef(false)
 
   useEffect(() => {
+    if (!restoredSelection.current) return
     if (codex.selectedThreadId === previousCodexSelection.current) return
     previousCodexSelection.current = codex.selectedThreadId
-    if (codex.selectedThreadId) setSelectedThreadId(codex.selectedThreadId)
+    if (codex.selectedThreadId) {
+      setSelectedThreadId(codex.selectedThreadId)
+      void runtime.setAppState(SELECTED_CONVERSATION_KEY, codex.selectedThreadId).catch(() => undefined)
+    }
   }, [codex.selectedThreadId])
 
   useEffect(() => {
-    if (restoredSelection.current || codex.phase !== 'ready' || !claude.status) return
-    restoredSelection.current = true
-    void runtime.getAppState('selectedThreadId').then((remembered) => {
-      if (!remembered || !claude.sessions.some((session) => session.id === remembered)) return
-      claude.selectSession(remembered)
-      setSelectedThreadId(remembered)
-    }).catch(() => undefined)
-  }, [claude, codex.phase])
+    if (restoredSelection.current || codex.phase !== 'ready' || !claude.loaded) return
+    let disposed = false
+    void (async () => {
+      const remembered = await runtime.getAppState(SELECTED_CONVERSATION_KEY)
+        ?? await runtime.getAppState('selectedThreadId')
+      if (disposed) return
+      if (remembered?.startsWith('claude:') && claude.sessions.some((session) => session.id === remembered)) {
+        claude.selectSession(remembered)
+        setSelectedThreadId(remembered)
+      } else if (remembered && codex.threads.some((thread) => thread.id === remembered)) {
+        setSelectedThreadId(remembered)
+      } else {
+        setSelectedThreadId(codex.selectedThreadId ?? claude.sessions[0]?.id ?? null)
+      }
+      previousCodexSelection.current = codex.selectedThreadId
+      restoredSelection.current = true
+    })().catch(() => {
+      if (disposed) return
+      previousCodexSelection.current = codex.selectedThreadId
+      setSelectedThreadId(codex.selectedThreadId)
+      restoredSelection.current = true
+    })
+    return () => { disposed = true }
+  }, [claude.loaded, claude.selectSession, claude.sessions, codex.phase, codex.selectedThreadId, codex.threads])
 
   const selectedProvider: ConversationProvider = selectedThreadId?.startsWith('claude:') ? 'claude' : 'codex'
   const capabilities = useMemo(() => capabilitiesForProvider(selectedProvider), [selectedProvider])
@@ -88,7 +109,7 @@ export function useUnifiedHarness() {
     if (threadId.startsWith('claude:')) claude.selectSession(threadId)
     else await codex.selectThread(threadId)
     setSelectedThreadId(threadId)
-    void runtime.setAppState('selectedThreadId', threadId).catch(() => undefined)
+    void runtime.setAppState(SELECTED_CONVERSATION_KEY, threadId).catch(() => undefined)
   }, [claude, codex])
 
   const createThread = useCallback(async (provider: ConversationProvider = 'codex') => {
@@ -106,7 +127,7 @@ export function useUnifiedHarness() {
       const id = await claude.createSession(sessionCwd)
       claude.selectSession(id)
       setSelectedThreadId(id)
-      void runtime.setAppState('selectedThreadId', id).catch(() => undefined)
+      void runtime.setAppState(SELECTED_CONVERSATION_KEY, id).catch(() => undefined)
     } catch {
       // useClaudeHarness surfaces the actionable runtime error.
     }

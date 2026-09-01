@@ -17,6 +17,27 @@ const thread: Thread = {
 }
 
 describe('Claude event reducer', () => {
+  it('rebuilds the user input from daemon replay events', () => {
+    let detail = emptyThreadDetail(thread)
+    detail = reduceClaudeEvent(detail, { method: 'turn/started', params: { sessionId: thread.id, turnId: 'turn-1' } })
+    detail = reduceClaudeEvent(detail, {
+      method: 'message/user',
+      params: {
+        sessionId: thread.id,
+        turnId: 'turn-1',
+        itemId: 'turn-1:user',
+        content: [{ type: 'text', text: '继续执行' }],
+      },
+    })
+
+    expect(detail.items).toHaveLength(1)
+    expect(detail.items[0].item).toMatchObject({
+      id: 'turn-1:user',
+      type: 'userMessage',
+      content: [{ type: 'text', text: '继续执行' }],
+    })
+  })
+
   it('streams assistant text into one stable final item', () => {
     let detail = emptyThreadDetail(thread)
     detail = reduceClaudeEvent(detail, { method: 'turn/started', params: { sessionId: thread.id, turnId: 'turn-1' } })

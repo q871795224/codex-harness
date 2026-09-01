@@ -1,7 +1,7 @@
-//! Experimental foreground runtime used to validate Agent SDK/UI integration.
-//! The adapter is owned by the Harness process, so active turns do not survive an
-//! app exit. Do not treat this as the final Claude Provider lifecycle; see
-//! `docs/claude-provider-tech-design.md` for the Supervisor evaluation.
+//! Claude Provider client.
+//!
+//! Harness connects to a local Node.js daemon over a Unix socket. The daemon owns
+//! Agent SDK queries and therefore survives Harness window and process exits.
 
 use crate::diagnostics::DiagnosticLog;
 use serde::Serialize;
@@ -9,29 +9,31 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     env,
+    fs::{self, OpenOptions},
     path::{Path, PathBuf},
     process::Stdio,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, Command},
+    net::{unix::OwnedWriteHalf, UnixStream},
     sync::{oneshot, Mutex},
-    time::{timeout, Duration},
+    time::{sleep, timeout, Duration},
 };
 
-const PROTOCOL_VERSION: u64 = 1;
+const PROTOCOL_VERSION: u64 = 2;
+const CONNECT_ATTEMPTS: usize = 50;
 
 type PendingResponse = oneshot::Sender<Result<Value, String>>;
 
 struct ClaudeConnection {
-    stdin: Arc<Mutex<ChildStdin>>,
+    writer: Mutex<OwnedWriteHalf>,
     pending: Arc<Mutex<HashMap<u64, PendingResponse>>>,
-    _child: Arc<Mutex<Child>>,
+    alive: Arc<AtomicBool>,
 }
 
 pub struct ClaudeRuntime {
@@ -39,6 +41,7 @@ pub struct ClaudeRuntime {
     diagnostics: Arc<DiagnosticLog>,
     connection: Mutex<Option<Arc<ClaudeConnection>>>,
     next_id: AtomicU64,
+    latest_event_seq: Arc<AtomicU64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,6 +50,7 @@ pub struct ClaudeRuntimeStatus {
     pub available: bool,
     pub node_path: Option<String>,
     pub claude_path: Option<String>,
+    // Kept as adapterPath for frontend compatibility; it now points to daemon.mjs.
     pub adapter_path: Option<String>,
     pub error: Option<String>,
 }
@@ -58,24 +62,25 @@ impl ClaudeRuntime {
             diagnostics,
             connection: Mutex::new(None),
             next_id: AtomicU64::new(1),
+            latest_event_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 
     pub fn status(&self) -> ClaudeRuntimeStatus {
         let node = find_node_binary();
         let claude = find_claude_binary();
-        let adapter = find_adapter(&self.app);
+        let daemon = find_daemon(&self.app);
         let error = node
             .as_ref()
             .err()
             .or_else(|| claude.as_ref().err())
-            .or_else(|| adapter.as_ref().err())
+            .or_else(|| daemon.as_ref().err())
             .cloned();
         ClaudeRuntimeStatus {
             available: error.is_none(),
             node_path: node.ok().map(|path| path.display().to_string()),
             claude_path: claude.ok().map(|path| path.display().to_string()),
-            adapter_path: adapter.ok().map(|path| path.display().to_string()),
+            adapter_path: daemon.ok().map(|path| path.display().to_string()),
             error,
         }
     }
@@ -89,69 +94,142 @@ impl ClaudeRuntime {
     async fn connection(&self) -> Result<Arc<ClaudeConnection>, String> {
         let mut guard = self.connection.lock().await;
         if let Some(connection) = guard.as_ref() {
-            if connection
-                ._child
-                .lock()
-                .await
-                .try_wait()
-                .ok()
-                .flatten()
-                .is_none()
-            {
+            if connection.alive.load(Ordering::Acquire) {
                 return Ok(connection.clone());
             }
             *guard = None;
         }
-        let connection = self.spawn().await?;
+
+        let socket_path = provider_socket_path()?;
+        let stream = match UnixStream::connect(&socket_path).await {
+            Ok(stream) => stream,
+            Err(_) => {
+                self.spawn_daemon(&socket_path)?;
+                connect_with_retry(&socket_path).await?
+            }
+        };
+        let connection = self.attach(stream);
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let result = send_request(
             &connection,
             id,
             "initialize",
-            json!({
-                "claudePath": find_claude_binary()?.display().to_string(),
-            }),
+            json!({ "lastEventSeq": self.latest_event_seq.load(Ordering::Acquire) }),
         )
         .await?;
         let version = result
             .get("protocolVersion")
             .and_then(Value::as_u64)
-            .ok_or_else(|| "Claude adapter initialize 缺少 protocolVersion。".to_string())?;
+            .ok_or_else(|| "Claude Provider initialize 缺少 protocolVersion。".to_string())?;
         if version != PROTOCOL_VERSION {
+            connection.alive.store(false, Ordering::Release);
             return Err(format!(
-                "Claude adapter 协议版本不兼容：Harness={PROTOCOL_VERSION}, adapter={version}"
+                "Claude Provider 协议版本不兼容：Harness={PROTOCOL_VERSION}, daemon={version}"
             ));
         }
         self.diagnostics.record(
             "info",
             "claude-runtime",
-            "adapter.connected",
-            json!({ "protocolVersion": version }),
+            "daemon.connected",
+            json!({
+                "protocolVersion": version,
+                "daemonPid": result.get("daemonPid"),
+            }),
         );
         *guard = Some(connection.clone());
         Ok(connection)
     }
 
-    async fn spawn(&self) -> Result<Arc<ClaudeConnection>, String> {
+    fn attach(&self, stream: UnixStream) -> Arc<ClaudeConnection> {
+        let (reader, writer) = stream.into_split();
+        let pending = Arc::new(Mutex::new(HashMap::<u64, PendingResponse>::new()));
+        let alive = Arc::new(AtomicBool::new(true));
+        let connection = Arc::new(ClaudeConnection {
+            writer: Mutex::new(writer),
+            pending: pending.clone(),
+            alive: alive.clone(),
+        });
+        let app = self.app.clone();
+        let diagnostics = self.diagnostics.clone();
+        let latest_event_seq = self.latest_event_seq.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut lines = BufReader::new(reader).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let Ok(message) = serde_json::from_str::<Value>(&line) else {
+                    diagnostics.record(
+                        "error",
+                        "claude-runtime",
+                        "daemon.invalid-json",
+                        json!({ "length": line.len() }),
+                    );
+                    continue;
+                };
+                if let Some(id) = message.get("id").and_then(Value::as_u64) {
+                    if let Some(sender) = pending.lock().await.remove(&id) {
+                        let response = if let Some(error) = message.get("error") {
+                            Err(provider_error(error))
+                        } else {
+                            message
+                                .get("result")
+                                .cloned()
+                                .ok_or_else(|| "Claude Provider 响应缺少 result。".to_string())
+                        };
+                        let _ = sender.send(response);
+                    }
+                } else if message.get("method").and_then(Value::as_str).is_some() {
+                    if let Some(sequence) = message.get("seq").and_then(Value::as_u64) {
+                        latest_event_seq.fetch_max(sequence, Ordering::AcqRel);
+                    }
+                    let _ = app.emit("claude:event", &message);
+                }
+            }
+            alive.store(false, Ordering::Release);
+            for (_, sender) in pending.lock().await.drain() {
+                let _ = sender.send(Err("Claude Provider 已断开。".to_string()));
+            }
+            let _ = app.emit("claude:transport", json!({ "kind": "disconnected" }));
+        });
+        connection
+    }
+
+    fn spawn_daemon(&self, socket_path: &Path) -> Result<(), String> {
         let node = find_node_binary()?;
         let claude = find_claude_binary()?;
-        let adapter = find_adapter(&self.app)?;
-        let root = adapter
+        let daemon = find_daemon(&self.app)?;
+        let state_dir = socket_path
+            .parent()
+            .ok_or_else(|| "Claude Provider socket 路径无效。".to_string())?;
+        fs::create_dir_all(state_dir)
+            .map_err(|error| format!("无法创建 Claude Provider 状态目录: {error}"))?;
+        set_owner_only_directory(state_dir)?;
+        let log_dir = state_dir.join("logs");
+        fs::create_dir_all(&log_dir)
+            .map_err(|error| format!("无法创建 Claude Provider 日志目录: {error}"))?;
+        set_owner_only_directory(&log_dir)?;
+        let log = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_dir.join("claude-provider.log"))
+            .map_err(|error| format!("无法打开 Claude Provider 日志: {error}"))?;
+        let error_log = log
+            .try_clone()
+            .map_err(|error| format!("无法复制 Claude Provider 日志句柄: {error}"))?;
+        let root = daemon
             .parent()
             .and_then(Path::parent)
             .and_then(Path::parent)
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")));
-        let mut command = Command::new(&node);
+        let mut command = std::process::Command::new(&node);
         command
-            .arg(&adapter)
+            .arg(&daemon)
             .current_dir(root)
             .env_clear()
             .env("CODEX_HARNESS_CLAUDE_PATH", &claude)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
+            .env("CODEX_HARNESS_CLAUDE_SOCKET", socket_path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(log))
+            .stderr(Stdio::from(error_log));
         if let Some(home) = real_home() {
             command.env("HOME", home);
         }
@@ -172,80 +250,34 @@ impl ClaudeRuntime {
                 command.env(key, value);
             }
         }
-        let mut child = command
+        command
             .spawn()
-            .map_err(|error| format!("无法启动 Claude adapter: {error}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "Claude adapter 没有 stdin。".to_string())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "Claude adapter 没有 stdout。".to_string())?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| "Claude adapter 没有 stderr。".to_string())?;
-        let pending = Arc::new(Mutex::new(HashMap::<u64, PendingResponse>::new()));
-
-        let app = self.app.clone();
-        let response_map = pending.clone();
-        let diagnostics = self.diagnostics.clone();
-        tauri::async_runtime::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let Ok(message) = serde_json::from_str::<Value>(&line) else {
-                    diagnostics.record(
-                        "error",
-                        "claude-runtime",
-                        "adapter.invalid-json",
-                        json!({ "length": line.len() }),
-                    );
-                    continue;
-                };
-                if let Some(id) = message.get("id").and_then(Value::as_u64) {
-                    if let Some(sender) = response_map.lock().await.remove(&id) {
-                        let response = if let Some(error) = message.get("error") {
-                            Err(adapter_error(error))
-                        } else {
-                            message
-                                .get("result")
-                                .cloned()
-                                .ok_or_else(|| "Claude adapter 响应缺少 result。".to_string())
-                        };
-                        let _ = sender.send(response);
-                    }
-                } else if message.get("method").and_then(Value::as_str).is_some() {
-                    let _ = app.emit("claude:event", &message);
-                }
-            }
-            let mut pending = response_map.lock().await;
-            for (_, sender) in pending.drain() {
-                let _ = sender.send(Err("Claude adapter 已断开。".to_string()));
-            }
-            let _ = app.emit("claude:transport", json!({ "kind": "disconnected" }));
-        });
-
-        let diagnostics = self.diagnostics.clone();
-        tauri::async_runtime::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                diagnostics.record(
-                    "error",
-                    "claude-runtime",
-                    "adapter.stderr",
-                    json!({ "length": line.len() }),
-                );
-            }
-        });
-
-        Ok(Arc::new(ClaudeConnection {
-            stdin: Arc::new(Mutex::new(stdin)),
-            pending,
-            _child: Arc::new(Mutex::new(child)),
-        }))
+            .map_err(|error| format!("无法启动 Claude Provider daemon: {error}"))?;
+        self.diagnostics.record(
+            "info",
+            "claude-runtime",
+            "daemon.spawned",
+            json!({ "socketPath": socket_path }),
+        );
+        Ok(())
     }
+}
+
+async fn connect_with_retry(socket_path: &Path) -> Result<UnixStream, String> {
+    let mut last_error = None;
+    for _ in 0..CONNECT_ATTEMPTS {
+        match UnixStream::connect(socket_path).await {
+            Ok(stream) => return Ok(stream),
+            Err(error) => last_error = Some(error),
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    Err(format!(
+        "无法连接 Claude Provider daemon: {}",
+        last_error
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "未知错误".to_string())
+    ))
 }
 
 async fn send_request(
@@ -258,57 +290,67 @@ async fn send_request(
     connection.pending.lock().await.insert(id, sender);
     let line = json!({ "id": id, "method": method, "params": params }).to_string();
     let write_result = async {
-        let mut stdin = connection.stdin.lock().await;
-        stdin
+        let mut writer = connection.writer.lock().await;
+        writer
             .write_all(format!("{line}\n").as_bytes())
             .await
-            .map_err(|error| format!("无法写入 Claude adapter: {error}"))?;
-        stdin
+            .map_err(|error| format!("无法写入 Claude Provider: {error}"))?;
+        writer
             .flush()
             .await
-            .map_err(|error| format!("无法刷新 Claude adapter 请求: {error}"))
+            .map_err(|error| format!("无法刷新 Claude Provider 请求: {error}"))
     }
     .await;
     if let Err(error) = write_result {
+        connection.alive.store(false, Ordering::Release);
         connection.pending.lock().await.remove(&id);
         return Err(error);
     }
     match timeout(Duration::from_secs(20), receiver).await {
-        Ok(response) => response.map_err(|_| format!("Claude adapter 请求已取消: {method}"))?,
+        Ok(response) => response.map_err(|_| format!("Claude Provider 请求已取消: {method}"))?,
         Err(_) => {
             connection.pending.lock().await.remove(&id);
-            Err(format!("Claude adapter 请求超时: {method}"))
+            Err(format!("Claude Provider 请求超时: {method}"))
         }
     }
 }
 
-fn adapter_error(error: &Value) -> String {
+fn provider_error(error: &Value) -> String {
     error
         .get("message")
         .and_then(Value::as_str)
-        .unwrap_or("Claude adapter 请求失败")
+        .unwrap_or("Claude Provider 请求失败")
         .chars()
         .take(1200)
         .collect()
 }
 
-fn find_adapter(app: &AppHandle) -> Result<PathBuf, String> {
-    if let Some(path) = env::var_os("CODEX_HARNESS_CLAUDE_ADAPTER_PATH").map(PathBuf::from) {
+fn provider_socket_path() -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os("CODEX_HARNESS_CLAUDE_SOCKET").map(PathBuf::from) {
+        return Ok(path);
+    }
+    real_home()
+        .map(|home| home.join(".codex-harness/claude-provider.sock"))
+        .ok_or_else(|| "找不到用户 HOME，无法确定 Claude Provider socket。".to_string())
+}
+
+fn find_daemon(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os("CODEX_HARNESS_CLAUDE_DAEMON_PATH").map(PathBuf::from) {
         if path.is_file() {
             return Ok(path);
         }
     }
-    let development = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("claude-adapter/adapter.mjs");
+    let development = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("claude-adapter/daemon.mjs");
     if development.is_file() {
         return Ok(development);
     }
     if let Ok(resources) = app.path().resource_dir() {
-        let bundled = resources.join("claude-adapter/adapter.mjs");
+        let bundled = resources.join("claude-adapter/daemon.mjs");
         if bundled.is_file() {
             return Ok(bundled);
         }
     }
-    Err("找不到 Claude adapter。".to_string())
+    Err("找不到 Claude Provider daemon。".to_string())
 }
 
 fn find_node_binary() -> Result<PathBuf, String> {
@@ -334,7 +376,7 @@ fn find_node_binary() -> Result<PathBuf, String> {
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0);
     if !output.status.success() || major < 18 {
-        return Err("Claude adapter 需要 Node.js 18+。".to_string());
+        return Err("Claude Provider 需要 Node.js 18+。".to_string());
     }
     Ok(path)
 }
@@ -380,14 +422,26 @@ fn real_home() -> Option<PathBuf> {
     env::var_os("HOME").map(PathBuf::from)
 }
 
+#[cfg(unix)]
+fn set_owner_only_directory(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .map_err(|error| format!("无法设置 {} 的权限: {error}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn set_owner_only_directory(_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn extracts_bounded_adapter_error() {
+    fn extracts_bounded_provider_error() {
         assert_eq!(
-            adapter_error(&json!({ "message": "model_not_found" })),
+            provider_error(&json!({ "message": "model_not_found" })),
             "model_not_found"
         );
     }
