@@ -36,6 +36,7 @@ import {
   normalizeFontSize,
   normalizeFollowUpMode,
   normalizeSendShortcut,
+  normalizeSidebarListSplitRatio,
   normalizeSidebarWidth,
   normalizeTheme,
   rebaseSandboxPolicy,
@@ -45,8 +46,8 @@ import {
   withInitialThreadPreview,
 } from '../../core/domain/codex'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
-import { diagnosticErrorCode, runtime, type ClientDiagnostic } from '../../core/runtime/bridge'
-import { appServer, type StartThreadResponse } from '../../core/runtime/appServerClient'
+import { diagnosticErrorCode, recordWorkspaceContextDiagnostic, runtime, type ClientDiagnostic } from '../../core/runtime/bridge'
+import { appServer, type ResumeThreadResponse, type StartThreadResponse } from '../../core/runtime/appServerClient'
 import { defaultHarnessActionShortcuts } from '../actions/harnessActions'
 import {
   defaultConversationStatsPreferences,
@@ -91,8 +92,11 @@ import { prependOlderTurns } from './threadHistory'
 import { reduceTitleGeneratorEvent, type TitleGeneratorState } from './titleGenerator'
 import {
   isFirstUserTurn,
+  activeThreadIdsForRecovery,
   resolveNewThreadWorkspaceRoot,
   resumedThreadDetail,
+  resumeThreadWithRetry,
+  resumeThreadRequest,
   runtimeThreadSettings,
   shouldDiscardDraftThread,
   startedThreadDetail,
@@ -169,6 +173,7 @@ export function useHarness() {
   const titleGeneratorsRef = useRef(new Map<string, TitleGeneratorState>())
   const threadTitleGenerationRef = useRef(threadTitleGeneration)
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
+  const transportRecoveryTimerRef = useRef<number | null>(null)
 
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
   useEffect(() => { threadsRef.current = threads }, [threads])
@@ -214,6 +219,10 @@ export function useHarness() {
 
   const setSidebarWidth = useCallback((sidebarWidth: number) => {
     updateNavigation((current) => ({ ...current, sidebarWidth: normalizeSidebarWidth(sidebarWidth) }))
+  }, [updateNavigation])
+
+  const setSidebarListSplitRatio = useCallback((sidebarListSplitRatio: number) => {
+    updateNavigation((current) => ({ ...current, sidebarListSplitRatio: normalizeSidebarListSplitRatio(sidebarListSplitRatio) }))
   }, [updateNavigation])
 
   const setSidebarCollapsed = useCallback((sidebarCollapsed: boolean) => {
@@ -421,6 +430,23 @@ export function useHarness() {
 
   const refreshThreads = useCallback(async (mode: ViewMode = viewMode, searchTerm = '') => {
     const response = await listThreadPage(appServer, mode, searchTerm)
+    const selectedId = selectedThreadIdRef.current
+    const selectedThread = selectedId ? response.data.find((thread) => thread.id === selectedId) : undefined
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'thread.list.received',
+      threadId: selectedId ?? undefined,
+      method: 'thread/list',
+      context: {
+        source: 'useHarness.refreshThreads',
+        viewMode: mode,
+        searchTermChars: searchTerm.length,
+        threadCount: response.data.length,
+        selectedThreadId: selectedId,
+        selectedThreadFound: Boolean(selectedThread),
+        selectedThreadCwd: selectedThread?.cwd ?? null,
+      },
+    })
     setThreads(response.data)
     setThreadRoots((current) => {
       const next = { ...current }
@@ -474,8 +500,45 @@ export function useHarness() {
     else draftContentThreadIdsRef.current.delete(threadId)
   }, [])
 
+  const applyResumedThread = useCallback(async (threadId: string, response: ResumeThreadResponse, loadQueueAfter = true) => {
+    const resumedDetail = resumedThreadDetail(response)
+    const activeTurnId = resumedDetail.activeTurnId
+    const ownership = syncResumedTurn({
+      activeTurnIds: activeTurnIdsRef.current,
+      ownedActiveThreads: ownedActiveThreadsRef.current,
+    }, threadId, activeTurnId)
+    commitTurnOwnership(ownership)
+    const owned = ownership.ownedActiveThreads[threadId] === true
+    setDetails((current) => ({
+      ...current,
+      [threadId]: {
+        ...resumedDetail,
+        foreignActive: activeTurnId !== null && !owned,
+      },
+    }))
+    upsertThread(response.thread)
+    void mapThreadRoots([response.thread])
+    if (loadQueueAfter) await loadQueue(threadId)
+  }, [commitTurnOwnership, loadQueue, mapThreadRoots, upsertThread])
+
   const selectThread = useCallback(async (threadId: string) => {
     const previousThreadId = selectedThreadIdRef.current
+    const listedThread = threadsRef.current.find((thread) => thread.id === threadId)
+    const detailBeforeResume = detailsRef.current[threadId]
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'thread.selection.requested',
+      threadId,
+      method: 'thread/resume',
+      context: {
+        source: 'useHarness.selectThread',
+        previousThreadId,
+        selectedThreadIdBefore: previousThreadId,
+        listedThreadCwd: listedThread?.cwd ?? null,
+        detailCwdBefore: detailBeforeResume?.thread.cwd ?? null,
+        requestedCwd: listedThread?.cwd ?? null,
+      },
+    })
     selectedThreadIdRef.current = threadId
     setSelectedThreadId(threadId)
     if (previousThreadId !== threadId) discardEmptyDraftThread(previousThreadId)
@@ -483,33 +546,40 @@ export function useHarness() {
     markThreadRead(threadId)
     setBusy((current) => ({ ...current, [`load:${threadId}`]: true }))
     try {
-      const listedThread = threadsRef.current.find((thread) => thread.id === threadId)
-      const response = await appServer.resumeThread({
+      const response = await resumeThreadWithRetry(() => appServer.resumeThread(resumeThreadRequest(threadId, listedThread?.cwd)))
+      const localThreadAtResponse = threadsRef.current.find((thread) => thread.id === threadId)
+      const localDetailAtResponse = detailsRef.current[threadId]
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'thread.selection.resumed',
         threadId,
-        ...(listedThread ? { cwd: listedThread.cwd, runtimeWorkspaceRoots: [listedThread.cwd] } : {}),
-        // Match the CLI's bounded history strategy: hydrate only the newest
-        // page first, then let the user explicitly ask for older history.
-        initialTurnsPage: { limit: 5, sortDirection: 'desc', itemsView: 'full' },
-      })
-      const resumedDetail = resumedThreadDetail(response)
-      const activeTurnId = resumedDetail.activeTurnId
-      const ownership = syncResumedTurn({
-        activeTurnIds: activeTurnIdsRef.current,
-        ownedActiveThreads: ownedActiveThreadsRef.current,
-      }, threadId, activeTurnId)
-      commitTurnOwnership(ownership)
-      const owned = ownership.ownedActiveThreads[threadId] === true
-      setDetails((current) => ({
-        ...current,
-        [threadId]: {
-          ...resumedDetail,
-          foreignActive: activeTurnId !== null && !owned,
+        method: 'thread/resume',
+        context: {
+          source: 'useHarness.selectThread',
+          selectedThreadIdAtResponse: selectedThreadIdRef.current,
+          selectedThreadMatches: selectedThreadIdRef.current === threadId,
+          requestedCwd: listedThread?.cwd ?? null,
+          localThreadCwdAtResponse: localThreadAtResponse?.cwd ?? null,
+          localDetailCwdAtResponse: localDetailAtResponse?.thread.cwd ?? null,
+          responseCwd: response.thread.cwd,
+          responseRuntimeWorkspaceRoots: response.runtimeWorkspaceRoots,
+          responseApplied: true,
         },
-      }))
-      upsertThread(response.thread)
-      void mapThreadRoots([response.thread])
-      await loadQueue(threadId)
+      })
+      await applyResumedThread(threadId, response)
     } catch (error) {
+      recordWorkspaceContextDiagnostic({
+        level: 'error',
+        event: 'thread.selection.failed',
+        threadId,
+        method: 'thread/resume',
+        errorCode: diagnosticErrorCode(error),
+        context: {
+          source: 'useHarness.selectThread',
+          selectedThreadIdAtFailure: selectedThreadIdRef.current,
+          requestedCwd: listedThread?.cwd ?? null,
+        },
+      })
       const thread = threadsRef.current.find((item) => item.id === threadId)
       if (thread?.canAcceptDirectInput && isMissingRollout(error)) {
         // `thread/start` creates a live, empty thread before its first turn is
@@ -521,7 +591,72 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
     }
-  }, [commitTurnOwnership, discardEmptyDraftThread, loadQueue, mapThreadRoots, markThreadRead, notify, upsertThread])
+  }, [applyResumedThread, discardEmptyDraftThread, markThreadRead, notify])
+
+  const recoverActiveThreadSubscriptions = useCallback(async () => {
+    const selectedId = selectedThreadIdRef.current
+    const activeThreadIds = activeThreadIdsForRecovery(
+      threadsRef.current,
+      activeTurnIdsRef.current,
+      detailsRef.current,
+      selectedId,
+    )
+
+    if (selectedId) void selectThread(selectedId)
+    await Promise.all(activeThreadIds.map(async (threadId) => {
+      const thread = threadsRef.current.find((candidate) => candidate.id === threadId) ?? detailsRef.current[threadId]?.thread
+      if (!thread) return
+      const startedAt = performance.now()
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'thread.recovery.requested',
+        threadId,
+        method: 'thread/resume',
+        context: {
+          source: 'useHarness.recoverActiveThreadSubscriptions',
+          selectedThreadId: selectedId,
+          cwd: thread.cwd,
+        },
+      })
+      try {
+        const response = await resumeThreadWithRetry(() => appServer.resumeThread(resumeThreadRequest(threadId, thread.cwd)))
+        await applyResumedThread(threadId, response, false)
+        recordWorkspaceContextDiagnostic({
+          level: 'info',
+          event: 'thread.recovery.completed',
+          threadId,
+          method: 'thread/resume',
+          context: {
+            source: 'useHarness.recoverActiveThreadSubscriptions',
+            selectedThreadId: selectedId,
+            responseCwd: response.thread.cwd,
+            durationMs: Math.round(performance.now() - startedAt),
+          },
+        })
+      } catch (error) {
+        recordWorkspaceContextDiagnostic({
+          level: 'error',
+          event: 'thread.recovery.failed',
+          threadId,
+          method: 'thread/resume',
+          errorCode: diagnosticErrorCode(error),
+          context: {
+            source: 'useHarness.recoverActiveThreadSubscriptions',
+            selectedThreadId: selectedId,
+            durationMs: Math.round(performance.now() - startedAt),
+          },
+        })
+      }
+    }))
+  }, [applyResumedThread, selectThread])
+
+  const scheduleTransportRecovery = useCallback(() => {
+    if (transportRecoveryTimerRef.current !== null) return
+    transportRecoveryTimerRef.current = window.setTimeout(() => {
+      transportRecoveryTimerRef.current = null
+      void recoverActiveThreadSubscriptions()
+    }, 100)
+  }, [recoverActiveThreadSubscriptions])
 
   const openThread = useCallback(async (threadId: string) => {
     const activeThreads = await refreshThreads('active')
@@ -656,6 +791,21 @@ export function useHarness() {
       if (!workspace) throw new Error('所选目录不是可用的 Git checkout。')
       const nextCwd = workspace.checkoutRoot
       const detail = detailsRef.current[threadId]
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'thread.workspace-change.requested',
+        threadId,
+        method: 'thread/settings/update',
+        context: {
+          source: 'useHarness.changeThreadWorkspace',
+          trigger: 'workspace-picker',
+          selectedThreadId: selectedThreadIdRef.current,
+          currentThreadCwd: currentThread.cwd,
+          detailCwd: detail?.thread.cwd ?? null,
+          requestedCwd: nextCwd,
+          selectedCheckoutRoot: checkoutRoot,
+        },
+      })
       const overrides = threadPermissionOverrides(detail, currentThread.cwd, nextCwd)
       await appServer.updateThreadSettings({ threadId, cwd: nextCwd, ...overrides })
       await appServer.updateThreadMetadata({
@@ -680,6 +830,19 @@ export function useHarness() {
         runtimeWorkspaceRoots: [nextCwd],
         sandbox: rebaseSandboxPolicy(detail.sandbox, currentThread.cwd, nextCwd),
       }))
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'thread.workspace-change.completed',
+        threadId,
+        method: 'thread/settings/update',
+        context: {
+          source: 'useHarness.changeThreadWorkspace',
+          trigger: 'workspace-picker',
+          selectedThreadId: selectedThreadIdRef.current,
+          previousCwd: currentThread.cwd,
+          nextCwd,
+        },
+      })
     } catch (error) {
       notify(`无法切换工作区：${messageOf(error)}`, 'error')
     } finally {
@@ -842,13 +1005,47 @@ export function useHarness() {
     try {
       const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
       const detail = detailsRef.current[threadId]
-      const response = await appServer.startTurn(turnStartRequest(
+      const request = turnStartRequest(
         threadId,
         newClientId(),
         inputs ?? (text ? [textInput(text)] : []),
         thread,
         detail,
-      ))
+      )
+      const requestCwd = typeof request.cwd === 'string' ? request.cwd : null
+      const requestRuntimeWorkspaceRoots = Array.isArray(request.runtimeWorkspaceRoots)
+        ? request.runtimeWorkspaceRoots.filter((root): root is string => typeof root === 'string')
+        : null
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'turn.context.before-start',
+        threadId,
+        method: 'turn/start',
+        context: {
+          source: 'useHarness.startTurn',
+          selectedThreadId: selectedThreadIdRef.current,
+          selectedThreadMatches: selectedThreadIdRef.current === threadId,
+          threadCwd: thread?.cwd ?? null,
+          detailCwd: detail?.thread.cwd ?? null,
+          threadDetailCwdMatches: thread && detail ? thread.cwd === detail.thread.cwd : null,
+          detailRuntimeWorkspaceRoots: detail?.runtimeWorkspaceRoots ?? null,
+          requestCwd,
+          requestRuntimeWorkspaceRoots,
+        },
+      })
+      const response = await appServer.startTurn(request)
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'turn.context.accepted',
+        threadId,
+        method: 'turn/start',
+        context: {
+          source: 'useHarness.startTurn',
+          requestCwd,
+          requestRuntimeWorkspaceRoots,
+          turnId: response.turn.id,
+        },
+      })
       setActiveTurn(threadId, response.turn.id, true)
       return response.turn.id
     } finally {
@@ -1235,6 +1432,23 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       const settings = params.threadSettings as JsonObject | undefined
       const cwd = typeof settings?.cwd === 'string' ? settings.cwd : null
+      const localThread = threadId ? threadsRef.current.find((candidate) => candidate.id === threadId) : undefined
+      const localDetail = threadId ? detailsRef.current[threadId] : undefined
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'thread.settings-event.received',
+        threadId: threadId ?? undefined,
+        method,
+        context: {
+          source: 'useHarness.handleEvent',
+          selectedThreadId: selectedThreadIdRef.current,
+          selectedThreadMatches: Boolean(threadId && selectedThreadIdRef.current === threadId),
+          currentThreadCwd: localThread?.cwd ?? null,
+          currentDetailCwd: localDetail?.thread.cwd ?? null,
+          eventCwd: cwd,
+          hasThreadSettings: Boolean(settings),
+        },
+      })
       if (threadId && cwd && settings) {
         const sandbox = eventSandboxPolicy(settings.sandboxPolicy)
         const profile = eventPermissionProfile(settings.activePermissionProfile)
@@ -1454,15 +1668,22 @@ export function useHarness() {
       runtime,
       handleEvent,
       (event) => {
-        if (event.kind === 'disconnected') notify(String(event.message ?? 'Codex App Server 连接已断开。'), 'error')
+        if (event.kind === 'disconnected') {
+          notify(String(event.message ?? 'Codex App Server 连接已断开。'), 'error')
+          scheduleTransportRecovery()
+        }
       },
       (error) => notify(`无法监听 App Server：${messageOf(error)}`, 'error'),
     )
     return () => {
       disposed = true
+      if (transportRecoveryTimerRef.current !== null) {
+        window.clearTimeout(transportRecoveryTimerRef.current)
+        transportRecoveryTimerRef.current = null
+      }
       unsubscribe()
     }
-  }, [handleEvent, notify, refreshThreads, selectThread])
+  }, [handleEvent, notify, refreshThreads, scheduleTransportRecovery, selectThread])
 
   const currentThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
@@ -1540,6 +1761,7 @@ export function useHarness() {
     toggleThreadPinned,
     toggleWorkspacePinned,
     setSidebarWidth,
+    setSidebarListSplitRatio,
     setSidebarCollapsed,
     setFontSize,
     resetFontSizes,

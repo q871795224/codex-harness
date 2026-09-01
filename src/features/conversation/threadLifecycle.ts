@@ -9,6 +9,45 @@ import type {
 import { emptyThreadDetail, rebaseSandboxPolicy } from '../../core/domain/codex'
 import type { ResumeThreadResponse, StartThreadResponse, ThreadSettingsResponse } from '../../core/runtime/appServerClient'
 
+export async function resumeThreadWithRetry<T>(resume: () => Promise<T>): Promise<T> {
+  try {
+    return await resume()
+  } catch (error) {
+    if (!isAppServerTransportError(error)) throw error
+    return resume()
+  }
+}
+
+function isAppServerTransportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /(connection|socket|websocket|closed|连接|断开)/i.test(message)
+}
+
+export function resumeThreadRequest(threadId: string, cwd?: string): JsonObject {
+  return {
+    threadId,
+    ...(cwd ? { cwd, runtimeWorkspaceRoots: [cwd] } : {}),
+    initialTurnsPage: { limit: 5, sortDirection: 'desc', itemsView: 'full' },
+  }
+}
+
+export function activeThreadIdsForRecovery(
+  threads: Thread[],
+  activeTurnIds: Record<string, string>,
+  details: Record<string, ThreadDetail>,
+  selectedThreadId: string | null,
+): string[] {
+  const activeThreadIds = new Set([
+    ...threads.filter((thread) => thread.status.type === 'active').map((thread) => thread.id),
+    ...Object.keys(activeTurnIds),
+    ...Object.entries(details)
+      .filter(([, detail]) => detail.activeTurnId !== null)
+      .map(([threadId]) => threadId),
+  ])
+  if (selectedThreadId) activeThreadIds.delete(selectedThreadId)
+  return [...activeThreadIds]
+}
+
 export function runtimeThreadSettings(response: ThreadSettingsResponse): Partial<ThreadCodexSettings> {
   return {
     model: response.model,

@@ -116,6 +116,7 @@ struct ClientDiagnostic {
     level: String,
     area: String,
     event: String,
+    context: Option<Value>,
     method: Option<String>,
     thread_id: Option<String>,
     error_code: Option<String>,
@@ -365,6 +366,7 @@ fn record_client_diagnostic(state: State<'_, AppState>, diagnostic: ClientDiagno
         &diagnostic.area,
         &diagnostic.event,
         json!({
+            "context": diagnostic.context,
             "method": diagnostic.method,
             "threadId": diagnostic.thread_id,
             "errorCode": error_code,

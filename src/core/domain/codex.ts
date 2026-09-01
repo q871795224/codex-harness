@@ -23,6 +23,7 @@ export interface NavigationPreferences {
   pinnedWorkspaceRoots: string[]
   sidebarWidth: number
   sidebarCollapsed: boolean
+  sidebarListSplitRatio: number
 }
 
 export const MIN_SIDEBAR_WIDTH = 214
@@ -32,6 +33,15 @@ export const MAX_SIDEBAR_WIDTH = 480
 export function normalizeSidebarWidth(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_SIDEBAR_WIDTH
   return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(value)))
+}
+
+export const MIN_SIDEBAR_LIST_SPLIT_RATIO = 0.2
+export const DEFAULT_SIDEBAR_LIST_SPLIT_RATIO = 0.5
+export const MAX_SIDEBAR_LIST_SPLIT_RATIO = 0.8
+
+export function normalizeSidebarListSplitRatio(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_SIDEBAR_LIST_SPLIT_RATIO
+  return Math.min(MAX_SIDEBAR_LIST_SPLIT_RATIO, Math.max(MIN_SIDEBAR_LIST_SPLIT_RATIO, value))
 }
 
 export const MIN_FONT_SIZE = 13

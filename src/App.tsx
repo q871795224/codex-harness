@@ -389,6 +389,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         pinnedWorkspaceRoots={harness.navigation.pinnedWorkspaceRoots}
         sidebarWidth={harness.navigation.sidebarWidth}
         sidebarCollapsed={harness.navigation.sidebarCollapsed}
+        sidebarListSplitRatio={harness.navigation.sidebarListSplitRatio}
         creatingThread={Boolean(harness.busy.createThread)}
         archivingOldThreads={Boolean(harness.busy.archiveOldThreads)}
         onSelectThread={(threadId) => void harness.selectThread(threadId)}
@@ -406,6 +407,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onToggleThreadPinned={harness.toggleThreadPinned}
         onToggleWorkspacePinned={harness.toggleWorkspacePinned}
         onSidebarWidth={harness.setSidebarWidth}
+        onSidebarListSplitRatio={harness.setSidebarListSplitRatio}
         onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
         onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
         onVisibleThreadOrder={setVisibleThreadIds}

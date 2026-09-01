@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { emptyThreadDetail, type ApprovalRequest, type Thread, type ThreadDetail, type Turn, type UserInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
-import type { ClaudeAdapterEvent, ClaudeRuntimeStatus, ClaudeSessionRecord, ClaudeTransportEvent } from '../../core/claude/types'
+import { approvalRequestFromEvent, reconcileClaudeApprovalSnapshot } from '../../core/claude/approvalState'
+import type { ClaudeAdapterEvent, ClaudeProviderSnapshot, ClaudeRuntimeStatus, ClaudeSessionRecord, ClaudeTransportEvent } from '../../core/claude/types'
 import { reduceClaudeEvent } from '../../core/claude/eventReducer'
 import { reduceThreadDetailEvent } from '../conversation/conversationEventReducer'
+
+const CLAUDE_MAX_TURNS = 65_536
+const CLAUDE_PERMISSION_MODE = 'bypassPermissions' as const
 
 interface ClaudeToast {
   kind: 'error' | 'info'
@@ -21,9 +25,14 @@ export function useClaudeHarness() {
   const [toast, setToast] = useState<ClaudeToast | null>(null)
   const sessionsRef = useRef<ClaudeSessionRecord[]>([])
   const activeTurnIdsRef = useRef<Record<string, string>>({})
+  const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
+  const daemonInstanceIdRef = useRef<string | null>(null)
+  const approvalEventSeqRef = useRef<Record<string, number>>({})
+  const approvalResolvedSeqRef = useRef<Record<string, number>>({})
 
   useEffect(() => { sessionsRef.current = sessions }, [sessions])
   useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
+  useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => {
     if (!toast) return undefined
     const timer = window.setTimeout(() => setToast(null), toast.kind === 'error' ? 6_000 : 3_500)
@@ -57,6 +66,56 @@ export function useClaudeHarness() {
     })
   }, [])
 
+  const replaceApprovals = useCallback((next: Record<string, ApprovalRequest[]>) => {
+    approvalsRef.current = next
+    setApprovals(next)
+  }, [])
+
+  const removeApproval = useCallback((sessionId: string, requestId: string) => {
+    const next = {
+      ...approvalsRef.current,
+      [sessionId]: (approvalsRef.current[sessionId] ?? []).filter((item) => String(item.id) !== requestId),
+    }
+    delete approvalEventSeqRef.current[requestId]
+    replaceApprovals(next)
+  }, [replaceApprovals])
+
+  const applyProviderSnapshot = useCallback((provider: ClaudeProviderSnapshot) => {
+    const previousDaemonInstanceId = daemonInstanceIdRef.current
+    const nextDaemonInstanceId = typeof provider.daemonInstanceId === 'string' ? provider.daemonInstanceId : null
+    const daemonChanged = previousDaemonInstanceId !== null
+      && nextDaemonInstanceId !== null
+      && previousDaemonInstanceId !== nextDaemonInstanceId
+    daemonInstanceIdRef.current = nextDaemonInstanceId
+
+    const active = Array.isArray(provider.activeTurns)
+      ? Object.fromEntries(provider.activeTurns
+        .filter((turn) => typeof turn?.sessionId === 'string' && typeof turn?.turnId === 'string')
+        .map((turn) => [turn.sessionId, turn.turnId]))
+      : {}
+    activeTurnIdsRef.current = active
+    setActiveTurnIds(active)
+
+    if (!Array.isArray(provider.pendingApprovals)) return
+    const snapshotSeq = Number.isSafeInteger(provider.snapshotSeq)
+      ? provider.snapshotSeq
+      : Number.isSafeInteger(provider.latestEventSeq) ? provider.latestEventSeq : null
+    const sequenceState = daemonChanged
+      ? { eventSeqById: {}, resolvedSeqById: {} }
+      : { eventSeqById: approvalEventSeqRef.current, resolvedSeqById: approvalResolvedSeqRef.current }
+    const result = reconcileClaudeApprovalSnapshot(
+      approvalsRef.current,
+      provider.pendingApprovals,
+      snapshotSeq,
+      sequenceState.eventSeqById,
+      sequenceState.resolvedSeqById,
+      !daemonChanged,
+    )
+    approvalEventSeqRef.current = result.eventSeqById
+    approvalResolvedSeqRef.current = result.resolvedSeqById
+    replaceApprovals(result.approvals)
+  }, [replaceApprovals])
+
   const handleEvent = useCallback((event: ClaudeAdapterEvent) => {
     const params = event.params ?? {}
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null
@@ -65,25 +124,27 @@ export function useClaudeHarness() {
       void persistProviderSession(sessionId, params.providerSessionId).catch((error) => notify(messageOf(error), 'error'))
       return
     }
-    if (event.method === 'approval/requested' && typeof params.requestId === 'string') {
-      const toolName = typeof params.toolName === 'string' ? params.toolName : 'Tool'
-      const input = params.input && typeof params.input === 'object' ? params.input as Record<string, unknown> : {}
-      const command = toolName === 'Bash' && typeof input.command === 'string' ? input.command : undefined
-      const request: ApprovalRequest = {
-        id: params.requestId,
-        method: 'claude/tool/requestApproval',
-        threadId: sessionId,
-        params: {
-          toolName,
-          input,
-          ...(command ? { command } : {}),
-          reason: `Claude 请求使用 ${toolName}`,
-        },
+    if ((event.method === 'approval/resolved' || event.method === 'approval/expired') && typeof params.requestId === 'string') {
+      if (event.replayed) return
+      const requestId = params.requestId
+      const eventSeq = eventSequence(event)
+      if (eventSeq !== null) approvalResolvedSeqRef.current[requestId] = eventSeq
+      removeApproval(sessionId, requestId)
+      return
+    }
+    if (event.method === 'approval/requested') {
+      if (event.replayed) return
+      const request = approvalRequestFromEvent(event)
+      if (!request) return
+      const requestId = String(request.id)
+      const eventSeq = eventSequence(event)
+      if (eventSeq !== null) approvalEventSeqRef.current[requestId] = eventSeq
+      delete approvalResolvedSeqRef.current[requestId]
+      const next = {
+        ...approvalsRef.current,
+        [sessionId]: [...(approvalsRef.current[sessionId] ?? []).filter((item) => String(item.id) !== requestId), request],
       }
-      setApprovals((current) => ({
-        ...current,
-        [sessionId]: [...(current[sessionId] ?? []).filter((item) => item.id !== request.id), request],
-      }))
+      replaceApprovals(next)
       return
     }
     setDetails((current) => {
@@ -92,7 +153,7 @@ export function useClaudeHarness() {
       if (!detail) return current
       return { ...current, [sessionId]: reduceClaudeEvent(detail, event) }
     })
-    if (event.method === 'turn/started' && typeof params.turnId === 'string') {
+    if (!event.replayed && event.method === 'turn/started' && typeof params.turnId === 'string') {
       setActiveTurnIds((current) => {
         const next = { ...current, [sessionId]: params.turnId as string }
         activeTurnIdsRef.current = next
@@ -102,17 +163,23 @@ export function useClaudeHarness() {
         ? { ...session, updatedAt: Date.now() }
         : session))
     }
-    if (event.method === 'turn/completed' || event.method === 'turn/failed' || event.method === 'turn/interrupted') {
+    if (!event.replayed && (event.method === 'turn/completed' || event.method === 'turn/failed' || event.method === 'turn/interrupted')) {
+      const eventSeq = eventSequence(event)
+      for (const request of approvalsRef.current[sessionId] ?? []) {
+        const requestId = String(request.id)
+        if (eventSeq !== null) approvalResolvedSeqRef.current[requestId] = eventSeq
+        delete approvalEventSeqRef.current[requestId]
+      }
       setActiveTurnIds((current) => {
         const next = { ...current }
         delete next[sessionId]
         activeTurnIdsRef.current = next
         return next
       })
-      setApprovals((current) => ({ ...current, [sessionId]: [] }))
+      replaceApprovals({ ...approvalsRef.current, [sessionId]: [] })
       if (event.method === 'turn/failed') notify(typeof params.message === 'string' ? params.message : 'Claude turn 失败', 'error')
     }
-  }, [notify, persistProviderSession])
+  }, [notify, persistProviderSession, removeApproval, replaceApprovals])
 
   useEffect(() => {
     let disposed = false
@@ -145,8 +212,11 @@ export function useClaudeHarness() {
         notify('Claude Provider 已重启；中断的 turn 需要重新发送。', 'error')
       }
       reconnectTimer = window.setTimeout(() => {
-        void runtime.claudeRequest('runtime/status')
-          .then(() => runtime.claudeRuntimeStatus())
+        void runtime.claudeRequest<ClaudeProviderSnapshot>('runtime/status')
+          .then((provider) => {
+            if (!disposed) applyProviderSnapshot(provider)
+            return runtime.claudeRuntimeStatus()
+          })
           .then((nextStatus) => { if (!disposed) setStatus(nextStatus) })
           .catch(() => undefined)
       }, 400)
@@ -180,14 +250,8 @@ export function useClaudeHarness() {
           return next
         })
         if (nextStatus.available) {
-          const provider = await runtime.claudeRequest<{
-            activeTurns?: Array<{ sessionId: string, turnId: string }>
-          }>('runtime/status')
-          if (!disposed && provider.activeTurns) {
-            const active = Object.fromEntries(provider.activeTurns.map((turn) => [turn.sessionId, turn.turnId]))
-            activeTurnIdsRef.current = active
-            setActiveTurnIds(active)
-          }
+          const provider = await runtime.claudeRequest<ClaudeProviderSnapshot>('runtime/status')
+          if (!disposed) applyProviderSnapshot(provider)
           const connectedStatus = await runtime.claudeRuntimeStatus()
           if (!disposed) setStatus(connectedStatus)
         }
@@ -203,7 +267,7 @@ export function useClaudeHarness() {
       unlistenEvents?.()
       unlistenTransport?.()
     }
-  }, [handleEvent])
+  }, [applyProviderSnapshot, handleEvent])
 
   const threads = useMemo(
     () => sessions.map((session) => sessionThread(session, Boolean(activeTurnIds[session.id]))),
@@ -284,8 +348,8 @@ export function useClaudeHarness() {
         turnId,
         cwd: session.cwd,
         input,
-        permissionMode: 'default',
-        maxTurns: 40,
+        permissionMode: CLAUDE_PERMISSION_MODE,
+        maxTurns: CLAUDE_MAX_TURNS,
       })
     } catch (error) {
       setDetails((current) => {
@@ -330,15 +394,15 @@ export function useClaudeHarness() {
       ? request.params.input as Record<string, unknown>
       : undefined
     try {
-      await runtime.answerClaudeApproval(String(request.id), allow, input)
-      setApprovals((current) => ({
-        ...current,
-        [request.threadId]: (current[request.threadId] ?? []).filter((item) => item.id !== request.id),
-      }))
+      const result = await runtime.answerClaudeApproval(String(request.id), allow, input)
+      if (typeof result?.resolvedSeq === 'number' && Number.isSafeInteger(result.resolvedSeq)) {
+        approvalResolvedSeqRef.current[String(request.id)] = result.resolvedSeq
+      }
+      removeApproval(request.threadId, String(request.id))
     } catch (error) {
       notify(`无法提交 Claude 审批：${messageOf(error)}`, 'error')
     }
-  }, [notify])
+  }, [notify, removeApproval])
 
   const renameSession = useCallback(async (sessionId: string, title: string) => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
@@ -420,4 +484,8 @@ function unavailableStatus(error: string): ClaudeRuntimeStatus {
     socketPath: null,
     error,
   }
+}
+
+function eventSequence(event: ClaudeAdapterEvent): number | null {
+  return typeof event.seq === 'number' && Number.isSafeInteger(event.seq) ? event.seq : null
 }

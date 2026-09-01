@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Thread, Turn } from '../../core/domain/codex'
 import type { ResumeThreadResponse, StartThreadResponse } from '../../core/runtime/appServerClient'
 import {
   resumedThreadDetail,
+  resumeThreadWithRetry,
+  resumeThreadRequest,
+  activeThreadIdsForRecovery,
   runtimeThreadSettings,
   startedThreadDetail,
   threadPermissionOverrides,
@@ -56,6 +59,45 @@ function response(): ResumeThreadResponse {
 }
 
 describe('thread lifecycle hydration', () => {
+  it('collects every active thread except the selected one for recovery', () => {
+    const detail = resumedThreadDetail({ ...response(), thread: thread({ id: 'detail-thread' }) })
+    const active = thread({ id: 'listed-active', status: { type: 'active', activeFlags: [] } })
+    const idle = thread({ id: 'listed-idle' })
+
+    expect(activeThreadIdsForRecovery(
+      [active, idle],
+      { 'owned-thread': 'turn-1' },
+      { 'detail-thread': detail },
+      'listed-active',
+    )).toEqual(['owned-thread', 'detail-thread'])
+  })
+
+  it('builds a bounded full-history resume request for a known checkout', () => {
+    expect(resumeThreadRequest('thread-1', '/repo')).toEqual({
+      threadId: 'thread-1',
+      cwd: '/repo',
+      runtimeWorkspaceRoots: ['/repo'],
+      initialTurnsPage: { limit: 5, sortDirection: 'desc', itemsView: 'full' },
+    })
+  })
+
+  it('retries a resume once after a transport failure', async () => {
+    const resume = vi.fn()
+      .mockRejectedValueOnce(new Error('Codex App Server 连接已关闭。'))
+      .mockResolvedValueOnce(response())
+
+    await expect(resumeThreadWithRetry(resume)).resolves.toEqual(response())
+    expect(resume).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry a non-transport resume failure', async () => {
+    const error = new Error('thread not found')
+    const resume = vi.fn().mockRejectedValue(error)
+
+    await expect(resumeThreadWithRetry(resume)).rejects.toBe(error)
+    expect(resume).toHaveBeenCalledTimes(1)
+  })
+
   it('restores a descending history page into chronological UI state', () => {
     const detail = resumedThreadDetail(response())
 

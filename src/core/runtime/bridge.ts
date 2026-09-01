@@ -52,6 +52,7 @@ export interface ClientDiagnostic {
   level: 'error' | 'info'
   area: string
   event: string
+  context?: JsonObject
   method?: string
   threadId?: string
   errorCode?: DiagnosticErrorCode
@@ -127,8 +128,8 @@ export const runtime = {
     return this.claudeRequest<void>('turn/interrupt', { sessionId })
   },
 
-  answerClaudeApproval(requestId: string, allow: boolean, updatedInput?: Record<string, unknown>): Promise<void> {
-    return this.claudeRequest<void>('approval/respond', { requestId, allow, ...(updatedInput ? { updatedInput } : {}) })
+  answerClaudeApproval(requestId: string, allow: boolean, updatedInput?: Record<string, unknown>): Promise<{ resolvedSeq?: number }> {
+    return this.claudeRequest<{ resolvedSeq?: number }>('approval/respond', { requestId, allow, ...(updatedInput ? { updatedInput } : {}) })
   },
 
   listenClaudeEvents(handler: (event: ClaudeAdapterEvent) => void): Promise<() => void> {
@@ -473,6 +474,10 @@ export const runtime = {
   listenTransport(handler: (event: JsonObject) => void): Promise<() => void> {
     return listen<JsonObject>('app-server:transport', (event) => handler(event.payload))
   },
+}
+
+export function recordWorkspaceContextDiagnostic(diagnostic: Omit<ClientDiagnostic, 'area'>): void {
+  void runtime.recordClientDiagnostic({ area: 'workspace-context', ...diagnostic }).catch(() => undefined)
 }
 
 interface ResumeThreadResponse {

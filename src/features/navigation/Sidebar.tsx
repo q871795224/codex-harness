@@ -39,7 +39,7 @@ import type {
   Workspace,
   WorkspaceSort,
 } from '../../core/domain/codex'
-import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sortThreads, sortWorkspaces } from '../../core/domain/codex'
+import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, normalizeSidebarListSplitRatio, sortThreads, sortWorkspaces } from '../../core/domain/codex'
 import { relativeTime, truncate } from '../../core/domain/format'
 import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
 import harnessIcon from '../../../icon/codex-harness.svg'
@@ -62,6 +62,7 @@ interface SidebarProps {
   pinnedWorkspaceRoots: string[]
   sidebarWidth: number
   sidebarCollapsed: boolean
+  sidebarListSplitRatio: number
   creatingThread: boolean
   archivingOldThreads: boolean
   onSelectThread: (threadId: string) => void
@@ -79,6 +80,7 @@ interface SidebarProps {
   onToggleThreadPinned: (threadId: string) => void
   onToggleWorkspacePinned: (workspaceRoot: string) => void
   onSidebarWidth: (width: number) => void
+  onSidebarListSplitRatio: (ratio: number) => void
   onOpenSettings: () => void
   onOpenPlugins: () => void
   onVisibleThreadOrder: (threadIds: string[]) => void
@@ -99,6 +101,7 @@ export function Sidebar({
   pinnedWorkspaceRoots,
   sidebarWidth,
   sidebarCollapsed,
+  sidebarListSplitRatio,
   creatingThread,
   archivingOldThreads,
   onSelectThread,
@@ -116,6 +119,7 @@ export function Sidebar({
   onToggleThreadPinned,
   onToggleWorkspacePinned,
   onSidebarWidth,
+  onSidebarListSplitRatio,
   onOpenSettings,
   onOpenPlugins,
   onVisibleThreadOrder,
@@ -130,6 +134,8 @@ export function Sidebar({
   const [newThreadMenuOpen, setNewThreadMenuOpen] = useState(false)
   const [resizing, setResizing] = useState(false)
   const [previewWidth, setPreviewWidth] = useState<number | null>(null)
+  const [splitResizing, setSplitResizing] = useState(false)
+  const [previewSplitRatio, setPreviewSplitRatio] = useState<number | null>(null)
   const [dragPreviewOrder, setDragPreviewOrder] = useState<string[] | null>(null)
   const [, setRelativeTimeTick] = useState(0)
   const [draggedThreadId, setDraggedThreadId] = useState<string | null>(null)
@@ -140,6 +146,8 @@ export function Sidebar({
   const searchStarted = useRef(false)
   const resizeStart = useRef<{ clientX: number; width: number } | null>(null)
   const resizedWidth = useRef<number | null>(null)
+  const splitResizeStart = useRef<{ clientY: number; ratio: number; containerHeight: number } | null>(null)
+  const resizedSplitRatio = useRef<number | null>(null)
   const threadDrag = useRef<{ id: string; groupKey: string; pointerId: number; startX: number; startY: number; moved: boolean; preview: string[] | null } | null>(null)
   const suppressThreadClick = useRef(false)
 
@@ -208,6 +216,37 @@ export function Sidebar({
     }
   }, [onSidebarWidth, resizing])
 
+  useEffect(() => {
+    if (!splitResizing) return undefined
+
+    const resize = (event: PointerEvent) => {
+      const start = splitResizeStart.current
+      if (!start || start.containerHeight <= 0) return
+      const ratio = normalizeSidebarListSplitRatio(start.ratio + (event.clientY - start.clientY) / start.containerHeight)
+      resizedSplitRatio.current = ratio
+      setPreviewSplitRatio(ratio)
+    }
+    const finishResize = () => {
+      const ratio = resizedSplitRatio.current
+      splitResizeStart.current = null
+      resizedSplitRatio.current = null
+      setPreviewSplitRatio(null)
+      setSplitResizing(false)
+      if (ratio !== null) onSidebarListSplitRatio(ratio)
+    }
+
+    document.body.classList.add('sidebar-split-resizing')
+    window.addEventListener('pointermove', resize)
+    window.addEventListener('pointerup', finishResize)
+    window.addEventListener('pointercancel', finishResize)
+    return () => {
+      document.body.classList.remove('sidebar-split-resizing')
+      window.removeEventListener('pointermove', resize)
+      window.removeEventListener('pointerup', finishResize)
+      window.removeEventListener('pointercancel', finishResize)
+    }
+  }, [onSidebarListSplitRatio, splitResizing])
+
   const orderedThreads = useMemo(
     () => sortThreads(threads, threadSort, dragPreviewOrder ?? manualThreadOrder, pinnedThreadIds),
     [dragPreviewOrder, manualThreadOrder, pinnedThreadIds, threadSort, threads],
@@ -230,6 +269,13 @@ export function Sidebar({
     return { byRoot, unsorted }
   }, [orderedThreads, orderedWorkspaces, threadRoots])
 
+  const providerSplit = useMemo(() => splitThreadsByProvider(orderedThreads), [orderedThreads])
+  const listSections = useMemo(() => {
+    const sections: { key: string; threads: Thread[] }[] = [{ key: 'all.codex', threads: providerSplit.codex }]
+    if (providerSplit.claude.length > 0) sections.push({ key: 'all.claude', threads: providerSplit.claude })
+    return sections
+  }, [providerSplit])
+
   const allWorkspacesExpanded = orderedWorkspaces.length > 0 && orderedWorkspaces.every((workspace) => expanded[workspace.root] ?? true)
   const visibleThreadIds = useMemo(() => visibleThreadOrder({
     layout: navigationLayout,
@@ -239,7 +285,9 @@ export function Sidebar({
     unsorted: grouped.unsorted,
     expanded,
     visibleCounts,
-  }), [expanded, grouped, navigationLayout, orderedThreads, orderedWorkspaces, visibleCounts])
+    pinnedThreadIds,
+    listSections,
+  }), [expanded, grouped, listSections, navigationLayout, orderedThreads, orderedWorkspaces, pinnedThreadIds, visibleCounts])
 
   useEffect(() => onVisibleThreadOrder(visibleThreadIds), [onVisibleThreadOrder, visibleThreadIds])
 
@@ -258,6 +306,20 @@ export function Sidebar({
   }
 
   const displayedSidebarWidth = previewWidth ?? sidebarWidth
+  const displayedSplitRatio = previewSplitRatio ?? sidebarListSplitRatio
+
+  const startSplitResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const container = event.currentTarget.parentElement
+    const containerHeight = container?.getBoundingClientRect().height ?? 0
+    if (!containerHeight) return
+    splitResizeStart.current = { clientY: event.clientY, ratio: displayedSplitRatio, containerHeight }
+    resizedSplitRatio.current = displayedSplitRatio
+    setPreviewSplitRatio(displayedSplitRatio)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setSplitResizing(true)
+  }
+
   const sectionLabel = navigationLayout === 'workspace'
     ? workspaceSort === 'recent' ? '最近工作区' : '工作区'
     : '会话'
@@ -348,7 +410,7 @@ export function Sidebar({
       onTogglePinned={onToggleThreadPinned}
       onShowMore={() => setVisibleCounts((current) => ({
         ...current,
-        [groupKey]: visibleThreads(items, current[groupKey]).length + 5,
+        [groupKey]: visibleThreads(items, current[groupKey], undefined, pinnedThreadIds).length + 5,
       }))}
     />
   )
@@ -385,7 +447,7 @@ export function Sidebar({
         )}
       </div>
 
-      <div className="sidebar-scroll">
+      <div className={`sidebar-scroll ${navigationLayout === 'list' && providerSplit.claude.length > 0 ? 'split-mode' : ''}`}>
         <div className={`sidebar-section-heading ${searchOpen ? 'searching' : ''}`}>
           {searchOpen ? (
             <div className="sidebar-search">
@@ -464,14 +526,51 @@ export function Sidebar({
         )}
 
         {navigationLayout === 'list' ? (
-          <section className="workspace-group single-list-group">
-            <div className="workspace-row static">
-              <LayoutList size={16} />
-              <span>全部会话</span>
-              <em>{orderedThreads.length || ''}</em>
+          providerSplit.claude.length > 0 ? (
+            <div className={`sidebar-split-list ${splitResizing ? 'resizing' : ''}`}>
+              <section className="workspace-group single-list-group sidebar-split-pane" style={{ flexGrow: displayedSplitRatio, flexBasis: 0 }}>
+                <div className="workspace-row static">
+                  <LayoutList size={16} />
+                  <span>Codex</span>
+                  <em>{providerSplit.codex.length || ''}</em>
+                </div>
+                {renderThreadList(providerSplit.codex, 'all.codex')}
+              </section>
+              <div
+                className="sidebar-split-handle"
+                role="separator"
+                aria-label="调整 Codex 与 Cloud Code 会话列表的比例"
+                aria-orientation="horizontal"
+                aria-valuemin={20}
+                aria-valuemax={80}
+                aria-valuenow={Math.round(displayedSplitRatio * 100)}
+                tabIndex={0}
+                onPointerDown={startSplitResize}
+                onKeyDown={(event) => {
+                  const step = event.shiftKey ? 0.1 : 0.05
+                  if (event.key === 'ArrowUp') { event.preventDefault(); onSidebarListSplitRatio(displayedSplitRatio - step) }
+                  else if (event.key === 'ArrowDown') { event.preventDefault(); onSidebarListSplitRatio(displayedSplitRatio + step) }
+                }}
+              />
+              <section className="workspace-group single-list-group sidebar-split-pane" style={{ flexGrow: 1 - displayedSplitRatio, flexBasis: 0 }}>
+                <div className="workspace-row static">
+                  <Sparkles size={16} />
+                  <span>Cloud Code</span>
+                  <em>{providerSplit.claude.length}</em>
+                </div>
+                {renderThreadList(providerSplit.claude, 'all.claude')}
+              </section>
             </div>
-            {renderThreadList(orderedThreads, 'all')}
-          </section>
+          ) : (
+            <section className="workspace-group single-list-group">
+              <div className="workspace-row static">
+                <LayoutList size={16} />
+                <span>Codex</span>
+                <em>{providerSplit.codex.length || ''}</em>
+              </div>
+              {renderThreadList(providerSplit.codex, 'all.codex')}
+            </section>
+          )
         ) : (
           <>
             {orderedWorkspaces.map((workspace) => {
@@ -617,7 +716,7 @@ function ThreadList({
   onShowMore: () => void
 }) {
   if (threads.length === 0) return <p className="empty-thread-list">暂无会话</p>
-  const shownThreads = visibleThreads(threads, visibleCount)
+  const shownThreads = visibleThreads(threads, visibleCount, undefined, pinnedThreadIds)
   return (
     <div className="thread-list" data-workspace-group={groupKey}>
       {shownThreads.map((thread) => {
@@ -640,7 +739,6 @@ function ThreadList({
               title={thread.name || thread.preview || '新会话'}
             >
               {pinned && <i className="pinned-marker" aria-hidden />}
-              {thread.provider === 'claude' && <Sparkles className="thread-provider-mark" size={12} aria-label="Claude 会话" />}
               <StatusDot badge={badge} />
               <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
               <time>{isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
@@ -676,6 +774,16 @@ function SidebarPinButton({ pinned, subject, onToggle }: { pinned: boolean; subj
       {pinned ? <PinOff size={14} /> : <Pin size={14} />}
     </button>
   )
+}
+
+export function splitThreadsByProvider(threads: Thread[]): { codex: Thread[]; claude: Thread[] } {
+  const codex: Thread[] = []
+  const claude: Thread[] = []
+  for (const thread of threads) {
+    if (thread.provider === 'claude') claude.push(thread)
+    else codex.push(thread)
+  }
+  return { codex, claude }
 }
 
 export function reorderThreadIds(ids: string[], draggedId: string, targetId: string, edge: 'before' | 'after'): string[] {

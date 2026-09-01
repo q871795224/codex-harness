@@ -7,12 +7,14 @@ import type {
   Workspace,
 } from '../../core/domain/codex'
 import {
+  DEFAULT_SIDEBAR_LIST_SPLIT_RATIO,
   DEFAULT_SIDEBAR_WIDTH,
   DEFAULT_THREAD_TITLE_GENERATION,
   defaultFontSizePreferences,
   normalizeFontSizePreferences,
   normalizeFollowUpMode,
   normalizeSendShortcut,
+  normalizeSidebarListSplitRatio,
   normalizeSidebarWidth,
   normalizeTheme,
 } from '../../core/domain/codex'
@@ -38,6 +40,7 @@ export const defaultNavigationPreferences: NavigationPreferences = {
   pinnedWorkspaceRoots: [],
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   sidebarCollapsed: false,
+  sidebarListSplitRatio: DEFAULT_SIDEBAR_LIST_SPLIT_RATIO,
 }
 
 export const defaultAppearancePreferences: AppearancePreferences = {
@@ -107,6 +110,7 @@ export function parseNavigationPreferences(raw: string | null): NavigationPrefer
       pinnedWorkspaceRoots: parsePinnedIdentifiers(value.pinnedWorkspaceRoots),
       sidebarWidth: normalizeSidebarWidth(value.sidebarWidth),
       sidebarCollapsed: value.sidebarCollapsed === true,
+      sidebarListSplitRatio: normalizeSidebarListSplitRatio(value.sidebarListSplitRatio),
     }
   } catch {
     return defaultNavigationPreferences

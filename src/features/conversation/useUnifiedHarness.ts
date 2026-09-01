@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ApprovalRequest, UserInput } from '../../core/domain/codex'
-import { runtime } from '../../core/runtime/bridge'
+import { recordWorkspaceContextDiagnostic, runtime } from '../../core/runtime/bridge'
 import { useClaudeHarness } from '../claude/useClaudeHarness'
 import { useHarness } from './useHarness'
 
@@ -56,12 +56,24 @@ export function useUnifiedHarness() {
   useEffect(() => {
     if (!restoredSelection.current) return
     if (codex.selectedThreadId === previousCodexSelection.current) return
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'conversation.codex-selection.changed',
+      threadId: codex.selectedThreadId ?? undefined,
+      context: {
+        source: 'useUnifiedHarness.codex-selection-effect',
+        previousCodexThreadId: previousCodexSelection.current,
+        codexSelectedThreadId: codex.selectedThreadId,
+        unifiedSelectedThreadId: selectedThreadId,
+        stateAligned: codex.selectedThreadId === selectedThreadId,
+      },
+    })
     previousCodexSelection.current = codex.selectedThreadId
     if (codex.selectedThreadId) {
       setSelectedThreadId(codex.selectedThreadId)
       void runtime.setAppState(SELECTED_CONVERSATION_KEY, codex.selectedThreadId).catch(() => undefined)
     }
-  }, [codex.selectedThreadId])
+  }, [codex.selectedThreadId, selectedThreadId])
 
   useEffect(() => {
     if (restoredSelection.current || codex.phase !== 'ready' || !claude.loaded) return
@@ -70,14 +82,45 @@ export function useUnifiedHarness() {
       const remembered = await runtime.getAppState(SELECTED_CONVERSATION_KEY)
         ?? await runtime.getAppState('selectedThreadId')
       if (disposed) return
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'conversation.selection.restore-read',
+        threadId: remembered ?? undefined,
+        context: {
+          source: 'useUnifiedHarness.restore',
+          rememberedThreadId: remembered,
+          codexSelectedThreadId: codex.selectedThreadId,
+          unifiedSelectedThreadId: selectedThreadId,
+          codexThreadFound: Boolean(remembered && codex.threads.some((thread) => thread.id === remembered)),
+          claudeSessionFound: Boolean(remembered && claude.sessions.some((session) => session.id === remembered)),
+        },
+      })
+      let restoreSource = 'fallback'
       if (remembered?.startsWith('claude:') && claude.sessions.some((session) => session.id === remembered)) {
         claude.selectSession(remembered)
         setSelectedThreadId(remembered)
+        restoreSource = 'claude-session'
       } else if (remembered && codex.threads.some((thread) => thread.id === remembered)) {
         setSelectedThreadId(remembered)
+        restoreSource = 'codex-unified-state-only'
       } else {
         setSelectedThreadId(codex.selectedThreadId ?? claude.sessions[0]?.id ?? null)
       }
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'conversation.selection.restored',
+        threadId: remembered ?? undefined,
+        context: {
+          source: 'useUnifiedHarness.restore',
+          restoreSource,
+          rememberedThreadId: remembered,
+          codexSelectedThreadId: codex.selectedThreadId,
+          restoredUnifiedThreadId: remembered && (codex.threads.some((thread) => thread.id === remembered) || claude.sessions.some((session) => session.id === remembered))
+            ? remembered
+            : codex.selectedThreadId ?? claude.sessions[0]?.id ?? null,
+          codexSelectThreadCalled: false,
+        },
+      })
       previousCodexSelection.current = codex.selectedThreadId
       restoredSelection.current = true
     })().catch(() => {
@@ -106,11 +149,33 @@ export function useUnifiedHarness() {
   const activeTurnId = selectedThreadId ? activeTurnIds[selectedThreadId] ?? currentDetail?.activeTurnId ?? null : null
 
   const selectThread = useCallback(async (threadId: string) => {
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'conversation.selection.requested',
+      threadId,
+      context: {
+        source: 'useUnifiedHarness.selectThread',
+        provider: threadId.startsWith('claude:') ? 'claude' : 'codex',
+        previousUnifiedThreadId: selectedThreadId,
+        codexSelectedThreadIdBefore: codex.selectedThreadId,
+      },
+    })
     if (threadId.startsWith('claude:')) claude.selectSession(threadId)
     else await codex.selectThread(threadId)
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'conversation.selection.completed',
+      threadId,
+      context: {
+        source: 'useUnifiedHarness.selectThread',
+        provider: threadId.startsWith('claude:') ? 'claude' : 'codex',
+        codexSelectedThreadIdAfterCall: codex.selectedThreadId,
+        selectionCallCompleted: true,
+      },
+    })
     setSelectedThreadId(threadId)
     void runtime.setAppState(SELECTED_CONVERSATION_KEY, threadId).catch(() => undefined)
-  }, [claude, codex])
+  }, [claude, codex, selectedThreadId])
 
   const createThread = useCallback(async (provider: ConversationProvider = 'codex') => {
     if (provider === 'codex') {
@@ -134,6 +199,20 @@ export function useUnifiedHarness() {
   }, [claude, codex, currentThread?.cwd])
 
   const sendMessage = useCallback((input: UserInput[], mode: 'interject' | 'queue') => {
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'conversation.message.dispatch',
+      threadId: selectedThreadId ?? undefined,
+      method: selectedProvider === 'claude' ? 'claude/turn/start' : 'turn/start',
+      context: {
+        source: 'useUnifiedHarness.sendMessage',
+        provider: selectedProvider,
+        unifiedSelectedThreadId: selectedThreadId,
+        codexSelectedThreadId: codex.selectedThreadId,
+        stateAligned: selectedProvider === 'codex' ? selectedThreadId === codex.selectedThreadId : null,
+        mode,
+      },
+    })
     if (selectedProvider === 'claude' && selectedThreadId) return claude.sendMessage(selectedThreadId, input)
     return codex.sendMessage(input, mode)
   }, [claude, codex, selectedProvider, selectedThreadId])

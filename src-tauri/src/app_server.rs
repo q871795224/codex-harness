@@ -1,7 +1,7 @@
 use crate::diagnostics::{error_code, DiagnosticLog};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::{
     collections::HashMap,
     env, fs,
@@ -75,11 +75,12 @@ impl AppServerManager {
 
     pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
         let started = Instant::now();
+        let request_context = request_context(&params);
         self.diagnostics.record(
             "info",
             "app-server",
             "request.started",
-            json!({ "method": &method }),
+            json!({ "method": &method, "requestContext": request_context.clone() }),
         );
         let result = match self.connection().await {
             Ok(connection) => self.send_request(&connection, method.clone(), params).await,
@@ -87,11 +88,16 @@ impl AppServerManager {
         };
         let duration_ms = started.elapsed().as_millis() as u64;
         match &result {
-            Ok(_) => self.diagnostics.record(
+            Ok(response) => self.diagnostics.record(
                 "info",
                 "app-server",
                 "request.completed",
-                json!({ "method": method, "durationMs": duration_ms }),
+                json!({
+                    "method": method,
+                    "durationMs": duration_ms,
+                    "requestContext": request_context,
+                    "responseContext": response_context(response),
+                }),
             ),
             Err(error) => self.diagnostics.record(
                 "error",
@@ -100,6 +106,7 @@ impl AppServerManager {
                 json!({
                     "method": method,
                     "durationMs": duration_ms,
+                    "requestContext": request_context,
                     "errorCode": error_code(error),
                 }),
             ),
@@ -260,9 +267,9 @@ impl AppServerManager {
                                 }
                             } else {
                                 let method = payload.get("method").and_then(Value::as_str);
-                                let thread_id = payload
-                                    .get("params")
-                                    .and_then(Value::as_object)
+                                let params = payload.get("params").unwrap_or(&Value::Null);
+                                let thread_id = params
+                                    .as_object()
                                     .and_then(|params| params.get("threadId"))
                                     .and_then(Value::as_str);
                                 if should_persist_notification(method) {
@@ -270,7 +277,11 @@ impl AppServerManager {
                                         "info",
                                         "app-server",
                                         "notification.received",
-                                        json!({ "method": method, "threadId": thread_id }),
+                                        json!({
+                                            "method": method,
+                                            "threadId": thread_id,
+                                            "requestContext": request_context(params),
+                                        }),
                                     );
                                 }
                                 let _ = app.emit("app-server:event", payload);
@@ -811,6 +822,61 @@ fn find_codex_binary() -> Result<PathBuf, String> {
     Err("找不到 Codex CLI。请先安装 Codex，或设置 CODEX_HARNESS_CODEX_PATH。".to_string())
 }
 
+fn request_context(value: &Value) -> Option<Value> {
+    let mut context = Map::new();
+    copy_string(&mut context, "threadId", value.get("threadId"));
+    copy_string(&mut context, "cwd", value.get("cwd"));
+    copy_string_array(
+        &mut context,
+        "runtimeWorkspaceRoots",
+        value.get("runtimeWorkspaceRoots"),
+    );
+    if let Some(settings) = value.get("threadSettings") {
+        copy_string(&mut context, "settingsCwd", settings.get("cwd"));
+        copy_string_array(
+            &mut context,
+            "settingsRuntimeWorkspaceRoots",
+            settings.get("runtimeWorkspaceRoots"),
+        );
+    }
+    (!context.is_empty()).then_some(Value::Object(context))
+}
+
+fn response_context(value: &Value) -> Option<Value> {
+    let mut context = Map::new();
+    if let Some(thread) = value.get("thread") {
+        copy_string(&mut context, "responseThreadId", thread.get("id"));
+        copy_string(&mut context, "responseCwd", thread.get("cwd"));
+    }
+    copy_string(&mut context, "responseCwd", value.get("cwd"));
+    copy_string_array(
+        &mut context,
+        "responseRuntimeWorkspaceRoots",
+        value.get("runtimeWorkspaceRoots"),
+    );
+    (!context.is_empty()).then_some(Value::Object(context))
+}
+
+fn copy_string(context: &mut Map<String, Value>, key: &str, value: Option<&Value>) {
+    if let Some(value) = value.and_then(Value::as_str) {
+        context.insert(key.to_string(), Value::String(value.to_string()));
+    }
+}
+
+fn copy_string_array(context: &mut Map<String, Value>, key: &str, value: Option<&Value>) {
+    let Some(values) = value.and_then(Value::as_array) else {
+        return;
+    };
+    let values = values
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|value| Value::String(value.to_string()))
+        .collect::<Vec<_>>();
+    if !values.is_empty() {
+        context.insert(key.to_string(), Value::Array(values));
+    }
+}
+
 fn describe_error(error: &Value) -> String {
     error
         .get("message")
@@ -888,5 +954,31 @@ mod tests {
         )));
         assert!(should_persist_notification(Some("item/completed")));
         assert!(should_persist_notification(None));
+    }
+
+    #[test]
+    fn summarizes_workspace_context_without_persisting_request_payloads() {
+        let request = request_context(&json!({
+            "threadId": "thread-1",
+            "cwd": "/repo",
+            "runtimeWorkspaceRoots": ["/repo"],
+            "input": [{ "text": "must not be logged" }],
+        }))
+        .expect("extracts request context");
+        assert_eq!(request["threadId"], "thread-1");
+        assert_eq!(request["cwd"], "/repo");
+        assert!(!request.to_string().contains("must not be logged"));
+
+        let response = response_context(&json!({
+            "thread": { "id": "thread-1", "cwd": "/repo/worktree" },
+            "runtimeWorkspaceRoots": ["/repo/worktree"],
+        }))
+        .expect("extracts response context");
+        assert_eq!(response["responseThreadId"], "thread-1");
+        assert_eq!(response["responseCwd"], "/repo/worktree");
+        assert_eq!(
+            response["responseRuntimeWorkspaceRoots"],
+            json!(["/repo/worktree"])
+        );
     }
 }

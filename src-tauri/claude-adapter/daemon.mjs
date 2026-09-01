@@ -40,9 +40,11 @@ const { query } = sdk
 
 const PROTOCOL_VERSION = 2
 const MAX_REPLAY_EVENTS = 5_000
+const DEFAULT_MAX_TURNS = 65_536
 const socketPath = process.env.CODEX_HARNESS_CLAUDE_SOCKET
 const lockPath = `${socketPath}.lock`
 const claudePath = process.env.CODEX_HARNESS_CLAUDE_PATH || undefined
+const daemonInstanceId = randomUUID()
 const activeTurns = new Map()
 const pendingApprovals = new Map()
 const clients = new Set()
@@ -70,10 +72,38 @@ function emit(method, params) {
   replayEvents.push(message)
   if (replayEvents.length > MAX_REPLAY_EVENTS) replayEvents.shift()
   for (const client of clients) send(client, message)
+  return message
 }
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error)
+}
+
+function approvalEventParams(approval) {
+  return {
+    requestId: approval.requestId,
+    sessionId: approval.sessionId,
+    turnId: approval.turnId,
+    toolName: approval.toolName,
+    input: approval.input,
+    suggestions: approval.suggestions,
+  }
+}
+
+function approvalSnapshot() {
+  return [...pendingApprovals.values()].map(approvalEventParams)
+}
+
+function runtimeSnapshot() {
+  const snapshotSeq = nextSequence - 1
+  return {
+    daemonPid: process.pid,
+    daemonInstanceId,
+    latestEventSeq: snapshotSeq,
+    snapshotSeq,
+    activeTurns: activeTurnSnapshot(),
+    pendingApprovals: approvalSnapshot(),
+  }
 }
 
 function imageMediaType(path) {
@@ -117,28 +147,39 @@ async function* singleMessage(message) {
 
 function approvalRequest(sessionId, turnId, toolName, input, context) {
   const requestId = randomUUID()
-  emit('approval/requested', {
+  let resolveApproval
+  let rejectApproval
+  let removeAbortListener = () => {}
+  const pending = {
     requestId,
     sessionId,
     turnId,
     toolName,
     input,
     suggestions: context?.suggestions ?? [],
-  })
-  return new Promise((resolve, reject) => {
-    const abort = () => {
-      pendingApprovals.delete(requestId)
-      reject(new Error('Claude approval was cancelled'))
-    }
+    resolve: (decision) => {
+      removeAbortListener()
+      resolveApproval(decision)
+    },
+    expire: (reason) => {
+      if (!pendingApprovals.delete(requestId)) return false
+      removeAbortListener()
+      emit('approval/expired', { ...approvalEventParams(pending), reason })
+      rejectApproval(new Error('Claude approval was cancelled'))
+      return true
+    },
+  }
+  const promise = new Promise((resolve, reject) => {
+    resolveApproval = resolve
+    rejectApproval = reject
+    const abort = () => pending.expire('turn-interrupted')
+    removeAbortListener = () => context?.signal?.removeEventListener('abort', abort)
     context?.signal?.addEventListener('abort', abort, { once: true })
-    pendingApprovals.set(requestId, {
-      sessionId,
-      resolve: (decision) => {
-        context?.signal?.removeEventListener('abort', abort)
-        resolve(decision)
-      },
-    })
   })
+  pendingApprovals.set(requestId, pending)
+  emit('approval/requested', approvalEventParams(pending))
+  if (context?.signal?.aborted) pending.expire('turn-interrupted')
+  return promise
 }
 
 function assistantBlocks(message, sessionId, turnId) {
@@ -199,6 +240,7 @@ async function startTurn(params) {
   emit('message/user', { sessionId, turnId, itemId: `${turnId}:user`, content: params.input ?? [] })
 
   let providerSessionId = params.providerSessionId ?? null
+  const permissionMode = params.permissionMode ?? 'default'
   try {
     const message = await userMessage(params.input)
     for await (const sdkMessage of query({
@@ -209,11 +251,13 @@ async function startTurn(params) {
         ...(params.model ? { model: params.model } : {}),
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
         settingSources: ['user', 'project', 'local'],
-        permissionMode: params.permissionMode ?? 'default',
-        maxTurns: params.maxTurns ?? 40,
+        permissionMode,
+        ...(permissionMode === 'bypassPermissions'
+          ? { allowDangerouslySkipPermissions: true }
+          : { canUseTool: (toolName, input, context) => approvalRequest(sessionId, turnId, toolName, input, context) }),
+        maxTurns: params.maxTurns ?? DEFAULT_MAX_TURNS,
         includePartialMessages: true,
         abortController,
-        canUseTool: (toolName, input, context) => approvalRequest(sessionId, turnId, toolName, input, context),
         env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness' },
       },
     })) {
@@ -253,6 +297,9 @@ async function startTurn(params) {
       message: errorMessage(error),
     })
   } finally {
+    for (const pending of pendingApprovals.values()) {
+      if (pending.sessionId === sessionId && pending.turnId === turnId) pending.expire('turn-ended')
+    }
     activeTurns.delete(sessionId)
   }
 }
@@ -265,20 +312,14 @@ async function handle(client, request) {
   const { id, method, params = {} } = request
   if (method === 'initialize') {
     const lastEventSeq = Number.isSafeInteger(params.lastEventSeq) ? params.lastEventSeq : 0
-    respond(client, id, {
-      protocolVersion: PROTOCOL_VERSION,
-      daemonVersion: '0.2.0',
-      daemonPid: process.pid,
-      latestEventSeq: nextSequence - 1,
-      activeTurns: activeTurnSnapshot(),
-    })
+    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.2.0', ...runtimeSnapshot() })
     for (const event of replayEvents) {
-      if (event.seq > lastEventSeq) send(client, event)
+      if (event.seq > lastEventSeq) send(client, { ...event, replayed: true })
     }
     return
   }
   if (method === 'runtime/status') {
-    respond(client, id, { daemonPid: process.pid, latestEventSeq: nextSequence - 1, activeTurns: activeTurnSnapshot() })
+    respond(client, id, runtimeSnapshot())
     return
   }
   if (method === 'turn/start') {
@@ -298,10 +339,12 @@ async function handle(client, request) {
     const pending = pendingApprovals.get(params.requestId)
     if (!pending) throw new Error('Claude approval 已不存在')
     pendingApprovals.delete(params.requestId)
+    const outcome = params.allow ? 'allowed' : 'denied'
     pending.resolve(params.allow
       ? { behavior: 'allow', updatedInput: params.updatedInput ?? params.input ?? {} }
       : { behavior: 'deny', message: params.message || 'User declined in Codex Harness' })
-    respond(client, id, {})
+    const resolution = emit('approval/resolved', { ...approvalEventParams(pending), outcome })
+    respond(client, id, { resolvedSeq: resolution.seq })
     return
   }
   if (method === 'shutdown') {

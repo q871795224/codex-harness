@@ -88,8 +88,8 @@ macOS 上使用 label 为 `com.local.codex-harness.claude-provider` 的 per-user
 
 | 方法 | 关键字段 | 说明 |
 | --- | --- | --- |
-| `initialize` | protocol version、last event sequence | daemon 握手、协议版本校验和断点事件回放 |
-| `runtime/status` | 无 | 返回 daemon PID、最新事件序号和 active turns |
+| `initialize` | protocol version、last event sequence | daemon 握手、实例标识、当前 runtime 快照和断点事件回放 |
+| `runtime/status` | 无 | 返回 daemon 实例、最新事件序号、active turns 和当前 pending approvals |
 | `turn/start` | session ID、provider session ID、`cwd`、结构化输入 | 首次发送时创建 SDK 会话；后续使用 `resume` 恢复并开始工作 |
 | `turn/interrupt` | session ID | 通过 SDK cancellation 中断当前 query |
 | `approval/respond` | request ID、allow/deny | 恢复 `canUseTool` 回调 |
@@ -107,10 +107,12 @@ macOS 上使用 label 为 `com.local.codex-harness.claude-provider` 的 per-user
 | `tool/started` | SDK tool use block | 展示基础工具活动 |
 | `tool/completed` | SDK tool result | 更新工具结果和状态 |
 | `approval/requested` | SDK `canUseTool` | 进入 Harness 审批流 |
+| `approval/resolved` | `approval/respond` | 从所有客户端移除已处理审批 |
+| `approval/expired` | SDK cancellation 或 turn 结束 | 从所有客户端移除失效审批 |
 | `turn/completed` | SDK result | 结束 working，记录用量摘要（若有） |
 | `turn/failed` | SDK error/result | 展示可操作错误，不保存凭据或完整响应头 |
 
-协议在 per-user Unix socket 上使用 JSONL，并包含自增 request ID、provider session ID、turn ID 和 daemon 事件序号。daemon 在内存中保留最近 5,000 个事件；客户端用 `lastEventSeq` 只补收断线后的事件。daemon stdout/stderr 只写本地诊断日志，不记录环境变量值。
+协议在 per-user Unix socket 上使用 JSONL，并包含自增 request ID、provider session ID、turn ID 和 daemon 事件序号。daemon 在内存中保留最近 5,000 个事件；客户端用 `lastEventSeq` 只补收断线后的事件。`initialize` 和 `runtime/status` 同时返回 `daemonInstanceId`、`snapshotSeq`、active turns 与权威 pending approval 快照；初始化回放事件标记为 `replayed`，不能把历史 `approval/requested` 直接当作当前审批。daemon stdout/stderr 只写本地诊断日志，不记录环境变量值。
 
 ### Provider capability
 
@@ -145,8 +147,9 @@ Node Provider daemon 使用官方 `@anthropic-ai/claude-agent-sdk` 的 streaming
 - `pathToClaudeCodeExecutable` 指向 Harness 解析出的真实 Claude Code，避免 Universal App 捆绑单架构 Claude binary。
 - `env` 以白名单方式继承 `HOME`、`PATH`、`CLAUDE_CONFIG_DIR` 以及 AIS/Claude 所需变量。日志不得包含变量值。
 - `settingSources` 启用 user、project 与 local 配置，使 AIS 和项目 `CLAUDE.md` 正常生效。
+- `maxTurns` 使用 `65_536` 作为极高的安全上限，避免正常长任务被过早截断，同时保留异常 agent loop 的最终熔断。
 - 多个 Harness 客户端可连接同一 daemon；客户端断开不触发 query cancellation。
-- daemon 对同一个 Harness session 强制单 active turn，并集中持有 pending approvals。
+- daemon 对同一个 Harness session 强制单 active turn，并集中持有 pending approvals；审批处理和失效会广播给所有客户端。
 - daemon 异常退出后由 launchd 自动重新启动；已退出进程中的 active query 无法恢复。
 
 一期要求本机 Node.js 18+，并把 daemon、保留的 foreground adapter 与固定版本 SDK 作为 Tauri resource 打包；已验证 SDK resource 脱离仓库 `node_modules` 后仍能工作。正式发布前仍需决定是否把 Node runtime 固定为随 App 发布的双架构产物，并验证 Universal App 在 Apple Silicon 和 Intel Mac 上均能启动。
@@ -189,7 +192,7 @@ Harness 只保存索引，不保存 Claude 正文：
 - Provider：Claude
 - 工作目录
 - 模型：一期使用 AIS 当前默认值，不先实现模型发现
-- 权限模式
+- 权限模式：当前固定使用 `bypassPermissions`；daemon 同时传递 SDK 要求的危险跳过权限确认参数
 
 Codex 专属的 reasoning effort、service tier、Skills 和 MCP 管理入口不在 Claude 会话显示。消息列表复用现有视觉组件，Claude adapter 只提供通用 message/tool/approval 数据。
 

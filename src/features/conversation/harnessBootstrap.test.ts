@@ -33,6 +33,7 @@ describe('Harness bootstrap restoration', () => {
       [NAVIGATION_PREFERENCES_KEY]: JSON.stringify({
         layout: 'list', sort: 'manual', manualThreadOrder: ['a', 'a', 42],
         workspaceSort: 'recent', pinnedThreadIds: ['thread-1', 'thread-1'], sidebarWidth: 900,
+        sidebarListSplitRatio: 0.95,
       }),
       [APPEARANCE_PREFERENCES_KEY]: JSON.stringify({ theme: 'dark' }),
       [KEYBOARD_PREFERENCES_KEY]: JSON.stringify({ sendShortcut: 'enter', followUpMode: 'interject' }),
@@ -47,7 +48,7 @@ describe('Harness bootstrap restoration', () => {
     expect(state.rememberedThreadId).toBe('thread-1')
     expect(state.navigation).toMatchObject({
       layout: 'list', sort: 'manual', manualThreadOrder: ['a'], workspaceSort: 'recent',
-      pinnedThreadIds: ['thread-1'], sidebarWidth: 480,
+      pinnedThreadIds: ['thread-1'], sidebarWidth: 480, sidebarListSplitRatio: 0.8,
     })
     expect(state.appearance.theme).toBe('dark')
     expect(state.keyboard).toMatchObject({ sendShortcut: 'enter', followUpMode: 'interject' })

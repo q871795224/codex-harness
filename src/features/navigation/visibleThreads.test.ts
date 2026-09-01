@@ -18,7 +18,28 @@ describe('visible sidebar threads', () => {
     expect(visibleThreadOrder({
       layout: 'workspace', orderedThreads: [first, hidden, loose], orderedWorkspaceRoots: ['/a', '/b'],
       groupedByRoot: new Map([['/a', [first]], ['/b', [hidden]]]), unsorted: [loose],
-      expanded: { '/b': false }, visibleCounts: {},
+      expanded: { '/b': false }, visibleCounts: {}, pinnedThreadIds: [],
     })).toEqual(['first', 'loose'])
+  })
+
+  it('always shows every pinned thread even when pinned exceed the default count', () => {
+    // 7 threads, all old (recency far past the 3-day cutoff) → default count would be 3
+    const threads = Array.from({ length: 7 }, (_, index) => thread(`thread-${index + 1}`, 1))
+    const pinnedThreadIds = ['thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6', 'thread-7']
+    const shown = visibleThreads(threads, undefined, 1_000_000, pinnedThreadIds)
+    expect(shown).toHaveLength(6)
+    expect(shown.map(({ id }) => id)).toEqual(['thread-1', 'thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6'])
+  })
+
+  it('keeps the recency-based default when pinned count is smaller', () => {
+    const threads = Array.from({ length: 8 }, (_, index) => thread(`thread-${index + 1}`, 1))
+    expect(visibleThreads(threads, undefined, 1_000_000, ['thread-8'])).toHaveLength(3)
+    expect(visibleThreads(threads, undefined, 1_000_000, [])).toHaveLength(3)
+  })
+
+  it('only counts threads pinned within the list itself', () => {
+    const threads = Array.from({ length: 6 }, (_, index) => thread(`thread-${index + 1}`, 1))
+    // pinned ids that are not in this list must not inflate the count
+    expect(visibleThreads(threads, undefined, 1_000_000, ['other-a', 'other-b', 'other-c', 'other-d'])).toHaveLength(3)
   })
 })

@@ -157,7 +157,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .new-chat-provider-menu button span { display: grid; gap: 2px; }
 .new-chat-provider-menu button strong { font-size: 12px; }
 .new-chat-provider-menu button small { color: #89909b; font-size: 9px; }
-.thread-provider-mark { flex: 0 0 auto; color: #c46d38; }
+
+.sidebar-split-list { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.sidebar-split-pane { display: flex; min-height: 44px; flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #d9dce1 transparent; }
+.sidebar-split-handle { flex: 0 0 auto; height: 9px; margin: 0 -7px; cursor: row-resize; touch-action: none; position: relative; }
+.sidebar-split-handle::after { position: absolute; top: 4px; right: 7px; left: 7px; height: 1px; background: #8da0e9; content: ''; opacity: 0; transition: opacity .12s ease; }
+.sidebar-split-handle:hover::after, .sidebar-split-handle:focus-visible::after, .sidebar-split-list.resizing .sidebar-split-handle::after { opacity: .75; }
+body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 
 .sidebar-search { position: relative; display: flex; flex: 1; align-items: center; gap: 7px; height: 29px; min-width: 0; padding: 0 7px; border: 1px solid #e4e6ea; border-radius: 7px; color: #999ea8; background: #fdfdfd; }
 .sidebar-search:focus-within { border-color: #bdc8f7; background: #fff; box-shadow: 0 0 0 3px rgba(105, 130, 245, .08); }
@@ -166,6 +172,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .sidebar-search button { border: 0; padding: 0; background: transparent; color: #9da2ac; cursor: pointer; font-size: 18px; line-height: 1; }
 
 .sidebar-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 7px 12px; scrollbar-width: thin; scrollbar-color: #d9dce1 transparent; }
+.sidebar-scroll.split-mode { display: flex; flex-direction: column; overflow: hidden; }
 .sidebar-section-heading { display: flex; align-items: center; justify-content: space-between; height: 31px; padding: 0 6px; color: #707681; font-size: 13px; }
 .sidebar-section-heading.searching { padding: 0 2px; }
 .sidebar-search-trigger { display: flex; align-items: center; gap: 6px; height: 27px; min-width: 0; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: #707681; cursor: text; }

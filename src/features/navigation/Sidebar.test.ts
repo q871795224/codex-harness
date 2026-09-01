@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { claudeProviderDescription, reorderThreadIds } from './Sidebar'
+import type { Thread } from '../../core/domain/codex'
+import { claudeProviderDescription, reorderThreadIds, splitThreadsByProvider } from './Sidebar'
 
 describe('sidebar manual ordering', () => {
   it('places a dragged thread on the requested side of its target', () => {
@@ -11,6 +12,30 @@ describe('sidebar manual ordering', () => {
     const ids = ['a', 'b']
     expect(reorderThreadIds(ids, 'missing', 'a', 'before')).toBe(ids)
     expect(reorderThreadIds(ids, 'a', 'a', 'after')).toBe(ids)
+  })
+})
+
+describe('sidebar provider split', () => {
+  const thread = (id: string, provider?: 'codex' | 'claude'): Thread => ({ id, provider } as Thread)
+
+  it('puts codex and legacy (provider-less) threads first, claude threads second', () => {
+    const legacy = thread('legacy')
+    const codexA = thread('codex-a', 'codex')
+    const claudeA = thread('claude-a', 'claude')
+    const codexB = thread('codex-b', 'codex')
+    const claudeB = thread('claude-b', 'claude')
+    const { codex, claude } = splitThreadsByProvider([legacy, claudeA, codexA, claudeB, codexB])
+    expect(codex.map(({ id }) => id)).toEqual(['legacy', 'codex-a', 'codex-b'])
+    expect(claude.map(({ id }) => id)).toEqual(['claude-a', 'claude-b'])
+  })
+
+  it('tolerates an all-codex or all-claude list', () => {
+    const onlyCodex = splitThreadsByProvider([thread('a', 'codex')])
+    expect(onlyCodex.codex).toHaveLength(1)
+    expect(onlyCodex.claude).toHaveLength(0)
+    const onlyClaude = splitThreadsByProvider([thread('b', 'claude')])
+    expect(onlyClaude.codex).toHaveLength(0)
+    expect(onlyClaude.claude).toHaveLength(1)
   })
 })
 
