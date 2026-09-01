@@ -395,7 +395,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
         onArchiveOldThreads={() => void harness.archiveOldThreads()}
         onNewThread={(provider) => void harness.createThread(provider)}
-        claudeAvailable={Boolean(harness.claudeStatus?.available)}
+        claudeStatus={harness.claudeStatus}
         onSearch={(term) => void harness.searchThreads(term)}
         onRefresh={() => void harness.refresh()}
         onViewMode={(mode) => void harness.setViewMode(mode)}

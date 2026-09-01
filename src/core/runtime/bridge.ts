@@ -27,7 +27,7 @@ import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-wo
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/types'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
-import type { ClaudeAdapterEvent, ClaudeRuntimeStatus, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTurnStartInput } from '../claude/types'
+import type { ClaudeAdapterEvent, ClaudeRuntimeStatus, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -133,6 +133,10 @@ export const runtime = {
 
   listenClaudeEvents(handler: (event: ClaudeAdapterEvent) => void): Promise<() => void> {
     return listen<ClaudeAdapterEvent>('claude:event', (event) => handler(event.payload))
+  },
+
+  listenClaudeTransport(handler: (event: ClaudeTransportEvent) => void): Promise<() => void> {
+    return listen<ClaudeTransportEvent>('claude:transport', (event) => handler(event.payload))
   },
 
   async readThreadCreditUsage(threadId: string): Promise<ThreadCreditUsage | null> {

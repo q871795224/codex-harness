@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { emptyThreadDetail, type ApprovalRequest, type Thread, type ThreadDetail, type Turn, type UserInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
-import type { ClaudeAdapterEvent, ClaudeRuntimeStatus, ClaudeSessionRecord } from '../../core/claude/types'
+import type { ClaudeAdapterEvent, ClaudeRuntimeStatus, ClaudeSessionRecord, ClaudeTransportEvent } from '../../core/claude/types'
 import { reduceClaudeEvent } from '../../core/claude/eventReducer'
 import { reduceThreadDetailEvent } from '../conversation/conversationEventReducer'
 
@@ -20,8 +20,10 @@ export function useClaudeHarness() {
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [toast, setToast] = useState<ClaudeToast | null>(null)
   const sessionsRef = useRef<ClaudeSessionRecord[]>([])
+  const activeTurnIdsRef = useRef<Record<string, string>>({})
 
   useEffect(() => { sessionsRef.current = sessions }, [sessions])
+  useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
   useEffect(() => {
     if (!toast) return undefined
     const timer = window.setTimeout(() => setToast(null), toast.kind === 'error' ? 6_000 : 3_500)
@@ -91,7 +93,11 @@ export function useClaudeHarness() {
       return { ...current, [sessionId]: reduceClaudeEvent(detail, event) }
     })
     if (event.method === 'turn/started' && typeof params.turnId === 'string') {
-      setActiveTurnIds((current) => ({ ...current, [sessionId]: params.turnId as string }))
+      setActiveTurnIds((current) => {
+        const next = { ...current, [sessionId]: params.turnId as string }
+        activeTurnIdsRef.current = next
+        return next
+      })
       setSessions((current) => current.map((session) => session.id === sessionId
         ? { ...session, updatedAt: Date.now() }
         : session))
@@ -100,6 +106,7 @@ export function useClaudeHarness() {
       setActiveTurnIds((current) => {
         const next = { ...current }
         delete next[sessionId]
+        activeTurnIdsRef.current = next
         return next
       })
       setApprovals((current) => ({ ...current, [sessionId]: [] }))
@@ -109,15 +116,54 @@ export function useClaudeHarness() {
 
   useEffect(() => {
     let disposed = false
-    let unlisten: (() => void) | undefined
+    let unlistenEvents: (() => void) | undefined
+    let unlistenTransport: (() => void) | undefined
+    let reconnectTimer: number | undefined
+    const handleTransport = (event: ClaudeTransportEvent) => {
+      if (event.kind === 'connected') {
+        setStatus((current) => current ? { ...current, managed: event.managed ?? current.managed, running: true, error: null } : current)
+        return
+      }
+      setStatus((current) => current ? { ...current, running: false } : current)
+      const interrupted = activeTurnIdsRef.current
+      if (Object.keys(interrupted).length > 0) {
+        setDetails((current) => {
+          const next = { ...current }
+          for (const [sessionId, turnId] of Object.entries(interrupted)) {
+            const detail = next[sessionId]
+            if (!detail) continue
+            next[sessionId] = reduceClaudeEvent(detail, {
+              method: 'turn/failed',
+              params: { sessionId, turnId, message: 'Claude Provider 异常退出，当前 turn 无法恢复。' },
+            })
+          }
+          return next
+        })
+        activeTurnIdsRef.current = {}
+        setActiveTurnIds({})
+        setApprovals({})
+        notify('Claude Provider 已重启；中断的 turn 需要重新发送。', 'error')
+      }
+      reconnectTimer = window.setTimeout(() => {
+        void runtime.claudeRequest('runtime/status')
+          .then(() => runtime.claudeRuntimeStatus())
+          .then((nextStatus) => { if (!disposed) setStatus(nextStatus) })
+          .catch(() => undefined)
+      }, 400)
+    }
     void (async () => {
       try {
-        const dispose = await runtime.listenClaudeEvents(handleEvent)
+        const [disposeEvents, disposeTransport] = await Promise.all([
+          runtime.listenClaudeEvents(handleEvent),
+          runtime.listenClaudeTransport(handleTransport),
+        ])
         if (disposed) {
-          dispose()
+          disposeEvents()
+          disposeTransport()
           return
         }
-        unlisten = dispose
+        unlistenEvents = disposeEvents
+        unlistenTransport = disposeTransport
         const [nextStatus, nextSessions] = await Promise.all([
           runtime.claudeRuntimeStatus(),
           runtime.listClaudeSessions(false),
@@ -138,18 +184,24 @@ export function useClaudeHarness() {
             activeTurns?: Array<{ sessionId: string, turnId: string }>
           }>('runtime/status')
           if (!disposed && provider.activeTurns) {
-            setActiveTurnIds(Object.fromEntries(provider.activeTurns.map((turn) => [turn.sessionId, turn.turnId])))
+            const active = Object.fromEntries(provider.activeTurns.map((turn) => [turn.sessionId, turn.turnId]))
+            activeTurnIdsRef.current = active
+            setActiveTurnIds(active)
           }
+          const connectedStatus = await runtime.claudeRuntimeStatus()
+          if (!disposed) setStatus(connectedStatus)
         }
       } catch (error) {
-        if (!disposed) setStatus({ available: false, nodePath: null, claudePath: null, adapterPath: null, error: messageOf(error) })
+        if (!disposed) setStatus(unavailableStatus(messageOf(error)))
       } finally {
         if (!disposed) setLoaded(true)
       }
     })()
     return () => {
       disposed = true
-      unlisten?.()
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer)
+      unlistenEvents?.()
+      unlistenTransport?.()
     }
   }, [handleEvent])
 
@@ -210,7 +262,11 @@ export function useClaudeHarness() {
       durationMs: null,
     }
     setBusy((current) => ({ ...current, composer: true }))
-    setActiveTurnIds((current) => ({ ...current, [sessionId]: turnId }))
+    setActiveTurnIds((current) => {
+      const next = { ...current, [sessionId]: turnId }
+      activeTurnIdsRef.current = next
+      return next
+    })
     setDetails((current) => {
       const base = current[sessionId] ?? emptyThreadDetail(sessionThread(session))
       const withTurn = reduceThreadDetailEvent(base, { type: 'turnStarted', turn: newTurn })
@@ -246,6 +302,7 @@ export function useClaudeHarness() {
       setActiveTurnIds((current) => {
         const next = { ...current }
         delete next[sessionId]
+        activeTurnIdsRef.current = next
         return next
       })
       notify(`无法发送 Claude 消息：${messageOf(error)}`, 'error')
@@ -350,4 +407,17 @@ function sessionThread(session: ClaudeSessionRecord, active = false): Thread {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function unavailableStatus(error: string): ClaudeRuntimeStatus {
+  return {
+    available: false,
+    managed: false,
+    running: false,
+    nodePath: null,
+    claudePath: null,
+    daemonPath: null,
+    socketPath: null,
+    error,
+  }
 }

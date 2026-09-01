@@ -49,10 +49,12 @@ pub struct ClaudeRuntime {
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeRuntimeStatus {
     pub available: bool,
+    pub managed: bool,
+    pub running: bool,
     pub node_path: Option<String>,
     pub claude_path: Option<String>,
-    // Kept as adapterPath for frontend compatibility; it now points to daemon.mjs.
-    pub adapter_path: Option<String>,
+    pub daemon_path: Option<String>,
+    pub socket_path: Option<String>,
     pub error: Option<String>,
 }
 
@@ -94,9 +96,14 @@ impl ClaudeRuntime {
             .cloned();
         ClaudeRuntimeStatus {
             available: error.is_none(),
+            managed: launch_agent_loaded(),
+            running: provider_socket_reachable(),
             node_path: node.ok().map(|path| path.display().to_string()),
             claude_path: claude.ok().map(|path| path.display().to_string()),
-            adapter_path: daemon.ok().map(|path| path.display().to_string()),
+            daemon_path: daemon.ok().map(|path| path.display().to_string()),
+            socket_path: provider_socket_path()
+                .ok()
+                .map(|path| path.display().to_string()),
             error,
         }
     }
@@ -153,6 +160,14 @@ impl ClaudeRuntime {
             "daemon.connected",
             json!({
                 "protocolVersion": version,
+                "daemonPid": result.get("daemonPid"),
+            }),
+        );
+        let _ = self.app.emit(
+            "claude:transport",
+            json!({
+                "kind": "connected",
+                "managed": launch_agent_loaded(),
                 "daemonPid": result.get("daemonPid"),
             }),
         );
@@ -582,6 +597,10 @@ fn provider_socket_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "找不到用户 HOME，无法确定 Claude Provider socket。".to_string())
 }
 
+fn provider_socket_reachable() -> bool {
+    provider_socket_path().is_ok_and(|path| std::os::unix::net::UnixStream::connect(path).is_ok())
+}
+
 fn find_daemon(app: &AppHandle) -> Result<PathBuf, String> {
     if let Some(path) = env::var_os("CODEX_HARNESS_CLAUDE_DAEMON_PATH").map(PathBuf::from) {
         if path.is_file() {
@@ -717,6 +736,26 @@ mod tests {
             provider_error(&json!({ "message": "model_not_found" })),
             "model_not_found"
         );
+    }
+
+    #[test]
+    fn serializes_provider_management_status_for_the_frontend() {
+        let status = ClaudeRuntimeStatus {
+            available: true,
+            managed: true,
+            running: true,
+            node_path: Some("/node".to_string()),
+            claude_path: Some("/claude".to_string()),
+            daemon_path: Some("/daemon.mjs".to_string()),
+            socket_path: Some("/provider.sock".to_string()),
+            error: None,
+        };
+        let value = serde_json::to_value(status).expect("serializes status");
+
+        assert_eq!(value["managed"], true);
+        assert_eq!(value["running"], true);
+        assert_eq!(value["daemonPath"], "/daemon.mjs");
+        assert!(value.get("adapterPath").is_none());
     }
 
     #[cfg(target_os = "macos")]

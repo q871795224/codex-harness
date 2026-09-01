@@ -45,6 +45,7 @@ import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
 import harnessIcon from '../../../icon/codex-harness.svg'
 import { resolveThreadBadge } from './threadBadge'
 import { visibleThreadOrder, visibleThreads } from './visibleThreads'
+import type { ClaudeRuntimeStatus } from '../../core/claude/types'
 
 interface SidebarProps {
   workspaces: Workspace[]
@@ -67,7 +68,7 @@ interface SidebarProps {
   onSelectWorkspace: (root: string) => void
   onArchiveOldThreads: () => void
   onNewThread: (provider?: 'codex' | 'claude') => void
-  claudeAvailable?: boolean
+  claudeStatus?: ClaudeRuntimeStatus | null
   onSearch: (term: string) => void
   onRefresh: () => void
   onViewMode: (mode: 'active' | 'archived') => void
@@ -104,7 +105,7 @@ export function Sidebar({
   onSelectWorkspace,
   onArchiveOldThreads,
   onNewThread,
-  claudeAvailable = false,
+  claudeStatus = null,
   onSearch,
   onRefresh,
   onViewMode,
@@ -133,6 +134,7 @@ export function Sidebar({
   const [, setRelativeTimeTick] = useState(0)
   const [draggedThreadId, setDraggedThreadId] = useState<string | null>(null)
   const [threadDrop, setThreadDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
+  const claudeAvailable = Boolean(claudeStatus?.available)
   const onSearchRef = useRef(onSearch)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchStarted = useRef(false)
@@ -378,7 +380,7 @@ export function Sidebar({
         {newThreadMenuOpen && (
           <div className="new-chat-provider-menu" role="menu">
             <button type="button" onClick={() => { setNewThreadMenuOpen(false); onNewThread('codex') }}><CirclePlus size={15} /><span><strong>Codex</strong><small>App Server 原生会话</small></span></button>
-            <button type="button" disabled={!claudeAvailable} onClick={() => { setNewThreadMenuOpen(false); onNewThread('claude') }}><Sparkles size={15} /><span><strong>Claude</strong><small>{claudeAvailable ? 'AIS Switch · Agent SDK' : 'Claude runtime 不可用'}</small></span></button>
+            <button type="button" disabled={!claudeAvailable} onClick={() => { setNewThreadMenuOpen(false); onNewThread('claude') }}><Sparkles size={15} /><span><strong>Claude</strong><small>{claudeProviderDescription(claudeStatus)}</small></span></button>
           </div>
         )}
       </div>
@@ -568,6 +570,15 @@ export function Sidebar({
       />
     </aside>
   )
+}
+
+export function claudeProviderDescription(status: ClaudeRuntimeStatus | null): string {
+  if (!status) return 'Provider 状态检查中'
+  if (!status.available) return 'Claude Provider 不可用'
+  if (status.running && status.managed) return 'AIS Switch · Provider 已连接'
+  if (status.running) return 'AIS Switch · Provider 已连接（按需）'
+  if (status.managed) return 'AIS Switch · Provider 启动中'
+  return 'AIS Switch · Provider 待连接'
 }
 
 function ThreadList({

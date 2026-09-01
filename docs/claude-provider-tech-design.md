@@ -162,8 +162,10 @@ Node Provider daemon 使用官方 `@anthropic-ai/claude-agent-sdk` 的 streaming
 - LaunchAgent 已加载时通过 `kickstart` 恢复服务，不再创建第二个非托管进程。
 - 完成 initialize/version 握手，按最后收到的事件序号补收断线事件。
 - 维护 request/response correlation 和连接状态；活跃 turn 与 pending approval 归 daemon 管理。
-- 把 provider 事件转换为 Tauri event。
+- 把 provider 消息和 `connected`/`disconnected` transport 状态转换为 Tauri event。
 - App 退出时只关闭 socket，不停止 daemon、Claude query、AIS Switch，也不修改 AIS 配置。
+
+Rust 向前端返回 `available`、`managed`、`running`、Node/Claude/daemon 路径和 socket 路径。`available` 表示依赖完整、允许创建 Claude 会话；`managed` 表示 LaunchAgent 已加载；`running` 表示当前 socket 可连接，不能再用“依赖已安装”代替“Provider 已连接”。
 
 ### 会话状态与持久化
 
@@ -190,6 +192,8 @@ Harness 只保存索引，不保存 Claude 正文：
 - 权限模式
 
 Codex 专属的 reasoning effort、service tier、Skills 和 MCP 管理入口不在 Claude 会话显示。消息列表复用现有视觉组件，Claude adapter 只提供通用 message/tool/approval 数据。
+
+Harness 新会话菜单直接展示 Claude Provider 的连接状态。Provider transport 异常断开时，Harness 将受影响的 active turn 明确收口为失败、清理遗留审批，并在 launchd 拉起新进程后自动重连；空闲断线自动恢复且不打扰用户。
 
 ## AIS Switch SDK 验证
 
@@ -282,7 +286,9 @@ Supervisor 的任务生命周期符合 Harness 方向，但当前公开接口不
 | --- | --- | --- |
 | 首次注册 | 通过 | `launchctl print gui/<uid>/com.local.codex-harness.claude-provider` 为 `running` |
 | Harness 退出 | 通过 | 关闭 Harness 进程后 daemon PID 和 socket 继续存在 |
+| Harness 重开 | 通过 | packaged debug App 关闭并重开后，两次 initialize 连接同一个 daemon PID |
 | 异常保活 | 通过 | 终止空闲 daemon 后 launchd 自动生成新 PID，`runs` 从 1 增至 2 |
+| 应用自动重连 | 通过 | Harness 运行期间终止空闲 daemon，launchd 拉起新 PID 后 Harness 自动完成 initialize |
 | 环境隔离 | 通过 | 实际 Node 进程环境不包含用户 launchd domain 中的无关 token 变量 |
 | AIS 请求 | 通过 | LaunchAgent 的干净环境中返回固定响应 `LAUNCH_AGENT_AIS_OK` |
 
@@ -295,6 +301,7 @@ Supervisor 的任务生命周期符合 Harness 方向，但当前公开接口不
 | 一期 B（完成代码） | 图片、基础工具卡片和审批 | 图片输入与审批映射已实现，待 UI 人工验收 |
 | 一期 C（完成代码） | provider session 索引和恢复 | 仅持久化索引与 provider session ID，不保存正文 |
 | 生命周期重构（完成） | Provider daemon 脱离 Harness 窗口；不依赖私有 Claude 协议 | 客户端断开后 active task 继续，重连可回放并收到完成事件 |
+| Harness 应用收口（完成） | managed/running 状态、transport 断线收口与自动重连 | UI 能区分不可用、启动中、按需连接和 LaunchAgent 已连接 |
 | 后续 | fork、queue/steer、Skills/MCP、用量、Quick Agent | 每项单独设计并由 capability 开启 |
 
 ## 测试、灰度与回滚

@@ -14,6 +14,7 @@
 - 快捷命令通过声明式 `quickCommands` slot 接入左下角统一面板；插件只能调用 `harness.quickCommands` service 中由 Rust 原生层固定允许的命令，不能执行任意 shell 字符串。VPN 连接完成后以 Cisco 客户端的 `state: Connected` 状态作为成功依据。
 - `src-tauri/src/app_server.rs` 是唯一可直接接触 App Server 传输协议的模块。不要在 React 组件中直接实现协议或连接逻辑。
 - Claude Provider 由 `src-tauri/claude-adapter/daemon.mjs` 常驻进程承载，通过 `~/.codex-harness/claude-provider.sock` 与 Harness 连接；首次运行 Harness 时必须把 daemon 与 SDK 安装到 `~/.codex-harness/claude-provider/` 并注册 `com.local.codex-harness.claude-provider` LaunchAgent，使其在 macOS 用户登录后自启动并由 launchd 保活。关闭 Harness 不能停止 daemon 或 active turn；LaunchAgent 不可用时才允许 Harness 按需启动 daemon。`adapter.mjs` 仅保留为实验参考，不得作为生产 runtime 入口。
+- Harness 必须分别展示 Claude Provider 的 `available`（依赖完整）、`managed`（LaunchAgent 已加载）和 `running`（socket 可连接）状态，不能把“已安装”当作“已连接”；transport 异常断开时要收口受影响的 active turn、清理审批，并在 launchd 拉起后自动重连。
 - Skill 的发现、解析、启停状态和最终列表以共享 App Server daemon 为准，前端不要自行扫描或解析 `SKILL.md`。
 - MCP 是共享 App Server daemon 的全局配置：应用核心启动时加载一次，仅在用户手动 reload 时刷新；打开设置页不重复请求。Harness 必须结合 `config/read`、`mcpServerStatus/list` 和 `mcpServer/startupStatus/updated` 区分启用状态与实际运行状态，并向用户展示启动失败和认证异常；不得把“已启用”当作“已连接”。
 - Codex 原生能力（模型、推理强度、审批、上下文、附件、Skills 与 MCP）属于 Harness 核心，不通过 Harness 插件 contribution 实现；默认项和管理入口放在设置界面，会话级覆盖放在输入框。
