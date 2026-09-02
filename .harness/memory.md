@@ -1,0 +1,29 @@
+# 记忆
+
+## 当前范围
+
+- 当前 token 成本排查只覆盖 Codex；Claude 会话暂不纳入。
+- Quick Agent 的 `effort: max` 是有意配置，暂不调整 effort 或并发策略，先通过埋点观察实际消耗。
+- SeaTalk 已被禁用，草稿生成暂不作为当前优化对象。
+- MCP 转 Skill 暂不在本次实现范围，由另一个 Codex 负责。
+
+## 待完善的插件功能
+
+1. SeaTalk 草稿
+
+该功能是内置 SeaTalk 插件的功能，入口在 SeaTalk 页面里的“用当前会话生成草稿”按钮：`src/plugins/seatalk/index.tsx`。当前已禁用。
+
+但它有一个容易误解的地方：它不是在当前 Codex 会话里继续生成，而是：
+
+创建一个独立的 Agent Run；
+把当前意图和最近最多 8 条消息拼进 prompt；
+让 Codex 生成 SeaTalk 可发送正文；
+用户编辑后，再手动预览、确认、发送。
+生成草稿本身会额外消耗一次 Codex turn。SeaTalk 插件平时的本地 bridge 健康检查和消息轮询不消耗模型 token。如果不用 SeaTalk，建议直接禁用该插件。
+
+2. 子任务结果传回在哪里点击？
+在右下角“快捷 Agent”面板中，展开对应的任务记录。只有任务配置为“完成后可回传当前会话”，且子任务已经完成时，才会出现“回传结果到当前会话”的按钮：QuickActionPanel.tsx。
+
+当前内置的“提交、推送并创建 MR”默认配置是 detached，也就是“独立查看”，所以默认不会出现这个按钮：quick-agent/config.ts。
+
+点击回传后，父会话会再次启动一个 Codex turn 来处理子任务结果，因此这不是免费的 UI 操作。父会话有 active turn 时，回传会被拒绝，不会自动形成循环。

@@ -77,7 +77,7 @@ export class AgentRunCoordinator implements AgentRunService {
       const childThreadId = await this.transport.startThread(workspaceRoot, provider)
       run = await this.persist({ ...run, childThreadId, updatedAt: Date.now() })
       if (input.settings) await this.transport.configureThread(childThreadId, input.settings, provider)
-      const turnId = await this.transport.startTurn(childThreadId, prompt, provider)
+      const turnId = await this.transport.startTurn(childThreadId, prompt, provider, 'quick-agent')
       const current = this.runs.find((candidate) => candidate.runId === run.runId)
       if (current && !isRunning(current)) {
         return current.turnId === turnId ? current : await this.persist({ ...current, turnId, updatedAt: Date.now() })
@@ -131,7 +131,7 @@ export class AgentRunCoordinator implements AgentRunService {
         result,
         '',
         '请结合当前主会话目标继续处理。',
-      ].join('\n'), provider)
+      ].join('\n'), provider, 'return-to-parent')
       await this.persist({ ...run, returnedAt: Date.now(), updatedAt: Date.now() })
     } finally {
       this.returningRunIds.delete(runId)

@@ -3,6 +3,7 @@ import {
   LONG_PASTE_THRESHOLD,
   absoluteMentionPath,
   activeComposerTrigger,
+  composerTextInput,
   expandCollapsedPastes,
   hasSkillMarker,
   insertComposerPrompt,
@@ -74,6 +75,31 @@ describe('structured references', () => {
     expect(insertComposerPrompt('', '$plan-delegate 交给 Luna')).toBe('$plan-delegate 交给 Luna')
     expect(insertComposerPrompt('保留这段补充', '$plan-delegate 交给 Luna'))
       .toBe('$plan-delegate 交给 Luna\n\n保留这段补充')
+  })
+
+  it('emits CLI-compatible skill placeholders with UTF-8 byte ranges', () => {
+    expect(composerTextInput('检查 $tdd 和 $tdd', ['tdd'])).toEqual({
+      type: 'text',
+      text: '检查 $tdd 和 $tdd',
+      text_elements: [
+        { byteRange: { start: 7, end: 11 }, placeholder: '$tdd' },
+        { byteRange: { start: 16, end: 20 }, placeholder: '$tdd' },
+      ],
+    })
+    expect(composerTextInput('前缀 $中文 后缀', ['中文'])).toEqual({
+      type: 'text',
+      text: '前缀 $中文 后缀',
+      text_elements: [{ byteRange: { start: 7, end: 14 }, placeholder: '$中文' }],
+    })
+  })
+
+  it('only marks complete skill tokens and ignores unavailable markers', () => {
+    expect(composerTextInput('$tdd-extra $tdd/x $tdd', ['tdd'])).toEqual({
+      type: 'text',
+      text: '$tdd-extra $tdd/x $tdd',
+      text_elements: [{ byteRange: { start: 18, end: 22 }, placeholder: '$tdd' }],
+    })
+    expect(composerTextInput('$tdd', ['missing'])).toEqual({ type: 'text', text: '$tdd', text_elements: [] })
   })
 })
 

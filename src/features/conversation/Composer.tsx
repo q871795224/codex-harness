@@ -2,12 +2,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { ChevronDown, FileText, Image, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
-import { textInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import { appServer, type FuzzyFileSearchResult } from '../../core/runtime/appServerClient'
 import {
   absoluteMentionPath,
   activeComposerTrigger,
+  composerTextInput,
   expandCollapsedPastes,
   hasSkillMarker,
   insertCollapsedPaste,
@@ -210,14 +210,18 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
 
   useEffect(() => { setHighlightedSuggestion(0) }, [triggerKind, triggerQuery])
 
-  const inputs = useMemo<UserInput[]>(() => [
-    ...(expandedText.trim() ? [textInput(collapsedPastes.length > 0 ? expandedText : expandedText.trim())] : []),
-    ...attachments.map((attachment): UserInput => attachment.kind === 'image'
-      ? { type: 'localImage', path: attachment.path }
-      : attachment.kind === 'skill'
-        ? { type: 'skill', name: attachment.name, path: attachment.path }
-      : { type: 'mention', name: attachment.name, path: attachment.path }),
-  ], [attachments, collapsedPastes.length, expandedText])
+  const inputs = useMemo<UserInput[]>(() => {
+    const selectedSkillNames = attachments.filter((attachment) => attachment.kind === 'skill').map((attachment) => attachment.name)
+    const text = collapsedPastes.length > 0 ? expandedText : expandedText.trim()
+    return [
+      ...(text ? [composerTextInput(text, selectedSkillNames)] : []),
+      ...attachments.map((attachment): UserInput => attachment.kind === 'image'
+        ? { type: 'localImage', path: attachment.path }
+        : attachment.kind === 'skill'
+          ? { type: 'skill', name: attachment.name, path: attachment.path }
+          : { type: 'mention', name: attachment.name, path: attachment.path }),
+    ]
+  }, [attachments, collapsedPastes.length, expandedText])
 
   const submit = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return

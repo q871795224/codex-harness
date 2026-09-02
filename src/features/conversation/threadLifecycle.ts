@@ -1,5 +1,6 @@
 import type {
   JsonObject,
+  CodexTurnTrigger,
   SandboxPolicy,
   Thread,
   ThreadCodexSettings,
@@ -27,6 +28,7 @@ export function resumeThreadRequest(threadId: string, cwd?: string): JsonObject 
   return {
     threadId,
     ...(cwd ? { cwd, runtimeWorkspaceRoots: [cwd] } : {}),
+    excludeTurns: true,
     initialTurnsPage: { limit: 5, sortDirection: 'desc', itemsView: 'full' },
   }
 }
@@ -113,11 +115,13 @@ export function turnStartRequest(
   input: UserInput[],
   thread: Thread | undefined,
   detail: ThreadDetail | undefined,
+  trigger?: CodexTurnTrigger,
 ): JsonObject {
   return {
     threadId,
     clientUserMessageId,
     input,
+    ...(trigger ? { turnTrigger: trigger } : {}),
     ...(thread ? threadTurnContext(detail, thread.cwd) : {}),
   }
 }

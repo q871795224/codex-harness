@@ -72,11 +72,12 @@ describe('thread lifecycle hydration', () => {
     )).toEqual(['owned-thread', 'detail-thread'])
   })
 
-  it('builds a bounded full-history resume request for a known checkout', () => {
+  it('builds a bounded paginated resume request without duplicate thread history', () => {
     expect(resumeThreadRequest('thread-1', '/repo')).toEqual({
       threadId: 'thread-1',
       cwd: '/repo',
       runtimeWorkspaceRoots: ['/repo'],
+      excludeTurns: true,
       initialTurnsPage: { limit: 5, sortDirection: 'desc', itemsView: 'full' },
     })
   })
@@ -168,6 +169,17 @@ describe('thread workspace permissions', () => {
       cwd: '/repo/worktree',
       runtimeWorkspaceRoots: ['/repo/worktree'],
       permissions: 'profile-1',
+    })
+  })
+
+  it('labels non-conversation turns without changing their structured input', () => {
+    const currentThread = thread({ cwd: '/repo/worktree' })
+    const input = [{ type: 'text' as const, text: 'run quick task', text_elements: [] }]
+
+    expect(turnStartRequest('thread-1', 'message-1', input, currentThread, undefined, 'quick-agent')).toMatchObject({
+      threadId: 'thread-1',
+      input,
+      turnTrigger: 'quick-agent',
     })
   })
 })

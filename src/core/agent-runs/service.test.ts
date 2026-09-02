@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentRun, AgentRunTransport, ThreadInspection } from './types'
+import type { CodexTurnTrigger } from '../domain/codex'
 import { AgentRunCoordinator, isolatedAgentBranch } from './service'
 
 class FakeTransport implements AgentRunTransport {
   runs: AgentRun[] = []
-  startedPrompts: Array<{ threadId: string; prompt: string }> = []
+  startedPrompts: Array<{ threadId: string; prompt: string; trigger?: CodexTurnTrigger }> = []
   startedWorkspaces: string[] = []
   inspection: ThreadInspection = { active: true, lastTurnStatus: 'inProgress' }
   result = '子任务结论'
@@ -18,8 +19,8 @@ class FakeTransport implements AgentRunTransport {
   async prepareWorkspace(workspaceRoot: string, _access: AgentRun['workspaceAccess'], _runId: string) { return workspaceRoot }
   async startThread(workspaceRoot: string) { this.startedWorkspaces.push(workspaceRoot); return 'child-1' }
   async configureThread() {}
-  async startTurn(threadId: string, prompt: string) {
-    this.startedPrompts.push({ threadId, prompt })
+  async startTurn(threadId: string, prompt: string, _provider?: 'codex' | 'claude', trigger?: CodexTurnTrigger) {
+    this.startedPrompts.push({ threadId, prompt, trigger })
     return `turn-${this.startedPrompts.length}`
   }
   async interruptTurn(_threadId: string, _turnId: string) {}
@@ -45,7 +46,11 @@ describe('AgentRunCoordinator', () => {
 
     expect(run.status).toBe('running')
     expect(run.childThreadId).toBe('child-1')
-    expect(transport.startedPrompts).toEqual([{ threadId: 'child-1', prompt: '查询当前发布状态并总结' }])
+    expect(transport.startedPrompts).toEqual([{
+      threadId: 'child-1',
+      prompt: '查询当前发布状态并总结',
+      trigger: 'quick-agent',
+    }])
     expect(JSON.stringify(transport.runs)).not.toContain('prompt')
   })
 
@@ -109,6 +114,7 @@ describe('AgentRunCoordinator', () => {
     expect(transport.startedPrompts).toHaveLength(2)
     expect(transport.startedPrompts[1].threadId).toBe('parent-1')
     expect(transport.startedPrompts[1].prompt).toContain('子任务结论')
+    expect(transport.startedPrompts[1].trigger).toBe('return-to-parent')
     expect(service.snapshot()[0].returnedAt).not.toBeNull()
   })
 

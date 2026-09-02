@@ -1,4 +1,4 @@
-import type { AppServerEvent, ThreadCodexSettings } from '../domain/codex'
+import type { AppServerEvent, CodexTurnTrigger, ThreadCodexSettings } from '../domain/codex'
 import type { WorkspaceDeliveryContext } from '../app-launcher/types'
 
 export type AgentRunMode = 'detached' | 'delegated'
@@ -65,7 +65,7 @@ export interface AgentRunTransport {
   prepareWorkspace(workspaceRoot: string, access: AgentWorkspaceAccess, runId: string): Promise<string>
   startThread(workspaceRoot: string, provider?: AgentProvider): Promise<string>
   configureThread(threadId: string, settings: ThreadCodexSettings, provider?: AgentProvider): Promise<void>
-  startTurn(threadId: string, prompt: string, provider?: AgentProvider): Promise<string>
+  startTurn(threadId: string, prompt: string, provider?: AgentProvider, trigger?: CodexTurnTrigger): Promise<string>
   interruptTurn(threadId: string, turnId: string, provider?: AgentProvider): Promise<void>
   inspectThread(threadId: string, provider?: AgentProvider): Promise<ThreadInspection>
   readLastAgentMessage(threadId: string, provider?: AgentProvider): Promise<string>

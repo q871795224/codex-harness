@@ -3,11 +3,11 @@ import { runtime } from '../runtime/bridge'
 import { appServer } from '../runtime/appServerClient'
 import { AgentRunCoordinator } from './service'
 import type { AgentProvider, AgentRunService, AgentRunTransport } from './types'
-import type { ThreadCodexSettings } from '../domain/codex'
+import type { CodexTurnTrigger, ThreadCodexSettings } from '../domain/codex'
 
 export function useAgentRunService(
   selectThread: (threadId: string) => void | Promise<void>,
-  startTurn: (threadId: string, prompt: string) => Promise<string>,
+  startTurn: (threadId: string, prompt: string, trigger?: CodexTurnTrigger) => Promise<string>,
 ): AgentRunService {
   const selectThreadRef = useRef(selectThread)
   selectThreadRef.current = selectThread
@@ -48,9 +48,9 @@ export function useAgentRunService(
           sandboxPolicy: sandboxPolicy(settings.sandboxMode),
         })
       },
-      startTurn: async (threadId, prompt, provider = 'codex') => {
+      startTurn: async (threadId, prompt, provider = 'codex', trigger) => {
         if (provider === 'claude') return startClaudeAgentTurn(threadId, prompt, claudeSettingsRef.current.get(threadId))
-        return startTurnRef.current(threadId, prompt)
+        return startTurnRef.current(threadId, prompt, trigger)
       },
       interruptTurn: (threadId, turnId, provider = 'codex') => provider === 'claude'
         ? runtime.interruptClaudeTurn(threadId)

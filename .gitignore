@@ -1,5 +1,6 @@
 # Local reference material and generated protocol snapshots.
 -temp/
+.claude/worktrees/
 
 # JavaScript / Vite
 node_modules/

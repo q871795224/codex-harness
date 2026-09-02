@@ -1,37 +1,45 @@
 # Codex Harness 协作说明
 
-## 项目边界
+## 任务路由
 
-- `src/` 是 Vite + React + TypeScript 前端：界面、状态管理和展示逻辑。
-- `src-tauri/` 是 Tauri 的 Rust 原生层：应用入口、Tauri IPC 命令、本地 SQLite 状态，以及到 Codex App Server 的 Unix socket/WebSocket 连接。
-- 前端只能经 `src/core/runtime/bridge.ts` 调用原生能力；新增 IPC 时，同时在 Rust 中注册命令，并在 bridge 中提供类型化封装。
-- `src/core/domain/` 放共享领域类型和格式化逻辑；按界面功能组织的代码放在 `src/features/`。
-- `src/core/plugins/` 放 Harness 插件内核与 React host，`src/plugins/` 放随 App 发布的内置插件；插件只能通过 `src/extensions/types.ts` 中的 context、service、event 和 slot 契约接入能力。
-- 插件实例归属于 `global`、`workspace` 或 `thread`。实例生命周期独立于当前选中的会话，切换页面只改变 contribution 可见性，不能中断后台任务或连接。
-- 快捷 Agent Job 通过声明式 `quickActions` slot 接入右下角统一面板，并通过 `harness.agentRuns` 启动独立会话；每个 Job 对应一个独立插件实例，由实例决定 `global` 或 `workspace` 归属，Run 必须记录发起会话并允许同一会话并发启动，面板按 Job 实例和发起会话聚合展示，插件不能直接调用 App Server 协议。
-- 快捷 Agent Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery` 工作区模式；同一 checkout 的共享写任务互斥，隔离交付 worktree 固定创建在 `~/.codex-harness/agent-worktrees/<run-id>` 并保留供用户检查和交付，不自动清理。用户可在任务结束后手动清理；清理不能使用 `--force`，有未提交改动时必须失败并保留目录，分支始终保留。
-- 快捷 Agent Job 可声明 `completion: 'return-to-parent'`，但结果只能在子任务完成后由用户手动回传一次；父会话仍有 active turn 时必须拒绝并允许稍后重试，不能自动形成父子 Agent 多轮循环。
-- 快捷命令通过声明式 `quickCommands` slot 接入左下角统一面板；插件只能调用 `harness.quickCommands` service 中由 Rust 原生层固定允许的命令，不能执行任意 shell 字符串。VPN 连接完成后以 Cisco 客户端的 `state: Connected` 状态作为成功依据。
-- `src-tauri/src/app_server.rs` 是唯一可直接接触 App Server 传输协议的模块。不要在 React 组件中直接实现协议或连接逻辑。
-- Claude Provider 由 `src-tauri/claude-adapter/daemon.mjs` 常驻进程承载，通过 `~/.codex-harness/claude-provider.sock` 与 Harness 连接；首次运行 Harness 时必须把 daemon 与 SDK 安装到 `~/.codex-harness/claude-provider/` 并注册 `com.local.codex-harness.claude-provider` LaunchAgent，使其在 macOS 用户登录后自启动并由 launchd 保活。关闭 Harness 不能停止 daemon 或 active turn；LaunchAgent 不可用时才允许 Harness 按需启动 daemon。`adapter.mjs` 仅保留为实验参考，不得作为生产 runtime 入口。
-- Harness 必须分别展示 Claude Provider 的 `available`（依赖完整）、`managed`（LaunchAgent 已加载）和 `running`（socket 可连接）状态，不能把“已安装”当作“已连接”；transport 异常断开时要收口受影响的 active turn、清理审批，并在 launchd 拉起后自动重连。
-- Skill 的发现、解析、启停状态和最终列表以共享 App Server daemon 为准，前端不要自行扫描或解析 `SKILL.md`。
-- MCP 是共享 App Server daemon 的全局配置：应用核心启动时加载一次，仅在用户手动 reload 时刷新；打开设置页不重复请求。Harness 必须结合 `config/read`、`mcpServerStatus/list` 和 `mcpServer/startupStatus/updated` 区分启用状态与实际运行状态，并向用户展示启动失败和认证异常；不得把“已启用”当作“已连接”。
-- Codex 原生能力（模型、推理强度、审批、上下文、附件、Skills 与 MCP）属于 Harness 核心，不通过 Harness 插件 contribution 实现；默认项和管理入口放在设置界面，会话级覆盖放在输入框。
-- Codex 更新属于 Harness 核心：每天启动时至多检查一次 OpenAI Codex 最新稳定版并把结果持久化到 `state.sqlite`；安装必须调用 Harness 当前实际选中的 `codex update`，随后重启共享 App Server daemon、重新 initialize 并校验 CLI/App Server 版本，不能更新 Codex App 或其他封装 CLI。
-- 新会话空白区的增强 UI 使用 `newThreadPanels` 插件 slot；插件通过宿主传入的类型化会话设置更新函数修改模型、推理强度、审批 reviewer 和 sandbox，不能自行连接 App Server。
-- Codex Radar 网络请求由 Rust 原生层的固定域名客户端完成并缓存，内置会话启动器插件只能通过 `harness.codexRadar` service 读取整理后的模型指标。
-- 本机 Agent 用量由 Rust 原生层统一采集并持久化到状态库：Codex Business/Personal 历史数据通过 `ccusage` 读取，Codex 额度协议封装在 `src-tauri/src/app_server.rs`，AIS 只访问固定 Compass 域名；内置用量插件只能通过 `harness.usage` service 读取缓存或触发固定刷新，不能读取凭据或直接执行命令。
-- 图片使用 App Server 的 `localImage` 输入，普通文件使用结构化路径 mention；附件只保留在输入草稿和 Codex 会话中，不写入 Harness 状态库。
-- 输入框斜杠命令先由 `src/features/conversation/composerCommands.ts` 做精确匹配并在本地执行，不能发送到 App Server；消息中的 HTTP(S) 链接统一经 `src/core/runtime/bridge.ts` 调用系统浏览器打开，不能让 Harness WebView 导航离开应用。
-- macOS 系统通知默认使用 `src-tauri/Info.plist` 中的 `NSUserNotificationAlertStyle=alert`，让通知保留到用户处理；用户仍可在系统通知设置中覆盖展示样式。
+本文只放每次任务都必须知道的项目边界和安全约束。详细背景按任务需要读取，不要默认把 `.harness/` 下的全部文件加载进上下文。
 
-## 本地状态与安全
+- 先读 [.harness/README.md](.harness/README.md)，再按任务类型读取对应文档。
+- 项目架构读 [.harness/architecture.md](.harness/architecture.md)。
+- 项目长期记忆读 [.harness/memory.md](.harness/memory.md)。
+- 测试和验证要求读 [.harness/test.md](.harness/test.md)。
+- 已确认的坑点读 [.harness/pitfall.md](.harness/pitfall.md)。
+- 发布、打包和安装流程使用项目级 Skill `.agents/skills/harness-release/SKILL.md`，不要把发布清单带入普通开发任务。
+- Codex CLI/Harness 请求对照和 token 成本排查使用项目级 Skill `.agents/skills/harness-codex-audit/SKILL.md`。
 
-- 本地 UI 状态保存在 `~/.codex-harness/state.sqlite`；不要把会话正文、凭据或 token 写入该库。
-- API Workbench 的 Collection、Environment 与请求定义是跨工作区、跨会话的全局数据，保存在独立的 `~/.codex-harness/api-workbench.sqlite`；标记为 Secret 的变量值只存入 macOS Keychain，数据库中必须保持为空。
-- 启动时会复用或启动 `codex app-server daemon`；关闭 Harness 不应停止该 daemon。
-- Harness 管理 daemon 时必须从实际 `.codex` 安装路径推导并显式设置真实用户的 `HOME` 与 `CODEX_HOME`，不能继承 `codex-personal` 等隔离环境；新启动 daemon 的文件描述符软限制设为 4096。
+文档只记录稳定、可复用的约定；临时进度放在任务记录或对话中。规则发生变化时，只修改职责对应的文档，并同步更新本路由。
+
+## 每次任务必须知道的边界
+
+- `src/` 是 Vite + React + TypeScript 前端；`src-tauri/` 是 Tauri Rust 原生层，负责 IPC、本地 SQLite 和 Codex App Server 连接。
+- 前端只能通过 `src/core/runtime/bridge.ts` 调用原生能力；新增 IPC 必须同时更新 Rust 命令、bridge 类型封装和测试。
+- `src/core/domain/` 放共享领域类型和格式化逻辑；界面功能代码放 `src/features/`。
+- `src/core/plugins/` 是插件内核和 React host，`src/plugins/` 是内置插件。插件只能通过 `src/extensions/types.ts` 的 context、service、event、slot 契约接入能力。
+- `src-tauri/src/app_server.rs` 是唯一直接接触 Codex App Server 传输协议的模块；React 和插件不得自行连接或拼装协议。
+- Codex 的模型、推理强度、审批、上下文、附件、Skills、MCP 等原生能力属于 Harness 核心，不通过插件绕过核心实现。
+- Skill 的发现、解析、启停和最终列表以共享 App Server daemon 为准，前端不得自行扫描或解析 `SKILL.md`。
+- MCP 是共享 App Server daemon 的全局配置；必须区分配置启用、实际运行、启动失败和认证异常，不能把“已启用”当成“已连接”。
+
+## Agent Job 与命令
+
+- 快捷 Agent Job 通过 `quickActions` slot 和 `harness.agentRuns` 启动独立会话；插件不能直接调用 App Server。Run 必须记录发起会话，并允许同一会话按产品约定并发启动。
+- Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery` 工作区模式；同一 checkout 的共享写任务互斥。隔离 worktree 固定在 `~/.codex-harness/agent-worktrees/<run-id>`，完成后保留，不自动清理。
+- 清理隔离 worktree 不得使用 `--force`；有未提交改动时必须失败并保留目录，分支始终保留。
+- `completion: 'return-to-parent'` 只能由用户在子任务完成后手动回传一次；父会话 active 时必须拒绝，不能自动形成父子多轮循环。
+- 快捷命令必须通过 `harness.quickCommands` 调用 Rust 固定允许的命令，插件不能执行任意 shell 字符串。
+
+## 状态、安全与运行时
+
+- UI 状态保存在 `~/.codex-harness/state.sqlite`；不得写入会话正文、凭据或 prompt/response 内容。API Workbench 使用独立数据库，Secret 变量只进 macOS Keychain。
+- Harness 复用或启动共享 `codex app-server daemon`；关闭 Harness 不停止 daemon。由 Harness 启动 daemon 时，必须从实际 `.codex` 安装路径推导并显式设置真实用户的 `HOME`、`CODEX_HOME`，文件描述符软限制为 4096。
+- Claude Provider 是独立常驻 daemon；涉及 Claude 时先读 `.harness/architecture.md`，本次 Codex token 工作不主动扩展 Claude 范围。
+- 图片使用 App Server 的 `localImage` 输入，普通文件使用结构化 `mention`；附件只保留在输入草稿和 Codex 会话中。
+- 斜杠命令先由 `composerCommands.ts` 精确匹配并在本地执行；HTTP(S) 链接经 bridge 打开系统浏览器，不让 WebView 离开应用。
 
 ## 常用命令
 
@@ -48,42 +56,17 @@ pnpm tauri:build
 pnpm tauri:build:dev
 ```
 
-- `pnpm tauri dev` / `pnpm tauri:build` 是蓝色稳定版；`pnpm tauri:dev` / `pnpm tauri:build:dev` 是绿色开发版。
-- 两个 flavor 的打包脚本均固定使用 `universal-apple-darwin`，产出同时支持 Apple 芯片与 Intel Mac 的 Universal App。
-- 两个 flavor 有独立的 macOS Bundle ID，可同时运行；它们有意共享 `~/.codex-harness`、Codex 配置和会话历史。
+`pnpm tauri dev` / `pnpm tauri:build` 是蓝色稳定版；`pnpm tauri:dev` / `pnpm tauri:build:dev` 是绿色开发版。两个 flavor 都构建 `universal-apple-darwin`，并共享 `~/.codex-harness`、Codex 配置和会话历史。
 
-## 测试与发布
+## 验证与版本边界
 
-- 前端单元测试使用 Vitest；`pnpm test` 运行一次，`pnpm test:watch` 用于本地开发。
-- Rust 单元测试在 `src-tauri/` 中运行：`cargo test`。测试必须使用临时目录或注入的依赖，不能触碰真实 `~/.codex` 或 `~/.codex-harness` 数据。
-- 新增可独立验证的逻辑时，应同时补测试与对应的运行命令；改动 UI/IPC 流程时，至少执行 `pnpm build`。
-
-发布前必须依次执行：
-
-```bash
-pnpm test
-pnpm build
-(cd src-tauri && cargo test)
-pnpm tauri:build
-```
-
-随后用 `pnpm tauri dev` 验证创建/恢复会话、消息发送、审批和工作区选择等核心流程。
-
-### 版本发布流程
-
-版本号一旦用于 release commit、构建发布或创建同名 tag，后续改动不得继续沿用该版本，也不得通过 amend release commit 或移动 tag 把新改动补入已发布版本。开始后续改动时必须先按 SemVer 递增版本号：修订号（patch）和次版本号（minor）可直接递增；主版本号（major）必须先取得用户明确确认。
-
-版本号递增只表示进入新版本开发，不代表获得发布授权。普通改动完成后不得自动进入发布流程；只有用户明确授权发布后，才可执行 release commit、创建或推送 tag、安装或替换本地稳定版、上传发布产物或创建 GitHub Release。测试、开发构建和 smoke test 可作为改动验证执行，不构成发布授权。
-
-1. 发布前先检查工作树与 diff，确认没有夹带无关改动；同步修改 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 中的版本号，变更过的内置插件同时更新自身 manifest 版本。
-2. 使用目标版本依次执行 `pnpm test`、`pnpm build`、`(cd src-tauri && cargo test)`、`pnpm tauri:build`，再运行 `pnpm tauri dev` 做核心流程 smoke test。任一环节失败都不能提交、打 tag 或发布。
-3. 校验 macOS App 的 `CFBundleShortVersionString` 与目标版本一致后提交 release commit；创建 annotated tag，tag message 必须概括该版本的实际改动，不能只写版本号。
-4. 将构建出的稳定版 `Codex Harness.app` 安装到 `~/Applications`，旧版本先移入废纸篓或可恢复备份；启动安装后的 App，确认版本、daemon 连接和初始化请求正常。
-5. 将 release commit 与 tag push 到远端；正式发布还需将 App 压缩为版本化 zip、计算 SHA-256，并创建 GitHub Release，release notes 应列出主要改动、安装方式和校验值。
-6. 最后核对远端 main、tag peeled commit、GitHub Release asset、本机安装版本与本地 HEAD 一致，并确保工作树干净。
+- 前端单元测试使用 Vitest，Rust 单元测试使用 `cargo test`；测试必须使用临时目录或注入依赖，不得触碰真实 `~/.codex` 或 `~/.codex-harness` 数据。
+- 新增可独立验证的逻辑要补测试；改动 UI 或 IPC 流程至少执行 `pnpm build`。
+- 发布前的完整门禁、版本递增、release commit、tag、安装、上传和远端核对流程只在明确发布授权后执行，详见 `harness-release` Skill。
+- 已用于 release commit、构建发布或同名 tag 的版本不得继续承载后续改动；后续改动先按 SemVer 递增版本号，major 必须取得用户明确确认。
 
 ## 改动原则
 
-- 保持 TypeScript 与 Rust 的 IPC 参数和返回值一致；接口变更应同时更新两侧。
-- 优先做小而聚焦的改动，不顺带重构无关代码。
-- 更新本文件以记录稳定、会影响后续协作的项目约定，而不是临时进度。
+- 保持 TypeScript 与 Rust IPC 参数、返回值和错误语义一致。
+- 优先做小而聚焦的改动；不顺带重构无关代码。
+- 只有稳定且会影响后续协作的约定才进入本文件或 `.harness/`，临时判断不要固化。

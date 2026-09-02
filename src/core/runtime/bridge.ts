@@ -504,7 +504,7 @@ interface ResumeThreadResponse {
 function resumeThread(threadId: string, limit: number): Promise<ResumeThreadResponse> {
   return invoke<ResumeThreadResponse>('app_server_request', {
     method: 'thread/resume',
-    params: { threadId, initialTurnsPage: { limit, sortDirection: 'desc', itemsView: 'full' } },
+    params: { threadId, excludeTurns: true, initialTurnsPage: { limit, sortDirection: 'desc', itemsView: 'full' } },
   })
 }
 

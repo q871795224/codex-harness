@@ -80,7 +80,7 @@ impl AppServerManager {
             "info",
             "app-server",
             "request.started",
-            json!({ "method": &method, "requestContext": request_context.clone() }),
+            json!({ "method": &method, "requestMeta": request_context.clone() }),
         );
         let result = match self.connection().await {
             Ok(connection) => self.send_request(&connection, method.clone(), params).await,
@@ -95,8 +95,11 @@ impl AppServerManager {
                 json!({
                     "method": method,
                     "durationMs": duration_ms,
-                    "requestContext": request_context,
-                    "responseContext": response_context(response),
+                    "requestMeta": request_context,
+                    // Keep the safe, low-cardinality result metadata under a
+                    // non-sensitive key so the sanitizer does not redact it
+                    // wholesale along with arbitrary response bodies.
+                    "resultMeta": result_context(response),
                 }),
             ),
             Err(error) => self.diagnostics.record(
@@ -106,7 +109,7 @@ impl AppServerManager {
                 json!({
                     "method": method,
                     "durationMs": duration_ms,
-                    "requestContext": request_context,
+                    "requestMeta": request_context,
                     "errorCode": error_code(error),
                 }),
             ),
@@ -273,7 +276,22 @@ impl AppServerManager {
                                     .as_object()
                                     .and_then(|params| params.get("threadId"))
                                     .and_then(Value::as_str);
-                                if should_persist_notification(method) {
+                                if method == Some("thread/tokenUsage/updated") {
+                                    if let Some(usage) =
+                                        token_usage_context(params.get("tokenUsage"))
+                                    {
+                                        reader_diagnostics.record(
+                                            "info",
+                                            "codex-usage",
+                                            "usage.updated",
+                                            json!({
+                                                "threadId": thread_id,
+                                                "turnId": params.get("turnId"),
+                                                "usage": usage,
+                                            }),
+                                        );
+                                    }
+                                } else if should_persist_notification(method) {
                                     reader_diagnostics.record(
                                         "info",
                                         "app-server",
@@ -281,7 +299,7 @@ impl AppServerManager {
                                         json!({
                                             "method": method,
                                             "threadId": thread_id,
-                                            "requestContext": request_context(params),
+                                            "requestMeta": request_context(params),
                                         }),
                                     );
                                 }
@@ -819,11 +837,25 @@ fn request_context(value: &Value) -> Option<Value> {
     let mut context = Map::new();
     copy_string(&mut context, "threadId", value.get("threadId"));
     copy_string(&mut context, "cwd", value.get("cwd"));
+    copy_string(&mut context, "model", value.get("model"));
+    copy_string(
+        &mut context,
+        "effort",
+        value.get("effort").or_else(|| value.get("reasoningEffort")),
+    );
+    copy_string(&mut context, "turnTrigger", value.get("turnTrigger"));
+    copy_string(&mut context, "threadSource", value.get("threadSource"));
     copy_string_array(
         &mut context,
         "runtimeWorkspaceRoots",
         value.get("runtimeWorkspaceRoots"),
     );
+    copy_input_summary(&mut context, value.get("input"));
+    if !context.contains_key("effort") {
+        if let Some(config) = value.get("config") {
+            copy_string(&mut context, "effort", config.get("model_reasoning_effort"));
+        }
+    }
     if let Some(settings) = value.get("threadSettings") {
         copy_string(&mut context, "settingsCwd", settings.get("cwd"));
         copy_string_array(
@@ -831,20 +863,124 @@ fn request_context(value: &Value) -> Option<Value> {
             "settingsRuntimeWorkspaceRoots",
             settings.get("runtimeWorkspaceRoots"),
         );
+        if !context.contains_key("effort") {
+            copy_string(
+                &mut context,
+                "effort",
+                settings
+                    .get("effort")
+                    .or_else(|| settings.get("reasoningEffort")),
+            );
+        }
     }
     (!context.is_empty()).then_some(Value::Object(context))
 }
 
-fn response_context(value: &Value) -> Option<Value> {
-    let mut context = Map::new();
-    if let Some(thread) = value.get("thread") {
-        copy_string(&mut context, "responseThreadId", thread.get("id"));
-        copy_string(&mut context, "responseCwd", thread.get("cwd"));
+fn copy_input_summary(context: &mut Map<String, Value>, value: Option<&Value>) {
+    let Some(inputs) = value.and_then(Value::as_array) else {
+        return;
+    };
+
+    let mut item_types = Vec::new();
+    let mut body_chars = 0_u64;
+    let mut mention_count = 0_u64;
+    let mut skill_count = 0_u64;
+    let mut image_count = 0_u64;
+    let mut audio_count = 0_u64;
+    for input in inputs {
+        let Some(input) = input.as_object() else {
+            item_types.push(Value::String("other".to_string()));
+            continue;
+        };
+        let kind = match input.get("type").and_then(Value::as_str) {
+            Some("text") => {
+                body_chars = body_chars.saturating_add(
+                    input
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .map(|text| text.chars().count() as u64)
+                        .unwrap_or_default(),
+                );
+                "text"
+            }
+            Some("mention") => {
+                mention_count += 1;
+                "mention"
+            }
+            Some("skill") => {
+                skill_count += 1;
+                "skill"
+            }
+            Some("localImage" | "image") => {
+                image_count += 1;
+                "image"
+            }
+            Some("localAudio" | "audio") => {
+                audio_count += 1;
+                "audio"
+            }
+            _ => "other",
+        };
+        item_types.push(Value::String(kind.to_string()));
     }
-    copy_string(&mut context, "responseCwd", value.get("cwd"));
+
+    context.insert("itemTypes".to_string(), Value::Array(item_types));
+    context.insert("bodyChars".to_string(), json!(body_chars));
+    context.insert("mentionCount".to_string(), json!(mention_count));
+    context.insert("skillCount".to_string(), json!(skill_count));
+    context.insert("imageCount".to_string(), json!(image_count));
+    context.insert("audioCount".to_string(), json!(audio_count));
+}
+
+fn token_usage_context(value: Option<&Value>) -> Option<Value> {
+    const BREAKDOWN_FIELDS: [&str; 6] = [
+        "totalTokens",
+        "inputTokens",
+        "cachedInputTokens",
+        "cacheWriteInputTokens",
+        "outputTokens",
+        "reasoningOutputTokens",
+    ];
+
+    let raw = value?.as_object()?;
+    let mut context = Map::new();
+    for section_name in ["total", "last"] {
+        let Some(section) = raw.get(section_name).and_then(Value::as_object) else {
+            continue;
+        };
+        let mut breakdown = Map::new();
+        for field in BREAKDOWN_FIELDS {
+            if let Some(value) = section.get(field).filter(|value| value.is_number()) {
+                breakdown.insert(field.to_string(), value.clone());
+            }
+        }
+        if !breakdown.is_empty() {
+            context.insert(section_name.to_string(), Value::Object(breakdown));
+        }
+    }
+    if let Some(value) = raw
+        .get("modelContextWindow")
+        .filter(|value| value.is_number())
+    {
+        context.insert("contextWindow".to_string(), value.clone());
+    }
+    (!context.is_empty()).then_some(Value::Object(context))
+}
+
+fn result_context(value: &Value) -> Option<Value> {
+    let mut context = Map::new();
+    if let Some(turn) = value.get("turn") {
+        copy_string(&mut context, "turnId", turn.get("id"));
+    }
+    copy_string(&mut context, "turnId", value.get("turnId"));
+    if let Some(thread) = value.get("thread") {
+        copy_string(&mut context, "resultThreadId", thread.get("id"));
+        copy_string(&mut context, "resultCwd", thread.get("cwd"));
+    }
+    copy_string(&mut context, "resultCwd", value.get("cwd"));
     copy_string_array(
         &mut context,
-        "responseRuntimeWorkspaceRoots",
+        "resultRuntimeWorkspaceRoots",
         value.get("runtimeWorkspaceRoots"),
     );
     (!context.is_empty()).then_some(Value::Object(context))
@@ -954,24 +1090,69 @@ mod tests {
         let request = request_context(&json!({
             "threadId": "thread-1",
             "cwd": "/repo",
+            "model": "gpt-test",
+            "effort": "max",
+            "turnTrigger": "quick-agent",
             "runtimeWorkspaceRoots": ["/repo"],
-            "input": [{ "text": "must not be logged" }],
+            "input": [
+                { "type": "text", "text": "must not be logged" },
+                { "type": "mention", "name": "README.md", "path": "/repo/README.md" },
+                { "type": "skill", "name": "demo", "path": "/repo/SKILL.md" },
+                { "type": "localImage", "path": "/tmp/image.png" },
+            ],
         }))
         .expect("extracts request context");
         assert_eq!(request["threadId"], "thread-1");
         assert_eq!(request["cwd"], "/repo");
+        assert_eq!(request["model"], "gpt-test");
+        assert_eq!(request["effort"], "max");
+        assert_eq!(request["turnTrigger"], "quick-agent");
+        assert_eq!(
+            request["itemTypes"],
+            json!(["text", "mention", "skill", "image"])
+        );
+        assert_eq!(request["bodyChars"], 18);
+        assert_eq!(request["mentionCount"], 1);
+        assert_eq!(request["skillCount"], 1);
+        assert_eq!(request["imageCount"], 1);
         assert!(!request.to_string().contains("must not be logged"));
 
-        let response = response_context(&json!({
+        let response = result_context(&json!({
+            "turn": { "id": "turn-1" },
             "thread": { "id": "thread-1", "cwd": "/repo/worktree" },
             "runtimeWorkspaceRoots": ["/repo/worktree"],
         }))
         .expect("extracts response context");
-        assert_eq!(response["responseThreadId"], "thread-1");
-        assert_eq!(response["responseCwd"], "/repo/worktree");
+        assert_eq!(response["turnId"], "turn-1");
+        assert_eq!(response["resultThreadId"], "thread-1");
+        assert_eq!(response["resultCwd"], "/repo/worktree");
         assert_eq!(
-            response["responseRuntimeWorkspaceRoots"],
+            response["resultRuntimeWorkspaceRoots"],
             json!(["/repo/worktree"])
         );
+    }
+
+    #[test]
+    fn keeps_only_numeric_token_usage_metadata_for_diagnostics() {
+        let usage = token_usage_context(Some(&json!({
+            "total": {
+                "totalTokens": 1200,
+                "inputTokens": 900,
+                "outputTokens": 300,
+                "text": "must not be copied",
+            },
+            "last": {
+                "totalTokens": 400,
+                "reasoningOutputTokens": 100,
+            },
+            "modelContextWindow": 200000,
+            "secret": "must not be copied",
+        })))
+        .expect("extracts usage metadata");
+
+        assert_eq!(usage["total"]["totalTokens"], 1200);
+        assert_eq!(usage["last"]["reasoningOutputTokens"], 100);
+        assert_eq!(usage["contextWindow"], 200000);
+        assert!(!usage.to_string().contains("must not be copied"));
     }
 }

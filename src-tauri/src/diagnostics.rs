@@ -138,7 +138,7 @@ fn sanitize_fields(value: Value) -> Value {
             for (key, value) in values.into_iter().take(24) {
                 sanitized.insert(
                     key.clone(),
-                    if is_sensitive_key(&key) {
+                    if is_sensitive_key(&key) && !is_safe_usage_field(&key, &value) {
                         Value::String("[redacted]".to_string())
                     } else {
                         sanitize_fields(value)
@@ -153,6 +153,19 @@ fn sanitize_fields(value: Value) -> Value {
         Value::String(value) => Value::String(truncate(&value, MAX_FIELD_STRING_LEN)),
         value => value,
     }
+}
+
+fn is_safe_usage_field(key: &str, value: &Value) -> bool {
+    value.is_number()
+        && matches!(
+            key,
+            "totalTokens"
+                | "inputTokens"
+                | "cachedInputTokens"
+                | "cacheWriteInputTokens"
+                | "outputTokens"
+                | "reasoningOutputTokens"
+        )
 }
 
 fn is_sensitive_key(key: &str) -> bool {
@@ -261,5 +274,32 @@ mod tests {
             "no_rollout_found"
         );
         assert_eq!(error_code("other failure"), "request_failed");
+    }
+
+    #[test]
+    fn preserves_numeric_usage_but_redacts_token_like_strings() {
+        let directory = TestDir::new();
+        let log = DiagnosticLog::open_at(directory.0.clone()).expect("opens log");
+        log.record(
+            "info",
+            "codex-usage",
+            "usage.updated",
+            json!({
+                "usage": {
+                    "total": { "totalTokens": 1200, "outputTokens": 300 },
+                    "token": "secret-value",
+                },
+                "resultMeta": { "turnId": "turn-1" },
+                "requestMeta": { "turnTrigger": "quick-agent", "bodyChars": 123 },
+            }),
+        );
+
+        let contents =
+            fs::read_to_string(directory.0.join("harness.jsonl")).expect("reads diagnostic log");
+        assert!(contents.contains("totalTokens"));
+        assert!(contents.contains("1200"));
+        assert!(contents.contains("turn-1"));
+        assert!(contents.contains("quick-agent"));
+        assert!(!contents.contains("secret-value"));
     }
 }

@@ -4,6 +4,7 @@ import type {
   AppearancePreferences,
   ApprovalRequest,
   Badge,
+  CodexTurnTrigger,
   FollowUpMode,
   FontSize,
   FontSizeArea,
@@ -1057,6 +1058,7 @@ export function useHarness() {
         approvalPolicy: 'never',
         sandboxPolicy: { type: 'readOnly', networkAccess: false },
         effort: settings.effort,
+        turnTrigger: 'thread-title',
       })
       recordTitleDiagnostic({
         level: 'info',
@@ -1089,7 +1091,12 @@ export function useHarness() {
     }
   }, [])
 
-  const startTurn = useCallback(async (threadId: string, text: string | null, inputs?: UserInput[]) => {
+  const startTurn = useCallback(async (
+    threadId: string,
+    text: string | null,
+    inputs?: UserInput[],
+    trigger?: CodexTurnTrigger,
+  ) => {
     unstartedDraftThreadIdsRef.current.delete(threadId)
     draftContentThreadIdsRef.current.delete(threadId)
     locallyStartingRef.current.add(threadId)
@@ -1103,6 +1110,7 @@ export function useHarness() {
         inputs ?? (text ? [textInput(text)] : []),
         thread,
         detail,
+        trigger,
       )
       const requestCwd = typeof request.cwd === 'string' ? request.cwd : null
       const requestRuntimeWorkspaceRoots = Array.isArray(request.runtimeWorkspaceRoots)
@@ -1214,7 +1222,7 @@ export function useHarness() {
     continuingFailedThreadsRef.current.add(threadId)
     setBusy((current) => ({ ...current, composer: true }))
     try {
-      await startTurn(threadId, '继续')
+      await startTurn(threadId, '继续', undefined, 'continue-after-failure')
     } catch (error) {
       notify(`无法继续会话：${messageOf(error)}`, 'error')
     } finally {
@@ -1713,7 +1721,7 @@ export function useHarness() {
         if (restarts?.length) {
           delete pendingRestartRef.current[threadId]
           setPendingSteers((current) => ({ ...current, [threadId]: [] }))
-          void startTurn(threadId, null, restartInputs(restarts)).catch((error) => {
+          void startTurn(threadId, null, restartInputs(restarts), 'conversation-restart').catch((error) => {
             notify(`插话未能在停止后继续发送：${messageOf(error)}`, 'error')
           })
         }
@@ -1856,7 +1864,7 @@ export function useHarness() {
     createThread,
     resetThread,
     setThreadDraftContent,
-    startTurnInThread: (threadId: string, prompt: string) => startTurn(threadId, prompt),
+    startTurnInThread: (threadId: string, prompt: string, trigger?: CodexTurnTrigger) => startTurn(threadId, prompt, undefined, trigger),
     sendMessage,
     continueAfterFailure,
     stopTurn,

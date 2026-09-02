@@ -1,4 +1,4 @@
-import type { SendShortcut } from '../../core/domain/codex'
+import type { SendShortcut, UserInput } from '../../core/domain/codex'
 
 export const LONG_PASTE_THRESHOLD = 1_000
 
@@ -156,6 +156,41 @@ export function matchesSendShortcut(event: ComposerKeyEvent, shortcut: SendShort
 export function hasSkillMarker(text: string, name: string): boolean {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(`(^|\\s)\\$${escaped}(?=\\s|$)`).test(text)
+}
+
+/**
+ * Build the text part of a composer submission using the same placeholder
+ * metadata the Codex CLI sends for interactively selected skills.
+ *
+ * byteRange is measured in UTF-8 bytes, while String#indexOf uses UTF-16
+ * offsets. Keep the conversion here so the UI does not accidentally send a
+ * character range for non-ASCII prompts.
+ */
+export function composerTextInput(text: string, skillNames: string[]): Extract<UserInput, { type: 'text' }> {
+  const encoder = new TextEncoder()
+  const elements: Array<{ byteRange: { start: number; end: number }; placeholder: string }> = []
+  const names = [...new Set(skillNames)].filter(Boolean)
+
+  for (const name of names) {
+    const marker = `$${name}`
+    let searchStart = 0
+    while (searchStart < text.length) {
+      const markerStart = text.indexOf(marker, searchStart)
+      if (markerStart < 0) break
+      const markerEnd = markerStart + marker.length
+      const before = markerStart === 0 ? '' : text[markerStart - 1]
+      const after = markerEnd === text.length ? '' : text[markerEnd]
+      if ((!before || /\s/u.test(before)) && (!after || /\s/u.test(after))) {
+        const start = encoder.encode(text.slice(0, markerStart)).byteLength
+        const end = start + encoder.encode(marker).byteLength
+        elements.push({ byteRange: { start, end }, placeholder: marker })
+      }
+      searchStart = markerEnd
+    }
+  }
+
+  elements.sort((left, right) => left.byteRange.start - right.byteRange.start)
+  return { type: 'text', text, text_elements: elements }
 }
 
 export function insertComposerPrompt(current: string, prompt: string): string {

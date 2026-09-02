@@ -1,5 +1,13 @@
 export type JsonObject = Record<string, unknown>
 
+/** A low-cardinality source label for a Codex turn started by Harness. */
+export type CodexTurnTrigger =
+  | 'conversation-restart'
+  | 'continue-after-failure'
+  | 'quick-agent'
+  | 'return-to-parent'
+  | 'thread-title'
+
 export interface Workspace {
   root: string
   checkoutRoot: string
