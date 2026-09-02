@@ -166,11 +166,20 @@ export function useUnifiedHarness() {
   const approvals = useMemo(() => ({ ...codex.approvals, ...claude.approvals }), [claude.approvals, codex.approvals])
   const activeTurnIds = useMemo(() => ({ ...codex.activeTurnIds, ...claude.activeTurnIds }), [claude.activeTurnIds, codex.activeTurnIds])
   const claudeRoots = useMemo(
+    () => Object.fromEntries(claude.sessions.map((session) => {
+      // threadRoots is matched against Workspace.root in App.tsx; map the
+      // session cwd (a checkout root) back to its workspace root when known.
+      const root = codex.workspaces.find((workspace) => workspace.checkoutRoot === session.cwd)?.root ?? session.cwd
+      return [session.id, root]
+    })),
+    [claude.sessions, codex.workspaces],
+  )
+  const claudeGitCwds = useMemo(
     () => Object.fromEntries(claude.sessions.map((session) => [session.id, session.cwd])),
     [claude.sessions],
   )
   const threadRoots = useMemo(() => ({ ...codex.threadRoots, ...claudeRoots }), [claudeRoots, codex.threadRoots])
-  const threadGitCwds = useMemo(() => ({ ...codex.threadGitCwds, ...claudeRoots }), [claudeRoots, codex.threadGitCwds])
+  const threadGitCwds = useMemo(() => ({ ...codex.threadGitCwds, ...claudeGitCwds }), [claudeGitCwds, codex.threadGitCwds])
   const currentThread = threads.find((thread) => thread.id === selectedThreadId) ?? null
   const currentDetail = selectedThreadId ? details[selectedThreadId] ?? null : null
   const activeTurnId = selectedThreadId ? activeTurnIds[selectedThreadId] ?? currentDetail?.activeTurnId ?? null : null
@@ -368,7 +377,9 @@ export function useUnifiedHarness() {
     loadOlderTurns: selectedProvider === 'claude' ? async () => undefined : codex.loadOlderTurns,
     forkThreadAtTurn: selectedProvider === 'claude' ? async () => undefined : codex.forkThreadAtTurn,
     continueAfterFailure: selectedProvider === 'claude' ? async () => undefined : codex.continueAfterFailure,
-    changeThreadWorkspace: selectedProvider === 'claude' ? async () => undefined : codex.changeThreadWorkspace,
+    changeThreadWorkspace: selectedProvider === 'claude'
+      ? async (threadId: string, workspaceRoot: string) => { await claude.changeSessionWorkspace(threadId, workspaceRoot) }
+      : codex.changeThreadWorkspace,
     setThreadDraftContent: selectedProvider === 'claude' ? () => undefined : codex.setThreadDraftContent,
     searchThreads: async (term: string) => {
       await codex.searchThreads(term)

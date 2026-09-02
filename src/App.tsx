@@ -161,6 +161,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pluginsOpen, setPluginsOpen] = useState(false)
   const [rawMode, setRawMode] = useState(false)
+  const [rawOverrides, setRawOverrides] = useState<ReadonlySet<string>>(new Set())
+  const toggleRawOverride = (messageKey: string) => setRawOverrides((current) => {
+    const next = new Set(current)
+    if (next.has(messageKey)) next.delete(messageKey)
+    else next.add(messageKey)
+    return next
+  })
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
@@ -461,14 +468,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
               archived={harness.viewMode === 'archived'}
               pinned={harness.navigation.pinnedThreadIds.includes(harness.currentThread.id)}
               workspaceChanging={Boolean(harness.busy.threadWorkspace)}
-              canChangeWorkspace={codexConversation && canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
+              canChangeWorkspace={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
               onRename={(name) => void harness.renameThread(harness.currentThread!.id, name)}
               onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
               onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
               onTogglePinned={() => harness.toggleThreadPinned(harness.currentThread!.id)}
               onOpenThread={(threadId) => void harness.openThread(threadId)}
               onChooseWorkspace={() => {
-                if (!codexConversation) return
                 const threadId = harness.currentThread!.id
                 void harness.chooseWorkspace().then((selected) => selected
                   ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
@@ -535,7 +541,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 approvals={currentApprovals}
                 workspace={workspace}
                 workspaces={harness.workspaces}
-                workspaceChanging={Boolean(harness.busy.threadWorkspace) || !codexConversation}
+                workspaceChanging={Boolean(harness.busy.threadWorkspace)}
                 initialScrollTop={conversationScrollPositions.current[harness.currentThread.id] ?? null}
                 scrollToLatestRequest={scrollToLatestRequest?.threadId === harness.currentThread.id ? scrollToLatestRequest.sequence : 0}
                 hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
@@ -543,11 +549,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
                 onLoadOlderTurns={() => void harness.loadOlderTurns()}
                 onScrollPosition={(scrollTop) => { conversationScrollPositions.current[harness.currentThread!.id] = scrollTop }}
-                onWorkspaceChange={(workspaceRoot) => codexConversation && harness.selectedThreadId
+                onWorkspaceChange={(workspaceRoot) => harness.selectedThreadId
                   ? void harness.changeThreadWorkspace(harness.selectedThreadId, workspaceRoot)
                   : undefined}
                 onChooseWorkspace={() => {
-                  if (!codexConversation) return
                   const threadId = harness.selectedThreadId
                   void harness.chooseWorkspace().then((selected) => selected && threadId
                     ? harness.changeThreadWorkspace(threadId, selected.checkoutRoot)
@@ -589,6 +594,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   />
                 ))}
                 rawMode={rawMode}
+                rawOverrides={rawOverrides}
+                onRawOverrideToggle={toggleRawOverride}
                 working={harness.isCurrentWorking}
                 workingTurnId={currentActiveTurn?.id ?? null}
                 workingStartedAt={currentActiveTurn?.startedAt ?? null}
