@@ -48,3 +48,7 @@ rg '"area":"codex-usage"' ~/.codex-harness/logs/harness.jsonl | tail -20
 `turnTrigger` 的普通 turn 归为 `conversation`。`turn/start` 的 `request.completed` 会记录
 `resultMeta.turnId`，可和 `usage.updated.fields.turnId` 关联，避免只按时间猜测
 某个 turn 的来源。
+
+长期分析数据由 `src-tauri/src/codex_analytics.rs` 写入 `state.sqlite`，与轮转诊断日志分开。测试至少覆盖：同一 turn 的多次 `last` 正确累加、`total` 不参与累加、测试数据库不出现输入正文、MCP completed item 按 call ID 幂等、查询在缺少插件归因时安全降级。所有测试必须使用临时目录。
+
+本地估算器不调用模型、远端 tokenizer 或 Token Count API。当前 `unicode-heuristic-v1` 对 CJK 字符按单 Token、ASCII 单词字符按约 4 字符/Token、标点按约 2 字符/Token 估算；页面必须明确标注 `≈` 和 estimator version。官方 usage 与估算值只并列分析，不能相加后冒充实际 Token。

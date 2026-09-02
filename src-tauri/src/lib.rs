@@ -2,6 +2,7 @@ mod api_workbench;
 mod app_launcher;
 mod app_server;
 mod claude_runtime;
+mod codex_analytics;
 mod codex_radar;
 mod codex_update;
 mod diagnostics;
@@ -16,6 +17,7 @@ mod usage;
 
 use app_server::AppServerManager;
 use claude_runtime::{ClaudeRuntime, ClaudeRuntimeStatus};
+use codex_analytics::{AnalyticsSnapshot, CodexAnalytics};
 use codex_radar::{CodexRadarClient, RadarModelTable};
 use diagnostics::DiagnosticLog;
 use local_connector::{
@@ -39,6 +41,7 @@ struct AppState {
     diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
     codex_radar: CodexRadarClient,
+    codex_analytics: CodexAnalytics,
     store: HarnessStore,
     terminal: Arc<terminal::TerminalManager>,
     api_workbench: api_workbench::ApiWorkbenchStore,
@@ -669,11 +672,32 @@ fn upsert_plugin_run(
     state.store.upsert_plugin_run(&input)
 }
 
+#[tauri::command]
+async fn codex_analytics_snapshot(
+    state: State<'_, AppState>,
+    range: String,
+) -> Result<AnalyticsSnapshot, String> {
+    let analytics = state.codex_analytics.clone();
+    tauri::async_runtime::spawn_blocking(move || analytics.snapshot(&range))
+        .await
+        .map_err(|error| format!("等待 Codex 分析查询失败: {error}"))?
+}
+
 pub fn run() {
     let store = HarnessStore::open().expect("无法初始化 Codex Harness 本地状态库");
     let api_workbench =
         api_workbench::ApiWorkbenchStore::open().expect("Unable to initialize API Workbench");
     let diagnostics = Arc::new(DiagnosticLog::open().expect("无法初始化 Codex Harness 诊断日志"));
+    let analytics_root = store::harness_data_dir().expect("无法定位 Codex Harness 数据目录");
+    let analytics = CodexAnalytics::open(&analytics_root).unwrap_or_else(|_| {
+        diagnostics.record(
+            "error",
+            "codex-analytics",
+            "collector.disabled",
+            json!({ "errorCode": "initialization_failed" }),
+        );
+        CodexAnalytics::disabled(analytics_root.join("state.sqlite"))
+    });
     diagnostics.record(
         "info",
         "runtime",
@@ -688,6 +712,7 @@ pub fn run() {
             let manager = Arc::new(AppServerManager::new(
                 app.handle().clone(),
                 diagnostics.clone(),
+                analytics.clone(),
             ));
             let claude_runtime = Arc::new(ClaudeRuntime::new(
                 app.handle().clone(),
@@ -700,6 +725,7 @@ pub fn run() {
                 diagnostics,
                 local_connector: LocalConnector::new(),
                 codex_radar: CodexRadarClient::new(),
+                codex_analytics: analytics,
                 store,
                 terminal,
                 api_workbench,
@@ -752,6 +778,7 @@ pub fn run() {
             codex_radar_model_table,
             usage_cached_snapshot,
             usage_refresh_snapshot,
+            codex_analytics_snapshot,
             run_quick_command,
             terminal_create,
             terminal_write,

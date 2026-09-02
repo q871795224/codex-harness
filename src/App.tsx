@@ -28,6 +28,7 @@ import { conversationTabSupportsFocus } from './features/conversation/tabFocus'
 import { actionForShortcut, threadIndexForAction } from './features/actions/harnessActions'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 import type { UsageService } from './core/usage/types'
+import type { CodexAnalyticsService } from './core/codex-analytics/types'
 import type { ApiWorkbenchService } from './core/api-workbench/types'
 import type { TerminalService } from './core/terminal/types'
 import type { AppLauncherService } from './core/app-launcher/types'
@@ -56,6 +57,9 @@ export default function App() {
       cachedSnapshot: runtime.usageCachedSnapshot,
       refreshSnapshot: runtime.usageRefreshSnapshot,
     } satisfies UsageService,
+    'harness.codexAnalytics': {
+      snapshot: runtime.codexAnalyticsSnapshot,
+    } satisfies CodexAnalyticsService,
     'harness.quickCommands': {
       run: runtime.runQuickCommand,
     } satisfies QuickCommandService,

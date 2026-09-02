@@ -27,6 +27,7 @@ import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-wo
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/types'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
+import type { CodexAnalyticsRange, CodexAnalyticsSnapshot } from '../codex-analytics/types'
 import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntimeStatus, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
 
 interface PluginInstanceDto {
@@ -418,6 +419,10 @@ export const runtime = {
 
   usageRefreshSnapshot(since: string, until: string): Promise<UsageSnapshot> {
     return invoke<UsageSnapshot>('usage_refresh_snapshot', { since, until })
+  },
+
+  codexAnalyticsSnapshot(range: CodexAnalyticsRange): Promise<CodexAnalyticsSnapshot> {
+    return invoke<CodexAnalyticsSnapshot>('codex_analytics_snapshot', { range })
   },
 
   runQuickCommand(commandId: QuickCommandId): Promise<QuickCommandResult> {

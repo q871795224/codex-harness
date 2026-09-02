@@ -1,4 +1,7 @@
-use crate::diagnostics::{error_code, DiagnosticLog};
+use crate::{
+    codex_analytics::CodexAnalytics,
+    diagnostics::{error_code, DiagnosticLog},
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -59,15 +62,17 @@ struct Connection {
 pub struct AppServerManager {
     app: AppHandle,
     diagnostics: Arc<DiagnosticLog>,
+    analytics: CodexAnalytics,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
 }
 
 impl AppServerManager {
-    pub fn new(app: AppHandle, diagnostics: Arc<DiagnosticLog>) -> Self {
+    pub fn new(app: AppHandle, diagnostics: Arc<DiagnosticLog>, analytics: CodexAnalytics) -> Self {
         Self {
             app,
             diagnostics,
+            analytics,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
         }
@@ -76,6 +81,9 @@ impl AppServerManager {
     pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
         let started = Instant::now();
         let request_context = request_context(&params);
+        let pending_turn = (method == "turn/start")
+            .then(|| self.analytics.prepare_turn(&params))
+            .flatten();
         self.diagnostics.record(
             "info",
             "app-server",
@@ -87,6 +95,9 @@ impl AppServerManager {
             Err(error) => Err(error),
         };
         let duration_ms = started.elapsed().as_millis() as u64;
+        if let (Some(pending_turn), Ok(response)) = (pending_turn, &result) {
+            self.analytics.record_turn_start(pending_turn, response);
+        }
         match &result {
             Ok(response) => self.diagnostics.record(
                 "info",
@@ -231,6 +242,7 @@ impl AppServerManager {
         let app = self.app.clone();
         let writer_diagnostics = self.diagnostics.clone();
         let reader_diagnostics = self.diagnostics.clone();
+        let reader_analytics = self.analytics.clone();
 
         tauri::async_runtime::spawn(async move {
             while let Some(frame) = outbound.recv().await {
@@ -276,6 +288,7 @@ impl AppServerManager {
                                     .as_object()
                                     .and_then(|params| params.get("threadId"))
                                     .and_then(Value::as_str);
+                                reader_analytics.record_notification(method, params);
                                 if method == Some("thread/tokenUsage/updated") {
                                     if let Some(usage) =
                                         token_usage_context(params.get("tokenUsage"))
