@@ -20,8 +20,8 @@ export const harnessFilesPlugin: HarnessPlugin = {
     schemaVersion: 1,
     id: 'builtin.harness-files',
     name: 'Harness 文件',
-    description: '管理当前线程的 Codex 指令文件和 .harness 目录。',
-    version: '1.0.0',
+    description: '按会话类型管理 Codex / Claude 指令文件与 Harness 工作目录。',
+    version: '1.1.0',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global'],
     permissions: ['filesystem:harness-files'],
@@ -50,7 +50,9 @@ export const harnessFilesDefaultInstance: PluginInstanceRecord = {
 
 function HarnessFilesTab({ files, context }: { files: HarnessFilesService; context: ConversationTabProps }) {
   const cwd = context.threadCwd
-  const configurationKey = files.configurationKey()
+  const provider = context.provider ?? 'codex'
+  const providerLabel = provider === 'claude' ? 'Claude' : 'Codex'
+  const configurationKey = files.configurationKey(provider)
   const [tree, setTree] = useState<HarnessFileTree | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -75,7 +77,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     setLoading(true)
     setError(null)
     try {
-      const next = await files.list(cwd)
+      const next = await files.list(cwd, provider)
       const flattened = flattenNodes(next.roots)
       const preferred = preferredPath ?? selectedPath
       const nextSelected = flattened.find((node) => node.path === preferred)
@@ -94,7 +96,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     } finally {
       setLoading(false)
     }
-  }, [cwd, files, selectedPath])
+  }, [cwd, files, provider, selectedPath])
 
   useEffect(() => {
     setExpanded(new Set())
@@ -103,7 +105,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     setSavedContent('')
     setNotice(null)
     void refresh(null)
-  }, [cwd, configurationKey]) // Config changes alter fallback names and the effective instruction chain.
+  }, [cwd, configurationKey, provider]) // Config changes alter fallback names and the effective instruction chain.
 
   useEffect(() => {
     if (!cwd || !selected || selected.kind !== 'file') {
@@ -120,7 +122,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     let disposed = false
     setReading(true)
     setError(null)
-    void files.read(cwd, selected.path)
+    void files.read(cwd, selected.path, provider)
       .then((value) => {
         if (disposed) return
         setContent(value)
@@ -129,7 +131,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
       .catch((nextError) => { if (!disposed) setError(messageOf(nextError)) })
       .finally(() => { if (!disposed) setReading(false) })
     return () => { disposed = true }
-  }, [cwd, files, selected?.exists, selected?.kind, selected?.path])
+  }, [cwd, files, provider, selected?.exists, selected?.kind, selected?.path])
 
   const selectNode = (node: HarnessFileNode) => {
     if (node.path !== selectedPath && dirty && !window.confirm('当前文件有未保存的修改，确定切换吗？')) return
@@ -148,7 +150,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     setError(null)
     setNotice(null)
     try {
-      await files.write(cwd, selected.path, content)
+      await files.write(cwd, selected.path, content, provider)
       setSavedContent(content)
       setNotice('已保存')
       await refresh(selected.path)
@@ -169,14 +171,14 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     if (!base) return
     const suggested = kind === 'directory'
       ? 'new-folder'
-      : base.source === 'harness' ? 'notes.md' : 'AGENTS.md'
+      : base.source === 'harness' ? 'notes.md' : provider === 'claude' ? 'CLAUDE.md' : 'AGENTS.md'
     const name = window.prompt(kind === 'directory' ? '新目录名称' : '新文件名称', suggested)?.trim()
     if (!name) return
     const path = joinPath(base.path, name)
     setError(null)
     try {
-      if (kind === 'directory') await files.createDirectory(cwd, path)
-      else await files.write(cwd, path, '')
+      if (kind === 'directory') await files.createDirectory(cwd, path, provider)
+      else await files.write(cwd, path, '', provider)
       setExpanded((current) => new Set(current).add(base.path))
       await refresh(path)
       setNotice(kind === 'directory' ? '目录已创建' : '文件已创建')
@@ -193,7 +195,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     const nextPath = joinPath(parentPath(selected.path), name)
     setError(null)
     try {
-      await files.rename(cwd, selected.path, nextPath)
+      await files.rename(cwd, selected.path, nextPath, provider)
       await refresh(nextPath)
       setNotice('已重命名')
     } catch (nextError) {
@@ -207,7 +209,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     if (!window.confirm(`确定删除“${selected.name}”吗？${selected.kind === 'directory' ? '目录中的内容也会被删除。' : ''}`)) return
     setError(null)
     try {
-      await files.remove(cwd, selected.path)
+      await files.remove(cwd, selected.path, provider)
       await refresh(null)
       setNotice('已删除')
     } catch (nextError) {
@@ -223,24 +225,24 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
   }
 
   if (!cwd) {
-    return <div className="harness-files-empty"><FolderOpen size={28} /><strong>选择一个会话</strong><p>Harness 文件跟随当前线程的工作目录。</p></div>
+    return <div className="harness-files-empty"><FolderOpen size={28} /><strong>选择一个会话</strong><p>{providerLabel} 文件跟随当前线程的工作目录。</p></div>
   }
 
   return (
     <section className="harness-files-shell">
       <aside className="harness-files-explorer">
         <header className="harness-files-heading">
-          <div><span>THREAD FILES</span><strong>Harness 管理器</strong></div>
+          <div><span>THREAD FILES · {providerLabel.toUpperCase()}</span><strong>{providerLabel} 指令管理器</strong></div>
           <button type="button" onClick={() => void refresh(selectedPath)} disabled={loading} title="刷新文件树"><RefreshCw className={loading ? 'spin' : ''} size={15} /></button>
         </header>
         <div className="harness-files-path" title={cwd}>{compactPath(cwd)}</div>
         <div className="harness-files-tools">
           <button type="button" onClick={() => void createEntry('file')} title="新建文件"><FilePlus2 size={15} />文件</button>
-          <button type="button" onClick={() => void createEntry('directory')} title="在 .harness 内新建目录"><FolderPlus size={15} />目录</button>
+          <button type="button" onClick={() => void createEntry('directory')} title={`在 ${provider === 'claude' ? '.claude' : '.harness'} 内新建目录`}><FolderPlus size={15} />目录</button>
         </div>
-        <nav className="harness-file-tree" aria-label="Harness 文件">
+        <nav className="harness-file-tree" aria-label={`${providerLabel} 文件`}>
           {tree?.roots.map((node) => (
-            <TreeNode key={`${node.source}:${node.path}:${node.name}`} node={node} selectedPath={selectedPath} expanded={expanded} depth={0} onSelect={selectNode} />
+            <TreeNode key={`${node.source}:${node.path}:${node.name}`} node={node} selectedPath={selectedPath} expanded={expanded} depth={0} providerLabel={providerLabel} onSelect={selectNode} />
           ))}
           {!loading && tree && tree.roots.length === 0 && <p className="harness-tree-empty">没有可管理的文件</p>}
         </nav>
@@ -261,9 +263,9 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
               </div>
             </header>
             <div className="harness-editor-meta">
-              <span>{sourceLabel(selected.source)}</span>
+              <span>{sourceLabel(selected.source, providerLabel)}</span>
               {selected.instructionStatus && (
-                <em className={`harness-instruction-status ${selected.instructionStatus}`} title={instructionStatusDescription(selected.instructionStatus)}>
+                <em className={`harness-instruction-status ${selected.instructionStatus}`} title={instructionStatusDescription(selected.instructionStatus, providerLabel)}>
                   {instructionStatusLabel(selected.instructionStatus)}
                 </em>
               )}
@@ -281,7 +283,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
             />
           </>
         ) : (
-          <div className="harness-editor-empty"><FolderOpen size={32} /><strong>{selected?.name ?? '选择文件'}</strong><p>{selected ? '从左侧选择文件进行查看和编辑。' : '正在读取当前线程的 Harness 文件。'}</p></div>
+          <div className="harness-editor-empty"><FolderOpen size={32} /><strong>{selected?.name ?? '选择文件'}</strong><p>{selected ? '从左侧选择文件进行查看和编辑。' : `正在读取当前线程的 ${providerLabel} 文件。`}</p></div>
         )}
         {error && <div className="harness-files-error">{error}</div>}
       </main>
@@ -289,11 +291,12 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
   )
 }
 
-function TreeNode({ node, selectedPath, expanded, depth, onSelect }: {
+function TreeNode({ node, selectedPath, expanded, depth, providerLabel, onSelect }: {
   node: HarnessFileNode
   selectedPath: string | null
   expanded: Set<string>
   depth: number
+  providerLabel: string
   onSelect(node: HarnessFileNode): void
 }) {
   const open = expanded.has(node.path)
@@ -311,11 +314,11 @@ function TreeNode({ node, selectedPath, expanded, depth, onSelect }: {
         {node.kind === 'directory' ? <DirectoryIcon size={15} /> : <FileCode2 size={14} />}
         <span>{node.name}</span>
         {node.instructionStatus
-          ? <small className={`harness-instruction-status ${node.instructionStatus}`} title={instructionStatusDescription(node.instructionStatus)}>{instructionStatusLabel(node.instructionStatus)}</small>
+          ? <small className={`harness-instruction-status ${node.instructionStatus}`} title={instructionStatusDescription(node.instructionStatus, providerLabel)}>{instructionStatusLabel(node.instructionStatus)}</small>
           : !node.exists && <small>未创建</small>}
       </button>
       {node.kind === 'directory' && open && node.children.map((child) => (
-        <TreeNode key={`${child.source}:${child.path}:${child.name}`} node={child} selectedPath={selectedPath} expanded={expanded} depth={depth + 1} onSelect={onSelect} />
+        <TreeNode key={`${child.source}:${child.path}:${child.name}`} node={child} selectedPath={selectedPath} expanded={expanded} depth={depth + 1} providerLabel={providerLabel} onSelect={onSelect} />
       ))}
     </div>
   )
@@ -356,10 +359,10 @@ function compactPath(path: string): string {
   return parts.length <= 3 ? path : `…/${parts.slice(-3).join('/')}`
 }
 
-function sourceLabel(source: HarnessFileNode['source']): string {
-  if (source === 'global') return 'CODEX GLOBAL'
+function sourceLabel(source: HarnessFileNode['source'], providerLabel: string): string {
+  if (source === 'global') return `${providerLabel.toUpperCase()} GLOBAL`
   if (source === 'project') return 'PROJECT INSTRUCTIONS'
-  return 'THREAD .HARNESS'
+  return `THREAD .${providerLabel === 'Claude' ? 'CLAUDE' : 'HARNESS'}`
 }
 
 function instructionStatusLabel(status: NonNullable<HarnessFileNode['instructionStatus']>): string {
@@ -370,10 +373,10 @@ function instructionStatusLabel(status: NonNullable<HarnessFileNode['instruction
   return '超出限制'
 }
 
-function instructionStatusDescription(status: NonNullable<HarnessFileNode['instructionStatus']>): string {
-  if (status === 'active') return 'Codex 会将这个文件加入当前线程的指令链。'
+function instructionStatusDescription(status: NonNullable<HarnessFileNode['instructionStatus']>, providerLabel = 'Codex'): string {
+  if (status === 'active') return `${providerLabel} 会将这个文件加入当前线程的指令链。`
   if (status === 'overridden') return '同一目录中有优先级更高的非空指令文件。'
-  if (status === 'empty') return 'Codex 会跳过空指令文件，并继续检查下一候选文件。'
+  if (status === 'empty') return `${providerLabel} 会跳过空指令文件，并继续检查下一候选文件。`
   if (status === 'truncated') return '文件超过剩余的项目指令字节额度，只有前半部分会生效。'
   return '在读取到这个文件前已经达到项目指令字节上限。'
 }

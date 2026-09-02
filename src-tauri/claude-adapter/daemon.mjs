@@ -47,11 +47,19 @@ const claudePath = process.env.CODEX_HARNESS_CLAUDE_PATH || undefined
 const daemonInstanceId = randomUUID()
 const activeTurns = new Map()
 const pendingApprovals = new Map()
+const sessionStates = new Map()
+const modelCache = new Map()
 const clients = new Set()
 const replayEvents = []
 let nextSequence = 1
 let stopping = false
 let lockHandle
+
+const FALLBACK_MODELS = [
+  { value: 'sonnet', resolvedModel: null, displayName: 'Claude Sonnet', description: 'Balanced speed and quality.', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'], supportsAdaptiveThinking: true, supportsFastMode: false, supportsAutoMode: false },
+  { value: 'opus', resolvedModel: null, displayName: 'Claude Opus', description: 'Highest capability for complex tasks.', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'max'], supportsAdaptiveThinking: true, supportsFastMode: false, supportsAutoMode: false },
+  { value: 'haiku', resolvedModel: null, displayName: 'Claude Haiku', description: 'Fast and efficient for routine tasks.', supportsEffort: false, supportedEffortLevels: [], supportsAdaptiveThinking: false, supportsFastMode: false, supportsAutoMode: false },
+]
 
 if (!socketPath) throw new Error('CODEX_HARNESS_CLAUDE_SOCKET is required')
 
@@ -103,6 +111,98 @@ function runtimeSnapshot() {
     snapshotSeq,
     activeTurns: activeTurnSnapshot(),
     pendingApprovals: approvalSnapshot(),
+  }
+}
+
+function sessionState(sessionId, cwd = null) {
+  let state = sessionStates.get(sessionId)
+  if (!state) {
+    state = {
+      sessionId,
+      cwd,
+      providerSessionId: null,
+      model: null,
+      permissionMode: 'default',
+      effort: null,
+      lastStatus: null,
+      lastResult: '',
+      totalCostUsd: 0,
+      totalUsage: emptyUsage(),
+      lastUsage: null,
+      modelContextWindow: null,
+    }
+    sessionStates.set(sessionId, state)
+  }
+  if (cwd) state.cwd = cwd
+  return state
+}
+
+function emptyUsage() {
+  return {
+    totalTokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+  }
+}
+
+function number(value) {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+}
+
+function valueOf(source, ...keys) {
+  for (const key of keys) {
+    if (source && source[key] !== undefined) return source[key]
+  }
+  return 0
+}
+
+function usageBreakdown(usage) {
+  const inputTokens = number(valueOf(usage, 'input_tokens', 'inputTokens'))
+  const cachedInputTokens = number(valueOf(usage, 'cache_read_input_tokens', 'cacheReadInputTokens'))
+  const cacheWriteInputTokens = number(valueOf(usage, 'cache_creation_input_tokens', 'cacheCreationInputTokens'))
+  const outputTokens = number(valueOf(usage, 'output_tokens', 'outputTokens'))
+  const reasoningOutputTokens = number(valueOf(usage, 'reasoning_output_tokens', 'reasoningOutputTokens'))
+  const explicitTotal = valueOf(usage, 'total_tokens', 'totalTokens')
+  const totalTokens = explicitTotal ? number(explicitTotal) : inputTokens + cachedInputTokens + cacheWriteInputTokens + outputTokens
+  return { totalTokens, inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens, reasoningOutputTokens }
+}
+
+function addUsage(left, right) {
+  return Object.fromEntries(Object.keys(left).map((key) => [key, number(left[key]) + number(right[key])]))
+}
+
+function normalizeTurnUsage(sdkUsage, modelUsage, state) {
+  const last = usageBreakdown(sdkUsage)
+  state.totalUsage = addUsage(state.totalUsage, last)
+  const contextWindow = Object.values(modelUsage && typeof modelUsage === 'object' ? modelUsage : {})
+    .map((entry) => number(entry?.contextWindow))
+    .filter((value) => value > 0)
+    .reduce((current, value) => Math.max(current, value), state.modelContextWindow ?? 0)
+  state.modelContextWindow = contextWindow || state.modelContextWindow || null
+  state.lastUsage = {
+    total: state.totalUsage,
+    last,
+    modelContextWindow: state.modelContextWindow,
+  }
+  return state.lastUsage
+}
+
+function modelInfo(model) {
+  if (!model || typeof model !== 'object' || typeof model.value !== 'string') return null
+  return {
+    value: model.value,
+    resolvedModel: typeof model.resolvedModel === 'string' ? model.resolvedModel : null,
+    displayName: typeof model.displayName === 'string' ? model.displayName : model.value,
+    description: typeof model.description === 'string' ? model.description : '',
+    supportsEffort: model.supportsEffort === true,
+    supportedEffortLevels: Array.isArray(model.supportedEffortLevels) ? model.supportedEffortLevels.filter((entry) => typeof entry === 'string') : [],
+    supportsAdaptiveThinking: model.supportsAdaptiveThinking === true,
+    supportsFastMode: model.supportsFastMode === true,
+    supportsAutoMode: model.supportsAutoMode === true,
   }
 }
 
@@ -236,6 +336,12 @@ async function startTurn(params) {
 
   const abortController = new AbortController()
   activeTurns.set(sessionId, { turnId, abortController })
+  const state = sessionState(sessionId, params.cwd)
+  state.providerSessionId = params.providerSessionId ?? state.providerSessionId
+  state.model = params.model ?? state.model
+  state.permissionMode = params.permissionMode ?? state.permissionMode
+  state.effort = params.effort ?? state.effort
+  state.lastStatus = 'inProgress'
   emit('turn/started', { sessionId, turnId })
   emit('message/user', { sessionId, turnId, itemId: `${turnId}:user`, content: params.input ?? [] })
 
@@ -249,6 +355,7 @@ async function startTurn(params) {
         cwd: params.cwd,
         ...(providerSessionId ? { resume: providerSessionId } : {}),
         ...(params.model ? { model: params.model } : {}),
+        ...(params.effort ? { effort: params.effort } : {}),
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
         settingSources: ['user', 'project', 'local'],
         permissionMode,
@@ -263,21 +370,29 @@ async function startTurn(params) {
     })) {
       if (sdkMessage.session_id && sdkMessage.session_id !== providerSessionId) {
         providerSessionId = sdkMessage.session_id
+        state.providerSessionId = providerSessionId
         emit('session/started', { sessionId, providerSessionId })
       }
+      if (typeof sdkMessage.model === 'string' && sdkMessage.model) state.model = sdkMessage.model
       if (sdkMessage.type === 'stream_event') streamDelta(sdkMessage, sessionId, turnId)
       else if (sdkMessage.type === 'assistant') assistantBlocks(sdkMessage, sessionId, turnId)
       else if (sdkMessage.type === 'user') userBlocks(sdkMessage, sessionId, turnId)
       else if (sdkMessage.type === 'result') {
         if (sdkMessage.subtype === 'success') {
+          const turnCostUsd = number(sdkMessage.total_cost_usd)
           emit('turn/completed', {
             sessionId,
             turnId,
             providerSessionId,
             result: sdkMessage.result ?? '',
-            usage: sdkMessage.usage ?? null,
-            totalCostUsd: sdkMessage.total_cost_usd ?? null,
+            usage: normalizeTurnUsage(sdkMessage.usage, sdkMessage.modelUsage, state),
+            totalCostUsd: state.totalCostUsd + turnCostUsd,
+            model: state.model,
+            queuedTurnCount: number(sdkMessage.queued_turn_count),
           })
+          state.lastResult = sdkMessage.result ?? ''
+          state.lastStatus = 'completed'
+          state.totalCostUsd += turnCostUsd
         } else {
           emit('turn/failed', {
             sessionId,
@@ -286,10 +401,12 @@ async function startTurn(params) {
             code: sdkMessage.subtype,
             message: sdkMessage.errors?.join('\n') || sdkMessage.subtype,
           })
+          state.lastStatus = 'failed'
         }
       }
     }
   } catch (error) {
+    state.lastStatus = abortController.signal.aborted ? 'interrupted' : 'failed'
     emit(abortController.signal.aborted ? 'turn/interrupted' : 'turn/failed', {
       sessionId,
       turnId,
@@ -301,6 +418,114 @@ async function startTurn(params) {
       if (pending.sessionId === sessionId && pending.turnId === turnId) pending.expire('turn-ended')
     }
     activeTurns.delete(sessionId)
+  }
+}
+
+async function* waitForInput() {
+  await new Promise(() => {})
+}
+
+function queryOptions(params, abortController) {
+  const permissionMode = params.permissionMode ?? 'default'
+  return {
+    cwd: params.cwd,
+    ...(params.providerSessionId ? { resume: params.providerSessionId } : {}),
+    ...(params.model ? { model: params.model } : {}),
+    ...(params.effort ? { effort: params.effort } : {}),
+    ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+    settingSources: ['user', 'project', 'local'],
+    permissionMode,
+    ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),
+    maxTurns: params.maxTurns ?? DEFAULT_MAX_TURNS,
+    includePartialMessages: false,
+    abortController,
+    env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness' },
+  }
+}
+
+async function listModels(params) {
+  const cwd = typeof params.cwd === 'string' && params.cwd ? params.cwd : process.cwd()
+  const cached = modelCache.get(cwd)
+  if (cached && cached.expiresAt > Date.now()) return { models: cached.models }
+  const abortController = new AbortController()
+  try {
+    const modelQuery = query({ prompt: waitForInput(), options: queryOptions({ cwd }, abortController) })
+    const initialization = await modelQuery.initializationResult()
+    const models = (initialization.models ?? []).map(modelInfo).filter(Boolean)
+    const result = models.length > 0 ? models : FALLBACK_MODELS
+    modelCache.set(cwd, { models: result, expiresAt: Date.now() + 5 * 60_000 })
+    return { models: result }
+  } catch (error) {
+    return { models: FALLBACK_MODELS, warning: errorMessage(error) }
+  } finally {
+    abortController.abort()
+  }
+}
+
+async function readContext(params) {
+  const sessionId = params.sessionId
+  const state = sessionState(sessionId, params.cwd)
+  if (activeTurns.has(sessionId)) {
+    if (state.lastUsage) return contextFromUsage(state.lastUsage, state.model)
+    throw new Error('Claude 会话当前正在运行，请等待回合结束后读取上下文。')
+  }
+  if (!state.providerSessionId && !params.providerSessionId) {
+    if (state.lastUsage) return contextFromUsage(state.lastUsage, state.model)
+    return null
+  }
+  const abortController = new AbortController()
+  try {
+    const contextQuery = query({
+      prompt: waitForInput(),
+      options: queryOptions({
+        cwd: params.cwd ?? state.cwd,
+        providerSessionId: params.providerSessionId ?? state.providerSessionId,
+        model: state.model,
+        permissionMode: state.permissionMode,
+        effort: state.effort,
+      }, abortController),
+    })
+    await contextQuery.initializationResult()
+    const usage = await contextQuery.getContextUsage()
+    return {
+      totalTokens: number(usage.totalTokens),
+      maxTokens: number(usage.maxTokens),
+      rawMaxTokens: number(usage.rawMaxTokens),
+      percentage: number(usage.percentage),
+      model: typeof usage.model === 'string' ? usage.model : state.model,
+    }
+  } catch (error) {
+    if (state.lastUsage) return contextFromUsage(state.lastUsage, state.model)
+    throw error
+  } finally {
+    abortController.abort()
+  }
+}
+
+function contextFromUsage(usage, model) {
+  const totalTokens = number(usage.last?.totalTokens ?? usage.total?.totalTokens)
+  const maxTokens = number(usage.modelContextWindow)
+  return {
+    totalTokens,
+    maxTokens,
+    rawMaxTokens: maxTokens,
+    percentage: maxTokens > 0 ? totalTokens / maxTokens * 100 : 0,
+    model: model ?? '',
+  }
+}
+
+function sessionStatus(params) {
+  const state = sessionState(params.sessionId, params.cwd)
+  const active = activeTurns.get(params.sessionId)
+  return {
+    sessionId: params.sessionId,
+    providerSessionId: state.providerSessionId,
+    active: Boolean(active),
+    turnId: active?.turnId ?? null,
+    lastTurnStatus: state.lastStatus,
+    lastResult: state.lastResult,
+    usage: state.lastUsage,
+    costUsd: state.totalCostUsd,
   }
 }
 
@@ -320,6 +545,24 @@ async function handle(client, request) {
   }
   if (method === 'runtime/status') {
     respond(client, id, runtimeSnapshot())
+    return
+  }
+  if (method === 'provider/models') {
+    respond(client, id, await listModels(params))
+    return
+  }
+  if (method === 'session/context') {
+    respond(client, id, await readContext(params))
+    return
+  }
+  if (method === 'session/status') {
+    respond(client, id, sessionStatus(params))
+    return
+  }
+  if (method === 'session/readLastMessage') {
+    const result = sessionStatus(params).lastResult
+    if (!result) throw new Error('Claude 会话尚未生成可读取的结果')
+    respond(client, id, { text: result })
     return
   }
   if (method === 'turn/start') {

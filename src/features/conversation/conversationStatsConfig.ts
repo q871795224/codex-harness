@@ -34,6 +34,7 @@ export interface ConversationStatsData {
   turns: Turn[]
   items: ThreadItemEntry[]
   tokenUsage: ThreadTokenUsage | null
+  costUsd?: number | null
   creditUsage: ThreadCreditUsage | null
   thread: Thread | null
   workspace: Workspace | null
@@ -175,9 +176,11 @@ export function conversationStatSegments(preferences: ConversationStatsPreferenc
       case 'credits':
         return data.creditUsage ? [{ id: preference.id, text: `${formatCredits(data.creditUsage.creditsMicros)} credits` }] : []
       case 'usd':
-        return data.creditUsage?.usdMicros !== null && data.creditUsage?.usdMicros !== undefined
-          ? [{ id: preference.id, text: `$${formatUsd(data.creditUsage.usdMicros)} USD` }]
-          : []
+        return data.costUsd !== null && data.costUsd !== undefined
+          ? [{ id: preference.id, text: `$${formatUsdDollars(data.costUsd)} USD` }]
+          : data.creditUsage?.usdMicros !== null && data.creditUsage?.usdMicros !== undefined
+            ? [{ id: preference.id, text: `$${formatUsd(data.creditUsage.usdMicros)} USD` }]
+            : []
     }
   })
 }
@@ -206,6 +209,10 @@ function formatCredits(micros: number): string {
 
 function formatUsd(micros: number): string {
   return (micros / 1_000_000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+}
+
+function formatUsdDollars(value: number): string {
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 }
 
 function formatTokens(value: number): string {

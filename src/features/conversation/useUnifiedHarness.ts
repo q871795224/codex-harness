@@ -3,6 +3,7 @@ import type { ApprovalRequest, UserInput } from '../../core/domain/codex'
 import { recordWorkspaceContextDiagnostic, runtime } from '../../core/runtime/bridge'
 import { useClaudeHarness } from '../claude/useClaudeHarness'
 import { useHarness } from './useHarness'
+import type { TurnCompletedEvent } from '../../core/conversations/types'
 
 export type ConversationProvider = 'codex' | 'claude'
 const SELECTED_CONVERSATION_KEY = 'selectedConversationId'
@@ -26,8 +27,8 @@ export function capabilitiesForProvider(provider: ConversationProvider): Convers
       approvals: true,
       interrupt: true,
       resume: true,
-      queue: false,
-      steer: false,
+      queue: true,
+      steer: true,
       fork: false,
       skills: false,
       mcpManagement: false,
@@ -152,6 +153,14 @@ export function useUnifiedHarness() {
 
   const selectedProvider: ConversationProvider = selectedThreadId?.startsWith('claude:') ? 'claude' : 'codex'
   const capabilities = useMemo(() => capabilitiesForProvider(selectedProvider), [selectedProvider])
+  const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
+    const disposeCodex = codex.onTurnCompleted(listener)
+    const disposeClaude = claude.onTurnCompleted(listener)
+    return () => {
+      disposeCodex()
+      disposeClaude()
+    }
+  }, [claude.onTurnCompleted, codex.onTurnCompleted])
   const threads = useMemo(() => [...claude.threads, ...codex.threads], [claude.threads, codex.threads])
   const details = useMemo(() => ({ ...codex.details, ...claude.details }), [claude.details, codex.details])
   const approvals = useMemo(() => ({ ...codex.approvals, ...claude.approvals }), [claude.approvals, codex.approvals])
@@ -188,7 +197,10 @@ export function useUnifiedHarness() {
         codexSelectedThreadIdBefore: codex.selectedThreadId,
       },
     })
-    if (threadId.startsWith('claude:')) claude.selectSession(threadId)
+    if (threadId.startsWith('claude:')) {
+      if (!claude.sessions.some((session) => session.id === threadId)) await claude.refresh(false)
+      claude.selectSession(threadId)
+    }
     else await codex.selectThread(threadId)
     if (selectionRequestRef.current !== requestId || selectedThreadIdRef.current !== threadId) return
     recordWorkspaceContextDiagnostic({
@@ -244,13 +256,33 @@ export function useUnifiedHarness() {
         mode,
       },
     })
-    if (selectedProvider === 'claude' && selectedThreadId) return claude.sendMessage(selectedThreadId, input)
+    if (selectedProvider === 'claude' && selectedThreadId) return claude.sendMessage(selectedThreadId, input, mode)
     return codex.sendMessage(input, mode)
   }, [claude, codex, selectedProvider, selectedThreadId])
 
   const stopTurn = useCallback(() => {
     if (selectedProvider === 'claude' && selectedThreadId) return claude.stopTurn(selectedThreadId)
     return codex.stopTurn()
+  }, [claude, codex, selectedProvider, selectedThreadId])
+
+  const editQueue = useCallback((queueId: string, text: string) => {
+    if (selectedProvider === 'claude' && selectedThreadId) return claude.editQueue(selectedThreadId, queueId, text)
+    return codex.editQueue(queueId, text)
+  }, [claude, codex, selectedProvider, selectedThreadId])
+
+  const removeQueue = useCallback((queueId: string) => {
+    if (selectedProvider === 'claude' && selectedThreadId) return claude.removeQueue(selectedThreadId, queueId)
+    return codex.removeQueue(queueId)
+  }, [claude, codex, selectedProvider, selectedThreadId])
+
+  const promoteQueue = useCallback((queue: Parameters<typeof codex.promoteQueue>[0]) => {
+    if (selectedProvider === 'claude' && selectedThreadId) return claude.promoteQueue(selectedThreadId, queue)
+    return codex.promoteQueue(queue)
+  }, [claude, codex, selectedProvider, selectedThreadId])
+
+  const startQueue = useCallback(() => {
+    if (selectedProvider === 'claude' && selectedThreadId) return claude.startQueue(selectedThreadId)
+    return codex.startQueue()
   }, [claude, codex, selectedProvider, selectedThreadId])
 
   const renameThread = useCallback((threadId: string, name: string) => threadId.startsWith('claude:')
@@ -300,17 +332,19 @@ export function useUnifiedHarness() {
     currentDetail,
     activeTurnId,
     selectedProvider,
+    onTurnCompleted,
     newThreadProvider,
     toggleNewThreadProvider,
     capabilities,
     claudeStatus: claude.status,
-    currentTokenUsage: selectedProvider === 'claude' ? null : codex.currentTokenUsage,
+    currentTokenUsage: selectedProvider === 'claude' ? currentDetail?.tokenUsage ?? null : codex.currentTokenUsage,
+    currentCostUsd: selectedProvider === 'claude' ? currentDetail?.costUsd ?? null : null,
     currentTaskPlan: selectedProvider === 'claude' ? null : codex.currentTaskPlan,
     currentForeignActive: selectedProvider === 'claude' ? false : codex.currentForeignActive,
     isCurrentWorking: Boolean(activeTurnId || (selectedThreadId && codex.startingThreadIds[selectedThreadId])),
     busy: selectedProvider === 'claude' ? { ...codex.busy, ...claude.busy } : codex.busy,
     toast: claude.toast ?? codex.toast,
-    queues: selectedProvider === 'claude' && selectedThreadId ? { ...codex.queues, [selectedThreadId]: [] } : codex.queues,
+    queues: selectedProvider === 'claude' ? claude.queues : codex.queues,
     pendingSteers: selectedProvider === 'claude' && selectedThreadId ? { ...codex.pendingSteers, [selectedThreadId]: [] } : codex.pendingSteers,
     selectThread,
     openThread: selectThread,
@@ -318,6 +352,13 @@ export function useUnifiedHarness() {
     resetThread,
     sendMessage,
     stopTurn,
+    editQueue,
+    removeQueue,
+    promoteQueue,
+    startQueue,
+    claudeModels: claude.models,
+    claudeSettingsForThread: claude.settingsForSession,
+    updateClaudeSettings: claude.updateSessionSettings,
     renameThread,
     archiveThread,
     unarchiveThread,

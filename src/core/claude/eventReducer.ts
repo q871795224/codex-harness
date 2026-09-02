@@ -1,5 +1,6 @@
 import type { JsonObject, ThreadDetail, ThreadItem, Turn, UserInput } from '../domain/codex'
 import { reduceThreadDetailEvent } from '../../features/conversation/conversationEventReducer'
+import { parseClaudeTokenUsage } from './types'
 import type { ClaudeAdapterEvent } from './types'
 
 export function reduceClaudeEvent(detail: ThreadDetail, event: ClaudeAdapterEvent): ThreadDetail {
@@ -66,7 +67,12 @@ export function reduceClaudeEvent(detail: ThreadDetail, event: ClaudeAdapterEven
     })
   }
   if (event.method === 'turn/completed') {
-    return completedTurn(detail, turnId, 'completed')
+    const usage = parseClaudeTokenUsage(params.usage)
+    const costUsd = typeof params.totalCostUsd === 'number' && Number.isFinite(params.totalCostUsd)
+      ? Math.max(0, params.totalCostUsd)
+      : detail.costUsd ?? null
+    const completed = completedTurn(detail, turnId, 'completed')
+    return { ...completed, tokenUsage: usage ?? completed.tokenUsage ?? null, costUsd }
   }
   if (event.method === 'turn/interrupted') {
     return completedTurn(detail, turnId, 'interrupted')

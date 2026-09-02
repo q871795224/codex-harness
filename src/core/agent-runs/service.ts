@@ -1,5 +1,5 @@
 import type { AppServerEvent, JsonObject } from '../domain/codex'
-import type { AgentRun, AgentRunService, AgentRunTransport, StartAgentRunInput } from './types'
+import type { AgentProvider, AgentRun, AgentRunService, AgentRunTransport, StartAgentRunInput } from './types'
 
 export class AgentRunCoordinator implements AgentRunService {
   private runs: AgentRun[] = []
@@ -44,6 +44,7 @@ export class AgentRunCoordinator implements AgentRunService {
 
     const reservesSharedRoot = input.workspaceAccess === 'shared-write'
     if (reservesSharedRoot) this.pendingWriterRoots.add(input.workspaceRoot)
+    const provider = input.provider ?? inferProvider(input.parentThreadId)
     let run: AgentRun
     let workspaceRoot: string
     try {
@@ -52,6 +53,7 @@ export class AgentRunCoordinator implements AgentRunService {
       run = await this.persist({
         runId,
         instanceId: input.instanceId,
+        provider,
         mode: input.mode,
         workspaceAccess: input.workspaceAccess,
         status: 'starting',
@@ -72,10 +74,14 @@ export class AgentRunCoordinator implements AgentRunService {
     }
 
     try {
-      const childThreadId = await this.transport.startThread(workspaceRoot)
+      const childThreadId = await this.transport.startThread(workspaceRoot, provider)
       run = await this.persist({ ...run, childThreadId, updatedAt: Date.now() })
-      if (input.settings) await this.transport.configureThread(childThreadId, input.settings)
-      const turnId = await this.transport.startTurn(childThreadId, prompt)
+      if (input.settings) await this.transport.configureThread(childThreadId, input.settings, provider)
+      const turnId = await this.transport.startTurn(childThreadId, prompt, provider)
+      const current = this.runs.find((candidate) => candidate.runId === run.runId)
+      if (current && !isRunning(current)) {
+        return current.turnId === turnId ? current : await this.persist({ ...current, turnId, updatedAt: Date.now() })
+      }
       return await this.persist({ ...run, turnId, status: 'running', updatedAt: Date.now() })
     } catch (error) {
       await this.persist({
@@ -93,7 +99,7 @@ export class AgentRunCoordinator implements AgentRunService {
     await this.initialize()
     const run = this.requireRun(runId)
     if (!run.childThreadId || !run.turnId || !isRunning(run)) return
-    await this.transport.interruptTurn(run.childThreadId, run.turnId)
+    await this.transport.interruptTurn(run.childThreadId, run.turnId, providerOf(run))
     await this.persist({ ...run, status: 'cancelled', completedAt: Date.now(), updatedAt: Date.now() })
   }
 
@@ -101,7 +107,7 @@ export class AgentRunCoordinator implements AgentRunService {
     await this.initialize()
     const run = this.requireRun(runId)
     if (!run.childThreadId) throw new Error('任务还没有 child thread')
-    return this.transport.readLastAgentMessage(run.childThreadId)
+    return this.transport.readLastAgentMessage(run.childThreadId, providerOf(run))
   }
 
   async returnToParent(runId: string): Promise<void> {
@@ -113,7 +119,8 @@ export class AgentRunCoordinator implements AgentRunService {
     if (this.returningRunIds.has(runId)) return
     this.returningRunIds.add(runId)
     try {
-      const parent = await this.transport.inspectThread(run.parentThreadId)
+      const provider = providerOf(run)
+      const parent = await this.transport.inspectThread(run.parentThreadId, provider)
       if (parent.active || parent.lastTurnStatus === 'inProgress') {
         throw new Error('主会话仍在运行，请等待当前任务结束后再回传。')
       }
@@ -124,7 +131,7 @@ export class AgentRunCoordinator implements AgentRunService {
         result,
         '',
         '请结合当前主会话目标继续处理。',
-      ].join('\n'))
+      ].join('\n'), provider)
       await this.persist({ ...run, returnedAt: Date.now(), updatedAt: Date.now() })
     } finally {
       this.returningRunIds.delete(runId)
@@ -184,6 +191,40 @@ export class AgentRunCoordinator implements AgentRunService {
     if (!run) return
     const params = event.params ?? {}
 
+    const provider = providerOf(run)
+    if (provider === 'claude') {
+      if (event.method === 'approval/requested') {
+        await this.persist({ ...run, status: 'waitingApproval', updatedAt: Date.now() })
+        return
+      }
+      if (event.method === 'approval/resolved' || event.method === 'approval/expired') {
+        if (isRunning(run)) await this.persist({ ...run, status: 'running', updatedAt: Date.now() })
+        return
+      }
+      if (event.method === 'turn/started') {
+        if (run.status === 'starting') await this.persist({ ...run, status: 'running', updatedAt: Date.now() })
+        return
+      }
+      if (event.method === 'turn/completed') {
+        await this.persist({ ...run, status: 'completed', errorSummary: null, completedAt: Date.now(), updatedAt: Date.now() })
+        return
+      }
+      if (event.method === 'turn/interrupted') {
+        await this.persist({ ...run, status: 'cancelled', errorSummary: null, completedAt: Date.now(), updatedAt: Date.now() })
+        return
+      }
+      if (event.method === 'turn/failed') {
+        await this.persist({
+          ...run,
+          status: 'failed',
+          errorSummary: typeof params.message === 'string' ? params.message : '子 Agent 执行失败',
+          completedAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+      }
+      return
+    }
+
     if (event.id !== undefined && isApprovalRequest(event.method ?? '')) {
       await this.persist({ ...run, status: 'waitingApproval', updatedAt: Date.now() })
       return
@@ -207,7 +248,7 @@ export class AgentRunCoordinator implements AgentRunService {
   }
 
   private async loadAndReconcile(): Promise<void> {
-    this.runs = await this.transport.listRuns()
+    this.runs = (await this.transport.listRuns()).map((run) => ({ ...run, provider: providerOf(run) }))
     this.emit()
     await Promise.all(this.runs.filter(isRunning).map(async (run) => {
       if (!run.childThreadId) {
@@ -215,7 +256,7 @@ export class AgentRunCoordinator implements AgentRunService {
         return
       }
       try {
-        const inspection = await this.transport.inspectThread(run.childThreadId)
+        const inspection = await this.transport.inspectThread(run.childThreadId, providerOf(run))
         if (inspection.active || inspection.lastTurnStatus === 'inProgress') return
         const status = inspection.lastTurnStatus === 'completed' ? 'completed'
           : inspection.lastTurnStatus === 'interrupted' ? 'cancelled'
@@ -247,7 +288,11 @@ export class AgentRunCoordinator implements AgentRunService {
   }
 
   private async persist(run: AgentRun): Promise<AgentRun> {
-    const saved = await this.transport.saveRun(run)
+    const savedResult = await this.transport.saveRun(run)
+    const saved: AgentRun = {
+      ...savedResult,
+      provider: savedResult.provider ?? run.provider ?? inferProvider(run.childThreadId ?? run.parentThreadId),
+    }
     this.runs = [saved, ...this.runs.filter((candidate) => candidate.runId !== saved.runId)]
     this.emit()
     return saved
@@ -267,8 +312,16 @@ function isRunning(run: AgentRun): boolean {
 }
 
 function eventThreadId(params: JsonObject): string | null {
-  const value = params.threadId ?? params.conversationId
+  const value = params.threadId ?? params.conversationId ?? params.sessionId
   return typeof value === 'string' ? value : null
+}
+
+function inferProvider(threadId: string | null | undefined): AgentProvider {
+  return typeof threadId === 'string' && threadId.startsWith('claude:') ? 'claude' : 'codex'
+}
+
+function providerOf(run: AgentRun): AgentProvider {
+  return run.provider ?? inferProvider(run.childThreadId ?? run.parentThreadId)
 }
 
 function isApprovalRequest(method: string): boolean {

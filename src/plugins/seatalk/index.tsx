@@ -27,7 +27,7 @@ export const seaTalkPlugin: HarnessPlugin = {
     id: 'builtin.seatalk',
     name: 'SeaTalk Bridge',
     description: '通过本机 bridge 接收 SeaTalk 消息，并以可编辑草稿和显式确认方式发送。',
-    version: '1.0.1',
+    version: '1.0.2',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
     permissions: ['localhost:bridge-agent'],
@@ -249,6 +249,7 @@ function SeaTalkDraft({ bridge, agentRuns, instanceId, config, context, replyTar
     try {
       const run = await agentRuns.start({
         instanceId,
+        provider: context.provider ?? 'codex',
         title: '生成 SeaTalk 草稿',
         mode: 'detached',
         workspaceAccess: 'read-only',
@@ -289,7 +290,7 @@ function SeaTalkDraft({ bridge, agentRuns, instanceId, config, context, replyTar
 
   return (
     <section className="seatalk-card seatalk-draft">
-      <div className="seatalk-card-title"><Send size={16} /><div><h3>组织并发送</h3><p>Codex 只生成草稿；Harness 不会自动发送。</p></div></div>
+      <div className="seatalk-card-title"><Send size={16} /><div><h3>组织并发送</h3><p>{context.provider === 'claude' ? 'Claude' : 'Codex'} 只生成草稿；Harness 不会自动发送。</p></div></div>
       <div className="seatalk-target-row">
         <select value={targetType} onChange={(event) => setTargetType(event.target.value as 'user' | 'group')}>
           <option value="group">群组</option><option value="user">同事</option>
@@ -297,9 +298,9 @@ function SeaTalkDraft({ bridge, agentRuns, instanceId, config, context, replyTar
         <input value={targetId} onChange={(event) => setTargetId(event.target.value)} placeholder="目标 ID" />
       </div>
       <input value={threadId} onChange={(event) => setThreadId(event.target.value)} placeholder="Thread / root message ID（可选）" />
-      <textarea value={intent} onChange={(event) => setIntent(event.target.value)} rows={3} placeholder="告诉 Codex 这段发言的目的、语气和重点…" />
+      <textarea value={intent} onChange={(event) => setIntent(event.target.value)} rows={3} placeholder={`告诉 ${context.provider === 'claude' ? 'Claude' : 'Codex'} 这段发言的目的、语气和重点…`} />
       <button type="button" className="seatalk-generate" disabled={busy || generating || !intent.trim() || !context.workspaceRoot} onClick={() => void generate()}>
-        {generating ? <LoaderCircle className="spin" size={14} /> : <Bot size={14} />}{generating ? 'Codex 正在起草' : '用当前会话生成草稿'}
+        {generating ? <LoaderCircle className="spin" size={14} /> : <Bot size={14} />}{generating ? `${context.provider === 'claude' ? 'Claude' : 'Codex'} 正在起草` : '用当前会话生成草稿'}
       </button>
       {!context.workspaceRoot && <small className="seatalk-hint">当前会话没有已识别的 workspace，仍可手动填写草稿。</small>}
       <label className="seatalk-draft-editor"><span>可编辑草稿</span><textarea value={draft} onChange={(event) => { setDraft(event.target.value); setConfirming(false); setSentMessageId(null) }} rows={7} placeholder="生成结果会出现在这里，也可以直接输入…" /></label>
@@ -376,11 +377,11 @@ function draftPrompt(intent: string, context: ConversationTabProps): string {
   const transcript = context.items
     .filter((entry) => entry.item.type === 'userMessage' || entry.item.type === 'agentMessage')
     .slice(-8)
-    .map((entry) => `${entry.item.type === 'userMessage' ? '用户' : 'Codex'}：${itemText(entry.item)}`)
+    .map((entry) => `${entry.item.type === 'userMessage' ? '用户' : context.provider === 'claude' ? 'Claude' : 'Codex'}：${itemText(entry.item)}`)
     .join('\n\n')
     .slice(-8_000)
   return [
-    '请为一条即将发送给 SeaTalk 同事或群组的消息起草正文。',
+    `请为一条即将发送给 SeaTalk 同事或群组的消息起草正文。当前会话由 ${context.provider === 'claude' ? 'Claude' : 'Codex'} 执行。`,
     '只输出可直接发送的正文，不要解释、不要加 Markdown 代码围栏，也不要声称已经发送。',
     `发言意图：${intent.trim()}`,
     transcript ? `当前 Harness 会话的最近上下文：\n${transcript}` : '当前会话没有可用的文字上下文。',

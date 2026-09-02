@@ -27,7 +27,7 @@ import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-wo
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/types'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
-import type { ClaudeAdapterEvent, ClaudeRuntimeStatus, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
+import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntimeStatus, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -122,6 +122,22 @@ export const runtime = {
 
   startClaudeTurn(input: ClaudeTurnStartInput): Promise<{ accepted: boolean }> {
     return this.claudeRequest('turn/start', input as unknown as JsonObject)
+  },
+
+  listClaudeModels(cwd: string): Promise<{ models: ClaudeModel[]; warning?: string }> {
+    return this.claudeRequest<{ models: ClaudeModel[]; warning?: string }>('provider/models', { cwd })
+  },
+
+  readClaudeContext(sessionId: string, cwd: string, providerSessionId: string | null): Promise<ClaudeContextUsage | null> {
+    return this.claudeRequest<ClaudeContextUsage | null>('session/context', { sessionId, cwd, ...(providerSessionId ? { providerSessionId } : {}) })
+  },
+
+  readClaudeSessionStatus(sessionId: string, cwd?: string): Promise<{ active: boolean; turnId: string | null; lastTurnStatus: string | null; lastResult: string; usage: unknown; costUsd: number }> {
+    return this.claudeRequest('session/status', { sessionId, ...(cwd ? { cwd } : {}) })
+  },
+
+  readLastClaudeAgentMessage(sessionId: string): Promise<string> {
+    return this.claudeRequest<{ text: string }>('session/readLastMessage', { sessionId }).then((result) => result.text)
   },
 
   interruptClaudeTurn(sessionId: string): Promise<void> {
@@ -323,28 +339,28 @@ export const runtime = {
     return invoke<void>('set_plugin_state', { instanceId, key, value })
   },
 
-  listHarnessFiles(cwd: string, fallbackFilenames: string[], maxBytes: number): Promise<HarnessFileTree> {
-    return invoke<HarnessFileTree>('list_harness_files', { cwd, fallbackFilenames, maxBytes })
+  listHarnessFiles(cwd: string, fallbackFilenames: string[], maxBytes: number, provider: 'codex' | 'claude' = 'codex'): Promise<HarnessFileTree> {
+    return invoke<HarnessFileTree>('list_harness_files', { cwd, fallbackFilenames, maxBytes, provider })
   },
 
-  readHarnessFile(cwd: string, path: string, fallbackFilenames: string[]): Promise<string> {
-    return invoke<string>('read_harness_file', { cwd, path, fallbackFilenames })
+  readHarnessFile(cwd: string, path: string, fallbackFilenames: string[], provider: 'codex' | 'claude' = 'codex'): Promise<string> {
+    return invoke<string>('read_harness_file', { cwd, path, fallbackFilenames, provider })
   },
 
-  writeHarnessFile(cwd: string, path: string, content: string, fallbackFilenames: string[]): Promise<void> {
-    return invoke<void>('write_harness_file', { cwd, path, content, fallbackFilenames })
+  writeHarnessFile(cwd: string, path: string, content: string, fallbackFilenames: string[], provider: 'codex' | 'claude' = 'codex'): Promise<void> {
+    return invoke<void>('write_harness_file', { cwd, path, content, fallbackFilenames, provider })
   },
 
-  createHarnessDirectory(cwd: string, path: string, fallbackFilenames: string[]): Promise<void> {
-    return invoke<void>('create_harness_directory', { cwd, path, fallbackFilenames })
+  createHarnessDirectory(cwd: string, path: string, fallbackFilenames: string[], provider: 'codex' | 'claude' = 'codex'): Promise<void> {
+    return invoke<void>('create_harness_directory', { cwd, path, fallbackFilenames, provider })
   },
 
-  renameHarnessPath(cwd: string, path: string, nextPath: string, fallbackFilenames: string[]): Promise<void> {
-    return invoke<void>('rename_harness_path', { cwd, path, nextPath, fallbackFilenames })
+  renameHarnessPath(cwd: string, path: string, nextPath: string, fallbackFilenames: string[], provider: 'codex' | 'claude' = 'codex'): Promise<void> {
+    return invoke<void>('rename_harness_path', { cwd, path, nextPath, fallbackFilenames, provider })
   },
 
-  removeHarnessPath(cwd: string, path: string, fallbackFilenames: string[]): Promise<void> {
-    return invoke<void>('remove_harness_path', { cwd, path, fallbackFilenames })
+  removeHarnessPath(cwd: string, path: string, fallbackFilenames: string[], provider: 'codex' | 'claude' = 'codex'): Promise<void> {
+    return invoke<void>('remove_harness_path', { cwd, path, fallbackFilenames, provider })
   },
 
   listPluginRuns(): Promise<AgentRun[]> {

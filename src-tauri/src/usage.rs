@@ -124,6 +124,9 @@ pub async fn collect(
         &since,
         &until,
     );
+    let claude_history = collect_ccusage(
+        "claude", "Claude", "claude", None, &real_home, &since, &until,
+    );
     let business_limits = app_server.request("account/rateLimits/read".to_string(), json!({}));
     let personal_limits = async {
         if personal_codex_home.is_dir() {
@@ -134,9 +137,10 @@ pub async fn collect(
     };
     let ais = collect_ais(&real_home, &until);
 
-    let (mut business, mut personal, business_limits, personal_limits, ais) = futures_util::join!(
+    let (mut business, mut personal, claude, business_limits, personal_limits, ais) = futures_util::join!(
         business_history,
         personal_history,
+        claude_history,
         business_limits,
         personal_limits,
         ais,
@@ -148,7 +152,7 @@ pub async fn collect(
         fetched_at: now_millis(),
         since,
         until,
-        providers: vec![business, personal, ais],
+        providers: vec![business, personal, claude, ais],
     })
 }
 

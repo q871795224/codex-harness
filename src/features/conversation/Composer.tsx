@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, FileText, Image, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
+import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
@@ -36,10 +37,13 @@ interface ComposerProps {
   autoFocus?: boolean
   models: CodexModel[]
   settings: ThreadCodexSettings
+  claudeModels?: ClaudeModel[]
+  claudeSettings?: ClaudeSessionSettings
   rawMode: boolean
   followUpMode: FollowUpMode
   settingsDisabled?: boolean
   onSettingsChange: (patch: Partial<ThreadCodexSettings>) => Promise<void> | void
+  onClaudeSettingsChange?: (patch: Partial<ClaudeSessionSettings>) => Promise<void> | void
   onFollowUpModeChange: (mode: FollowUpMode) => void
   onSend: (input: UserInput[], mode: 'interject' | 'queue') => Promise<void> | void
   onCommand: (command: ComposerCommand) => Promise<void> | void
@@ -75,7 +79,7 @@ interface ComposerSuggestion {
   complete?: boolean
 }
 
-export function Composer({ provider = 'codex', initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions }: ComposerProps) {
+export function Composer({ provider = 'codex', initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions }: ComposerProps) {
   const [text, setText] = useState(initialDraft?.text ?? '')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
@@ -95,9 +99,12 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
   const previousFocusRequestRef = useRef(focusRequest)
   const onDraftChangeRef = useRef(onDraftChange)
   const selectedModel = models.find((model) => model.model === settings.model) ?? models[0] ?? null
+  const selectedClaudeModel = claudeModels.find((model) => model.value === claudeSettings?.model) ?? claudeModels[0] ?? null
   const fastTier = fastServiceTier(selectedModel)
   const fastEnabled = fastTier?.id === settings.serviceTier
-  const yoloEnabled = isYoloMode(settings)
+  const yoloEnabled = provider === 'claude'
+    ? claudeSettings?.permissionMode === 'bypassPermissions'
+    : isYoloMode(settings)
   const imageUnsupported = attachments.some((item) => item.kind === 'image') && selectedModel !== null && !selectedModel.inputModalities.includes('image')
   const expandedText = useMemo(() => expandCollapsedPastes(text, collapsedPastes), [collapsedPastes, text])
   const hasContent = Boolean(expandedText.trim() || attachments.length)
@@ -119,14 +126,14 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
           detail: match.path,
         }))
     }
-    if (trigger.kind === 'command') return attachments.length > 0 ? [] : commandSuggestions(trigger.query, models, selectedModel)
+    if (trigger.kind === 'command') return attachments.length > 0 ? [] : commandSuggestions(trigger.query, models, selectedModel, claudeModels, selectedClaudeModel, provider)
     if (provider === 'claude') return []
     const query = trigger.query.toLocaleLowerCase()
     return skills
       .filter((skill) => skill.enabled && (!query || skill.name.toLocaleLowerCase().includes(query) || skill.description.toLocaleLowerCase().includes(query)))
       .slice(0, 8)
       .map((skill) => ({ kind: 'skill', name: skill.name, path: skill.path, detail: skill.description }))
-  }, [attachments.length, fileMatches, models, provider, selectedModel, skills, suggestionsDismissed, trigger])
+  }, [attachments.length, claudeModels, fileMatches, models, provider, selectedClaudeModel, selectedModel, skills, suggestionsDismissed, trigger])
   const suggestionsOpen = Boolean(trigger && !suggestionsDismissed && !(trigger.kind === 'command' && attachments.length > 0))
 
   useLayoutEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
@@ -214,21 +221,19 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
 
   const submit = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return
-    if (provider === 'claude' && working) {
-      setActionError('Claude 一期暂不支持运行中追加消息，请先停止或等待当前任务完成。')
-      return
-    }
     const command = parseComposerCommand(expandedText, attachments.length > 0)
     if (command) {
       if (settingsLocked && ['model', 'reasoning', 'permissions'].includes(command.name)) {
         setActionError('请等待当前回合结束后再修改会话设置。')
         return
       }
-      if (command.name === 'model' && !models.some((model) => model.model === command.model)) {
-        setActionError(`当前 App Server 不支持模型 ${command.model}。`)
+      if (command.name === 'model' && (provider === 'claude'
+        ? !claudeModels.some((model) => model.value === command.model)
+        : !models.some((model) => model.model === command.model))) {
+        setActionError(`${provider === 'claude' ? 'Claude' : 'App Server'} 不支持模型 ${command.model}。`)
         return
       }
-      if (command.name === 'reasoning' && !selectedModel?.supportedReasoningEfforts.some((effort) => effort.reasoningEffort === command.effort)) {
+      if (command.name === 'reasoning' && provider === 'codex' && !selectedModel?.supportedReasoningEfforts.some((effort) => effort.reasoningEffort === command.effort)) {
         setActionError(`当前模型不支持推理强度 ${command.effort}。`)
         return
       }
@@ -318,6 +323,9 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
   const settingsLocked = disabled || busy || settingsDisabled || working
   const updateSettings = (patch: Partial<ThreadCodexSettings>) => {
     void Promise.resolve(onSettingsChange(patch)).catch(() => undefined)
+  }
+  const updateClaudeSettings = (patch: Partial<ClaudeSessionSettings>) => {
+    void Promise.resolve(onClaudeSettingsChange?.(patch)).catch(() => undefined)
   }
 
   return (
@@ -441,17 +449,28 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
               <option value="untrusted">Untrusted</option>
               <option value="never">Never</option>
             </select>}
-            {provider === 'codex' && <button
+            {provider === 'claude' && claudeSettings && <select className="approval-select claude-permission-select" value={claudeSettings.permissionMode} disabled={settingsLocked} onChange={(event) => updateClaudeSettings({ permissionMode: event.target.value as ClaudeSessionSettings['permissionMode'] })} aria-label="Claude 权限模式" title="Claude 权限模式">
+              <option value="default">Ask</option>
+              <option value="acceptEdits">Accept edits</option>
+              <option value="plan">Plan</option>
+              <option value="dontAsk">Don't ask</option>
+              <option value="bypassPermissions">Dangerous</option>
+            </select>}
+            <button
               type="button"
               className={`yolo-mode-button${yoloEnabled ? ' active' : ''}`}
               disabled={settingsLocked}
-              onClick={() => updateSettings(yoloModeSettings(!yoloEnabled))}
-              title={yoloEnabled ? '关闭 YOLO：恢复按需审批和工作区沙箱' : '开启 YOLO：不请求审批并允许完整文件系统访问'}
-              aria-label="切换 YOLO 模式"
+              onClick={() => provider === 'claude'
+                ? updateClaudeSettings({ permissionMode: yoloEnabled ? 'default' : 'bypassPermissions' })
+                : updateSettings(yoloModeSettings(!yoloEnabled))}
+              title={provider === 'claude'
+                ? (yoloEnabled ? '关闭 Dangerous：恢复 Claude 审批' : '开启 Dangerous：绕过 Claude 权限审批')
+                : (yoloEnabled ? '关闭 YOLO：恢复按需审批和工作区沙箱' : '开启 YOLO：不请求审批并允许完整文件系统访问')}
+              aria-label={provider === 'claude' ? '切换 Dangerous 模式' : '切换 YOLO 模式'}
               aria-pressed={yoloEnabled}
             >
               <ShieldOff size={14} />
-            </button>}
+            </button>
             {provider === 'codex' && fastTier && (
               <button
                 type="button"
@@ -482,7 +501,18 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
                 {(selectedModel?.supportedReasoningEfforts ?? []).map((option) => <option key={option.reasoningEffort} value={option.reasoningEffort}>{option.reasoningEffort}</option>)}
               </select>
             </div>}
-            {provider === 'codex' && <ContextRing usage={contextUsage} />}
+            {provider === 'claude' && claudeSettings && <div className="model-effort-control">
+              <select value={claudeSettings.model ?? selectedClaudeModel?.value ?? ''} disabled={settingsLocked || claudeModels.length === 0} onChange={(event) => {
+                const model = claudeModels.find((candidate) => candidate.value === event.target.value)
+                updateClaudeSettings({ model: event.target.value, effort: model?.supportedEffortLevels[0] ?? null })
+              }} aria-label="Claude 模型" title={selectedClaudeModel?.description ?? 'Claude 模型'}>
+                {claudeModels.map((model) => <option key={model.value} value={model.value}>{model.displayName}</option>)}
+              </select>
+              {selectedClaudeModel?.supportedEffortLevels.length ? <select className="effort-select" value={claudeSettings.effort ?? selectedClaudeModel.supportedEffortLevels[0]} disabled={settingsLocked} onChange={(event) => updateClaudeSettings({ effort: event.target.value })} aria-label="Claude 推理强度" title={`推理强度：${claudeSettings.effort ?? selectedClaudeModel.supportedEffortLevels[0]}`}>
+                {selectedClaudeModel.supportedEffortLevels.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
+              </select> : null}
+            </div>}
+            <ContextRing usage={contextUsage} provider={provider} />
             <div className="send-control">
               <button
                 type="button"
@@ -494,10 +524,10 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
               >
                 {working && !hasContent ? <Square size={13} fill="currentColor" /> : <Send size={17} />}
               </button>
-              {provider === 'codex' && working && !foreignActive && (
+              {working && !foreignActive && (
                 <button type="button" className="follow-up-toggle" disabled={busy} onClick={() => setModeOpen((open) => !open)} title={`默认：${followUpMode === 'queue' ? '排队' : '插话'}`} aria-label="选择后续消息默认行为"><ChevronDown size={13} /></button>
               )}
-              {provider === 'codex' && working && !foreignActive && modeOpen && (
+              {working && !foreignActive && modeOpen && (
                 <div className="follow-up-menu">
                   <button type="button" className={followUpMode === 'queue' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('queue'); setModeOpen(false) }}><strong>默认排队</strong><small>当前回合完成后，开始新的回合</small></button>
                   <button type="button" className={followUpMode === 'interject' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('interject'); setModeOpen(false) }}><strong>默认插话</strong><small>不停止当前回合，追加新的方向</small></button>
@@ -511,7 +541,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
   )
 }
 
-function commandSuggestions(query: string, models: CodexModel[], selectedModel: CodexModel | null): ComposerSuggestion[] {
+function commandSuggestions(query: string, models: CodexModel[], selectedModel: CodexModel | null, claudeModels: ClaudeModel[], selectedClaudeModel: ClaudeModel | null, provider: 'codex' | 'claude'): ComposerSuggestion[] {
   const separator = query.indexOf(' ')
   if (separator < 0) {
     const normalized = query.toLocaleLowerCase()
@@ -519,8 +549,10 @@ function commandSuggestions(query: string, models: CodexModel[], selectedModel: 
       { name: 'new', detail: '新建会话', complete: true },
       { name: 'reset', detail: '清空当前会话并开始新会话', complete: true },
       { name: 'model', detail: '选择当前会话模型', complete: false },
-      { name: 'reasoning', detail: '选择推理强度', complete: false },
-      { name: 'permissions', detail: '选择审批策略', complete: false },
+      ...(provider === 'codex' ? [
+        { name: 'reasoning', detail: '选择推理强度', complete: false },
+        { name: 'permissions', detail: '选择审批策略', complete: false },
+      ] : selectedClaudeModel?.supportedEffortLevels.length ? [{ name: 'reasoning', detail: '选择 Claude 推理强度', complete: false }] : []),
       { name: 'raw', detail: '切换原始 Markdown 显示', complete: true },
     ].filter((command) => command.name.includes(normalized)).map((command) => ({
       kind: 'command',
@@ -533,13 +565,21 @@ function commandSuggestions(query: string, models: CodexModel[], selectedModel: 
 
   const name = query.slice(0, separator)
   const argument = query.slice(separator + 1).trim().toLocaleLowerCase()
-  if (name === 'model') return models
-    .filter((model) => !argument || model.model.toLocaleLowerCase().includes(argument) || model.displayName.toLocaleLowerCase().includes(argument))
-    .map((model) => ({ kind: 'command', name: model.displayName, detail: model.description, replacement: `/model ${model.model}`, complete: true }))
-  if (name === 'reasoning') return (selectedModel?.supportedReasoningEfforts ?? [])
-    .filter((effort) => !argument || effort.reasoningEffort.toLocaleLowerCase().includes(argument))
-    .map((effort) => ({ kind: 'command', name: effort.reasoningEffort, detail: effort.description, replacement: `/reasoning ${effort.reasoningEffort}`, complete: true }))
-  if (name === 'permissions') return [
+  if (name === 'model') return provider === 'claude'
+    ? claudeModels
+      .filter((model) => !argument || model.value.toLocaleLowerCase().includes(argument) || model.displayName.toLocaleLowerCase().includes(argument))
+      .map((model) => ({ kind: 'command', name: model.displayName, detail: model.description, replacement: `/model ${model.value}`, complete: true }))
+    : models
+      .filter((model) => !argument || model.model.toLocaleLowerCase().includes(argument) || model.displayName.toLocaleLowerCase().includes(argument))
+      .map((model) => ({ kind: 'command', name: model.displayName, detail: model.description, replacement: `/model ${model.model}`, complete: true }))
+  if (name === 'reasoning') return provider === 'claude'
+    ? (selectedClaudeModel?.supportedEffortLevels ?? [])
+      .filter((effort) => !argument || effort.toLocaleLowerCase().includes(argument))
+      .map((effort) => ({ kind: 'command', name: effort, detail: 'Claude 推理强度', replacement: `/reasoning ${effort}`, complete: true }))
+    : (selectedModel?.supportedReasoningEfforts ?? [])
+      .filter((effort) => !argument || effort.reasoningEffort.toLocaleLowerCase().includes(argument))
+      .map((effort) => ({ kind: 'command', name: effort.reasoningEffort, detail: effort.description, replacement: `/reasoning ${effort.reasoningEffort}`, complete: true }))
+  if (name === 'permissions' && provider === 'codex') return [
     { value: 'on-request', label: 'On request' },
     { value: 'untrusted', label: 'Untrusted' },
     { value: 'never', label: 'Never' },
@@ -553,14 +593,14 @@ function attachmentFromPath(path: string): ComposerAttachment {
   return { path, name, kind: /\.(avif|bmp|gif|heic|heif|jpe?g|png|tiff?|webp)$/i.test(name) ? 'image' : 'file' }
 }
 
-function ContextRing({ usage }: { usage: ThreadTokenUsage | null }) {
+function ContextRing({ usage, provider }: { usage: ThreadTokenUsage | null; provider: 'codex' | 'claude' }) {
   const windowSize = usage?.modelContextWindow ?? null
-  const used = usage?.last.totalTokens ?? null
+  const used = usage?.contextTokens ?? usage?.last.totalTokens ?? null
   const percent = windowSize && used !== null ? Math.min(100, Math.max(0, (used / windowSize) * 100)) : 0
   const circumference = 2 * Math.PI * 9
   const dashOffset = circumference * (1 - percent / 100)
   const tone = percent >= 90 ? 'danger' : percent >= 75 ? 'warning' : ''
-  const label = windowSize && used !== null ? `上下文已使用 ${formatTokens(used)} / ${formatTokens(windowSize)} tokens（${Math.round(percent)}%）` : '等待 App Server 提供上下文窗口用量'
+  const label = windowSize && used !== null ? `上下文已使用 ${formatTokens(used)} / ${formatTokens(windowSize)} tokens（${Math.round(percent)}%）` : `等待${provider === 'claude' ? ' Claude' : ' App Server'} 提供上下文窗口用量`
   return <span className={`context-ring ${tone}`} title={label} aria-label={label}><svg viewBox="0 0 24 24" aria-hidden><circle className="context-ring-track" cx="12" cy="12" r="9" /><circle className="context-ring-progress" cx="12" cy="12" r="9" strokeDasharray={circumference} strokeDashoffset={dashOffset} /></svg></span>
 }
 

@@ -10,9 +10,10 @@ export const lunaPlugin: HarnessPlugin = {
     id: 'builtin.temporary-agent',
     name: 'Luna',
     description: '把当前会话已经对齐的内容整理成 handoff，再交给 Luna Max 实施。',
-    version: '1.1.0',
+    version: '1.1.1',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
+    supportedProviders: ['codex'],
   },
   activate(ctx) {
     ctx.slots.composerActions.register({

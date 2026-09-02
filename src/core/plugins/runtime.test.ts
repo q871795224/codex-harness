@@ -20,7 +20,7 @@ function instance(overrides: Partial<PluginInstanceRecord> = {}): PluginInstance
   }
 }
 
-function plugin(id: string, activate: HarnessPlugin['activate'] = () => undefined, requires: string[] = []): HarnessPlugin {
+function plugin(id: string, activate: HarnessPlugin['activate'] = () => undefined, requires: string[] = [], supportedProviders?: HarnessPlugin['manifest']['supportedProviders']): HarnessPlugin {
   return {
     manifest: {
       schemaVersion: 1,
@@ -31,6 +31,7 @@ function plugin(id: string, activate: HarnessPlugin['activate'] = () => undefine
       engine: { codexHarness: '^0.1.0' },
       supportedScopes: ['global', 'workspace', 'thread'],
       requires,
+      supportedProviders,
     },
     activate,
   }
@@ -70,6 +71,19 @@ describe('scoped contributions', () => {
     ], { threadId: 'thread-1', threadCwd: '/repo', workspaceRoot: '/repo' })
 
     expect(resolved.map((entry) => entry.contribution.id)).toEqual(['global-job', 'workspace-job'])
+  })
+
+  it('filters provider-specific contributions without deactivating their instances', async () => {
+    const codexOnly = plugin('codex-only', (ctx) => {
+      ctx.slots.conversationTabs.register({ id: 'tab', label: 'Codex', render: () => null })
+    }, [], ['codex'])
+    const host = new PluginHost([codexOnly], { storage: () => storage })
+    await host.syncInstances([instance({ pluginId: 'codex-only' })])
+
+    expect(host.resolvedTabs({ provider: 'codex', threadId: 'codex-1', threadCwd: '/repo', workspaceRoot: '/repo' })).toHaveLength(1)
+    expect(host.resolvedTabs({ provider: 'claude', threadId: 'claude-1', threadCwd: '/repo', workspaceRoot: '/repo' })).toHaveLength(0)
+    expect(host.status('instance-1').phase).toBe('active')
+    await host.dispose()
   })
 })
 

@@ -173,27 +173,35 @@ export class PluginHost {
   }
 
   resolvedTabs(context: PluginViewContext): ResolvedContribution<ConversationTabContribution>[] {
-    return resolveScopedContributions(this.tabs.list(), context)
+    return this.filterProvider(resolveScopedContributions(this.tabs.list(), context), context)
   }
 
   resolvedThreadHeaderActions(context: PluginViewContext): ResolvedContribution<ThreadHeaderActionContribution>[] {
-    return resolveScopedContributions(this.threadHeaderActions.list(), context)
+    return this.filterProvider(resolveScopedContributions(this.threadHeaderActions.list(), context), context)
   }
 
   resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[] {
-    return resolveScopedContributions(this.newThreadPanels.list(), context)
+    return this.filterProvider(resolveScopedContributions(this.newThreadPanels.list(), context), context)
   }
 
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[] {
-    return resolveScopedContributions(this.composerActions.list(), context)
+    return this.filterProvider(resolveScopedContributions(this.composerActions.list(), context), context)
   }
 
   resolvedQuickActions(context: PluginViewContext): ResolvedContribution<QuickActionContribution>[] {
-    return resolveScopedContributions(this.quickActions.list(), context)
+    return this.filterProvider(resolveScopedContributions(this.quickActions.list(), context), context)
   }
 
   resolvedQuickCommands(context: PluginViewContext): ResolvedContribution<QuickCommandContribution>[] {
-    return resolveScopedContributions(this.quickCommands.list(), context)
+    return this.filterProvider(resolveScopedContributions(this.quickCommands.list(), context), context)
+  }
+
+  private filterProvider<T>(entries: ResolvedContribution<T>[], context: PluginViewContext): ResolvedContribution<T>[] {
+    if (!context.provider) return entries
+    return entries.filter((entry) => {
+      const supported = this.definitions.get(entry.pluginId)?.manifest.supportedProviders
+      return !supported || supported.includes(context.provider!)
+    })
   }
 
   syncInstances(instances: PluginInstanceRecord[]): Promise<void> {

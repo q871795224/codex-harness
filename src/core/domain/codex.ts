@@ -325,6 +325,7 @@ export interface ThreadTokenUsage {
   total: TokenUsageBreakdown
   last: TokenUsageBreakdown
   modelContextWindow: number | null
+  contextTokens?: number | null
 }
 
 export interface TurnPlanStep {
@@ -377,6 +378,8 @@ export interface ThreadDetail {
   activePermissionProfile: ActivePermissionProfile | null
   model: string | null
   threadSettings?: Partial<ThreadCodexSettings> | null
+  tokenUsage?: ThreadTokenUsage | null
+  costUsd?: number | null
 }
 
 export function emptyThreadDetail(
@@ -395,6 +398,8 @@ export function emptyThreadDetail(
     activePermissionProfile: runtime.activePermissionProfile ?? null,
     model: runtime.model ?? null,
     threadSettings: runtime.threadSettings ?? null,
+    tokenUsage: null,
+    costUsd: null,
   }
 }
 

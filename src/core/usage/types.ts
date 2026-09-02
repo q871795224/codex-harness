@@ -1,4 +1,4 @@
-export type UsageProviderId = 'codex-business' | 'codex-personal' | 'ais'
+export type UsageProviderId = 'codex-business' | 'codex-personal' | 'claude' | 'ais'
 export type UsageProviderStatus = 'ready' | 'unavailable' | 'error'
 
 export interface UsageTotals {
@@ -36,7 +36,7 @@ export interface UsageBudget {
 export interface UsageProvider {
   id: UsageProviderId
   label: string
-  sourceKind: 'codex' | 'ais'
+  sourceKind: 'codex' | 'claude' | 'ais'
   status: UsageProviderStatus
   message: string | null
   totals: UsageTotals

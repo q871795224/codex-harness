@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { emptyThreadDetail, type ApprovalRequest, type Thread, type ThreadDetail, type Turn, type UserInput } from '../../core/domain/codex'
+import { emptyThreadDetail, textInput, type ApprovalRequest, type QueuedSubmission, type Thread, type ThreadDetail, type Turn, type UserInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import { approvalRequestFromEvent, reconcileClaudeApprovalSnapshot } from '../../core/claude/approvalState'
-import type { ClaudeAdapterEvent, ClaudeProviderSnapshot, ClaudeRuntimeStatus, ClaudeSessionRecord, ClaudeTransportEvent } from '../../core/claude/types'
+import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeProviderSnapshot, ClaudeRuntimeStatus, ClaudeSessionRecord, ClaudeSessionSettings, ClaudeTransportEvent } from '../../core/claude/types'
+import { DEFAULT_CLAUDE_SESSION_SETTINGS } from '../../core/claude/types'
 import { reduceClaudeEvent } from '../../core/claude/eventReducer'
 import { reduceThreadDetailEvent } from '../conversation/conversationEventReducer'
+import type { TurnCompletedEvent } from '../../core/conversations/types'
 
 const CLAUDE_MAX_TURNS = 65_536
-const CLAUDE_PERMISSION_MODE = 'bypassPermissions' as const
+const CLAUDE_SESSION_SETTINGS_KEY = 'claude.sessionSettings'
 
 interface ClaudeToast {
   kind: 'error' | 'info'
@@ -21,11 +23,19 @@ export function useClaudeHarness() {
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
   const [activeTurnIds, setActiveTurnIds] = useState<Record<string, string>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
+  const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
+  const [models, setModels] = useState<ClaudeModel[]>([])
+  const [sessionSettings, setSessionSettings] = useState<Record<string, ClaudeSessionSettings>>({})
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [toast, setToast] = useState<ClaudeToast | null>(null)
   const sessionsRef = useRef<ClaudeSessionRecord[]>([])
   const activeTurnIdsRef = useRef<Record<string, string>>({})
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
+  const queuesRef = useRef<Record<string, QueuedSubmission[]>>({})
+  const settingsRef = useRef<Record<string, ClaudeSessionSettings>>({})
+  const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
+  const manualStopRef = useRef(new Set<string>())
+  const interjectRef = useRef(new Set<string>())
   const daemonInstanceIdRef = useRef<string | null>(null)
   const approvalEventSeqRef = useRef<Record<string, number>>({})
   const approvalResolvedSeqRef = useRef<Record<string, number>>({})
@@ -33,21 +43,96 @@ export function useClaudeHarness() {
   useEffect(() => { sessionsRef.current = sessions }, [sessions])
   useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
+  useEffect(() => { queuesRef.current = queues }, [queues])
+  useEffect(() => { settingsRef.current = sessionSettings }, [sessionSettings])
   useEffect(() => {
     if (!toast) return undefined
     const timer = window.setTimeout(() => setToast(null), toast.kind === 'error' ? 6_000 : 3_500)
     return () => window.clearTimeout(timer)
   }, [toast])
 
+  useEffect(() => {
+    void runtime.getAppState(CLAUDE_SESSION_SETTINGS_KEY).then((value) => {
+      const parsed = parseSessionSettings(value)
+      settingsRef.current = parsed
+      setSessionSettings(parsed)
+    }).catch(() => undefined)
+  }, [])
+
   const notify = useCallback((message: string, kind: ClaudeToast['kind'] = 'info') => {
     setToast({ message, kind })
   }, [])
+
+  const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
+    turnCompletedListenersRef.current.add(listener)
+    return () => { turnCompletedListenersRef.current.delete(listener) }
+  }, [])
+
+  useEffect(() => {
+    const cwd = sessions[0]?.cwd
+    if (!status?.available || !cwd) return
+    let disposed = false
+    void runtime.listClaudeModels(cwd).then((result) => {
+      if (!disposed) setModels(result.models)
+    }).catch((error) => {
+      if (!disposed) notify(`无法读取 Claude 模型列表：${messageOf(error)}`, 'error')
+    })
+    return () => { disposed = true }
+  }, [notify, sessions[0]?.cwd, status?.available])
 
   const refresh = useCallback(async (archived = false) => {
     const next = await runtime.listClaudeSessions(archived)
     sessionsRef.current = next
     setSessions(next)
     return next
+  }, [])
+
+  const settingsForSession = useCallback((sessionId: string | null): ClaudeSessionSettings => {
+    if (!sessionId) return DEFAULT_CLAUDE_SESSION_SETTINGS
+    return sessionSettings[sessionId] ?? DEFAULT_CLAUDE_SESSION_SETTINGS
+  }, [sessionSettings])
+
+  const updateSessionSettings = useCallback((sessionId: string, patch: Partial<ClaudeSessionSettings>) => {
+    setSessionSettings((current) => {
+      const next = {
+        ...current,
+        [sessionId]: { ...DEFAULT_CLAUDE_SESSION_SETTINGS, ...(current[sessionId] ?? {}), ...patch },
+      }
+      settingsRef.current = next
+      void runtime.setAppState(CLAUDE_SESSION_SETTINGS_KEY, JSON.stringify(next)).catch(() => undefined)
+      return next
+    })
+  }, [])
+
+  const refreshContext = useCallback(async (sessionId: string) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session || !session.providerSessionId) return
+    try {
+      const context = await runtime.readClaudeContext(sessionId, session.cwd, session.providerSessionId)
+      if (!context) return
+      setDetails((current) => {
+        const detail = current[sessionId]
+        if (!detail) return current
+        const tokenUsage = detail.tokenUsage ?? {
+          total: emptyTokenBreakdown(),
+          last: emptyTokenBreakdown(),
+          modelContextWindow: context.rawMaxTokens || context.maxTokens || null,
+        }
+        return {
+          ...current,
+          [sessionId]: {
+            ...detail,
+            tokenUsage: {
+              ...tokenUsage,
+              modelContextWindow: context.rawMaxTokens || context.maxTokens || tokenUsage.modelContextWindow,
+              contextTokens: context.totalTokens,
+            },
+          },
+        }
+      })
+    } catch {
+      // The usage event already provides a safe fallback for the context ring.
+    }
   }, [])
 
   const persistProviderSession = useCallback(async (sessionId: string, providerSessionId: string) => {
@@ -65,6 +150,155 @@ export function useClaudeHarness() {
       return next
     })
   }, [])
+
+  const beginTurn = useCallback(async (sessionId: string, input: UserInput[], turnId = `claude-turn:${crypto.randomUUID()}`) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session || input.length === 0) return
+    if (activeTurnIdsRef.current[sessionId]) throw new Error('Claude 会话当前正在运行')
+    const userItemId = `${turnId}:user`
+    const startedAt = Date.now()
+    const newTurn: Turn = {
+      id: turnId,
+      items: [],
+      status: 'inProgress',
+      error: null,
+      startedAt,
+      completedAt: null,
+      durationMs: null,
+    }
+    const nextActive = { ...activeTurnIdsRef.current, [sessionId]: turnId }
+    activeTurnIdsRef.current = nextActive
+    setActiveTurnIds(nextActive)
+    setBusy((current) => ({ ...current, composer: true }))
+    setDetails((current) => {
+      const base = current[sessionId] ?? emptyThreadDetail(sessionThread(session))
+      const withTurn = reduceThreadDetailEvent(base, { type: 'turnStarted', turn: newTurn })
+      const withUser = reduceThreadDetailEvent(withTurn, {
+        type: 'itemUpserted',
+        turnId,
+        item: { id: userItemId, type: 'userMessage', content: input },
+      })
+      return { ...current, [sessionId]: { ...withUser, activeTurnId: turnId } }
+    })
+    const settings = settingsRef.current[sessionId] ?? DEFAULT_CLAUDE_SESSION_SETTINGS
+    const selectedModel = models.find((model) => model.value === settings.model) ?? models[0] ?? null
+    const model = selectedModel?.value
+    const effort = selectedModel && selectedModel.supportedEffortLevels.includes(settings.effort ?? '')
+      ? settings.effort!
+      : selectedModel?.supportedEffortLevels[0]
+    try {
+      await runtime.startClaudeTurn({
+        sessionId,
+        providerSessionId: session.providerSessionId,
+        turnId,
+        cwd: session.cwd,
+        input,
+        ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
+        permissionMode: settings.permissionMode,
+        maxTurns: CLAUDE_MAX_TURNS,
+      })
+    } catch (error) {
+      setDetails((current) => {
+        const detail = current[sessionId]
+        if (!detail) return current
+        return {
+          ...current,
+          [sessionId]: reduceClaudeEvent(detail, {
+            method: 'turn/failed',
+            params: { sessionId, turnId, message: messageOf(error) },
+          }),
+        }
+      })
+      const next = { ...activeTurnIdsRef.current }
+      if (next[sessionId] === turnId) delete next[sessionId]
+      activeTurnIdsRef.current = next
+      setActiveTurnIds(next)
+      notify(`无法发送 Claude 消息：${messageOf(error)}`, 'error')
+      throw error
+    } finally {
+      setBusy((current) => ({ ...current, composer: false }))
+    }
+  }, [models, notify])
+
+  const drainQueue = useCallback(async (sessionId: string) => {
+    if (activeTurnIdsRef.current[sessionId]) return
+    if (manualStopRef.current.delete(sessionId)) return
+    const queue = queuesRef.current[sessionId] ?? []
+    const next = queue[0]
+    if (!next) {
+      interjectRef.current.delete(sessionId)
+      return
+    }
+    const remaining = queue.slice(1)
+    queuesRef.current = { ...queuesRef.current, [sessionId]: remaining }
+    setQueues(queuesRef.current)
+    interjectRef.current.delete(sessionId)
+    await beginTurn(sessionId, next.input)
+  }, [beginTurn])
+
+  const sendMessage = useCallback(async (sessionId: string, input: UserInput[], mode: 'interject' | 'queue') => {
+    if (input.length === 0) return
+    if (!activeTurnIdsRef.current[sessionId]) {
+      await beginTurn(sessionId, input)
+      return
+    }
+    const queued: QueuedSubmission = {
+      id: `claude-queue:${crypto.randomUUID()}`,
+      input,
+      clientUserMessageId: crypto.randomUUID(),
+    }
+    const nextQueue = [...(queuesRef.current[sessionId] ?? []), queued]
+    queuesRef.current = { ...queuesRef.current, [sessionId]: nextQueue }
+    setQueues(queuesRef.current)
+    if (mode === 'interject' && !interjectRef.current.has(sessionId)) {
+      interjectRef.current.add(sessionId)
+      try {
+        await runtime.interruptClaudeTurn(sessionId)
+      } catch (error) {
+        interjectRef.current.delete(sessionId)
+        notify(`无法插话 Claude turn：${messageOf(error)}`, 'error')
+      }
+    }
+  }, [beginTurn, notify])
+
+  const editQueue = useCallback((sessionId: string, queueId: string, text: string) => {
+    const value = text.trim()
+    if (!value) return
+    const nextQueue = (queuesRef.current[sessionId] ?? []).map((item) => item.id === queueId
+      ? { ...item, input: [textInput(value)] }
+      : item)
+    queuesRef.current = { ...queuesRef.current, [sessionId]: nextQueue }
+    setQueues(queuesRef.current)
+  }, [])
+
+  const removeQueue = useCallback((sessionId: string, queueId: string) => {
+    const nextQueue = (queuesRef.current[sessionId] ?? []).filter((item) => item.id !== queueId)
+    queuesRef.current = { ...queuesRef.current, [sessionId]: nextQueue }
+    setQueues(queuesRef.current)
+  }, [])
+
+  const promoteQueue = useCallback(async (sessionId: string, item: QueuedSubmission) => {
+    const queue = queuesRef.current[sessionId] ?? []
+    const promoted = queue.find((candidate) => candidate.id === item.id)
+    if (!promoted) return
+    const nextQueue = [promoted, ...queue.filter((candidate) => candidate.id !== item.id)]
+    queuesRef.current = { ...queuesRef.current, [sessionId]: nextQueue }
+    setQueues(queuesRef.current)
+    if (activeTurnIdsRef.current[sessionId] && !interjectRef.current.has(sessionId)) {
+      interjectRef.current.add(sessionId)
+      try {
+        await runtime.interruptClaudeTurn(sessionId)
+      } catch (error) {
+        interjectRef.current.delete(sessionId)
+        notify(`无法插话 Claude turn：${messageOf(error)}`, 'error')
+      }
+    } else {
+      await drainQueue(sessionId)
+    }
+  }, [drainQueue, notify])
+
+  const startQueue = useCallback((sessionId: string) => drainQueue(sessionId), [drainQueue])
 
   const replaceApprovals = useCallback((next: Record<string, ApprovalRequest[]>) => {
     approvalsRef.current = next
@@ -159,9 +393,13 @@ export function useClaudeHarness() {
         activeTurnIdsRef.current = next
         return next
       })
-      setSessions((current) => current.map((session) => session.id === sessionId
-        ? { ...session, updatedAt: Date.now() }
-        : session))
+      setSessions((current) => {
+        const next = current.map((session) => session.id === sessionId
+          ? { ...session, updatedAt: Date.now() }
+          : session)
+        sessionsRef.current = next
+        return next
+      })
     }
     if (!event.replayed && (event.method === 'turn/completed' || event.method === 'turn/failed' || event.method === 'turn/interrupted')) {
       const eventSeq = eventSequence(event)
@@ -178,8 +416,29 @@ export function useClaudeHarness() {
       })
       replaceApprovals({ ...approvalsRef.current, [sessionId]: [] })
       if (event.method === 'turn/failed') notify(typeof params.message === 'string' ? params.message : 'Claude turn 失败', 'error')
+      if (event.method === 'turn/completed') {
+        const providerSessionId = typeof params.providerSessionId === 'string' ? params.providerSessionId : null
+        if (providerSessionId) {
+          void persistProviderSession(sessionId, providerSessionId)
+            .then(() => refreshContext(sessionId))
+            .catch(() => undefined)
+        } else {
+          void refreshContext(sessionId)
+        }
+        const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+        if (session) {
+          const completedEvent: TurnCompletedEvent = {
+            threadId: sessionId,
+            turnId: typeof params.turnId === 'string' ? params.turnId : '',
+            title: session.title,
+            status: 'completed',
+          }
+          for (const listener of turnCompletedListenersRef.current) listener(completedEvent)
+        }
+      }
+      void drainQueue(sessionId).catch((error) => notify(`无法继续 Claude 排队消息：${messageOf(error)}`, 'error'))
     }
-  }, [notify, persistProviderSession, removeApproval, replaceApprovals])
+  }, [drainQueue, notify, persistProviderSession, refreshContext, removeApproval, replaceApprovals])
 
   useEffect(() => {
     let disposed = false
@@ -300,6 +559,11 @@ export function useClaudeHarness() {
         return next
       })
       setDetails((current) => ({ ...current, [session.id]: emptyThreadDetail(sessionThread(session)) }))
+      setSessionSettings((current) => {
+        const next = { ...current, [session.id]: current[session.id] ?? DEFAULT_CLAUDE_SESSION_SETTINGS }
+        settingsRef.current = next
+        return next
+      })
       return session.id
     } catch (error) {
       notify(`无法创建 Claude 会话：${messageOf(error)}`, 'error')
@@ -309,84 +573,19 @@ export function useClaudeHarness() {
     }
   }, [notify])
 
-  const sendMessage = useCallback(async (sessionId: string, input: UserInput[]) => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session || input.length === 0) return
-    if (activeTurnIds[sessionId]) throw new Error('Claude 会话当前正在运行')
-    const turnId = `claude-turn:${crypto.randomUUID()}`
-    const userItemId = `${turnId}:user`
-    const startedAt = Date.now()
-    const newTurn: Turn = {
-      id: turnId,
-      items: [],
-      status: 'inProgress',
-      error: null,
-      startedAt,
-      completedAt: null,
-      durationMs: null,
-    }
-    setBusy((current) => ({ ...current, composer: true }))
-    setActiveTurnIds((current) => {
-      const next = { ...current, [sessionId]: turnId }
-      activeTurnIdsRef.current = next
-      return next
-    })
-    setDetails((current) => {
-      const base = current[sessionId] ?? emptyThreadDetail(sessionThread(session))
-      const withTurn = reduceThreadDetailEvent(base, { type: 'turnStarted', turn: newTurn })
-      const withUser = reduceThreadDetailEvent(withTurn, {
-        type: 'itemUpserted',
-        turnId,
-        item: { id: userItemId, type: 'userMessage', content: input },
-      })
-      return { ...current, [sessionId]: { ...withUser, activeTurnId: turnId } }
-    })
-    try {
-      await runtime.startClaudeTurn({
-        sessionId,
-        providerSessionId: session.providerSessionId,
-        turnId,
-        cwd: session.cwd,
-        input,
-        permissionMode: CLAUDE_PERMISSION_MODE,
-        maxTurns: CLAUDE_MAX_TURNS,
-      })
-    } catch (error) {
-      setDetails((current) => {
-        const detail = current[sessionId]
-        if (!detail) return current
-        return {
-          ...current,
-          [sessionId]: reduceClaudeEvent(detail, {
-            method: 'turn/failed',
-            params: { sessionId, turnId, message: messageOf(error) },
-          }),
-        }
-      })
-      setActiveTurnIds((current) => {
-        const next = { ...current }
-        delete next[sessionId]
-        activeTurnIdsRef.current = next
-        return next
-      })
-      notify(`无法发送 Claude 消息：${messageOf(error)}`, 'error')
-      throw error
-    } finally {
-      setBusy((current) => ({ ...current, composer: false }))
-    }
-  }, [activeTurnIds, notify])
-
   const stopTurn = useCallback(async (sessionId: string) => {
-    if (!activeTurnIds[sessionId]) return
+    if (!activeTurnIdsRef.current[sessionId]) return
+    manualStopRef.current.add(sessionId)
     setBusy((current) => ({ ...current, stop: true }))
     try {
       await runtime.interruptClaudeTurn(sessionId)
     } catch (error) {
+      manualStopRef.current.delete(sessionId)
       notify(`无法停止 Claude turn：${messageOf(error)}`, 'error')
     } finally {
       setBusy((current) => ({ ...current, stop: false }))
     }
-  }, [activeTurnIds, notify])
+  }, [notify])
 
   const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
     const allow = decision === 'accept' || decision === 'approved' || decision === 'acceptForSession'
@@ -427,6 +626,12 @@ export function useClaudeHarness() {
       sessionsRef.current = next
       return next
     })
+    if (archived) {
+      const nextQueues = { ...queuesRef.current }
+      delete nextQueues[sessionId]
+      queuesRef.current = nextQueues
+      setQueues(nextQueues)
+    }
     notify(archived ? '已归档 Claude 会话' : '已恢复 Claude 会话')
   }, [notify])
 
@@ -438,13 +643,24 @@ export function useClaudeHarness() {
     details,
     activeTurnIds,
     approvals,
+    queues,
+    models,
+    sessionSettings,
     busy,
     toast,
     refresh,
+    settingsForSession,
+    updateSessionSettings,
+    refreshContext,
+    onTurnCompleted,
     selectSession,
     createSession,
     sendMessage,
     stopTurn,
+    editQueue: (sessionId: string, queueId: string, text: string) => editQueue(sessionId, queueId, text),
+    removeQueue: (sessionId: string, queueId: string) => removeQueue(sessionId, queueId),
+    promoteQueue: (sessionId: string, item: QueuedSubmission) => promoteQueue(sessionId, item),
+    startQueue: (sessionId: string) => startQueue(sessionId),
     answerApproval,
     renameSession,
     archiveSession: (sessionId: string) => setArchived(sessionId, true),
@@ -471,6 +687,42 @@ function sessionThread(session: ClaudeSessionRecord, active = false): Thread {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function parseSessionSettings(value: string | null): Record<string, ClaudeSessionSettings> {
+  if (!value) return {}
+  try {
+    const raw = JSON.parse(value)
+    if (!raw || typeof raw !== 'object') return {}
+    const result: Record<string, ClaudeSessionSettings> = {}
+    for (const [sessionId, candidate] of Object.entries(raw)) {
+      if (!candidate || typeof candidate !== 'object') continue
+      const input = candidate as Record<string, unknown>
+      const permissionMode = input.permissionMode === 'acceptEdits' || input.permissionMode === 'plan'
+        || input.permissionMode === 'dontAsk' || input.permissionMode === 'bypassPermissions'
+        ? input.permissionMode
+        : 'default'
+      result[sessionId] = {
+        model: typeof input.model === 'string' && input.model ? input.model : null,
+        effort: typeof input.effort === 'string' && input.effort ? input.effort : null,
+        permissionMode,
+      }
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+function emptyTokenBreakdown() {
+  return {
+    totalTokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+  }
 }
 
 function unavailableStatus(error: string): ClaudeRuntimeStatus {

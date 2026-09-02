@@ -19,7 +19,7 @@ export const quickAgentPlugin: HarnessPlugin = {
     id: 'builtin.quick-agent',
     name: '快捷 Agent',
     description: '在独立会话中使用预设模型和权限执行固定 Job。',
-    version: '1.2.0',
+    version: '1.3.0',
     engine: { codexHarness: '^0.3.0' },
     supportedScopes: ['global', 'workspace'],
   },
@@ -35,11 +35,12 @@ export const quickAgentPlugin: HarnessPlugin = {
     ctx.slots.quickActions.register({
       id: job.id,
       label: job.name,
-      async run({ checkoutRoot, threadId }) {
+      async run({ checkoutRoot, threadId, provider }) {
         if (!checkoutRoot) throw new Error('请先打开一个具有工作目录的会话。')
         if (job.completion === 'return-to-parent' && !threadId) throw new Error('结果回传需要从会话中启动。')
         await agentRuns.start({
           instanceId: ctx.instanceId,
+          provider: provider ?? (threadId?.startsWith('claude:') ? 'claude' : 'codex'),
           title: job.name,
           mode: job.completion === 'return-to-parent' ? 'delegated' : 'detached',
           workspaceAccess: job.workspaceAccess,

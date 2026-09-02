@@ -153,6 +153,7 @@ export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode 
 }
 
 interface ConversationViewProps {
+  provider?: 'codex' | 'claude'
   items: ThreadItemEntry[]
   turns: Turn[]
   cwd: string
@@ -185,7 +186,7 @@ interface ConversationViewProps {
   continueDisabled?: boolean
 }
 
-export function ConversationView({ items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
+export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -222,6 +223,7 @@ export function ConversationView({ items, turns, cwd, approvals, workspace, work
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
   const rawTranscriptRows = items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
+  const agentLabel = provider === 'claude' ? 'Claude' : 'Codex'
   const turnDetails = turns.map((turn) => ({ id: turn.id, status: turn.status, error: turn.error }))
   const activeTurnIndex = turnDetails.findIndex((turn) => turn.id === workingTurnId)
   if (workingTurnId && activeTurnIndex >= 0) turnDetails[activeTurnIndex] = { ...turnDetails[activeTurnIndex], status: 'inProgress' }
@@ -282,7 +284,7 @@ export function ConversationView({ items, turns, cwd, approvals, workspace, work
                     </select>
                     <ChevronDown size={14} aria-hidden />
                   </span>
-                  开启一段新的 Codex 会话吧。
+                  开启一段新的 {provider === 'claude' ? 'Claude' : 'Codex'} 会话吧。
                 </p>
               </div>
               {newThreadPanels}
@@ -296,6 +298,7 @@ export function ConversationView({ items, turns, cwd, approvals, workspace, work
               showAgentLabel={row.showAgentLabel}
               rawMode
               cwd={cwd}
+              agentLabel={agentLabel}
               onOpenThread={onOpenThread}
               workingStartedAt={index === workingMessageIndex ? workingStartedAt : undefined}
             />
@@ -303,6 +306,7 @@ export function ConversationView({ items, turns, cwd, approvals, workspace, work
             <TranscriptTurnView
               key={turn.turnId}
               turn={turn}
+              agentLabel={agentLabel}
               working={working && turn.turnId === workingTurnId}
               workingStartedAt={workingStartedAt}
               canContinue={Boolean(onContinueAfterFailure) && !working && !continueDisabled && latestTurnId === turn.turnId}
@@ -317,13 +321,14 @@ export function ConversationView({ items, turns, cwd, approvals, workspace, work
             <TurnFailureNotice
               key={`failure:${turn.id}`}
               error={turn.error}
+              agentLabel={agentLabel}
               canContinue={Boolean(onContinueAfterFailure) && !working && !continueDisabled && latestTurnId === turn.id}
               onContinue={onContinueAfterFailure}
             />
           ))}
           {working && (rawMode ? workingMessageIndex < 0 : !activeTurnHasContent) && (
             <article className="message agent-message working-message">
-              <div className="message-label"><Bot size={15} />Codex</div>
+              <div className="message-label"><Bot size={15} />{agentLabel}</div>
               <WorkingStatus startedAt={workingStartedAt} />
             </article>
           )}
@@ -391,8 +396,9 @@ export function latestAgentMessageIndex(rows: Array<{ entry: ThreadItemEntry }>,
   return -1
 }
 
-function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking }: {
+function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking }: {
   turn: TranscriptTurn
+  agentLabel: string
   working: boolean
   workingStartedAt: number | null
   canContinue: boolean
@@ -411,6 +417,7 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
           entry={row.entry}
           rawMode={false}
           cwd={cwd}
+          agentLabel={agentLabel}
           onOpenThread={onOpenThread}
         />
       ))}
@@ -419,6 +426,7 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
           {processRows.length > 0 && (
             <ProcessGroup
               rows={processRows}
+              agentLabel={agentLabel}
               status={turn.status}
               hasFinalAnswer={turn.finalRows.length > 0}
               working={working}
@@ -428,9 +436,9 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
             />
           )}
           {turn.finalRows.length > 0 && (
-            <section className="final-answer" aria-label="Codex 最终回答">
+            <section className="final-answer" aria-label={`${agentLabel} 最终回答`}>
               <div className="final-answer-heading">
-                <span><Bot size={15} />Codex</span>
+                <span><Bot size={15} />{agentLabel}</span>
                 <small>最终回答</small>
               </div>
               {turn.finalRows.map((row, index) => (
@@ -441,6 +449,7 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
                   showAgentLabel={false}
                   rawMode={false}
                   cwd={cwd}
+                  agentLabel={agentLabel}
                   onOpenThread={onOpenThread}
                 />
               ))}
@@ -456,17 +465,18 @@ function TranscriptTurnView({ turn, working, workingStartedAt, canContinue, onCo
           )}
         </div>
       )}
-      {turn.status === 'failed' && <TurnFailureNotice error={turn.error} canContinue={canContinue} onContinue={onContinue} />}
+      {turn.status === 'failed' && <TurnFailureNotice error={turn.error} agentLabel={agentLabel} canContinue={canContinue} onContinue={onContinue} />}
     </section>
   )
 }
 
-function TurnFailureNotice({ error, canContinue, onContinue }: {
+function TurnFailureNotice({ error, agentLabel = 'Codex', canContinue, onContinue }: {
   error: Turn['error'] | undefined
+  agentLabel?: string
   canContinue: boolean
   onContinue?: () => void
 }) {
-  const reason = error?.message?.trim() || 'Codex 未返回更具体的失败原因。'
+  const reason = error?.message?.trim() || `${agentLabel} 未返回更具体的失败原因。`
   return (
     <article className="turn-failure-notice" role="alert">
       <div className="turn-failure-copy">
@@ -480,8 +490,9 @@ function TurnFailureNotice({ error, canContinue, onContinue }: {
   )
 }
 
-function ProcessGroup({ rows, status, hasFinalAnswer, working, workingStartedAt, cwd, onOpenThread }: {
+function ProcessGroup({ rows, agentLabel, status, hasFinalAnswer, working, workingStartedAt, cwd, onOpenThread }: {
   rows: TranscriptItem[]
+  agentLabel: string
   status: Turn['status'] | undefined
   hasFinalAnswer: boolean
   working: boolean
@@ -502,7 +513,7 @@ function ProcessGroup({ rows, status, hasFinalAnswer, working, workingStartedAt,
     <section className={`process-group ${state}`}>
       <button type="button" className="process-group-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span className="process-group-title">{working ? 'Codex 正在执行' : status === 'failed' ? '执行失败' : status === 'interrupted' ? '执行已中断' : '执行过程'}</span>
+        <span className="process-group-title">{working ? `${agentLabel} 正在执行` : status === 'failed' ? '执行失败' : status === 'interrupted' ? '执行已中断' : '执行过程'}</span>
         <span className="process-group-summary">{summarizeProcessRows(rows)}</span>
         {state !== 'completed' && <small>{state === 'running' ? '运行中' : state === 'failed' ? '失败' : '已中断'}</small>}
       </button>
@@ -516,6 +527,7 @@ function ProcessGroup({ rows, status, hasFinalAnswer, working, workingStartedAt,
               showAgentLabel={false}
               rawMode={false}
               cwd={cwd}
+              agentLabel={agentLabel}
               onOpenThread={onOpenThread}
             />
           ))}
@@ -540,6 +552,7 @@ const ThreadItemView = memo(function ThreadItemView({
   entry,
   agentText,
   showAgentLabel = true,
+  agentLabel = 'Codex',
   rawMode,
   workingStartedAt,
   cwd,
@@ -548,6 +561,7 @@ const ThreadItemView = memo(function ThreadItemView({
   entry: ThreadItemEntry
   agentText?: string
   showAgentLabel?: boolean
+  agentLabel?: string
   rawMode: boolean
   workingStartedAt?: number | null
   cwd: string
@@ -575,7 +589,7 @@ const ThreadItemView = memo(function ThreadItemView({
   if (item.type === 'agentMessage') {
     return (
       <article className="message agent-message">
-        {showAgentLabel && <div className="message-label"><Bot size={15} />Codex</div>}
+        {showAgentLabel && <div className="message-label"><Bot size={15} />{agentLabel}</div>}
         <MessageBody text={agentText ?? item.text ?? ''} raw={rawMode} cwd={cwd} />
         {workingStartedAt !== undefined && <WorkingStatus startedAt={workingStartedAt} />}
       </article>

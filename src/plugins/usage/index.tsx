@@ -19,6 +19,7 @@ const USAGE_REFRESH_INTERVAL_MS = 15 * 60 * 1_000
 const PROVIDER_COLORS: Record<UsageProviderId, string> = {
   'codex-business': '#337a68',
   'codex-personal': '#5875b8',
+  claude: '#9a668f',
   ais: '#b97935',
 }
 const MODEL_COLORS = ['#4f7f72', '#5f77ad', '#b87843', '#8a6699', '#9a8b65', '#aeb5bb']
@@ -28,8 +29,8 @@ export const usagePlugin: HarnessPlugin = {
     schemaVersion: 1,
     id: 'builtin.usage',
     name: '用量',
-    description: '汇总 Codex、AIS 与本机 Agent 的额度、Token 和模型用量。',
-    version: '1.1.0',
+    description: '汇总 Codex、Claude、AIS 与本机 Agent 的额度、Token 和模型用量。',
+    version: '1.2.0',
     engine: { codexHarness: '^0.4.17' },
     supportedScopes: ['global'],
     permissions: ['local:agent-usage', 'network:compass.llm.shopee.io'],
@@ -499,6 +500,7 @@ function providerDescription(provider: UsageProvider): string {
   if (provider.id === 'ais') return 'Compass 月度项目额度'
   if (provider.id === 'codex-business') return '企业账号额度与本机 Codex 日志'
   if (provider.id === 'codex-personal') return '个人账号限流窗口与本机 Codex 日志'
+  if (provider.id === 'claude') return 'Claude Code 本机日志与模型用量'
   return `本机 ${provider.label} 日志`
 }
 

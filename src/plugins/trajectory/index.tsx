@@ -8,9 +8,10 @@ export const trajectoryPlugin: HarnessPlugin = {
     id: 'builtin.trajectory',
     name: '轨迹',
     description: '按时间顺序展示当前会话公开的消息、命令、工具与文件修改。',
-    version: '1.0.0',
+    version: '1.0.1',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
+    supportedProviders: ['codex'],
   },
   activate(ctx) {
     ctx.slots.conversationTabs.register({

@@ -1,3 +1,5 @@
+import type { PluginProvider } from '../../extensions/types'
+
 export type HarnessFileNodeKind = 'file' | 'directory'
 export type HarnessFileNodeSource = 'global' | 'project' | 'harness'
 export type HarnessInstructionStatus = 'active' | 'overridden' | 'empty' | 'truncated' | 'excluded'
@@ -24,11 +26,11 @@ export interface HarnessFileTree {
 }
 
 export interface HarnessFilesService {
-  configurationKey(): string
-  list(cwd: string): Promise<HarnessFileTree>
-  read(cwd: string, path: string): Promise<string>
-  write(cwd: string, path: string, content: string): Promise<void>
-  createDirectory(cwd: string, path: string): Promise<void>
-  rename(cwd: string, path: string, nextPath: string): Promise<void>
-  remove(cwd: string, path: string): Promise<void>
+  configurationKey(provider?: PluginProvider): string
+  list(cwd: string, provider?: PluginProvider): Promise<HarnessFileTree>
+  read(cwd: string, path: string, provider?: PluginProvider): Promise<string>
+  write(cwd: string, path: string, content: string, provider?: PluginProvider): Promise<void>
+  createDirectory(cwd: string, path: string, provider?: PluginProvider): Promise<void>
+  rename(cwd: string, path: string, nextPath: string, provider?: PluginProvider): Promise<void>
+  remove(cwd: string, path: string, provider?: PluginProvider): Promise<void>
 }

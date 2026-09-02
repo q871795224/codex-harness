@@ -69,13 +69,31 @@ export default function App() {
       onClick: runtime.listenSystemNotificationClicks,
     } satisfies SystemNotificationService,
     'harness.files': {
-      configurationKey: () => JSON.stringify(harnessInstructionConfig.current),
-      list: (cwd) => runtime.listHarnessFiles(cwd, harnessInstructionConfig.current.fallbackFilenames, harnessInstructionConfig.current.maxBytes),
-      read: (cwd, path) => runtime.readHarnessFile(cwd, path, harnessInstructionConfig.current.fallbackFilenames),
-      write: (cwd, path, content) => runtime.writeHarnessFile(cwd, path, content, harnessInstructionConfig.current.fallbackFilenames),
-      createDirectory: (cwd, path) => runtime.createHarnessDirectory(cwd, path, harnessInstructionConfig.current.fallbackFilenames),
-      rename: (cwd, path, nextPath) => runtime.renameHarnessPath(cwd, path, nextPath, harnessInstructionConfig.current.fallbackFilenames),
-      remove: (cwd, path) => runtime.removeHarnessPath(cwd, path, harnessInstructionConfig.current.fallbackFilenames),
+      configurationKey: (provider = 'codex') => JSON.stringify(harnessInstructionConfigFor(harnessInstructionConfig.current, provider)),
+      list: (cwd, provider = 'codex') => {
+        const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
+        return runtime.listHarnessFiles(cwd, config.fallbackFilenames, config.maxBytes, provider)
+      },
+      read: (cwd, path, provider = 'codex') => {
+        const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
+        return runtime.readHarnessFile(cwd, path, config.fallbackFilenames, provider)
+      },
+      write: (cwd, path, content, provider = 'codex') => {
+        const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
+        return runtime.writeHarnessFile(cwd, path, content, config.fallbackFilenames, provider)
+      },
+      createDirectory: (cwd, path, provider = 'codex') => {
+        const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
+        return runtime.createHarnessDirectory(cwd, path, config.fallbackFilenames, provider)
+      },
+      rename: (cwd, path, nextPath, provider = 'codex') => {
+        const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
+        return runtime.renameHarnessPath(cwd, path, nextPath, config.fallbackFilenames, provider)
+      },
+      remove: (cwd, path, provider = 'codex') => {
+        const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
+        return runtime.removeHarnessPath(cwd, path, config.fallbackFilenames, provider)
+      },
     } satisfies HarnessFilesService,
     'harness.apiWorkbench': {
       load: runtime.apiWorkbenchLoad,
@@ -159,42 +177,48 @@ function HarnessShell({ harness, agentRuns, codex }: {
   )
   const threadCwd = harness.currentThread?.cwd ?? null
   const resolvedThreadHeaderActions = plugins.resolvedThreadHeaderActions({
+    provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedPluginTabs = plugins.resolvedTabs({
+    provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedNewThreadPanels = plugins.resolvedNewThreadPanels({
+    provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedComposerActions = plugins.resolvedComposerActions({
+    provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedQuickActions = plugins.resolvedQuickActions({
+    provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedQuickCommands = plugins.resolvedQuickCommands({
+    provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const codexConversation = harness.selectedProvider === 'codex'
-  const threadHeaderActions = codexConversation ? resolvedThreadHeaderActions : []
-  const pluginTabs = codexConversation ? resolvedPluginTabs : []
-  const newThreadPanels = codexConversation ? resolvedNewThreadPanels : []
-  const composerActions = codexConversation ? resolvedComposerActions : []
-  const quickActions = codexConversation ? resolvedQuickActions : []
-  const quickCommands = codexConversation ? resolvedQuickCommands : []
+  const threadHeaderActions = resolvedThreadHeaderActions
+  const pluginTabs = resolvedPluginTabs
+  const newThreadPanels = resolvedNewThreadPanels
+  const composerActions = resolvedComposerActions
+  const quickActions = resolvedQuickActions
+  const quickCommands = resolvedQuickCommands
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
   const tabFocusable = conversationTabSupportsFocus(selectedPluginTab?.contribution ?? null)
   const tabFocused = focusedTab === tab && tabFocusable
@@ -203,7 +227,14 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const composerCollapsed = composerCollapsible && Boolean(collapsedComposerKeys[composerCollapseKey])
   const composerVisible = harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
   const quickPanelBottom = resolveQuickPanelAnchor(composerVisible, quickActionBottom)
-  const quickPanelsVisible = codexConversation && shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
+  const quickPanelsVisible = shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
+
+  useEffect(() => {
+    if (tab !== 'chat' && !selectedPluginTab) {
+      setTab('chat')
+      setFocusedTab(null)
+    }
+  }, [selectedPluginTab, tab])
   const orderedTabIds = orderConversationTabs(
     ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
@@ -448,6 +479,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   key={`${action.pluginId}:${action.contribution.id}`}
                   action={action}
                   props={{
+                    provider: harness.selectedProvider,
                     threadId: harness.selectedThreadId,
                     threadCwd,
                     workspaceRoot: workspace?.root ?? null,
@@ -491,18 +523,19 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   )
                 })}
               </div>
-              <span className={`connection-state ${codexConversation ? '' : 'claude'}`}><span />{codexConversation ? '本机 App Server' : 'Claude · AIS SDK'}</span>
+              <span className={`connection-state ${codexConversation ? '' : 'claude'}`}><span />{codexConversation ? '本机 App Server' : 'Claude · Agent SDK'}</span>
             </div>
 
             {tab === 'chat' ? (
               <ConversationView
+                provider={harness.selectedProvider}
                 items={harness.currentDetail?.items ?? []}
                 turns={harness.currentDetail?.turns ?? []}
                 cwd={harness.currentThread.cwd}
                 approvals={currentApprovals}
                 workspace={workspace}
                 workspaces={harness.workspaces}
-                workspaceChanging={Boolean(harness.busy.threadWorkspace)}
+                workspaceChanging={Boolean(harness.busy.threadWorkspace) || !codexConversation}
                 initialScrollTop={conversationScrollPositions.current[harness.currentThread.id] ?? null}
                 scrollToLatestRequest={scrollToLatestRequest?.threadId === harness.currentThread.id ? scrollToLatestRequest.sequence : 0}
                 hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
@@ -526,7 +559,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 agentApprovalCounts={codexConversation ? Object.fromEntries(Object.entries(harness.approvals).map(([threadId, requests]) => [threadId, requests.length])) : {}}
                 activeTurnIds={codexConversation ? harness.activeTurnIds : {}}
                 onInterruptAgent={codexConversation ? (threadId) => void harness.interruptAgentThread(threadId) : undefined}
-                newThreadPanels={!codexConversation ? null : codexUpdate.loading ? null : codexUpdate.visible && codexUpdate.status ? (
+                newThreadPanels={codexConversation && codexUpdate.loading ? null : codexConversation && codexUpdate.visible && codexUpdate.status ? (
                   <CodexUpdatePanel
                     status={codexUpdate.status}
                     updating={codexUpdate.updating}
@@ -541,6 +574,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     key={`${panel.pluginId}:${panel.contribution.id}`}
                     panel={panel}
                     props={{
+                      provider: harness.selectedProvider,
                       threadId: harness.selectedThreadId,
                       threadCwd,
                       workspaceRoot: workspace?.root ?? null,
@@ -566,6 +600,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
               <PluginTabBoundary
                 tab={selectedPluginTab}
                 props={{
+                  provider: harness.selectedProvider,
                   threadId: harness.selectedThreadId,
                   threadCwd,
                   workspaceRoot: workspace?.root ?? null,
@@ -618,10 +653,15 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   autoFocus={!composerCollapsible}
                   models={codexConversation ? codex.models : []}
                   settings={codex.settingsForThread(harness.selectedThreadId)}
+                  claudeModels={harness.claudeModels}
+                  claudeSettings={harness.selectedProvider === 'claude' ? harness.claudeSettingsForThread(harness.selectedThreadId) : undefined}
                   rawMode={rawMode}
                   followUpMode={harness.keyboard.followUpMode}
-                  settingsDisabled={!codexConversation || codex.loading || codexUpdate.updating}
+                  settingsDisabled={codexConversation ? codex.loading || codexUpdate.updating : false}
                   onSettingsChange={(patch) => codexConversation && harness.selectedThreadId ? codex.updateThreadSettings(harness.selectedThreadId, patch) : undefined}
+                  onClaudeSettingsChange={(patch) => harness.selectedProvider === 'claude' && harness.selectedThreadId
+                    ? harness.updateClaudeSettings(harness.selectedThreadId, patch)
+                    : undefined}
                   onFollowUpModeChange={harness.setFollowUpMode}
                   onSend={(input, mode) => {
                     const threadId = harness.currentThread!.id
@@ -634,7 +674,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     else if (command.name === 'new') runAction('thread.new')
                     else if (command.name === 'reset') return harness.resetThread()
                     else if (command.name === 'model' && codexConversation && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { model: command.model })
+                    else if (command.name === 'model' && harness.selectedProvider === 'claude' && harness.selectedThreadId) void harness.updateClaudeSettings(harness.selectedThreadId, { model: command.model })
                     else if (command.name === 'reasoning' && codexConversation && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { effort: command.effort })
+                    else if (command.name === 'reasoning' && harness.selectedProvider === 'claude' && harness.selectedThreadId) void harness.updateClaudeSettings(harness.selectedThreadId, { effort: command.effort })
                     else if (command.name === 'permissions' && codexConversation && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { approvalPolicy: command.approvalPolicy })
                   }}
                   onStop={harness.stopTurn}
@@ -646,6 +688,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                       key={`${action.pluginId}:${action.contribution.id}`}
                       action={action}
                       props={{
+                        provider: harness.selectedProvider,
                         threadId: harness.selectedThreadId,
                         threadCwd,
                         workspaceRoot: workspace?.root ?? null,
@@ -663,6 +706,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   turns={harness.currentDetail?.turns ?? []}
                   items={harness.currentDetail?.items ?? []}
                   tokenUsage={harness.currentTokenUsage}
+                  costUsd={harness.currentCostUsd}
                   creditUsage={harness.selectedThreadId ? threadCreditUsages[harness.selectedThreadId] ?? null : null}
                   thread={harness.currentThread}
                   workspace={workspace}
@@ -682,6 +726,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
             agentRuns={agentRuns}
             anchorBottom={quickPanelBottom}
             context={{
+              provider: harness.selectedProvider,
               threadId: harness.selectedThreadId,
               threadCwd,
               workspaceRoot: workspace?.root ?? null,
@@ -706,6 +751,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
             turns: harness.currentDetail?.turns ?? [],
             items: harness.currentDetail?.items ?? [],
             tokenUsage: harness.currentTokenUsage,
+            costUsd: harness.currentCostUsd,
             creditUsage: harness.selectedThreadId ? threadCreditUsages[harness.selectedThreadId] ?? null : null,
             thread: harness.currentThread,
             workspace,
@@ -752,6 +798,11 @@ function resolveHarnessInstructionConfig(config: CodexConfig): HarnessInstructio
     ? config.project_doc_max_bytes!
     : 32 * 1024
   return { fallbackFilenames, maxBytes }
+}
+
+function harnessInstructionConfigFor(config: HarnessInstructionConfig, provider: 'codex' | 'claude'): HarnessInstructionConfig {
+  if (provider === 'codex') return config
+  return { fallbackFilenames: ['CLAUDE.md', 'CLAUDE.local.md'], maxBytes: config.maxBytes }
 }
 
 function SidebarEdgeToggle({

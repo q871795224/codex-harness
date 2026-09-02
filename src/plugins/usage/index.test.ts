@@ -7,7 +7,7 @@ function provider(id: UsageProvider['id'], remaining: number): UsageProvider {
   return {
     id,
     label: id,
-    sourceKind: id === 'ais' ? 'ais' : 'codex',
+    sourceKind: id === 'ais' ? 'ais' : id === 'claude' ? 'claude' : 'codex',
     status: 'ready',
     message: null,
     totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, reasoningOutputTokens: 0, totalTokens: 0, costUsd: 0 },

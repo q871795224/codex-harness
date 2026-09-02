@@ -2,6 +2,7 @@ import type { ComponentType, ReactNode } from 'react'
 import type { CodexModel, Thread, ThreadCodexSettings, ThreadItemEntry, Workspace } from '../core/domain/codex'
 
 export type PluginScopeKind = 'global' | 'workspace' | 'thread'
+export type PluginProvider = 'codex' | 'claude'
 
 export type PluginScope =
   | { kind: 'global' }
@@ -18,6 +19,7 @@ export interface PluginManifest {
   supportedScopes: PluginScopeKind[]
   requires?: string[]
   permissions?: string[]
+  supportedProviders?: PluginProvider[]
 }
 
 export interface PluginInstanceRecord {
@@ -37,6 +39,7 @@ export type PluginInstanceStatus =
   | { phase: 'failed'; error: string }
 
 export interface PluginViewContext {
+  provider?: PluginProvider
   threadId: string | null
   threadCwd: string | null
   workspaceRoot: string | null

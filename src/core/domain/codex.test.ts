@@ -95,6 +95,8 @@ describe('emptyThreadDetail', () => {
       activePermissionProfile: null,
       model: null,
       threadSettings: null,
+      tokenUsage: null,
+      costUsd: null,
     })
   })
 })

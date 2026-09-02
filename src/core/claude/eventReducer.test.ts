@@ -57,4 +57,26 @@ describe('Claude event reducer', () => {
     detail = reduceClaudeEvent(detail, { method: 'tool/started', params: { turnId: 'turn-1', itemId: 'edit-1', toolName: 'Edit', input: { file_path: '/workspace/a.ts' } } })
     expect(detail.items.map((entry) => entry.item.type)).toEqual(['commandExecution', 'fileChange'])
   })
+
+  it('keeps usage and estimated cost from the provider completion event', () => {
+    let detail = emptyThreadDetail(thread)
+    detail = reduceClaudeEvent(detail, { method: 'turn/started', params: { sessionId: thread.id, turnId: 'turn-usage' } })
+    detail = reduceClaudeEvent(detail, {
+      method: 'turn/completed',
+      params: {
+        sessionId: thread.id,
+        turnId: 'turn-usage',
+        totalCostUsd: 0.0123,
+        usage: {
+          total: { totalTokens: 120, inputTokens: 80, outputTokens: 40, cachedInputTokens: 10, cacheWriteInputTokens: 5, reasoningOutputTokens: 2 },
+          last: { totalTokens: 60, inputTokens: 45, outputTokens: 15, cachedInputTokens: 4, cacheWriteInputTokens: 1, reasoningOutputTokens: 1 },
+          modelContextWindow: 200_000,
+        },
+      },
+    })
+
+    expect(detail.tokenUsage).toMatchObject({ modelContextWindow: 200_000 })
+    expect(detail.tokenUsage?.total.totalTokens).toBe(120)
+    expect(detail.costUsd).toBe(0.0123)
+  })
 })

@@ -59,27 +59,50 @@ enum ManagedPathKind {
     Harness,
 }
 
+#[cfg(test)]
 pub fn list(
     cwd: &str,
     codex_home: &Path,
     fallback_filenames: &[String],
     max_bytes: usize,
 ) -> Result<HarnessFileTree, String> {
-    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
+    list_for_provider(cwd, codex_home, fallback_filenames, max_bytes, "codex")
+}
+
+pub fn list_for_provider(
+    cwd: &str,
+    codex_home: &Path,
+    fallback_filenames: &[String],
+    max_bytes: usize,
+    provider: &str,
+) -> Result<HarnessFileTree, String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames, provider)?;
     Ok(scope.tree(max_bytes))
 }
 
+#[cfg(test)]
 pub fn read(
     cwd: &str,
     codex_home: &Path,
     path: &str,
     fallback_filenames: &[String],
 ) -> Result<String, String> {
-    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
+    read_for_provider(cwd, codex_home, path, fallback_filenames, "codex")
+}
+
+pub fn read_for_provider(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    fallback_filenames: &[String],
+    provider: &str,
+) -> Result<String, String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames, provider)?;
     let target = scope.validate_existing(path, false)?;
     fs::read_to_string(&target).map_err(|error| format!("无法读取 {}: {error}", target.display()))
 }
 
+#[cfg(test)]
 pub fn write(
     cwd: &str,
     codex_home: &Path,
@@ -87,7 +110,18 @@ pub fn write(
     content: &str,
     fallback_filenames: &[String],
 ) -> Result<(), String> {
-    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
+    write_for_provider(cwd, codex_home, path, content, fallback_filenames, "codex")
+}
+
+pub fn write_for_provider(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    content: &str,
+    fallback_filenames: &[String],
+    provider: &str,
+) -> Result<(), String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames, provider)?;
     let target = scope.validate_target(path, false)?;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
@@ -96,18 +130,31 @@ pub fn write(
     fs::write(&target, content).map_err(|error| format!("无法写入 {}: {error}", target.display()))
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub fn create_directory(
     cwd: &str,
     codex_home: &Path,
     path: &str,
     fallback_filenames: &[String],
 ) -> Result<(), String> {
-    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
+    create_directory_for_provider(cwd, codex_home, path, fallback_filenames, "codex")
+}
+
+pub fn create_directory_for_provider(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    fallback_filenames: &[String],
+    provider: &str,
+) -> Result<(), String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames, provider)?;
     let target = scope.validate_target(path, true)?;
     fs::create_dir_all(&target)
         .map_err(|error| format!("无法创建目录 {}: {error}", target.display()))
 }
 
+#[cfg(test)]
 pub fn rename(
     cwd: &str,
     codex_home: &Path,
@@ -115,7 +162,25 @@ pub fn rename(
     next_path: &str,
     fallback_filenames: &[String],
 ) -> Result<(), String> {
-    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
+    rename_for_provider(
+        cwd,
+        codex_home,
+        path,
+        next_path,
+        fallback_filenames,
+        "codex",
+    )
+}
+
+pub fn rename_for_provider(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    next_path: &str,
+    fallback_filenames: &[String],
+    provider: &str,
+) -> Result<(), String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames, provider)?;
     let source = scope.validate_existing(path, true)?;
     let target = scope.validate_target(next_path, source.is_dir())?;
     if scope.classify(&source)? != scope.classify(&target)? {
@@ -133,16 +198,27 @@ pub fn rename(
     })
 }
 
+#[cfg(test)]
 pub fn remove(
     cwd: &str,
     codex_home: &Path,
     path: &str,
     fallback_filenames: &[String],
 ) -> Result<(), String> {
-    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames)?;
+    remove_for_provider(cwd, codex_home, path, fallback_filenames, "codex")
+}
+
+pub fn remove_for_provider(
+    cwd: &str,
+    codex_home: &Path,
+    path: &str,
+    fallback_filenames: &[String],
+    provider: &str,
+) -> Result<(), String> {
+    let scope = ManagedScope::resolve(cwd, codex_home, fallback_filenames, provider)?;
     let target = scope.validate_existing(path, true)?;
     if target == scope.harness_root {
-        return Err("不能删除 .harness 根目录。".to_string());
+        return Err(format!("不能删除 {} 根目录。", scope.harness_name));
     }
     if target.is_dir() {
         fs::remove_dir_all(&target)
@@ -157,8 +233,11 @@ struct ManagedScope {
     cwd: PathBuf,
     project_root: Option<PathBuf>,
     codex_home: PathBuf,
+    global_instruction_filenames: Vec<String>,
+    global_label: String,
     project_directories: Vec<PathBuf>,
     harness_root: PathBuf,
+    harness_name: String,
     instruction_filenames: Vec<String>,
 }
 
@@ -167,6 +246,7 @@ impl ManagedScope {
         cwd: &str,
         codex_home: &Path,
         fallback_filenames: &[String],
+        provider: &str,
     ) -> Result<Self, String> {
         let cwd = fs::canonicalize(cwd)
             .map_err(|error| format!("无法访问线程工作目录 {cwd}: {error}"))?;
@@ -175,6 +255,15 @@ impl ManagedScope {
         }
         let project_root = git_project_root(&cwd);
         let codex_home = absolute_path(codex_home)?;
+        let is_claude = provider == "claude";
+        let global_root = if is_claude {
+            codex_home
+                .parent()
+                .map(|home| home.join(".claude"))
+                .unwrap_or_else(|| codex_home.clone())
+        } else {
+            codex_home.clone()
+        };
         let mut project_directories = vec![project_root.clone().unwrap_or_else(|| cwd.clone())];
         if let Some(root) = &project_root {
             if !cwd.starts_with(root) {
@@ -189,13 +278,29 @@ impl ManagedScope {
                 project_directories.push(cursor.clone());
             }
         }
-        let instruction_filenames = instruction_filenames(fallback_filenames);
+        let global_instruction_filenames = if is_claude {
+            vec!["CLAUDE.md".to_string()]
+        } else {
+            AGENT_FILENAMES.map(str::to_string).to_vec()
+        };
+        let instruction_filenames = instruction_filenames(fallback_filenames, is_claude);
         Ok(Self {
-            harness_root: cwd.join(".harness"),
+            harness_root: cwd.join(if is_claude { ".claude" } else { ".harness" }),
             cwd,
             project_root,
-            codex_home,
+            codex_home: global_root,
+            global_instruction_filenames,
+            global_label: if is_claude {
+                "Claude 全局".to_string()
+            } else {
+                "Codex 全局".to_string()
+            },
             project_directories,
+            harness_name: if is_claude {
+                ".claude".to_string()
+            } else {
+                ".harness".to_string()
+            },
             instruction_filenames,
         })
     }
@@ -208,7 +313,7 @@ impl ManagedScope {
         };
         let mut used_bytes = 0;
         let mut has_active_document = false;
-        let global_names = AGENT_FILENAMES.map(str::to_string);
+        let global_names = self.global_instruction_filenames.clone();
         let mut global_children =
             instruction_nodes(&self.codex_home, &global_names, NodeSource::Global);
         apply_instruction_budget(
@@ -250,7 +355,7 @@ impl ManagedScope {
             roots: vec![
                 directory_node(
                     self.codex_home.clone(),
-                    "Codex 全局".to_string(),
+                    self.global_label.clone(),
                     NodeSource::Global,
                     global_children,
                 ),
@@ -266,7 +371,7 @@ impl ManagedScope {
                 ),
                 HarnessFileNode {
                     path: display_path(&self.harness_root),
-                    name: ".harness".to_string(),
+                    name: self.harness_name.clone(),
                     kind: NodeKind::Directory,
                     source: NodeSource::Harness,
                     exists: self.harness_root.is_dir(),
@@ -325,8 +430,11 @@ impl ManagedScope {
         }
         let filename = path.file_name().and_then(|name| name.to_str());
         let parent = path.parent();
-        let is_global_instruction = filename.is_some_and(|name| AGENT_FILENAMES.contains(&name))
-            && parent == Some(self.codex_home.as_path());
+        let is_global_instruction = filename.is_some_and(|name| {
+            self.global_instruction_filenames
+                .iter()
+                .any(|candidate| candidate == name)
+        }) && parent == Some(self.codex_home.as_path());
         let is_project_instruction = filename.is_some_and(|name| {
             self.instruction_filenames
                 .iter()
@@ -356,8 +464,12 @@ fn git_project_root(cwd: &Path) -> Option<PathBuf> {
     fs::canonicalize(root.trim()).ok()
 }
 
-fn instruction_filenames(fallback_filenames: &[String]) -> Vec<String> {
-    let mut names = AGENT_FILENAMES.map(str::to_string).to_vec();
+fn instruction_filenames(fallback_filenames: &[String], claude: bool) -> Vec<String> {
+    let mut names = if claude {
+        vec!["CLAUDE.md".to_string(), "CLAUDE.local.md".to_string()]
+    } else {
+        AGENT_FILENAMES.map(str::to_string).to_vec()
+    };
     for name in fallback_filenames {
         let path = Path::new(name);
         let is_plain_filename = !name.is_empty()
@@ -620,6 +732,40 @@ mod tests {
         assert_eq!(tree.roots[1].children[0].name, "项目根目录");
         assert_eq!(tree.roots[1].children.last().unwrap().name, "当前目录");
         assert_eq!(tree.roots[2].children[0].name, "plans");
+        assert_eq!(tree.roots[2].children[0].children[0].name, "today.md");
+    }
+
+    #[test]
+    fn lists_claude_global_project_and_thread_files_in_claude_directories() {
+        let (_temp, repository, cwd, codex_home) = fixture();
+        let claude_home = codex_home.parent().unwrap().join(".claude");
+        fs::create_dir_all(&claude_home).expect("creates Claude home");
+        fs::write(claude_home.join("CLAUDE.md"), "global Claude instructions")
+            .expect("writes global Claude instructions");
+        fs::write(repository.join("CLAUDE.md"), "project Claude instructions")
+            .expect("writes project Claude instructions");
+        fs::write(cwd.join("CLAUDE.local.md"), "local Claude instructions")
+            .expect("writes local Claude instructions");
+        fs::create_dir_all(cwd.join(".claude/notes")).expect("creates Claude thread files");
+        fs::write(cwd.join(".claude/notes/today.md"), "today").expect("writes Claude thread file");
+
+        let tree = list_for_provider(
+            cwd.to_str().unwrap(),
+            &codex_home,
+            &[],
+            DEFAULT_MAX_BYTES,
+            "claude",
+        )
+        .expect("lists Claude files");
+
+        assert_eq!(tree.roots[0].name, "Claude 全局");
+        assert_eq!(tree.roots[0].children[0].name, "CLAUDE.md");
+        assert_eq!(tree.roots[1].children[0].children[0].name, "CLAUDE.md");
+        assert_eq!(
+            tree.roots[1].children.last().unwrap().children[1].name,
+            "CLAUDE.local.md"
+        );
+        assert_eq!(tree.roots[2].name, ".claude");
         assert_eq!(tree.roots[2].children[0].children[0].name, "today.md");
     }
 

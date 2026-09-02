@@ -485,7 +485,7 @@ dependencies = [
 
 [[package]]
 name = "codex-harness"
-version = "0.6.4"
+version = "0.7.0"
 dependencies = [
  "block2",
  "futures-util",

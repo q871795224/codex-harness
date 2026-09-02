@@ -26,8 +26,8 @@ export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
   )
 }
 
-export function ConversationStats({ turns, items, tokenUsage, creditUsage, thread, workspace, taskPlan, preferences, emptyLabel }: ConversationStatsProps) {
-  const segments = conversationStatSegments(preferences, { turns, items, tokenUsage, creditUsage, thread, workspace, taskPlan })
+export function ConversationStats({ turns, items, tokenUsage, costUsd, creditUsage, thread, workspace, taskPlan, preferences, emptyLabel }: ConversationStatsProps) {
+  const segments = conversationStatSegments(preferences, { turns, items, tokenUsage, costUsd, creditUsage, thread, workspace, taskPlan })
   if (segments.length === 0) return emptyLabel ? <div className="conversation-stats empty">{emptyLabel}</div> : null
   return (
     <div className="conversation-stats">
