@@ -173,6 +173,8 @@ interface ConversationViewProps {
   onForkTurn?: (turnId: string) => void
   forkingTurnId?: string | null
   onOpenThread?: (threadId: string) => void
+  rawOverrides?: ReadonlySet<string>
+  onRawOverrideToggle?: (messageKey: string) => void
   agentApprovalCounts?: Record<string, number>
   activeTurnIds?: Record<string, string>
   onInterruptAgent?: (threadId: string) => void
@@ -186,7 +188,7 @@ interface ConversationViewProps {
   continueDisabled?: boolean
 }
 
-export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
+export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -297,6 +299,8 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
               agentText={row.agentText}
               showAgentLabel={row.showAgentLabel}
               rawMode
+              rawOverrides={rawOverrides}
+              onRawOverrideToggle={onRawOverrideToggle}
               cwd={cwd}
               agentLabel={agentLabel}
               onOpenThread={onOpenThread}
@@ -315,6 +319,8 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
               onOpenThread={onOpenThread}
               onFork={onForkTurn}
               forking={forkingTurnId === turn.turnId}
+              rawOverrides={rawOverrides}
+              onRawOverrideToggle={onRawOverrideToggle}
             />
           ))}
           {rawMode && turns.filter((turn) => turn.status === 'failed').map((turn) => (
@@ -383,6 +389,14 @@ function transcriptRowKey(row: TranscriptItem, index: number): string {
   return `${row.entry.turnId}:${row.entry.item.id ?? index}`
 }
 
+// Stable per-message key used for the per-message raw override. Only text
+// messages (user / agent) get a raw toggle; for those the item id is reliable.
+export function messageRawKey(entry: ThreadItemEntry): string | null {
+  const id = entry.item.id
+  if (!id) return null
+  return `${entry.turnId}:${id}`
+}
+
 export function isNearConversationBottom(scroll: Pick<HTMLElement, 'scrollTop' | 'clientHeight' | 'scrollHeight'>): boolean {
   return scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop <= 48
 }
@@ -396,7 +410,7 @@ export function latestAgentMessageIndex(rows: Array<{ entry: ThreadItemEntry }>,
   return -1
 }
 
-function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking }: {
+function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking, rawOverrides, onRawOverrideToggle }: {
   turn: TranscriptTurn
   agentLabel: string
   working: boolean
@@ -407,8 +421,12 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
   onOpenThread?: (threadId: string) => void
   onFork?: (turnId: string) => void
   forking: boolean
+  rawOverrides?: ReadonlySet<string>
+  onRawOverrideToggle?: (messageKey: string) => void
 }) {
   const processRows = turn.processRows.filter(isRenderableProcessRow)
+  const finalRawKey = turn.finalRows.length > 0 ? messageRawKey(turn.finalRows[0].entry) : null
+  const finalRawActive = finalRawKey !== null && (rawOverrides?.has(finalRawKey) ?? false)
   return (
     <section className={`conversation-turn${working ? ' running' : ''}`} data-turn-id={turn.turnId}>
       {turn.userRows.map((row, index) => (
@@ -416,6 +434,8 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
           key={transcriptRowKey(row, index)}
           entry={row.entry}
           rawMode={false}
+          rawOverrides={rawOverrides}
+          onRawOverrideToggle={onRawOverrideToggle}
           cwd={cwd}
           agentLabel={agentLabel}
           onOpenThread={onOpenThread}
@@ -448,6 +468,8 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
                   agentText={row.agentText}
                   showAgentLabel={false}
                   rawMode={false}
+                  rawOverrides={rawOverrides}
+                  onRawOverrideToggle={onRawOverrideToggle}
                   cwd={cwd}
                   agentLabel={agentLabel}
                   onOpenThread={onOpenThread}
@@ -459,6 +481,8 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
                   copyText={copyableTranscriptText(turn.finalRows)}
                   onFork={onFork ? () => onFork(turn.turnId) : undefined}
                   forking={forking}
+                  rawActive={finalRawActive}
+                  onToggleRaw={finalRawKey !== null && onRawOverrideToggle ? () => onRawOverrideToggle(finalRawKey) : undefined}
                 />
               )}
             </section>
@@ -554,6 +578,8 @@ const ThreadItemView = memo(function ThreadItemView({
   showAgentLabel = true,
   agentLabel = 'Codex',
   rawMode,
+  rawOverrides,
+  onRawOverrideToggle,
   workingStartedAt,
   cwd,
   onOpenThread,
@@ -563,11 +589,22 @@ const ThreadItemView = memo(function ThreadItemView({
   showAgentLabel?: boolean
   agentLabel?: string
   rawMode: boolean
+  rawOverrides?: ReadonlySet<string>
+  onRawOverrideToggle?: (messageKey: string) => void
   workingStartedAt?: number | null
   cwd: string
   onOpenThread?: (threadId: string) => void
 }) {
   const { item } = entry
+  const rawKey = messageRawKey(entry)
+  const rawActive = rawKey !== null && (rawOverrides?.has(rawKey) ?? false)
+  // Global /raw and the per-message toggle are independent: either one turns
+  // this message raw. Last writer wins is per-message because each toggle only
+  // ever flips its own key.
+  const effectiveRaw = rawMode || rawActive
+  const rawToggle = rawKey !== null && onRawOverrideToggle
+    ? () => onRawOverrideToggle(rawKey)
+    : undefined
   if (item.type === 'userMessage') {
     const text = itemText(item)
     const attachments = (item.content ?? []).filter((content) => content.type === 'localImage' || content.type === 'image' || content.type === 'mention')
@@ -575,14 +612,16 @@ const ThreadItemView = memo(function ThreadItemView({
       <article className="message user-message">
         <div className="message-label"><UserRound size={14} />你</div>
         <div className="user-bubble">
-          {text && <div>{text}</div>}
+          {text && (effectiveRaw
+            ? <pre className="raw-response">{text}</pre>
+            : <div>{text}</div>)}
           {attachments.length > 0 && <div className="user-attachments">{attachments.map((attachment, index) => {
             const path = attachment.type === 'image' ? attachment.url : attachment.path
             const name = attachment.type === 'mention' ? attachment.name : path.split(/[\\/]/).pop() || path
             return <span key={`${path}:${index}`} title={path}>{attachment.type === 'mention' ? <FileText size={13} /> : <Image size={13} />}{name}</span>
           })}</div>}
         </div>
-        {text && <MessageActions copyText={text} />}
+        {text && <MessageActions copyText={text} rawActive={rawActive} onToggleRaw={rawToggle} />}
       </article>
     ) : null
   }
@@ -590,7 +629,7 @@ const ThreadItemView = memo(function ThreadItemView({
     return (
       <article className="message agent-message">
         {showAgentLabel && <div className="message-label"><Bot size={15} />{agentLabel}</div>}
-        <MessageBody text={agentText ?? item.text ?? ''} raw={rawMode} cwd={cwd} />
+        <MessageBody text={agentText ?? item.text ?? ''} raw={effectiveRaw} cwd={cwd} />
         {workingStartedAt !== undefined && <WorkingStatus startedAt={workingStartedAt} />}
       </article>
     )
@@ -611,14 +650,16 @@ const ThreadItemView = memo(function ThreadItemView({
   return <GenericActivityItem item={item} />
 })
 
-function MessageActions({ copyText, onFork, forking = false }: {
+function MessageActions({ copyText, onFork, forking = false, rawActive = false, onToggleRaw }: {
   copyText?: string
   onFork?: () => void
   forking?: boolean
+  rawActive?: boolean
+  onToggleRaw?: () => void
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const canCopy = Boolean(copyText?.trim())
-  if (!canCopy && !onFork) return null
+  if (!canCopy && !onFork && !onToggleRaw) return null
 
   const copy = async () => {
     if (!copyText) return
@@ -636,6 +677,11 @@ function MessageActions({ copyText, onFork, forking = false }: {
       {canCopy && (
         <button type="button" className={copyState} onClick={() => void copy()} aria-label="复制消息" title={copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}>
           {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
+        </button>
+      )}
+      {onToggleRaw && (
+        <button type="button" className={rawActive ? 'active' : undefined} onClick={onToggleRaw} aria-label="切换原始文本" aria-pressed={rawActive} title={rawActive ? '恢复富文本渲染' : '以原始文本显示此消息'}>
+          <FileCode2 size={13} />
         </button>
       )}
       {onFork && (

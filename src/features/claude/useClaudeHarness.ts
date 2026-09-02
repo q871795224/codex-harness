@@ -619,6 +619,41 @@ export function useClaudeHarness() {
     })
   }, [])
 
+  const changeSessionWorkspace = useCallback(async (sessionId: string, workspaceRoot: string) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!workspaceRoot || !session) return
+    if (activeTurnIdsRef.current[sessionId]) {
+      notify('请先停止或等待当前轮完成，再切换工作目录。', 'error')
+      return
+    }
+    // The workspace picker passes a workspace root; normalize it to the
+    // checkout root so the session cwd matches how codex threads store cwd.
+    const mapped = await runtime.mapThreadWorkspaces([workspaceRoot])
+    const workspace = mapped[workspaceRoot]
+    if (!workspace) {
+      notify('所选目录不是可用的 Git checkout。', 'error')
+      return
+    }
+    const cwd = workspace.checkoutRoot
+    if (session.cwd === cwd) return
+    const saved = await runtime.upsertClaudeSession({
+      id: session.id,
+      providerSessionId: session.providerSessionId,
+      cwd,
+      title: session.title,
+    })
+    setSessions((current) => {
+      const next = current.map((candidate) => candidate.id === saved.id ? saved : candidate)
+      sessionsRef.current = next
+      return next
+    })
+    setDetails((current) => {
+      const detail = current[sessionId]
+      if (!detail) return current
+      return { ...current, [sessionId]: { ...detail, thread: { ...detail.thread, cwd } } }
+    })
+  }, [notify])
+
   const setArchived = useCallback(async (sessionId: string, archived: boolean) => {
     await runtime.setClaudeSessionArchived(sessionId, archived)
     setSessions((current) => {
@@ -663,6 +698,7 @@ export function useClaudeHarness() {
     startQueue: (sessionId: string) => startQueue(sessionId),
     answerApproval,
     renameSession,
+    changeSessionWorkspace,
     archiveSession: (sessionId: string) => setArchived(sessionId, true),
     unarchiveSession: (sessionId: string) => setArchived(sessionId, false),
   }
