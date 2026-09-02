@@ -608,6 +608,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 working={harness.isCurrentWorking}
                 workingTurnId={currentActiveTurn?.id ?? null}
                 workingStartedAt={currentActiveTurn?.startedAt ?? null}
+                recap={codexConversation ? harness.currentRecap : null}
                 onRawModeToggle={() => setRawMode((current) => !current)}
                 onContinueAfterFailure={codexConversation && canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
                 continueDisabled={Boolean(harness.busy.composer)}
@@ -762,6 +763,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
           selectedWorkspaceRoot={(harness.selectedThreadId ? harness.threadRoots[harness.selectedThreadId] : null) ?? harness.selectedWorkspaceRoot}
           codex={codex}
           threadTitleGeneration={harness.threadTitleGeneration}
+          recapGeneration={harness.recapGeneration}
           conversationStats={harness.conversationStats}
           conversationStatsData={{
             turns: harness.currentDetail?.turns ?? [],
@@ -781,6 +783,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
           onActionShortcut={harness.setActionShortcut}
           onResetActionShortcuts={harness.resetActionShortcuts}
           onThreadTitleGeneration={harness.setThreadTitleGeneration}
+          onRecapGeneration={harness.setRecapGeneration}
           onConversationStats={harness.setConversationStats}
           onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
           onClose={() => {

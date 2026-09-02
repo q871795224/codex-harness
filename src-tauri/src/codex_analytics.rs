@@ -1245,12 +1245,20 @@ fn source_for(
     if turn.trigger.as_deref() == Some("quick-agent") {
         return ("builtin.quick-agent".to_string(), "快捷 Agent".to_string());
     }
+    if turn.trigger.as_deref() == Some("recap") {
+        return ("builtin.recap".to_string(), "会话回顾".to_string());
+    }
+    if turn.trigger.as_deref() == Some("thread-title") {
+        return ("builtin.thread-title".to_string(), "自动命名".to_string());
+    }
     ("codex-harness".to_string(), "Codex Harness".to_string())
 }
 
 fn plugin_label(plugin_id: &str) -> &str {
     match plugin_id {
         "builtin.quick-agent" => "快捷 Agent",
+        "builtin.recap" => "会话回顾",
+        "builtin.thread-title" => "自动命名",
         "builtin.temporary-agent" => "Luna",
         "builtin.seatalk" => "SeaTalk",
         _ => plugin_id,

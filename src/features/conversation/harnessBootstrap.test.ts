@@ -7,6 +7,7 @@ import {
   KEYBOARD_PREFERENCES_KEY,
   loadHarnessBootstrap,
   NAVIGATION_PREFERENCES_KEY,
+  parseRecapGenerationSettings,
   parseThreadTitleGenerationSettings,
   THREAD_TITLE_GENERATION_KEY,
   togglePinnedIdentifier,
@@ -53,7 +54,8 @@ describe('Harness bootstrap restoration', () => {
     expect(state.appearance.theme).toBe('dark')
     expect(state.keyboard).toMatchObject({ sendShortcut: 'enter', followUpMode: 'interject' })
     expect(state.threadTitleGeneration).toEqual({ model: 'custom', effort: 'high', prompt: 'Only a title' })
-    expect(client.getAppState).toHaveBeenCalledTimes(6)
+    expect(state.recapGeneration).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
+    expect(client.getAppState).toHaveBeenCalledTimes(7)
   })
 
   it('falls back safely when persisted JSON is damaged', async () => {
@@ -84,5 +86,13 @@ describe('bootstrap preference helpers', () => {
     expect(parseThreadTitleGenerationSettings(JSON.stringify({ model: '', effort: '', prompt: '' }))).toMatchObject({
       model: 'gpt-5.6-luna', effort: 'low',
     })
+  })
+
+  it('defaults empty recap-generation fields independently', () => {
+    expect(parseRecapGenerationSettings(JSON.stringify({ model: '', effort: '', prompt: '' }))).toMatchObject({
+      model: 'gpt-5.6-luna', effort: 'low',
+    })
+    expect(parseRecapGenerationSettings(null).prompt).toBeTruthy()
+    expect(parseRecapGenerationSettings('not json')).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
   })
 })

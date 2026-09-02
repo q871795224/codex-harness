@@ -127,7 +127,7 @@ impl ClaudeRuntime {
         let stream = match UnixStream::connect(&socket_path).await {
             Ok(stream) => stream,
             Err(_) if launch_agent_loaded() => {
-                kickstart_launch_agent()?;
+                kickstart_launch_agent(false)?;
                 connect_with_retry(&socket_path).await?
             }
             Err(_) => {
@@ -386,8 +386,9 @@ fn ensure_launch_agent(app: &AppHandle) -> Result<&'static str, String> {
     set_owner_only_directory(&log_dir)?;
     let installed_daemon = state_dir.join("daemon.mjs");
     let installed_sdk = state_dir.join("sdk.mjs");
-    install_runtime_file(&source_daemon, &installed_daemon)?;
-    install_runtime_file(&source_sdk, &installed_sdk)?;
+    let daemon_changed = install_runtime_file(&source_daemon, &installed_daemon)?;
+    let sdk_changed = install_runtime_file(&source_sdk, &installed_sdk)?;
+    let runtime_changed = daemon_changed || sdk_changed;
 
     let launch_agents_dir = home.join("Library/LaunchAgents");
     fs::create_dir_all(&launch_agents_dir)
@@ -410,7 +411,7 @@ fn ensure_launch_agent(app: &AppHandle) -> Result<&'static str, String> {
     install_bytes(plist.as_bytes(), &plist_path, 0o644)?;
 
     if launch_agent_loaded() {
-        kickstart_launch_agent()?;
+        kickstart_launch_agent(runtime_changed)?;
         return Ok("loaded");
     }
     if std::os::unix::net::UnixStream::connect(&socket_path).is_ok() {
@@ -460,10 +461,16 @@ fn launch_agent_loaded() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn kickstart_launch_agent() -> Result<(), String> {
+fn kickstart_launch_agent(restart: bool) -> Result<(), String> {
     let service = format!("{}/{}", launch_agent_domain(), LAUNCH_AGENT_LABEL);
+    let mut args = vec!["kickstart"];
+    if restart {
+        // 运行中的 daemon 仍持有旧代码；文件已更新时必须杀掉重启才能加载新版本。
+        args.push("-k");
+    }
+    args.push(&service);
     let output = std::process::Command::new("/bin/launchctl")
-        .args(["kickstart", &service])
+        .args(&args)
         .output()
         .map_err(|error| format!("无法启动 Claude Provider LaunchAgent: {error}"))?;
     if output.status.success() {
@@ -481,7 +488,7 @@ fn kickstart_launch_agent() -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn kickstart_launch_agent() -> Result<(), String> {
+fn kickstart_launch_agent(_restart: bool) -> Result<(), String> {
     Err("当前平台不支持 Claude Provider LaunchAgent。".to_string())
 }
 
@@ -491,7 +498,7 @@ fn launch_agent_domain() -> String {
 }
 
 #[cfg(target_os = "macos")]
-fn install_runtime_file(source: &Path, destination: &Path) -> Result<(), String> {
+fn install_runtime_file(source: &Path, destination: &Path) -> Result<bool, String> {
     let bytes = fs::read(source).map_err(|error| {
         format!(
             "无法读取 Claude Provider resource {}: {error}",
@@ -502,12 +509,12 @@ fn install_runtime_file(source: &Path, destination: &Path) -> Result<(), String>
 }
 
 #[cfg(target_os = "macos")]
-fn install_bytes(bytes: &[u8], destination: &Path, mode: u32) -> Result<(), String> {
+fn install_bytes(bytes: &[u8], destination: &Path, mode: u32) -> Result<bool, String> {
     use std::os::unix::fs::PermissionsExt;
     if fs::read(destination).is_ok_and(|current| current == bytes) {
         fs::set_permissions(destination, fs::Permissions::from_mode(mode))
             .map_err(|error| format!("无法设置 {} 的权限: {error}", destination.display()))?;
-        return Ok(());
+        return Ok(false);
     }
     let temporary = destination.with_extension(format!("tmp-{}", std::process::id()));
     fs::write(&temporary, bytes)
@@ -515,7 +522,8 @@ fn install_bytes(bytes: &[u8], destination: &Path, mode: u32) -> Result<(), Stri
     fs::set_permissions(&temporary, fs::Permissions::from_mode(mode))
         .map_err(|error| format!("无法设置 {} 的权限: {error}", temporary.display()))?;
     fs::rename(&temporary, destination)
-        .map_err(|error| format!("无法安装 {}: {error}", destination.display()))
+        .map_err(|error| format!("无法安装 {}: {error}", destination.display()))?;
+    Ok(true)
 }
 
 #[cfg(target_os = "macos")]

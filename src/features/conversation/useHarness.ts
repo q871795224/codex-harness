@@ -15,6 +15,7 @@ import type {
   NavigationPreferences,
   PendingSteer,
   QueuedSubmission,
+  RecapGenerationSettings,
   Thread,
   ThreadDetail,
   ThreadSort,
@@ -30,9 +31,11 @@ import type {
 } from '../../core/domain/codex'
 import { yoloModeSettings } from '../codex/yoloMode'
 import {
+  DEFAULT_RECAP_GENERATION,
   DEFAULT_THREAD_TITLE_GENERATION,
   defaultFontSizePreferences,
   emptyThreadDetail,
+  EPHEMERAL_THREAD_DISABLED_CONFIG,
   isActive,
   normalizeFontSize,
   normalizeFollowUpMode,
@@ -84,6 +87,7 @@ import {
   KEYBOARD_PREFERENCES_KEY,
   loadHarnessBootstrap,
   NAVIGATION_PREFERENCES_KEY,
+  RECAP_GENERATION_KEY,
   THREAD_TITLE_GENERATION_KEY,
   togglePinnedIdentifier,
 } from './harnessBootstrap'
@@ -91,6 +95,14 @@ import { subscribeHarnessRuntime } from './harnessSubscriptions'
 import { archiveThreadsBefore, listThreadPage, type ThreadViewMode } from './threadCatalog'
 import { prependOlderTurns } from './threadHistory'
 import { reduceTitleGeneratorEvent, type TitleGeneratorState } from './titleGenerator'
+import {
+  recapHistoryText,
+  recapPrompt,
+  reduceRecapGeneratorEvent,
+  type RecapGeneratorState,
+  type RecapHistoryMessage,
+} from './recapGenerator'
+import { groupTranscriptTurns } from './transcript'
 import {
   isFirstUserTurn,
   activeThreadIdsForRecovery,
@@ -145,6 +157,10 @@ function recordTitleDiagnostic(diagnostic: Omit<ClientDiagnostic, 'area'>): void
   void runtime.recordClientDiagnostic({ area: 'thread-title', ...diagnostic }).catch(() => undefined)
 }
 
+function recordRecapDiagnostic(diagnostic: Omit<ClientDiagnostic, 'area'>): void {
+  void runtime.recordClientDiagnostic({ area: 'conversation-recap', ...diagnostic }).catch(() => undefined)
+}
+
 function isMissingRollout(error: unknown): boolean {
   return messageOf(error).toLowerCase().includes('no rollout found')
 }
@@ -165,6 +181,8 @@ export function useHarness() {
   const [keyboard, setKeyboard] = useState<KeyboardPreferences>(defaultKeyboardPreferences)
   const [conversationStats, setConversationStatsState] = useState<ConversationStatsPreferences>(defaultConversationStatsPreferences)
   const [threadTitleGeneration, setThreadTitleGenerationState] = useState<ThreadTitleGenerationSettings>(DEFAULT_THREAD_TITLE_GENERATION)
+  const [recapGeneration, setRecapGenerationState] = useState<RecapGenerationSettings>(DEFAULT_RECAP_GENERATION)
+  const [recapBanner, setRecapBanner] = useState<{ threadId: string; text: string; createdAt: number } | null>(null)
   const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
   const [pendingSteers, setPendingSteers] = useState<Record<string, PendingSteer[]>>({})
@@ -199,6 +217,14 @@ export function useHarness() {
   const attemptedTitleThreadsRef = useRef(new Set<string>())
   const titleGeneratorsRef = useRef(new Map<string, TitleGeneratorState>())
   const threadTitleGenerationRef = useRef(threadTitleGeneration)
+  const recapGeneratorsRef = useRef(new Map<string, RecapGeneratorState>())
+  const recapGenerationRef = useRef(recapGeneration)
+  const recapUnfocusedSinceRef = useRef<number | null>(null)
+  const recapLastTurnFinishedAtRef = useRef<number | null>(null)
+  const recapCompletedTurnsRef = useRef(0)
+  const recapLastRecappedCountRef = useRef<number | null>(null)
+  const recapTimerRef = useRef<number | null>(null)
+  const recapInFlightThreadRef = useRef<string | null>(null)
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
   const transportRecoveryTimerRef = useRef<number | null>(null)
 
@@ -207,6 +233,7 @@ export function useHarness() {
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => { detailsRef.current = details }, [details])
   useEffect(() => { threadTitleGenerationRef.current = threadTitleGeneration }, [threadTitleGeneration])
+  useEffect(() => { recapGenerationRef.current = recapGeneration }, [recapGeneration])
 
   const rememberNextThreadCwd = useCallback((cwd: string | null) => {
     nextThreadCwdRef.current = cwd
@@ -356,6 +383,12 @@ export function useHarness() {
     threadTitleGenerationRef.current = next
     setThreadTitleGenerationState(next)
     void runtime.setAppState(THREAD_TITLE_GENERATION_KEY, JSON.stringify(next)).catch(() => undefined)
+  }, [])
+
+  const setRecapGeneration = useCallback((next: RecapGenerationSettings) => {
+    recapGenerationRef.current = next
+    setRecapGenerationState(next)
+    void runtime.setAppState(RECAP_GENERATION_KEY, JSON.stringify(next)).catch(() => undefined)
   }, [])
 
   const setConversationStats = useCallback((next: ConversationStatsPreferences) => {
@@ -1090,6 +1123,7 @@ export function useHarness() {
         sandbox: 'read-only',
         developerInstructions: settings.prompt,
         ephemeral: true,
+        config: EPHEMERAL_THREAD_DISABLED_CONFIG,
       })
       generatorThreadId = response.thread.id
       titleGeneratorsRef.current.set(response.thread.id, {
@@ -1152,6 +1186,162 @@ export function useHarness() {
       })
     }
   }, [])
+
+  // --- Recap: mirror the Codex CLI's "Conversation recap" state machine. ---
+  const RECAP_DELAY_MS = 3 * 60_000
+  const RECAP_MIN_COMPLETED_TURNS = 3
+  const RECAP_MIN_TURNS_BETWEEN = 2
+  const RECAP_HISTORY_MAX_USER_TURNS = 8
+
+  const cancelRecapTimer = useCallback(() => {
+    if (recapTimerRef.current !== null) {
+      window.clearTimeout(recapTimerRef.current)
+      recapTimerRef.current = null
+    }
+  }, [])
+
+  const collectRecapHistory = useCallback((threadId: string): RecapHistoryMessage[] => {
+    const detail = detailsRef.current[threadId]
+    if (!detail) return []
+    const turns = groupTranscriptTurns(detail.items, detail.turns)
+    return recapHistoryText(turns, RECAP_HISTORY_MAX_USER_TURNS)
+  }, [])
+
+  const maybeGenerateRecap = useCallback(async (threadId: string) => {
+    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+    if (!thread || thread.ephemeral) return
+    if (activeTurnIdsRef.current[threadId]) return
+    if (recapInFlightThreadRef.current) return
+    const history = collectRecapHistory(threadId)
+    if (history.length === 0) return
+
+    recapInFlightThreadRef.current = threadId
+    const settings = recapGenerationRef.current
+    const attemptId = newClientId()
+    const startedAt = performance.now()
+    recordRecapDiagnostic({
+      level: 'info',
+      event: 'recap.started',
+      threadId,
+      attemptId,
+      stage: 'thread/start',
+      trigger: 'automatic',
+      model: settings.model,
+      effort: settings.effort,
+    })
+
+    let generatorThreadId: string | null = null
+    let stage = 'thread/start'
+    try {
+      const response: StartThreadResponse = await appServer.startThread({
+        cwd: thread.cwd,
+        runtimeWorkspaceRoots: [thread.cwd],
+        model: settings.model,
+        approvalPolicy: 'never',
+        sandbox: 'read-only',
+        developerInstructions: settings.prompt,
+        ephemeral: true,
+        config: EPHEMERAL_THREAD_DISABLED_CONFIG,
+      })
+      generatorThreadId = response.thread.id
+      recapGeneratorsRef.current.set(response.thread.id, {
+        targetThreadId: threadId,
+        attemptId,
+        text: '',
+        startedAt,
+      })
+      stage = 'turn/start'
+      await appServer.startTurn({
+        threadId: response.thread.id,
+        clientUserMessageId: newClientId(),
+        input: [textInput(recapPrompt(settings.prompt, history))],
+        cwd: thread.cwd,
+        runtimeWorkspaceRoots: [thread.cwd],
+        approvalPolicy: 'never',
+        sandboxPolicy: { type: 'readOnly', networkAccess: false },
+        effort: settings.effort,
+        turnTrigger: 'recap',
+      })
+    } catch (error) {
+      if (generatorThreadId) recapGeneratorsRef.current.delete(generatorThreadId)
+      recapInFlightThreadRef.current = null
+      recordRecapDiagnostic({
+        level: 'error',
+        event: 'recap.failed',
+        method: stage,
+        threadId,
+        generatorThreadId: generatorThreadId ?? undefined,
+        attemptId,
+        stage,
+        trigger: 'automatic',
+        model: settings.model,
+        effort: settings.effort,
+        errorCode: diagnosticErrorCode(error),
+        durationMs: Math.round(performance.now() - startedAt),
+      })
+    }
+  }, [collectRecapHistory])
+
+  const scheduleRecapCheck = useCallback((threadId: string) => {
+    cancelRecapTimer()
+    const unfocusedSince = recapUnfocusedSinceRef.current
+    const lastTurnFinishedAt = recapLastTurnFinishedAtRef.current
+    if (unfocusedSince === null || lastTurnFinishedAt === null) return
+    if (recapCompletedTurnsRef.current < RECAP_MIN_COMPLETED_TURNS) return
+    const lastRecapped = recapLastRecappedCountRef.current
+    if (lastRecapped !== null && recapCompletedTurnsRef.current - lastRecapped < RECAP_MIN_TURNS_BETWEEN) return
+    const deadline = Math.max(unfocusedSince, lastTurnFinishedAt) + RECAP_DELAY_MS
+    const delay = Math.max(0, deadline - Date.now())
+    recapTimerRef.current = window.setTimeout(() => {
+      recapTimerRef.current = null
+      // Mirror the CLI: only recap the thread the user is actually looking at.
+      if (selectedThreadIdRef.current !== threadId) return
+      void maybeGenerateRecap(threadId)
+    }, delay)
+  }, [cancelRecapTimer, maybeGenerateRecap])
+
+  const noteRecapTurnFinished = useCallback((threadId: string) => {
+    recapCompletedTurnsRef.current += 1
+    recapLastTurnFinishedAtRef.current = Date.now()
+    if (selectedThreadIdRef.current === threadId) scheduleRecapCheck(threadId)
+  }, [scheduleRecapCheck])
+
+  const handleRecapFocusGained = useCallback(() => {
+    recapUnfocusedSinceRef.current = null
+    cancelRecapTimer()
+  }, [cancelRecapTimer])
+
+  const handleRecapFocusLost = useCallback((threadId: string | null) => {
+    if (recapUnfocusedSinceRef.current === null) recapUnfocusedSinceRef.current = Date.now()
+    if (threadId) scheduleRecapCheck(threadId)
+  }, [scheduleRecapCheck])
+
+  useEffect(() => {
+    let cancelled = false
+    const unlisteners: Array<() => void> = []
+    const attach = async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      const currentWindow = getCurrentWindow()
+      const unlistenBlur = await currentWindow.listen('tauri://blur', () => {
+        handleRecapFocusLost(selectedThreadIdRef.current)
+      })
+      const unlistenFocus = await currentWindow.listen('tauri://focus', () => {
+        handleRecapFocusGained()
+      })
+      if (cancelled) {
+        unlistenBlur()
+        unlistenFocus()
+        return
+      }
+      unlisteners.push(unlistenBlur, unlistenFocus)
+    }
+    void attach()
+    return () => {
+      cancelled = true
+      for (const unlisten of unlisteners) unlisten()
+      cancelRecapTimer()
+    }
+  }, [cancelRecapTimer, handleRecapFocusGained, handleRecapFocusLost])
 
   const startTurn = useCallback(async (
     threadId: string,
@@ -1575,12 +1765,45 @@ export function useHarness() {
     return true
   }, [updateDetail, updateThread])
 
+  const handleRecapGeneratorEvent = useCallback((method: string, params: JsonObject): boolean => {
+    const generatorThreadId = eventThreadId(params)
+    if (!generatorThreadId) return false
+    const generator = recapGeneratorsRef.current.get(generatorThreadId)
+    if (!generator) return false
+
+    const result = reduceRecapGeneratorEvent(generator, method, params)
+    if (result.kind === 'pending') {
+      recapGeneratorsRef.current.set(generatorThreadId, result.state)
+    } else {
+      const { recap } = result
+      recapGeneratorsRef.current.delete(generatorThreadId)
+      recapInFlightThreadRef.current = null
+      recordRecapDiagnostic({
+        level: 'info',
+        event: 'recap.completed',
+        method: 'turn/completed',
+        threadId: generator.targetThreadId,
+        generatorThreadId,
+        attemptId: generator.attemptId,
+        stage: 'turn/completed',
+        accepted: Boolean(recap),
+        durationMs: Math.round(performance.now() - generator.startedAt),
+      })
+      if (recap) {
+        recapLastRecappedCountRef.current = recapCompletedTurnsRef.current
+        setRecapBanner({ threadId: generator.targetThreadId, text: recap, createdAt: Date.now() })
+      }
+    }
+    return true
+  }, [])
+
   const handleEvent = useCallback((event: AppServerEvent) => {
     const method = event.method
     const params = event.params ?? {}
     if (!method) return
 
     if (handleTitleGeneratorEvent(method, params)) return
+    if (handleRecapGeneratorEvent(method, params)) return
 
     if (event.id !== undefined && isApprovalRequestMethod(method)) {
       const threadId = eventThreadId(params)
@@ -1775,6 +1998,7 @@ export function useHarness() {
           persistBadge(threadId, badge)
         }
         if (completedThread && !completedThread.ephemeral) {
+          noteRecapTurnFinished(threadId)
           const completedEvent: TurnCompletedEvent = {
             threadId,
             turnId: turn.id,
@@ -1822,7 +2046,7 @@ export function useHarness() {
         setThreads((current) => current.filter((thread) => thread.id !== threadId))
       }
     }
-  }, [commitTurnOwnership, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, notify, persistBadge, queueDetailDelta, setActiveTurn, setThreadStarting, startTurn, updateDetail, updateThread, upsertThread])
+  }, [commitTurnOwnership, handleRecapGeneratorEvent, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, notify, persistBadge, queueDetailDelta, setActiveTurn, setThreadStarting, startTurn, updateDetail, updateThread, upsertThread])
 
   useEffect(() => {
     let disposed = false
@@ -1837,6 +2061,8 @@ export function useHarness() {
         setKeyboard(restored.keyboard)
         threadTitleGenerationRef.current = restored.threadTitleGeneration
         setThreadTitleGenerationState(restored.threadTitleGeneration)
+        recapGenerationRef.current = restored.recapGeneration
+        setRecapGenerationState(restored.recapGeneration)
         setConversationStatsState(restored.conversationStats)
         if (restored.workspaces.length > 0) setSelectedWorkspaceRoot(restored.workspaces[0].root)
         const loadedThreads = await refreshThreads('active')
@@ -1871,9 +2097,19 @@ export function useHarness() {
         window.clearTimeout(transportRecoveryTimerRef.current)
         transportRecoveryTimerRef.current = null
       }
+      if (recapTimerRef.current !== null) {
+        window.clearTimeout(recapTimerRef.current)
+        recapTimerRef.current = null
+      }
       unsubscribe()
     }
   }, [handleEvent, handleTransportDisconnect, notify, refreshThreads, scheduleTransportRecovery, selectThread])
+
+  // Switching threads cancels any pending recap so the banner always matches
+  // the thread the user is viewing.
+  useEffect(() => {
+    cancelRecapTimer()
+  }, [cancelRecapTimer, selectedThreadId])
 
   const currentThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
@@ -1887,6 +2123,7 @@ export function useHarness() {
     activeTurnId,
     ownedActiveThreads[selectedThreadId ?? ''] === true,
   )
+  const currentRecap = recapBanner && recapBanner.threadId === selectedThreadId ? recapBanner : null
 
   return {
     phase,
@@ -1904,6 +2141,7 @@ export function useHarness() {
     keyboard,
     conversationStats,
     threadTitleGeneration,
+    recapGeneration,
     queues,
     approvals,
     pendingSteers,
@@ -1919,6 +2157,7 @@ export function useHarness() {
     currentDetail,
     currentTokenUsage,
     currentTaskPlan,
+    currentRecap,
     activeTurnId,
     activeTurnIds,
     currentForeignActive,
@@ -1963,6 +2202,7 @@ export function useHarness() {
     setActionShortcut,
     resetActionShortcuts,
     setThreadTitleGeneration,
+    setRecapGeneration,
     setConversationStats,
     setSelectedWorkspaceRoot: selectWorkspaceRoot,
     changeThreadWorkspace,

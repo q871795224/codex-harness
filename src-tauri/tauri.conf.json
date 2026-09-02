@@ -58,7 +58,7 @@
     },
     "macOS": {
       "minimumSystemVersion": "11.0",
-      "signingIdentity": "-"
+      "signingIdentity": "Codex Harness Local Code Signing"
     }
   }
 }

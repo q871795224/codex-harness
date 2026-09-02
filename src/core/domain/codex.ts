@@ -5,6 +5,7 @@ export type CodexTurnTrigger =
   | 'conversation-restart'
   | 'continue-after-failure'
   | 'quick-agent'
+  | 'recap'
   | 'return-to-parent'
   | 'thread-title'
 
@@ -139,6 +140,53 @@ export const DEFAULT_THREAD_TITLE_GENERATION: ThreadTitleGenerationSettings = {
   model: 'gpt-5.6-luna',
   effort: 'low',
   prompt: DEFAULT_THREAD_TITLE_PROMPT,
+}
+
+export interface RecapGenerationSettings {
+  model: string
+  effort: string
+  prompt: string
+}
+
+export const DEFAULT_RECAP_PROMPT = `Write a brief catch-up for a user returning to this Codex task. In at most 40 words and one or two plain-text sentences, explain the objective, what was completed or learned, and the next step or blocker. Mention changed files, tests, approvals, or requested decisions only when relevant. Never claim changes were made or tests passed unless the conversation confirms it. If the task is complete, say so instead of inventing more work. Use the user's language; omit greetings, markdown, lists, and tool chatter.`
+
+export const DEFAULT_RECAP_GENERATION: RecapGenerationSettings = {
+  model: 'gpt-5.6-luna',
+  effort: 'low',
+  prompt: DEFAULT_RECAP_PROMPT,
+}
+
+// Config overrides that disable every tool/skill/MCP-adjacent feature for an
+// ephemeral background thread (title generation, recap), mirroring the Codex
+// TUI's temporary structured requests so the summary call costs minimal tokens.
+export const EPHEMERAL_THREAD_DISABLED_CONFIG: JsonObject = {
+  'features.apps': false,
+  'features.code_mode': false,
+  'features.code_mode_only': false,
+  'features.current_time_reminder': false,
+  'features.deferred_executor': false,
+  'features.enable_fanout': false,
+  'features.goals': false,
+  'features.hooks': false,
+  'features.image_generation': false,
+  'features.memories': false,
+  'features.multi_agent': false,
+  'features.multi_agent_v2': false,
+  'features.plugins': false,
+  'features.request_permissions_tool': false,
+  'features.shell_snapshot': false,
+  'features.shell_tool': false,
+  'features.standalone_web_search': false,
+  'features.token_budget': false,
+  'features.tool_suggest': false,
+  'features.unified_exec': false,
+  'features.view_image': false,
+  'orchestrator.skills.enabled': false,
+  'skills.include_instructions': false,
+  'token_budget.use_history_notes_extension': false,
+  'tools.experimental_request_user_input.enabled': false,
+  'tools.update_plan.enabled': false,
+  'web_search': 'disabled',
 }
 
 export function normalizeTheme(value: unknown): Theme {

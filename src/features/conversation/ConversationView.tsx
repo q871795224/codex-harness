@@ -15,7 +15,6 @@ import {
   Copy,
   FileCode2,
   FileText,
-  FolderGit2,
   GitBranch,
   GitFork,
   Image,
@@ -23,6 +22,7 @@ import {
   Pin,
   PinOff,
   ShieldAlert,
+  Sparkles,
   Terminal,
   UserRound,
   Wrench,
@@ -180,6 +180,7 @@ interface ConversationViewProps {
   activeTurnIds?: Record<string, string>
   onInterruptAgent?: (threadId: string) => void
   newThreadPanels?: ReactNode
+  recap?: { text: string; createdAt: number } | null
   rawMode: boolean
   working: boolean
   workingTurnId: string | null
@@ -189,7 +190,7 @@ interface ConversationViewProps {
   continueDisabled?: boolean
 }
 
-export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
+export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -290,11 +291,6 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
                   开启一段新的 {provider === 'claude' ? 'Claude' : 'Codex'} 会话吧。
                 </p>
               </div>
-              <div className="fresh-thread-cwd" role="status" aria-label={`当前会话工作目录：${cwd}`}>
-                <FolderGit2 size={13} aria-hidden />
-                <span>工作目录</span>
-                <code title={cwd}>{cwd}</code>
-              </div>
               {newThreadPanels}
             </div>
           )}
@@ -343,6 +339,15 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
               <div className="message-label"><Bot size={15} />{agentLabel}</div>
               <WorkingStatus startedAt={workingStartedAt} />
             </article>
+          )}
+          {recap && (
+            <div className="recap-banner" role="status">
+              <Sparkles size={14} aria-hidden />
+              <div className="recap-banner-body">
+                <strong>会话回顾</strong>
+                <p>{recap.text}</p>
+              </div>
+            </div>
           )}
           {approvals.map((request) => (
             <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
@@ -681,17 +686,17 @@ function MessageActions({ copyText, onFork, forking = false, rawActive = false, 
   return (
     <div className="message-actions">
       {canCopy && (
-        <button type="button" className={copyState} onClick={() => void copy()} aria-label="复制消息" title={copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}>
+        <button type="button" className={copyState} onClick={() => void copy()} aria-label="复制消息" data-tip="copy">
           {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
         </button>
       )}
       {onToggleRaw && (
-        <button type="button" className={rawActive ? 'active' : undefined} onClick={onToggleRaw} aria-label="切换原始文本" aria-pressed={rawActive} title={rawActive ? '恢复富文本渲染' : '以原始文本显示此消息'}>
+        <button type="button" className={rawActive ? 'active' : undefined} onClick={onToggleRaw} aria-label={rawActive ? '恢复富文本渲染' : '以原始文本显示此消息'} aria-pressed={rawActive} data-tip="raw">
           <FileCode2 size={13} />
         </button>
       )}
       {onFork && (
-        <button type="button" onClick={onFork} disabled={forking} aria-label="从此处开始分叉" title="复制到这一轮为止的对话历史；代码文件仍与当前会话共用同一工作目录">
+        <button type="button" onClick={onFork} disabled={forking} aria-label="从此处开始分叉" data-tip="fork">
           <GitFork size={13} />
         </button>
       )}

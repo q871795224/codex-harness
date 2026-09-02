@@ -9,6 +9,7 @@
 - 项目长期记忆读 [.harness/memory.md](.harness/memory.md)。
 - 测试和验证要求读 [.harness/test.md](.harness/test.md)。
 - 已确认的坑点读 [.harness/pitfall.md](.harness/pitfall.md)。
+- 沟通术语以 [.harness/glossary.md](.harness/glossary.md) 为准；出现名词歧义（如标题栏、turn、item）时查它，新约定沉淀进去。
 - 发布、打包和安装流程使用项目级 Skill `.agents/skills/harness-release/SKILL.md`，不要把发布清单带入普通开发任务。
 - Codex CLI/Harness 请求对照和 token 成本排查使用项目级 Skill `.agents/skills/harness-codex-audit/SKILL.md`。
 

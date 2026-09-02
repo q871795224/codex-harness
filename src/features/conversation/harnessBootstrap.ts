@@ -2,11 +2,13 @@ import type {
   AppearancePreferences,
   KeyboardPreferences,
   NavigationPreferences,
+  RecapGenerationSettings,
   ThreadTitleGenerationSettings,
   ThreadUiState,
   Workspace,
 } from '../../core/domain/codex'
 import {
+  DEFAULT_RECAP_GENERATION,
   DEFAULT_SIDEBAR_LIST_SPLIT_RATIO,
   DEFAULT_SIDEBAR_WIDTH,
   DEFAULT_THREAD_TITLE_GENERATION,
@@ -29,6 +31,7 @@ export const NAVIGATION_PREFERENCES_KEY = 'navigationPreferences'
 export const APPEARANCE_PREFERENCES_KEY = 'appearancePreferences'
 export const KEYBOARD_PREFERENCES_KEY = 'keyboardPreferences'
 export const THREAD_TITLE_GENERATION_KEY = 'threadTitleGeneration'
+export const RECAP_GENERATION_KEY = 'recapGeneration'
 export const CONVERSATION_STATS_PREFERENCES_KEY = 'conversationStatsPreferences'
 
 export const defaultNavigationPreferences: NavigationPreferences = {
@@ -68,11 +71,12 @@ export interface HarnessBootstrapState {
   appearance: AppearancePreferences
   keyboard: KeyboardPreferences
   threadTitleGeneration: ThreadTitleGenerationSettings
+  recapGeneration: RecapGenerationSettings
   conversationStats: ConversationStatsPreferences
 }
 
 export async function loadHarnessBootstrap(storage: HarnessBootstrapStorage): Promise<HarnessBootstrapState> {
-  const [workspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance, storedKeyboard, storedThreadTitleGeneration, storedConversationStats] = await Promise.all([
+  const [workspaces, storedStates, rememberedThreadId, storedNavigation, storedAppearance, storedKeyboard, storedThreadTitleGeneration, storedRecapGeneration, storedConversationStats] = await Promise.all([
     storage.listWorkspaces(),
     storage.listThreadStates(),
     storage.getAppState('selectedThreadId'),
@@ -80,6 +84,7 @@ export async function loadHarnessBootstrap(storage: HarnessBootstrapStorage): Pr
     storage.getAppState(APPEARANCE_PREFERENCES_KEY),
     storage.getAppState(KEYBOARD_PREFERENCES_KEY),
     storage.getAppState(THREAD_TITLE_GENERATION_KEY),
+    storage.getAppState(RECAP_GENERATION_KEY),
     storage.getAppState(CONVERSATION_STATS_PREFERENCES_KEY),
   ])
 
@@ -91,6 +96,7 @@ export async function loadHarnessBootstrap(storage: HarnessBootstrapStorage): Pr
     appearance: parseAppearancePreferences(storedAppearance),
     keyboard: parseKeyboardPreferences(storedKeyboard),
     threadTitleGeneration: parseThreadTitleGenerationSettings(storedThreadTitleGeneration),
+    recapGeneration: parseRecapGenerationSettings(storedRecapGeneration),
     conversationStats: parseConversationStatsPreferences(storedConversationStats),
   }
 }
@@ -134,6 +140,20 @@ export function parseThreadTitleGenerationSettings(raw: string | null): ThreadTi
     }
   } catch {
     return DEFAULT_THREAD_TITLE_GENERATION
+  }
+}
+
+export function parseRecapGenerationSettings(raw: string | null): RecapGenerationSettings {
+  if (!raw) return DEFAULT_RECAP_GENERATION
+  try {
+    const value = JSON.parse(raw) as Partial<RecapGenerationSettings>
+    return {
+      model: typeof value.model === 'string' && value.model.trim() ? value.model : DEFAULT_RECAP_GENERATION.model,
+      effort: typeof value.effort === 'string' && value.effort.trim() ? value.effort : DEFAULT_RECAP_GENERATION.effort,
+      prompt: typeof value.prompt === 'string' && value.prompt.trim() ? value.prompt : DEFAULT_RECAP_GENERATION.prompt,
+    }
+  } catch {
+    return DEFAULT_RECAP_GENERATION
   }
 }
 

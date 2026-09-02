@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Activity, ArrowDown, ArrowUp, Blocks, BrainCircuit, CircleHelp, FolderOpen, GripVertical, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
-import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, HarnessActionId, HarnessActionShortcuts, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
-import { DEFAULT_FONT_SIZES, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
+import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, HarnessActionId, HarnessActionShortcuts, RecapGenerationSettings, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
+import { DEFAULT_FONT_SIZES, DEFAULT_RECAP_GENERATION, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import { appServer } from '../../core/runtime/appServerClient'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
@@ -27,6 +27,7 @@ interface SettingsDialogProps {
   selectedWorkspaceRoot: string | null
   codex: ReturnType<typeof useCodexCore>
   threadTitleGeneration: ThreadTitleGenerationSettings
+  recapGeneration: RecapGenerationSettings
   conversationStats: ConversationStatsPreferences
   conversationStatsData: ConversationStatsData
   onTheme: (theme: Theme) => void
@@ -37,6 +38,7 @@ interface SettingsDialogProps {
   onActionShortcut: (actionId: HarnessActionId, shortcut: string) => void
   onResetActionShortcuts: () => void
   onThreadTitleGeneration: (settings: ThreadTitleGenerationSettings) => void
+  onRecapGeneration: (settings: RecapGenerationSettings) => void
   onConversationStats: (preferences: ConversationStatsPreferences) => void
   onOpenPlugins: () => void
   onClose: () => void
@@ -51,7 +53,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'skills' | 'mcp'
+type SettingsPage = 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -60,7 +62,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, threadTitleGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -72,6 +74,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
     keyboard: { heading: '快捷键', kicker: 'KEYBOARD' },
     models: { heading: '模型', kicker: 'CODEX' },
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
+    recap: { heading: '会话回顾', kicker: 'AUTOMATION' },
     skills: { heading: '技能', kicker: 'CODEX' },
     mcp: { heading: 'MCP', kicker: 'CODEX' },
   }
@@ -133,6 +136,9 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
             <button type="button" className={page === 'thread-title' ? 'selected' : ''} aria-current={page === 'thread-title' ? 'page' : undefined} onClick={() => setPage('thread-title')}>
               <MessageSquareText size={16} />会话标题
             </button>
+            <button type="button" className={page === 'recap' ? 'selected' : ''} aria-current={page === 'recap' ? 'page' : undefined} onClick={() => setPage('recap')}>
+              <Sparkles size={16} />会话回顾
+            </button>
             <button type="button" className={page === 'skills' ? 'selected' : ''} aria-current={page === 'skills' ? 'page' : undefined} onClick={() => setPage('skills')}>
               <Sparkles size={16} />技能
             </button>
@@ -156,6 +162,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
           {page === 'models' && <ModelsSettings codex={codex} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
+          {page === 'recap' && <RecapSettings codex={codex} settings={recapGeneration} onChange={onRecapGeneration} />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
           {page === 'mcp' && <McpSettings codex={codex} />}
           <SettingsVersions
@@ -241,6 +248,57 @@ function ThreadTitleSettings({ codex, settings, onChange }: {
         </label>
         <div className="title-prompt-actions">
           <button type="button" onClick={() => { setPromptDraft(DEFAULT_THREAD_TITLE_GENERATION.prompt); onChange({ ...settings, prompt: DEFAULT_THREAD_TITLE_GENERATION.prompt }) }}>恢复默认</button>
+          <button type="button" className="primary" disabled={!promptDraft.trim() || promptDraft === settings.prompt} onClick={() => onChange({ ...settings, prompt: promptDraft.trim() })}>保存提示词</button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function RecapSettings({ codex, settings, onChange }: {
+  codex: ReturnType<typeof useCodexCore>
+  settings: RecapGenerationSettings
+  onChange: (settings: RecapGenerationSettings) => void
+}) {
+  const [promptDraft, setPromptDraft] = useState(settings.prompt)
+  const selectedModel = codex.models.find((model) => model.model === settings.model) ?? null
+  const efforts = selectedModel?.supportedReasoningEfforts.map((option) => option.reasoningEffort) ?? [settings.effort]
+
+  useEffect(() => setPromptDraft(settings.prompt), [settings.prompt])
+
+  const selectModel = (modelId: string) => {
+    const model = codex.models.find((candidate) => candidate.model === modelId)
+    const effort = model?.supportedReasoningEfforts.some((option) => option.reasoningEffort === settings.effort)
+      ? settings.effort
+      : model?.defaultReasoningEffort ?? settings.effort
+    onChange({ ...settings, model: modelId, effort })
+  }
+
+  return (
+    <div className="settings-section codex-settings">
+      <section className="codex-setting-card">
+        <div className="settings-section-title"><Sparkles size={17} /><div><h3>会话回顾</h3><p>窗口失焦一段时间后，用独立的只读临时会话为当前会话生成一句进度摘要。</p></div></div>
+        <div className="settings-row-list">
+          <label className="settings-row">
+            <span>模型</span>
+            <select value={settings.model} disabled={codex.loading} onChange={(event) => selectModel(event.target.value)}>
+              {!selectedModel && <option value={settings.model}>{settings.model}</option>}
+              {codex.models.map((model) => <option key={model.id} value={model.model}>{model.displayName}</option>)}
+            </select>
+          </label>
+          <label className="settings-row">
+            <span>推理强度</span>
+            <select value={settings.effort} disabled={codex.loading} onChange={(event) => onChange({ ...settings, effort: event.target.value })}>
+              {efforts.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
+            </select>
+          </label>
+        </div>
+        <label className="title-prompt-field">
+          <span>开发者提示词</span>
+          <textarea value={promptDraft} onChange={(event) => setPromptDraft(event.target.value)} spellCheck={false} />
+        </label>
+        <div className="title-prompt-actions">
+          <button type="button" onClick={() => { setPromptDraft(DEFAULT_RECAP_GENERATION.prompt); onChange({ ...settings, prompt: DEFAULT_RECAP_GENERATION.prompt }) }}>恢复默认</button>
           <button type="button" className="primary" disabled={!promptDraft.trim() || promptDraft === settings.prompt} onClick={() => onChange({ ...settings, prompt: promptDraft.trim() })}>保存提示词</button>
         </div>
       </section>

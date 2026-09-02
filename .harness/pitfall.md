@@ -50,3 +50,16 @@
 - **原因**：Agent Run 的交付物生命周期独立于当前会话。
 - **正确做法**：保留目录和分支；有未提交改动时清理必须失败，不使用 `--force`。
 - **适用范围**：Quick Agent、worktree 清理和发布交付。
+
+## Claude Provider daemon 不随文件更新自动重启
+
+- **问题**：`~/.codex-harness/claude-provider/daemon.mjs` 被新版覆盖后，正在运行的 daemon 进程仍执行旧代码，新方法（如 `provider/models`）会报"未知 Claude Provider 方法"。
+- **原因**：`launchctl kickstart`（不带 `-k`）对已在运行的服务是 no-op，不会重启进程。
+- **正确做法**：`install_runtime_file` 返回内容是否变更，`ensure_launch_agent` 在文件变更时用 `kickstart -k` 强制重启 daemon；手动修复可执行 `launchctl kickstart -k gui/$(id -u)/com.local.codex-harness.claude-provider`。
+- **适用范围**：Claude Provider 方法新增、daemon 升级和"未知方法"报错排查。
+
+## macOS 发布必须用稳定签名身份
+
+- **问题**：ad-hoc 签名（`signingIdentity: "-"`）的应用每次重新构建 cdhash 都会变化，macOS TCC 把每个新构建当成新应用，屏幕录制等权限授权不跨版本保留，用户每次安装新版都会重新看到权限弹窗。
+- **正确做法**：`tauri.conf.json` 的 `signingIdentity` 固定为钥匙串里的自签证书 "Codex Harness Local Code Signing"（2036 年到期），签名身份稳定后 TCC 授权可跨版本继承；不要改回 `-`。
+- **适用范围**：发布打包、安装流程和权限弹窗排查。
