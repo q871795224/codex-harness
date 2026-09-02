@@ -58,6 +58,7 @@ export default function App() {
       refreshSnapshot: runtime.usageRefreshSnapshot,
     } satisfies UsageService,
     'harness.codexAnalytics': {
+      configure: runtime.codexAnalyticsConfigure,
       snapshot: runtime.codexAnalyticsSnapshot,
     } satisfies CodexAnalyticsService,
     'harness.quickCommands': {

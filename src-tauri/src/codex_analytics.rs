@@ -1,21 +1,59 @@
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicU8, Ordering},
         mpsc::{self, SyncSender},
         Arc,
     },
     thread,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-const ESTIMATOR_VERSION: &str = "unicode-heuristic-v1";
+const LOCAL_ESTIMATOR_VERSION: &str = "tiktoken-rs/0.12.0:o200k_base";
+const HEURISTIC_ESTIMATOR_VERSION: &str = "unicode-heuristic-v1:fallback";
+const OFFICIAL_ESTIMATOR_VERSION: &str = "openai:responses/input_tokens-v1";
 const EVENT_QUEUE_CAPACITY: usize = 2_048;
+const OFFICIAL_QUEUE_CAPACITY: usize = 64;
+const MAX_COUNTED_TEXT_BYTES: usize = 1_048_576;
+const OFFICIAL_MIN_INTERVAL: Duration = Duration::from_millis(250);
+const OFFICIAL_TIMEOUT: Duration = Duration::from_secs(5);
+const OFFICIAL_ENDPOINT: &str = "https://api.openai.com/v1/responses/input_tokens";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CounterMode {
+    Local = 0,
+    Official = 1,
+}
+
+impl CounterMode {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "local" => Ok(Self::Local),
+            "official" => Ok(Self::Official),
+            _ => Err(format!("不支持的 Token 计数模式: {value}")),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Official => "official",
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct OfficialStats {
+    requests: AtomicU64,
+    successes: AtomicU64,
+    failures: AtomicU64,
+    fallbacks: AtomicU64,
+}
 
 #[derive(Clone)]
 pub struct CodexAnalytics {
@@ -23,6 +61,9 @@ pub struct CodexAnalytics {
     events: Option<SyncSender<AnalyticsEvent>>,
     dropped_events: Arc<AtomicU64>,
     write_errors: Arc<AtomicU64>,
+    counter_mode: Arc<AtomicU8>,
+    api_key_configured: bool,
+    official_stats: Arc<OfficialStats>,
 }
 
 #[derive(Debug)]
@@ -30,6 +71,7 @@ enum AnalyticsEvent {
     Turn(TurnObservation),
     Usage(UsageObservation),
     Mcp(McpObservation),
+    OfficialCount(OfficialCountResult),
 }
 
 #[derive(Debug)]
@@ -42,6 +84,7 @@ struct TurnObservation {
     user_chars: u64,
     user_bytes: u64,
     user_estimated_tokens: u64,
+    user_text: Option<String>,
     mention_count: u64,
     image_count: u64,
     audio_count: u64,
@@ -57,6 +100,7 @@ pub(crate) struct PendingTurnObservation {
     user_chars: u64,
     user_bytes: u64,
     user_estimated_tokens: u64,
+    user_text: Option<String>,
     mention_count: u64,
     image_count: u64,
     audio_count: u64,
@@ -97,6 +141,35 @@ struct McpObservation {
     argument_chars: u64,
     result_chars: u64,
     estimated_tokens: u64,
+    text: Option<String>,
+}
+
+#[derive(Debug)]
+enum OfficialTarget {
+    Turn { turn_id: String },
+    Skill { turn_id: String, skill_name: String },
+    Mcp { call_id: String },
+}
+
+#[derive(Debug)]
+struct OfficialCountRequest {
+    target: OfficialTarget,
+    model: String,
+    text: String,
+}
+
+#[derive(Debug)]
+struct OfficialCountResult {
+    target: OfficialTarget,
+    tokens: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyticsCounterStatus {
+    mode: &'static str,
+    api_key_configured: bool,
+    local_estimator: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -105,7 +178,8 @@ pub struct AnalyticsSnapshot {
     range: String,
     generated_at: i64,
     retention: &'static str,
-    estimator_version: &'static str,
+    estimator_version: String,
+    counter: AnalyticsCounterSnapshot,
     summary: AnalyticsSummary,
     daily: Vec<DailyUsage>,
     sources: Vec<SourceUsage>,
@@ -113,6 +187,18 @@ pub struct AnalyticsSnapshot {
     skills: Vec<SkillUsage>,
     mcp_tools: Vec<McpUsage>,
     recent_turns: Vec<RecentTurn>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AnalyticsCounterSnapshot {
+    mode: &'static str,
+    api_key_configured: bool,
+    local_estimator: &'static str,
+    official_requests: u64,
+    official_successes: u64,
+    official_failures: u64,
+    official_fallbacks: u64,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -229,10 +315,19 @@ impl CodexAnalytics {
         drop(connection);
 
         let (events, receiver) = mpsc::sync_channel(EVENT_QUEUE_CAPACITY);
+        let (official_requests, official_receiver) = mpsc::sync_channel(OFFICIAL_QUEUE_CAPACITY);
         let writer_path = database_path.clone();
         let dropped_events = Arc::new(AtomicU64::new(0));
         let write_errors = Arc::new(AtomicU64::new(0));
+        let counter_mode = Arc::new(AtomicU8::new(CounterMode::Local as u8));
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let api_key_configured = api_key.is_some();
+        let official_stats = Arc::new(OfficialStats::default());
         let writer_errors = write_errors.clone();
+        let writer_mode = counter_mode.clone();
+        let writer_stats = official_stats.clone();
         thread::Builder::new()
             .name("codex-analytics-writer".to_string())
             .spawn(move || {
@@ -240,18 +335,46 @@ impl CodexAnalytics {
                     return;
                 };
                 while let Ok(event) = receiver.recv() {
-                    if persist_event(&connection, event).is_err() {
+                    if persist_event(
+                        &connection,
+                        event,
+                        &writer_mode,
+                        &official_requests,
+                        &writer_stats,
+                    )
+                    .is_err()
+                    {
                         writer_errors.fetch_add(1, Ordering::Relaxed);
                     }
                 }
             })
             .map_err(|error| format!("无法启动 Codex 分析写入线程: {error}"))?;
 
+        let result_sender = events.clone();
+        let official_mode = counter_mode.clone();
+        let worker_stats = official_stats.clone();
+        thread::Builder::new()
+            .name("codex-analytics-openai-counter".to_string())
+            .spawn(move || {
+                run_official_counter(
+                    official_receiver,
+                    result_sender,
+                    official_mode,
+                    api_key,
+                    worker_stats,
+                    OFFICIAL_ENDPOINT,
+                )
+            })
+            .map_err(|error| format!("无法启动 OpenAI Token 计数线程: {error}"))?;
+
         Ok(Self {
             database_path,
             events: Some(events),
             dropped_events,
             write_errors,
+            counter_mode,
+            api_key_configured,
+            official_stats,
         })
     }
 
@@ -261,7 +384,20 @@ impl CodexAnalytics {
             events: None,
             dropped_events: Arc::new(AtomicU64::new(0)),
             write_errors: Arc::new(AtomicU64::new(1)),
+            counter_mode: Arc::new(AtomicU8::new(CounterMode::Local as u8)),
+            api_key_configured: false,
+            official_stats: Arc::new(OfficialStats::default()),
         }
+    }
+
+    pub fn configure(&self, mode: &str) -> Result<AnalyticsCounterStatus, String> {
+        let mode = CounterMode::parse(mode)?;
+        self.counter_mode.store(mode as u8, Ordering::Relaxed);
+        Ok(AnalyticsCounterStatus {
+            mode: mode.label(),
+            api_key_configured: self.api_key_configured,
+            local_estimator: LOCAL_ESTIMATOR_VERSION,
+        })
     }
 
     pub fn prepare_turn(&self, params: &Value) -> Option<PendingTurnObservation> {
@@ -271,6 +407,8 @@ impl CodexAnalytics {
         let mut user_chars = 0_u64;
         let mut user_bytes = 0_u64;
         let mut user_estimated_tokens = 0_u64;
+        let mut user_text = String::new();
+        let mut text_overflow = false;
         let mut mention_count = 0_u64;
         let mut image_count = 0_u64;
         let mut audio_count = 0_u64;
@@ -282,8 +420,25 @@ impl CodexAnalytics {
                         if let Some(text) = input.get("text").and_then(Value::as_str) {
                             user_chars = user_chars.saturating_add(text.chars().count() as u64);
                             user_bytes = user_bytes.saturating_add(text.len() as u64);
-                            user_estimated_tokens =
-                                user_estimated_tokens.saturating_add(estimate_tokens(text));
+                            user_estimated_tokens = user_estimated_tokens
+                                .saturating_add(estimate_tokens_heuristic(text));
+                            if !text_overflow {
+                                let separator = usize::from(!user_text.is_empty());
+                                if user_text
+                                    .len()
+                                    .saturating_add(text.len())
+                                    .saturating_add(separator)
+                                    <= MAX_COUNTED_TEXT_BYTES
+                                {
+                                    if separator == 1 {
+                                        user_text.push('\n');
+                                    }
+                                    user_text.push_str(text);
+                                } else {
+                                    user_text.clear();
+                                    text_overflow = true;
+                                }
+                            }
                         }
                     }
                     Some("skill") => {
@@ -313,6 +468,7 @@ impl CodexAnalytics {
             user_chars,
             user_bytes,
             user_estimated_tokens,
+            user_text: (!text_overflow && !user_text.is_empty()).then_some(user_text),
             mention_count,
             image_count,
             audio_count,
@@ -338,6 +494,7 @@ impl CodexAnalytics {
             user_chars: pending.user_chars,
             user_bytes: pending.user_bytes,
             user_estimated_tokens: pending.user_estimated_tokens,
+            user_text: pending.user_text,
             mention_count: pending.mention_count,
             image_count: pending.image_count,
             audio_count: pending.audio_count,
@@ -444,7 +601,21 @@ impl CodexAnalytics {
             range: range.to_string(),
             generated_at: now_ms(),
             retention: "permanent",
-            estimator_version: ESTIMATOR_VERSION,
+            estimator_version: match self.current_mode() {
+                CounterMode::Local => LOCAL_ESTIMATOR_VERSION.to_string(),
+                CounterMode::Official => {
+                    format!("{OFFICIAL_ESTIMATOR_VERSION}（失败时回退 {LOCAL_ESTIMATOR_VERSION}）")
+                }
+            },
+            counter: AnalyticsCounterSnapshot {
+                mode: self.current_mode().label(),
+                api_key_configured: self.api_key_configured,
+                local_estimator: LOCAL_ESTIMATOR_VERSION,
+                official_requests: self.official_stats.requests.load(Ordering::Relaxed),
+                official_successes: self.official_stats.successes.load(Ordering::Relaxed),
+                official_failures: self.official_stats.failures.load(Ordering::Relaxed),
+                official_fallbacks: self.official_stats.fallbacks.load(Ordering::Relaxed),
+            },
             summary,
             daily: daily.into_values().collect(),
             sources,
@@ -499,6 +670,21 @@ impl CodexAnalytics {
         let arguments = item.get("arguments").map(json_chars).unwrap_or_default();
         let result = item.get("result").map(json_chars).unwrap_or_default();
         let estimated_tokens = estimate_token_count_from_chars(arguments + result);
+        let text = if arguments.saturating_add(result) <= MAX_COUNTED_TEXT_BYTES as u64 {
+            let arguments = item
+                .get("arguments")
+                .and_then(|value| serde_json::to_string(value).ok());
+            let result = item
+                .get("result")
+                .and_then(|value| serde_json::to_string(value).ok());
+            match (arguments, result) {
+                (Some(arguments), Some(result)) => Some(format!("{arguments}\n{result}")),
+                (Some(value), None) | (None, Some(value)) => Some(value),
+                (None, None) => None,
+            }
+        } else {
+            None
+        };
         let observation = McpObservation {
             call_id: call_id.to_string(),
             thread_id: thread_id.to_string(),
@@ -509,6 +695,7 @@ impl CodexAnalytics {
             argument_chars: arguments,
             result_chars: result,
             estimated_tokens,
+            text,
         };
         self.enqueue(AnalyticsEvent::Mcp(observation));
     }
@@ -520,6 +707,14 @@ impl CodexAnalytics {
             .is_none_or(|events| events.try_send(event).is_err())
         {
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn current_mode(&self) -> CounterMode {
+        if self.counter_mode.load(Ordering::Relaxed) == CounterMode::Official as u8 {
+            CounterMode::Official
+        } else {
+            CounterMode::Local
         }
     }
 }
@@ -594,16 +789,39 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
         .map_err(|error| format!("无法初始化 Codex 分析数据库: {error}"))
 }
 
-fn persist_event(connection: &Connection, event: AnalyticsEvent) -> rusqlite::Result<()> {
+fn persist_event(
+    connection: &Connection,
+    event: AnalyticsEvent,
+    mode: &AtomicU8,
+    official_requests: &SyncSender<OfficialCountRequest>,
+    official_stats: &OfficialStats,
+) -> rusqlite::Result<()> {
     match event {
-        AnalyticsEvent::Turn(turn) => persist_turn(connection, turn),
+        AnalyticsEvent::Turn(turn) => {
+            persist_turn(connection, turn, mode, official_requests, official_stats)
+        }
         AnalyticsEvent::Usage(usage) => persist_usage(connection, usage),
-        AnalyticsEvent::Mcp(call) => persist_mcp(connection, call),
+        AnalyticsEvent::Mcp(call) => {
+            persist_mcp(connection, call, mode, official_requests, official_stats)
+        }
+        AnalyticsEvent::OfficialCount(result) => persist_official_count(connection, result),
     }
 }
 
-fn persist_turn(connection: &Connection, turn: TurnObservation) -> rusqlite::Result<()> {
+fn persist_turn(
+    connection: &Connection,
+    mut turn: TurnObservation,
+    mode: &AtomicU8,
+    official_requests: &SyncSender<OfficialCountRequest>,
+    official_stats: &OfficialStats,
+) -> rusqlite::Result<()> {
     let now = now_ms();
+    let user_estimator = if let Some(text) = turn.user_text.as_deref() {
+        turn.user_estimated_tokens = count_local_tokens(text);
+        LOCAL_ESTIMATOR_VERSION
+    } else {
+        HEURISTIC_ESTIMATOR_VERSION
+    };
     connection.execute(
         r#"
         INSERT INTO codex_analytics_turns (
@@ -638,13 +856,39 @@ fn persist_turn(connection: &Connection, turn: TurnObservation) -> rusqlite::Res
             turn.mention_count,
             turn.image_count,
             turn.audio_count,
-            ESTIMATOR_VERSION,
+            user_estimator,
         ],
     )?;
+
+    if let (Some(model), Some(text)) = (turn.model.as_deref(), turn.user_text.take()) {
+        enqueue_official_if_enabled(
+            mode,
+            official_requests,
+            official_stats,
+            OfficialCountRequest {
+                target: OfficialTarget::Turn {
+                    turn_id: turn.turn_id.clone(),
+                },
+                model: model.to_string(),
+                text,
+            },
+        );
+    }
 
     for skill in turn.skills {
         let Ok(content) = fs::read_to_string(&skill.path) else {
             continue;
+        };
+        let within_limit = content.len() <= MAX_COUNTED_TEXT_BYTES;
+        let estimated_tokens = if within_limit {
+            count_local_tokens(&content)
+        } else {
+            estimate_tokens_heuristic(&content)
+        };
+        let estimator_version = if within_limit {
+            LOCAL_ESTIMATOR_VERSION
+        } else {
+            HEURISTIC_ESTIMATOR_VERSION
         };
         connection.execute(
             r#"
@@ -662,10 +906,27 @@ fn persist_turn(connection: &Connection, turn: TurnObservation) -> rusqlite::Res
                 skill.name,
                 content.chars().count() as u64,
                 content.len() as u64,
-                estimate_tokens(&content),
-                ESTIMATOR_VERSION,
+                estimated_tokens,
+                estimator_version,
             ],
         )?;
+        if within_limit {
+            if let Some(model) = turn.model.as_deref() {
+                enqueue_official_if_enabled(
+                    mode,
+                    official_requests,
+                    official_stats,
+                    OfficialCountRequest {
+                        target: OfficialTarget::Skill {
+                            turn_id: turn.turn_id.clone(),
+                            skill_name: skill.name,
+                        },
+                        model: model.to_string(),
+                        text: content,
+                    },
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -695,7 +956,7 @@ fn persist_usage(connection: &Connection, usage: UsageObservation) -> rusqlite::
             usage.turn_id,
             usage.thread_id,
             now,
-            ESTIMATOR_VERSION,
+            LOCAL_ESTIMATOR_VERSION,
             usage.usage.total,
             usage.usage.input,
             usage.usage.cached_input,
@@ -707,7 +968,19 @@ fn persist_usage(connection: &Connection, usage: UsageObservation) -> rusqlite::
     Ok(())
 }
 
-fn persist_mcp(connection: &Connection, call: McpObservation) -> rusqlite::Result<()> {
+fn persist_mcp(
+    connection: &Connection,
+    mut call: McpObservation,
+    mode: &AtomicU8,
+    official_requests: &SyncSender<OfficialCountRequest>,
+    official_stats: &OfficialStats,
+) -> rusqlite::Result<()> {
+    let estimator_version = if let Some(text) = call.text.as_deref() {
+        call.estimated_tokens = count_local_tokens(text);
+        LOCAL_ESTIMATOR_VERSION
+    } else {
+        HEURISTIC_ESTIMATOR_VERSION
+    };
     connection.execute(
         r#"
         INSERT INTO codex_analytics_mcp_calls (
@@ -731,10 +1004,64 @@ fn persist_mcp(connection: &Connection, call: McpObservation) -> rusqlite::Resul
             call.argument_chars,
             call.result_chars,
             call.estimated_tokens,
-            ESTIMATOR_VERSION,
+            estimator_version,
             now_ms(),
         ],
     )?;
+    if let Some(text) = call.text.take() {
+        let model = connection
+            .query_row(
+                "SELECT model FROM codex_analytics_turns WHERE turn_id = ?1",
+                [&call.turn_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten();
+        if let Some(model) = model {
+            enqueue_official_if_enabled(
+                mode,
+                official_requests,
+                official_stats,
+                OfficialCountRequest {
+                    target: OfficialTarget::Mcp {
+                        call_id: call.call_id,
+                    },
+                    model,
+                    text,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
+fn persist_official_count(
+    connection: &Connection,
+    result: OfficialCountResult,
+) -> rusqlite::Result<()> {
+    match result.target {
+        OfficialTarget::Turn { turn_id } => {
+            connection.execute(
+                "UPDATE codex_analytics_turns SET user_estimated_tokens = ?1, estimator_version = ?2 WHERE turn_id = ?3",
+                params![result.tokens, OFFICIAL_ESTIMATOR_VERSION, turn_id],
+            )?;
+        }
+        OfficialTarget::Skill {
+            turn_id,
+            skill_name,
+        } => {
+            connection.execute(
+                "UPDATE codex_analytics_skills SET estimated_tokens = ?1, estimator_version = ?2 WHERE turn_id = ?3 AND skill_name = ?4",
+                params![result.tokens, OFFICIAL_ESTIMATOR_VERSION, turn_id, skill_name],
+            )?;
+        }
+        OfficialTarget::Mcp { call_id } => {
+            connection.execute(
+                "UPDATE codex_analytics_mcp_calls SET estimated_tokens = ?1, estimator_version = ?2 WHERE call_id = ?3",
+                params![result.tokens, OFFICIAL_ESTIMATOR_VERSION, call_id],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -939,7 +1266,88 @@ fn add_tokens(target: &mut SerializableTokens, value: &SerializableTokens) {
     target.reasoning_output_tokens += value.reasoning_output_tokens;
 }
 
-fn estimate_tokens(text: &str) -> u64 {
+fn enqueue_official_if_enabled(
+    mode: &AtomicU8,
+    sender: &SyncSender<OfficialCountRequest>,
+    stats: &OfficialStats,
+    request: OfficialCountRequest,
+) {
+    if mode.load(Ordering::Relaxed) != CounterMode::Official as u8 {
+        return;
+    }
+    if sender.try_send(request).is_err() {
+        stats.fallbacks.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(Deserialize)]
+struct OfficialTokenResponse {
+    input_tokens: u64,
+}
+
+fn run_official_counter(
+    receiver: mpsc::Receiver<OfficialCountRequest>,
+    result_sender: SyncSender<AnalyticsEvent>,
+    mode: Arc<AtomicU8>,
+    api_key: Option<String>,
+    stats: Arc<OfficialStats>,
+    endpoint: &str,
+) {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(OFFICIAL_TIMEOUT)
+        .build()
+        .ok();
+    let mut last_request: Option<Instant> = None;
+    while let Ok(request) = receiver.recv() {
+        if mode.load(Ordering::Relaxed) != CounterMode::Official as u8 {
+            continue;
+        }
+        let (Some(client), Some(api_key)) = (client.as_ref(), api_key.as_deref()) else {
+            stats.fallbacks.fetch_add(1, Ordering::Relaxed);
+            continue;
+        };
+        if let Some(remaining) =
+            last_request.and_then(|last| OFFICIAL_MIN_INTERVAL.checked_sub(last.elapsed()))
+        {
+            thread::sleep(remaining);
+        }
+        last_request = Some(Instant::now());
+        stats.requests.fetch_add(1, Ordering::Relaxed);
+        let response = client
+            .post(endpoint)
+            .bearer_auth(api_key)
+            .json(&serde_json::json!({ "model": request.model, "input": request.text }))
+            .send()
+            .and_then(reqwest::blocking::Response::error_for_status)
+            .and_then(|response| response.json::<OfficialTokenResponse>());
+        match response {
+            Ok(response) => {
+                stats.successes.fetch_add(1, Ordering::Relaxed);
+                if result_sender
+                    .try_send(AnalyticsEvent::OfficialCount(OfficialCountResult {
+                        target: request.target,
+                        tokens: response.input_tokens,
+                    }))
+                    .is_err()
+                {
+                    stats.fallbacks.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            Err(_) => {
+                stats.failures.fetch_add(1, Ordering::Relaxed);
+                stats.fallbacks.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
+fn count_local_tokens(text: &str) -> u64 {
+    tiktoken_rs::o200k_base_singleton()
+        .encode_ordinary(text)
+        .len() as u64
+}
+
+fn estimate_tokens_heuristic(text: &str) -> u64 {
     let mut cjk = 0_u64;
     let mut ascii_word_chars = 0_u64;
     let mut punctuation = 0_u64;
@@ -1032,7 +1440,10 @@ fn now_ms() -> i64 {
 mod tests {
     use super::*;
     use std::{
-        env, process,
+        env,
+        io::{Read, Write},
+        net::TcpListener,
+        process,
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
     };
@@ -1048,9 +1459,10 @@ mod tests {
     }
 
     #[test]
-    fn estimator_handles_chinese_and_ascii_without_network_access() {
-        assert_eq!(estimate_tokens("你好 world"), 4);
-        assert_eq!(estimate_tokens("abcdefgh"), 2);
+    fn local_counter_handles_chinese_and_ascii_without_network_access() {
+        assert_eq!(count_local_tokens("hello world"), 2);
+        assert!(count_local_tokens("你好 world") > 0);
+        assert_eq!(estimate_tokens_heuristic("你好 world"), 4);
         let payload = serde_json::json!({ "中文": "line\n\"quoted\"", "items": [1, true] });
         assert_eq!(
             json_chars(&payload),
@@ -1068,6 +1480,67 @@ mod tests {
             .prepare_turn(&serde_json::json!({ "threadId": "thread-1" }))
             .is_none());
         assert!(analytics.snapshot("all").is_err());
+    }
+
+    #[test]
+    fn official_counter_returns_count_without_blocking_the_caller() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("binds mock server");
+        let endpoint = format!(
+            "http://{}/v1/responses/input_tokens",
+            listener.local_addr().expect("has address")
+        );
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accepts request");
+            let mut request = [0_u8; 8_192];
+            let read = stream.read(&mut request).expect("reads request");
+            let request = String::from_utf8_lossy(&request[..read]);
+            assert!(request.contains("fixture text"));
+            let body = r#"{"object":"response.input_tokens","input_tokens":37}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("writes response");
+        });
+        let (request_sender, request_receiver) = mpsc::sync_channel(1);
+        let (result_sender, result_receiver) = mpsc::sync_channel(1);
+        let mode = Arc::new(AtomicU8::new(CounterMode::Official as u8));
+        let stats = Arc::new(OfficialStats::default());
+        let worker_mode = mode.clone();
+        let worker_stats = stats.clone();
+        let worker = thread::spawn(move || {
+            run_official_counter(
+                request_receiver,
+                result_sender,
+                worker_mode,
+                Some("test-key".to_string()),
+                worker_stats,
+                &endpoint,
+            )
+        });
+        request_sender
+            .try_send(OfficialCountRequest {
+                target: OfficialTarget::Turn {
+                    turn_id: "turn-1".to_string(),
+                },
+                model: "gpt-test".to_string(),
+                text: "fixture text".to_string(),
+            })
+            .expect("queues without waiting");
+        drop(request_sender);
+        let event = result_receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("receives official result");
+        assert!(matches!(
+            event,
+            AnalyticsEvent::OfficialCount(OfficialCountResult { tokens: 37, .. })
+        ));
+        assert_eq!(stats.requests.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.successes.load(Ordering::Relaxed), 1);
+        server.join().expect("mock server exits");
+        worker.join().expect("counter exits");
     }
 
     #[test]
@@ -1112,8 +1585,15 @@ mod tests {
                 }),
             );
         }
-        thread::sleep(Duration::from_millis(80));
-        let snapshot = analytics.snapshot("all").expect("reads snapshot");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let snapshot = loop {
+            let snapshot = analytics.snapshot("all").expect("reads snapshot");
+            if snapshot.summary.turns == 1 && snapshot.summary.usage_updates == 2 {
+                break snapshot;
+            }
+            assert!(Instant::now() < deadline, "analytics writer did not drain");
+            thread::sleep(Duration::from_millis(20));
+        };
         assert_eq!(snapshot.summary.turns, 1);
         assert_eq!(snapshot.summary.usage_updates, 2);
         assert_eq!(snapshot.summary.actual.total_tokens, 20);

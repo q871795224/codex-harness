@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, Database, RefreshCw } from 'lucide-react'
+import { Activity, Cloud, Cpu, Database, RefreshCw, Save } from 'lucide-react'
 import type {
+  CodexAnalyticsCounterMode,
   CodexAnalyticsRange,
   CodexAnalyticsService,
   CodexAnalyticsSnapshot,
 } from '../../core/codex-analytics/types'
-import type { HarnessPlugin, PluginInstanceRecord } from '../../extensions/types'
+import type { HarnessPlugin, PluginInstanceRecord, PluginSettingsProps } from '../../extensions/types'
 
 const RANGE_LABELS: Record<CodexAnalyticsRange, string> = {
   '7d': '7 天',
@@ -19,14 +20,16 @@ export const codexAnalyticsPlugin: HarnessPlugin = {
     id: 'builtin.codex-analytics',
     name: 'Codex 分析',
     description: '按会话和 turn 分析 Codex、Skill、MCP 与 Harness 插件的 Token 去向。',
-    version: '1.0.0',
+    version: '1.1.0',
     engine: { codexHarness: '^0.7.1' },
     supportedScopes: ['global'],
     supportedProviders: ['codex'],
     permissions: ['local:codex-analytics'],
   },
-  activate(ctx) {
+  settings: CodexAnalyticsSettings,
+  async activate(ctx) {
     const service = ctx.services.get<CodexAnalyticsService>('harness.codexAnalytics')
+    await service.configure(readCounterMode(ctx.config))
     ctx.slots.conversationTabs.register({
       id: 'codex-analytics',
       label: 'Codex 分析',
@@ -42,9 +45,63 @@ export const codexAnalyticsDefaultInstance: PluginInstanceRecord = {
   pluginId: codexAnalyticsPlugin.manifest.id,
   scope: { kind: 'global' },
   enabled: true,
-  config: {},
+  config: { tokenCounter: 'local' },
   createdAt: 0,
   updatedAt: 0,
+}
+
+export function readCounterMode(config: Readonly<Record<string, unknown>>): CodexAnalyticsCounterMode {
+  return config.tokenCounter === 'official' ? 'official' : 'local'
+}
+
+function CodexAnalyticsSettings({ instance, saveConfig }: PluginSettingsProps) {
+  const [mode, setMode] = useState(() => readCounterMode(instance.config))
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    setMode(readCounterMode(instance.config))
+    setMessage(null)
+  }, [instance.config, instance.instanceId])
+
+  const save = async () => {
+    setSaving(true)
+    setMessage(null)
+    try {
+      await saveConfig({ tokenCounter: mode })
+      setMessage('已保存，新产生的记录将使用该模式')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="codex-analytics-settings">
+      <div className="codex-analytics-settings-intro">
+        <Activity size={15} />
+        <span>计数在独立后台线程完成；任何失败都只影响分析精度，不影响 Codex 执行。</span>
+      </div>
+      <div className="codex-analytics-counter-options" role="radiogroup" aria-label="Token 计数方式">
+        <label className={mode === 'local' ? 'selected' : ''}>
+          <input type="radio" name="token-counter" checked={mode === 'local'} onChange={() => { setMode('local'); setMessage(null) }} />
+          <Cpu size={18} />
+          <span><strong>本地分词器</strong><small>默认。使用 o200k_base，不联网、不发送正文，延迟最低。</small></span>
+        </label>
+        <label className={mode === 'official' ? 'selected' : ''}>
+          <input type="radio" name="token-counter" checked={mode === 'official'} onChange={() => { setMode('official'); setMessage(null) }} />
+          <Cloud size={18} />
+          <span><strong>OpenAI 官方接口</strong><small>调用 /responses/input_tokens；需进程环境中的 OPENAI_API_KEY，失败时自动回退本地。</small></span>
+        </label>
+      </div>
+      <p className="codex-analytics-settings-note">官方模式会把用户输入、Skill 内容和 MCP 参数/结果发送给 OpenAI。官方文档目前未单独承诺该端点免费或无限速，因此采集器采用单并发、有界队列和短超时。</p>
+      <div className="codex-analytics-settings-save">
+        <button type="button" disabled={saving} onClick={() => void save()}><Save size={14} />{saving ? '保存中…' : '保存设置'}</button>
+        {message ? <span>{message}</span> : null}
+      </div>
+    </div>
+  )
 }
 
 function CodexAnalyticsTab({ service }: { service: CodexAnalyticsService }) {
@@ -74,7 +131,7 @@ function CodexAnalyticsTab({ service }: { service: CodexAnalyticsService }) {
           <div>
             <span>CODEX EXECUTION LEDGER</span>
             <h2>Token 去向分析</h2>
-            <p>真实 usage 来自 App Server；用户输入、Skill 与 MCP 使用本地估算，二者不会混算。</p>
+            <p>真实 usage 来自 App Server；用户输入、Skill 与 MCP 独立计数，二者不会混算。</p>
           </div>
           <div className="codex-analytics-toolbar">
             <div className="codex-analytics-range" role="group" aria-label="分析时间范围">
@@ -100,14 +157,19 @@ function AnalyticsContent({ snapshot }: { snapshot: CodexAnalyticsSnapshot }) {
     + snapshot.summary.estimatedMcpTokens
   return (
     <main className="codex-analytics-content">
+      <div className="codex-analytics-counter-status">
+        <span>{snapshot.counter.mode === 'official' ? <Cloud size={14} /> : <Cpu size={14} />}{snapshot.counter.mode === 'official' ? '官方接口' : '本地分词器'}</span>
+        <code>{snapshot.estimatorVersion}</code>
+        {snapshot.counter.mode === 'official' ? <small>{snapshot.counter.apiKeyConfigured ? `成功 ${snapshot.counter.officialSuccesses} · 回退 ${snapshot.counter.officialFallbacks}` : '未检测到 OPENAI_API_KEY，当前自动回退本地'}</small> : null}
+      </div>
       {snapshot.summary.droppedEvents > 0 || snapshot.summary.writeErrors > 0 ? (
         <div className="codex-analytics-error">采集器已降级：丢弃 {snapshot.summary.droppedEvents} 个事件，写入失败 {snapshot.summary.writeErrors} 次。Codex 主流程未受影响。</div>
       ) : null}
       <section className="codex-analytics-metrics">
         <Metric label="官方 Token" value={formatTokens(snapshot.summary.actual.totalTokens)} detail={`${snapshot.summary.usageUpdates} 次增量上报`} />
         <Metric label="会话 / Turn" value={`${snapshot.summary.sessions} / ${snapshot.summary.turns}`} detail="按本机 Codex 会话统计" />
-        <Metric label="输入估算" value={formatTokens(snapshot.summary.estimatedUserTokens)} detail={`${formatNumber(snapshot.summary.userChars)} 字符`} />
-        <Metric label="可归因估算" value={formatTokens(estimatedAttributed)} detail="用户 + Skill + MCP，不等同官方总量" />
+        <Metric label="输入细分" value={formatTokens(snapshot.summary.estimatedUserTokens)} detail={`${formatNumber(snapshot.summary.userChars)} 字符`} />
+        <Metric label="可归因细分" value={formatTokens(estimatedAttributed)} detail="用户 + Skill + MCP，不等同官方总量" />
       </section>
 
       <section className="codex-analytics-panel codex-analytics-trend-panel">
@@ -128,7 +190,7 @@ function AnalyticsContent({ snapshot }: { snapshot: CodexAnalyticsSnapshot }) {
 
       <div className="codex-analytics-grid">
         <section className="codex-analytics-panel">
-          <PanelTitle title="Skill" detail={`本地估算 · ${snapshot.estimatorVersion}`} />
+          <PanelTitle title="Skill" detail={snapshot.estimatorVersion} />
           <RankRows rows={snapshot.skills.map((item) => ({ key: item.name, label: item.name, meta: `${item.calls} 次 · ${formatNumber(item.chars)} 字符`, value: item.estimatedTokens }))} estimated />
         </section>
         <section className="codex-analytics-panel">

@@ -51,4 +51,4 @@ rg '"area":"codex-usage"' ~/.codex-harness/logs/harness.jsonl | tail -20
 
 长期分析数据由 `src-tauri/src/codex_analytics.rs` 写入 `state.sqlite`，与轮转诊断日志分开。测试至少覆盖：同一 turn 的多次 `last` 正确累加、`total` 不参与累加、测试数据库不出现输入正文、MCP completed item 按 call ID 幂等、查询在缺少插件归因时安全降级。所有测试必须使用临时目录。
 
-本地估算器不调用模型、远端 tokenizer 或 Token Count API。当前 `unicode-heuristic-v1` 对 CJK 字符按单 Token、ASCII 单词字符按约 4 字符/Token、标点按约 2 字符/Token 估算；页面必须明确标注 `≈` 和 estimator version。官方 usage 与估算值只并列分析，不能相加后冒充实际 Token。
+默认计数器不调用模型或网络，使用 `tiktoken-rs` 的 `o200k_base` 在后台线程本地分词；超过 1 MiB 的单项内容才回退 `unicode-heuristic-v1`。可选官方模式调用 `/responses/input_tokens`，必须使用有界队列、单并发和短超时，缺少密钥、限流或网络失败时保留本地结果。官方 usage 与细分计数只并列分析，不能相加后冒充实际 Token。

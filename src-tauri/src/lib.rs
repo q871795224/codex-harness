@@ -17,7 +17,7 @@ mod usage;
 
 use app_server::AppServerManager;
 use claude_runtime::{ClaudeRuntime, ClaudeRuntimeStatus};
-use codex_analytics::{AnalyticsSnapshot, CodexAnalytics};
+use codex_analytics::{AnalyticsCounterStatus, AnalyticsSnapshot, CodexAnalytics};
 use codex_radar::{CodexRadarClient, RadarModelTable};
 use diagnostics::DiagnosticLog;
 use local_connector::{
@@ -683,6 +683,14 @@ async fn codex_analytics_snapshot(
         .map_err(|error| format!("等待 Codex 分析查询失败: {error}"))?
 }
 
+#[tauri::command]
+fn codex_analytics_configure(
+    state: State<'_, AppState>,
+    mode: String,
+) -> Result<AnalyticsCounterStatus, String> {
+    state.codex_analytics.configure(&mode)
+}
+
 pub fn run() {
     let store = HarnessStore::open().expect("无法初始化 Codex Harness 本地状态库");
     let api_workbench =
@@ -779,6 +787,7 @@ pub fn run() {
             usage_cached_snapshot,
             usage_refresh_snapshot,
             codex_analytics_snapshot,
+            codex_analytics_configure,
             run_quick_command,
             terminal_create,
             terminal_write,

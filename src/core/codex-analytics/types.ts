@@ -1,4 +1,11 @@
 export type CodexAnalyticsRange = '7d' | '30d' | 'all'
+export type CodexAnalyticsCounterMode = 'local' | 'official'
+
+export interface CodexAnalyticsCounterStatus {
+  mode: CodexAnalyticsCounterMode
+  apiKeyConfigured: boolean
+  localEstimator: string
+}
 
 export interface CodexTokenBreakdown {
   totalTokens: number
@@ -14,6 +21,12 @@ export interface CodexAnalyticsSnapshot {
   generatedAt: number
   retention: 'permanent'
   estimatorVersion: string
+  counter: CodexAnalyticsCounterStatus & {
+    officialRequests: number
+    officialSuccesses: number
+    officialFailures: number
+    officialFallbacks: number
+  }
   summary: {
     sessions: number
     turns: number
@@ -57,5 +70,6 @@ export interface CodexAnalyticsSnapshot {
 }
 
 export interface CodexAnalyticsService {
+  configure(mode: CodexAnalyticsCounterMode): Promise<CodexAnalyticsCounterStatus>
   snapshot(range: CodexAnalyticsRange): Promise<CodexAnalyticsSnapshot>
 }

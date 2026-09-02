@@ -6,7 +6,7 @@
 - Quick Agent 的 `effort: max` 是有意配置，暂不调整 effort 或并发策略，先通过埋点观察实际消耗。
 - SeaTalk 已被禁用，草稿生成暂不作为当前优化对象。
 - MCP 转 Skill 暂不在本次实现范围，由另一个 Codex 负责。
-- Codex 分析数据永久保留，不做 TTL；采集不得发起额外模型请求或网络 tokenizer 调用，也不得阻塞 App Server 主流程。
+- Codex 分析数据永久保留，不做 TTL；采集不得发起额外模型推理请求，也不得阻塞 App Server 主流程。默认使用本地 tokenizer；只有用户在插件设置中明确选择时才可异步调用官方 Input Token Count API，并必须自动回退本地。
 
 ## 待完善的插件功能
 
