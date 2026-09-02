@@ -324,6 +324,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .message-actions button:disabled { cursor: wait; opacity: .6; }
 .message-actions button.copied { color: #4e8563; }
 .message-actions button.failed { color: #b05252; }
+.message-actions button.active { color: #5267bd; background: #eef0fb; }
 .assistant-turn { min-width: 0; }
 .process-group { margin: 0 0 18px; overflow: hidden; border: 1px solid #e4e7ec; border-radius: 9px; background: #f8f9fa; }
 .process-group.running { border-color: #e4e7ec; background: #f8f9fa; }
@@ -1108,6 +1109,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .message-actions button:hover:not(:disabled) { background: #303640; color: #aab8ef; }
 .app-shell[data-theme='dark'] .message-actions button.copied { color: #8fc4a3; }
 .app-shell[data-theme='dark'] .message-actions button.failed { color: #dc9797; }
+.app-shell[data-theme='dark'] .message-actions button.active { color: #aab8ef; background: #2a2f3b; }
 .app-shell[data-theme='dark'] .process-group { border-color: #353941; background: #202329; }
 .app-shell[data-theme='dark'] .process-group.running { border-color: #353941; background: #202329; }
 .app-shell[data-theme='dark'] .process-group.failed { border-color: #654141; background: #2d2224; }
