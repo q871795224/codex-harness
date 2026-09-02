@@ -399,10 +399,14 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .raw-response { margin: 0; overflow: auto; padding: 12px 14px; border: 1px solid #dfe2e7; border-radius: 8px; background: #f7f8fa; color: #303640; font-family: var(--h-font-mono); font-size: 12px; line-height: 1.58; white-space: pre-wrap; word-break: break-word; }
 
 .fresh-thread-wrap { width: min(780px, 100%); margin: 26px auto 24px; }
-.fresh-thread { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 auto 18px; color: #626a76; }
+.fresh-thread { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 auto 8px; color: #626a76; }
 .fresh-thread-mark { display: grid; flex: 0 0 auto; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: #eef1ff; color: #5269d0; }
 .fresh-thread p { margin: 0; font-size: 14px; line-height: 1.4; }
 .fresh-thread strong { color: #303641; font-weight: 680; }
+.fresh-thread-cwd { display: flex; width: fit-content; max-width: min(620px, 100%); align-items: center; gap: 7px; margin: 0 auto 18px; padding: 5px 9px; border: 1px solid #e2e5eb; border-radius: 7px; background: rgba(248, 249, 251, .82); color: #7a828e; font-size: 11px; }
+.fresh-thread-cwd svg { flex: 0 0 auto; color: #7783ad; }
+.fresh-thread-cwd span { flex: 0 0 auto; font-weight: 650; }
+.fresh-thread-cwd code { min-width: 0; overflow: hidden; color: #4d5664; font-family: var(--h-font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .fresh-workspace-select { position: relative; display: inline-flex; align-items: center; margin: 0 4px; vertical-align: -1px; }
 .fresh-workspace-select select { max-width: 260px; height: 26px; padding: 0 23px; appearance: none; border: 1px solid transparent; border-radius: 6px; outline: 0; background: transparent; color: #344fb8; cursor: pointer; font: inherit; font-weight: 720; text-align: center; text-overflow: ellipsis; }
 .fresh-workspace-select select:hover:not(:disabled), .fresh-workspace-select select:focus-visible { border-color: #cbd3f0; background: #f5f7ff; }
@@ -978,6 +982,8 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .empty-state,
 .app-shell[data-theme='dark'] .boot-error,
 .app-shell[data-theme='dark'] .launch-screen { color: #959ca8; }
+.app-shell[data-theme='dark'] .fresh-thread-cwd { border-color: #383d46; background: rgba(31, 34, 40, .72); color: #959ca8; }
+.app-shell[data-theme='dark'] .fresh-thread-cwd code { color: #c5cad3; }
 .app-shell[data-theme='dark'] .new-chat-button,
 .app-shell[data-theme='dark'] .new-chat-provider,
 .app-shell[data-theme='dark'] .sidebar-search,

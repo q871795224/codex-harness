@@ -40,7 +40,11 @@ const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDial
 export default function App() {
   const harness = useUnifiedHarness()
   const codex = useCodexCore()
-  const agentRuns = useAgentRunService(harness.selectThread, harness.startTurnInThread)
+  const selectAgentRunThread = useCallback(
+    (threadId: string) => harness.selectThread(threadId, 'agent-run'),
+    [harness.selectThread],
+  )
+  const agentRuns = useAgentRunService(selectAgentRunThread, harness.startTurnInThread)
   const harnessInstructionConfig = useRef(resolveHarnessInstructionConfig(codex.config))
   harnessInstructionConfig.current = resolveHarnessInstructionConfig(codex.config)
   const services = useMemo(() => ({
@@ -66,7 +70,7 @@ export default function App() {
     } satisfies QuickCommandService,
     'harness.conversations': {
       onTurnCompleted: harness.onTurnCompleted,
-      openThread: harness.openThread,
+      openThread: (threadId) => harness.selectThread(threadId, 'notification'),
     } satisfies ConversationService,
     'harness.systemNotifications': {
       requestPermission: runtime.requestSystemNotificationPermission,
@@ -121,7 +125,7 @@ export default function App() {
       deliveryContext: runtime.workspaceDeliveryContext,
       openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
-  }), [agentRuns, harness.onTurnCompleted, harness.openThread])
+  }), [agentRuns, harness.onTurnCompleted, harness.selectThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {
@@ -321,7 +325,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
     const threadIndex = threadIndexForAction(actionId)
     if (threadIndex !== null) {
       const threadId = visibleThreadIds[threadIndex]
-      if (threadId) void harness.selectThread(threadId)
+      if (threadId) void harness.selectThread(threadId, 'keyboard-shortcut')
       return
     }
     if (actionId === 'thread.new') void harness.createThread(harness.newThreadProvider)
@@ -436,7 +440,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         sidebarListSplitRatio={harness.navigation.sidebarListSplitRatio}
         creatingThread={Boolean(harness.busy.createThread)}
         archivingOldThreads={Boolean(harness.busy.archiveOldThreads)}
-        onSelectThread={(threadId) => void harness.selectThread(threadId)}
+        onSelectThread={(threadId) => void harness.selectThread(threadId, 'sidebar')}
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
         onArchiveOldThreads={() => void harness.archiveOldThreads()}
         onNewThread={(provider) => void harness.createThread(provider)}

@@ -117,9 +117,13 @@ describe('new thread workspace', () => {
     expect(resolveNewThreadWorkspaceRoot('thread-1', [makeThread('/repo/current')], '/repo/sidebar')).toBe('/repo/current')
   })
 
-  it('falls back to the selected workspace without an open thread mapping', () => {
-    expect(resolveNewThreadWorkspaceRoot('missing', [makeThread('/repo/current')], '/repo/sidebar')).toBe('/repo/sidebar')
-    expect(resolveNewThreadWorkspaceRoot(null, [], '/repo/sidebar')).toBe('/repo/sidebar')
+  it('uses the explicitly remembered cwd after the selected thread is archived', () => {
+    expect(resolveNewThreadWorkspaceRoot('missing', [makeThread('/repo/current')], '/repo/remembered')).toBe('/repo/remembered')
+    expect(resolveNewThreadWorkspaceRoot(null, [], '/repo/remembered')).toBe('/repo/remembered')
+  })
+
+  it('requires an explicit cwd without a selected thread or remembered target', () => {
+    expect(resolveNewThreadWorkspaceRoot(null, [], null)).toBeNull()
   })
 })
 

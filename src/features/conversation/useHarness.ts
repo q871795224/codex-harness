@@ -110,6 +110,17 @@ import { promoteQueuedSubmission, restartInputs, submitActiveTurnInput } from '.
 
 export { parseThreadTitleGenerationSettings } from './harnessBootstrap'
 
+export type ThreadSelectionSource =
+  | 'sidebar'
+  | 'keyboard-shortcut'
+  | 'notification'
+  | 'agent-run'
+  | 'restore'
+  | 'fork'
+  | 'transport-recovery'
+  | 'open-thread'
+  | 'unknown'
+
 type ViewMode = ThreadViewMode
 
 interface HookToast {
@@ -162,12 +173,14 @@ export function useHarness() {
   const [ownedActiveThreads, setOwnedActiveThreads] = useState<Record<string, boolean>>({})
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(null)
+  const [nextThreadCwd, setNextThreadCwd] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('active')
   const [toast, setToast] = useState<HookToast | null>(null)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [forkingTurnId, setForkingTurnId] = useState<string | null>(null)
 
   const selectedThreadIdRef = useRef<string | null>(null)
+  const nextThreadCwdRef = useRef<string | null>(null)
   const threadsRef = useRef<Thread[]>([])
   const pendingRestartRef = useRef<Record<string, PendingSteer[]>>({})
   const continuingFailedThreadsRef = useRef(new Set<string>())
@@ -194,6 +207,11 @@ export function useHarness() {
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => { detailsRef.current = details }, [details])
   useEffect(() => { threadTitleGenerationRef.current = threadTitleGeneration }, [threadTitleGeneration])
+
+  const rememberNextThreadCwd = useCallback((cwd: string | null) => {
+    nextThreadCwdRef.current = cwd
+    setNextThreadCwd(cwd)
+  }, [])
 
   const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
     turnCompletedListenersRef.current.add(listener)
@@ -612,7 +630,7 @@ export function useHarness() {
     if (loadQueueAfter) await loadQueue(threadId)
   }, [commitTurnOwnership, loadQueue, mapThreadRoots, upsertThread])
 
-  const selectThread = useCallback(async (threadId: string) => {
+  const selectThread = useCallback(async (threadId: string, selectionSource: ThreadSelectionSource = 'unknown') => {
     const previousThreadId = selectedThreadIdRef.current
     const listedThread = threadsRef.current.find((thread) => thread.id === threadId)
     const detailBeforeResume = detailsRef.current[threadId]
@@ -622,7 +640,7 @@ export function useHarness() {
       threadId,
       method: 'thread/resume',
       context: {
-        source: 'useHarness.selectThread',
+        source: selectionSource,
         previousThreadId,
         selectedThreadIdBefore: previousThreadId,
         listedThreadCwd: listedThread?.cwd ?? null,
@@ -632,6 +650,7 @@ export function useHarness() {
     })
     selectedThreadIdRef.current = threadId
     setSelectedThreadId(threadId)
+    if (listedThread?.cwd) rememberNextThreadCwd(listedThread.cwd)
     if (previousThreadId !== threadId) discardEmptyDraftThread(previousThreadId)
     void runtime.setAppState('selectedThreadId', threadId).catch(() => undefined)
     markThreadRead(threadId)
@@ -646,7 +665,7 @@ export function useHarness() {
         threadId,
         method: 'thread/resume',
         context: {
-          source: 'useHarness.selectThread',
+          source: selectionSource,
           selectedThreadIdAtResponse: selectedThreadIdRef.current,
           selectedThreadMatches: selectedThreadIdRef.current === threadId,
           requestedCwd: listedThread?.cwd ?? null,
@@ -658,6 +677,7 @@ export function useHarness() {
         },
       })
       await applyResumedThread(threadId, response)
+      if (selectedThreadIdRef.current === threadId) rememberNextThreadCwd(response.thread.cwd)
     } catch (error) {
       recordWorkspaceContextDiagnostic({
         level: 'error',
@@ -666,7 +686,7 @@ export function useHarness() {
         method: 'thread/resume',
         errorCode: diagnosticErrorCode(error),
         context: {
-          source: 'useHarness.selectThread',
+          source: selectionSource,
           selectedThreadIdAtFailure: selectedThreadIdRef.current,
           requestedCwd: listedThread?.cwd ?? null,
         },
@@ -682,7 +702,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
     }
-  }, [applyResumedThread, discardEmptyDraftThread, markThreadRead, notify])
+  }, [applyResumedThread, discardEmptyDraftThread, markThreadRead, notify, rememberNextThreadCwd])
 
   const recoverActiveThreadSubscriptions = useCallback(async () => {
     const selectedId = selectedThreadIdRef.current
@@ -693,7 +713,7 @@ export function useHarness() {
       selectedId,
     )
 
-    if (selectedId) void selectThread(selectedId)
+    if (selectedId) void selectThread(selectedId, 'transport-recovery')
     await Promise.all(activeThreadIds.map(async (threadId) => {
       const thread = threadsRef.current.find((candidate) => candidate.id === threadId) ?? detailsRef.current[threadId]?.thread
       if (!thread) return
@@ -757,7 +777,7 @@ export function useHarness() {
       const archivedThreads = await refreshThreads('archived')
       setViewMode(archivedThreads.some((thread) => thread.id === threadId) ? 'archived' : 'active')
     }
-    await selectThread(threadId)
+    await selectThread(threadId, 'open-thread')
   }, [refreshThreads, selectThread])
 
   const forkThreadAtTurn = useCallback(async (turnId: string) => {
@@ -768,7 +788,7 @@ export function useHarness() {
       const response = await appServer.forkThread(sourceThreadId, turnId)
       upsertThread(response.thread)
       await mapThreadRoots([response.thread])
-      await selectThread(response.thread.id)
+      await selectThread(response.thread.id, 'fork')
       notify('已创建分支会话。对话历史已复制，代码文件仍与来源会话共用同一工作目录。')
     } catch (error) {
       notify(`无法创建分支会话：${messageOf(error)}`, 'error')
@@ -806,6 +826,7 @@ export function useHarness() {
       if (!workspace) return null
       setWorkspaces((current) => [workspace, ...current.filter((item) => item.root !== workspace.root)])
       setSelectedWorkspaceRoot(workspace.root)
+      rememberNextThreadCwd(workspace.checkoutRoot)
       notify(`已添加 ${workspace.name}`)
       await refreshThreads()
       return workspace
@@ -813,14 +834,42 @@ export function useHarness() {
       notify(messageOf(error), 'error')
       return null
     }
-  }, [notify, refreshThreads])
+  }, [notify, refreshThreads, rememberNextThreadCwd])
+
+  const selectWorkspaceRoot = useCallback((workspaceRoot: string) => {
+    setSelectedWorkspaceRoot(workspaceRoot)
+    const workspace = workspaces.find((candidate) => candidate.root === workspaceRoot)
+    rememberNextThreadCwd(workspace?.checkoutRoot ?? workspaceRoot)
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'workspace.selection.changed',
+      context: {
+        source: 'sidebar',
+        selectedWorkspaceRoot: workspaceRoot,
+        nextThreadCwd: workspace?.checkoutRoot ?? workspaceRoot,
+      },
+    })
+  }, [rememberNextThreadCwd, workspaces])
 
   const startNewThread = useCallback(async (sessionStartSource: 'clear' | undefined, operation: '创建' | '重置') => {
-    const workspaceRoot = resolveNewThreadWorkspaceRoot(selectedThreadIdRef.current, threadsRef.current, selectedWorkspaceRoot)
+    const workspaceRoot = resolveNewThreadWorkspaceRoot(selectedThreadIdRef.current, threadsRef.current, nextThreadCwdRef.current)
     if (!workspaceRoot) {
       notify('请先在左侧选择一个 Git 主工作区。', 'error')
       return
     }
+    const previousThread = threadsRef.current.find((thread) => thread.id === selectedThreadIdRef.current)
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'thread.create.requested',
+      method: 'thread/start',
+      context: {
+        source: 'create',
+        previousThreadId: selectedThreadIdRef.current,
+        previousThreadCwd: previousThread?.cwd ?? null,
+        nextThreadCwd: workspaceRoot,
+        sessionStartSource: sessionStartSource ?? null,
+      },
+    })
     setBusy((current) => ({ ...current, createThread: true }))
     try {
       const yolo = yoloModeSettings(true)
@@ -838,6 +887,18 @@ export function useHarness() {
       void mapThreadRoots([response.thread])
       selectedThreadIdRef.current = response.thread.id
       setSelectedThreadId(response.thread.id)
+      rememberNextThreadCwd(response.thread.cwd)
+      recordWorkspaceContextDiagnostic({
+        level: 'info',
+        event: 'thread.create.completed',
+        threadId: response.thread.id,
+        method: 'thread/start',
+        context: {
+          source: 'create',
+          requestedCwd: workspaceRoot,
+          selectedCwd: response.thread.cwd,
+        },
+      })
       if (previousThreadId !== response.thread.id) discardEmptyDraftThread(previousThreadId)
       void runtime.setAppState('selectedThreadId', response.thread.id).catch(() => undefined)
       markThreadRead(response.thread.id)
@@ -852,7 +913,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, selectedWorkspaceRoot, upsertThread])
+  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, upsertThread])
 
   const createThread = useCallback(async () => {
     await startNewThread(undefined, '创建')
@@ -906,6 +967,7 @@ export function useHarness() {
       setThreadRoots((current) => ({ ...current, [threadId]: workspace.root }))
       setThreadGitCwds((current) => ({ ...current, [threadId]: nextCwd }))
       setSelectedWorkspaceRoot(workspace.root)
+      rememberNextThreadCwd(nextCwd)
       updateThread(threadId, (thread) => ({
         ...thread,
         cwd: nextCwd,
@@ -939,7 +1001,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, threadWorkspace: false }))
     }
-  }, [notify, updateDetail, updateThread])
+  }, [notify, rememberNextThreadCwd, updateDetail, updateThread])
 
   const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
     setThreadStarting(threadId, false)
@@ -1337,14 +1399,19 @@ export function useHarness() {
 
   const archiveThread = useCallback(async (threadId: string) => {
     try {
+      const archivedThread = threadsRef.current.find((thread) => thread.id === threadId)
       await appServer.archiveThread(threadId)
       setThreads((current) => current.filter((thread) => thread.id !== threadId))
-      if (selectedThreadIdRef.current === threadId) setSelectedThreadId(null)
+      if (selectedThreadIdRef.current === threadId) {
+        if (archivedThread?.cwd) rememberNextThreadCwd(archivedThread.cwd)
+        selectedThreadIdRef.current = null
+        setSelectedThreadId(null)
+      }
       notify('已归档会话')
     } catch (error) {
       notify(`无法归档会话：${messageOf(error)}`, 'error')
     }
-  }, [notify])
+  }, [notify, rememberNextThreadCwd])
 
   const archiveOldThreads = useCallback(async () => {
     if (busy.archiveOldThreads) return
@@ -1776,7 +1843,7 @@ export function useHarness() {
         if (disposed) return
         setPhase('ready')
         if (restored.rememberedThreadId && loadedThreads.some((thread) => thread.id === restored.rememberedThreadId)) {
-          void selectThread(restored.rememberedThreadId)
+          void selectThread(restored.rememberedThreadId, 'restore')
         }
       } catch (error) {
         if (!disposed) {
@@ -1843,6 +1910,7 @@ export function useHarness() {
     startingThreadIds,
     selectedThreadId,
     selectedWorkspaceRoot,
+    nextThreadCwd,
     viewMode,
     toast,
     busy,
@@ -1896,7 +1964,7 @@ export function useHarness() {
     resetActionShortcuts,
     setThreadTitleGeneration,
     setConversationStats,
-    setSelectedWorkspaceRoot,
+    setSelectedWorkspaceRoot: selectWorkspaceRoot,
     changeThreadWorkspace,
     setViewMode: async (mode: ViewMode) => {
       setViewMode(mode)

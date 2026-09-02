@@ -15,6 +15,7 @@ import {
   Copy,
   FileCode2,
   FileText,
+  FolderGit2,
   GitBranch,
   GitFork,
   Image,
@@ -288,6 +289,11 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
                   </span>
                   开启一段新的 {provider === 'claude' ? 'Claude' : 'Codex'} 会话吧。
                 </p>
+              </div>
+              <div className="fresh-thread-cwd" role="status" aria-label={`当前会话工作目录：${cwd}`}>
+                <FolderGit2 size={13} aria-hidden />
+                <span>工作目录</span>
+                <code title={cwd}>{cwd}</code>
               </div>
               {newThreadPanels}
             </div>

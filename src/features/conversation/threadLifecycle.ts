@@ -96,9 +96,9 @@ export function startedThreadDetail(response: StartThreadResponse): ThreadDetail
 export function resolveNewThreadWorkspaceRoot(
   selectedThreadId: string | null,
   threads: Thread[],
-  fallbackWorkspaceRoot: string | null,
+  nextThreadCwd: string | null,
 ): string | null {
-  return (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId)?.cwd : null) ?? fallbackWorkspaceRoot
+  return (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId)?.cwd : null) ?? nextThreadCwd
 }
 
 export function threadTurnContext(detail: ThreadDetail | undefined, cwd: string): JsonObject {

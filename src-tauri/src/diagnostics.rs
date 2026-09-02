@@ -170,6 +170,9 @@ fn is_safe_usage_field(key: &str, value: &Value) -> bool {
 
 fn is_sensitive_key(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
+    if key == "context" {
+        return false;
+    }
     [
         "input",
         "prompt",
@@ -301,5 +304,24 @@ mod tests {
         assert!(contents.contains("turn-1"));
         assert!(contents.contains("quick-agent"));
         assert!(!contents.contains("secret-value"));
+    }
+
+    #[test]
+    fn preserves_workspace_context_metadata_but_redacts_nested_content() {
+        let sanitized = sanitize_fields(json!({
+            "context": {
+                "source": "sidebar",
+                "previousThreadCwd": "/repo/previous",
+                "selectedThreadCwd": "/repo/selected",
+                "promptText": "must stay private",
+                "authorizationToken": "secret-value"
+            }
+        }));
+
+        assert_eq!(sanitized["context"]["source"], "sidebar");
+        assert_eq!(sanitized["context"]["previousThreadCwd"], "/repo/previous");
+        assert_eq!(sanitized["context"]["selectedThreadCwd"], "/repo/selected");
+        assert_eq!(sanitized["context"]["promptText"], "[redacted]");
+        assert_eq!(sanitized["context"]["authorizationToken"], "[redacted]");
     }
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ApprovalRequest, UserInput } from '../../core/domain/codex'
 import { recordWorkspaceContextDiagnostic, runtime } from '../../core/runtime/bridge'
 import { useClaudeHarness } from '../claude/useClaudeHarness'
-import { useHarness } from './useHarness'
+import { useHarness, type ThreadSelectionSource } from './useHarness'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
 
 export type ConversationProvider = 'codex' | 'claude'
@@ -190,9 +190,11 @@ export function useUnifiedHarness() {
     return next
   }, [activeTurnIds, codex.startingThreadIds])
 
-  const selectThread = useCallback(async (threadId: string) => {
+  const selectThread = useCallback(async (threadId: string, selectionSource: ThreadSelectionSource = 'unknown') => {
     const requestId = ++selectionRequestRef.current
     const previousThreadId = selectedThreadIdRef.current
+    const previousThreadCwd = threads.find((thread) => thread.id === previousThreadId)?.cwd ?? null
+    const selectedThreadCwd = threads.find((thread) => thread.id === threadId)?.cwd ?? null
     selectedThreadIdRef.current = threadId
     setSelectedThreadId(threadId)
     recordWorkspaceContextDiagnostic({
@@ -200,9 +202,11 @@ export function useUnifiedHarness() {
       event: 'conversation.selection.requested',
       threadId,
       context: {
-        source: 'useUnifiedHarness.selectThread',
+        source: selectionSource,
         provider: threadId.startsWith('claude:') ? 'claude' : 'codex',
         previousUnifiedThreadId: previousThreadId,
+        previousThreadCwd,
+        selectedThreadCwd,
         codexSelectedThreadIdBefore: codex.selectedThreadId,
       },
     })
@@ -210,21 +214,23 @@ export function useUnifiedHarness() {
       if (!claude.sessions.some((session) => session.id === threadId)) await claude.refresh(false)
       claude.selectSession(threadId)
     }
-    else await codex.selectThread(threadId)
+    else await codex.selectThread(threadId, selectionSource)
     if (selectionRequestRef.current !== requestId || selectedThreadIdRef.current !== threadId) return
     recordWorkspaceContextDiagnostic({
       level: 'info',
       event: 'conversation.selection.completed',
       threadId,
       context: {
-        source: 'useUnifiedHarness.selectThread',
+        source: selectionSource,
         provider: threadId.startsWith('claude:') ? 'claude' : 'codex',
         codexSelectedThreadIdAfterCall: codex.selectedThreadId,
         selectionCallCompleted: true,
       },
     })
     void runtime.setAppState(SELECTED_CONVERSATION_KEY, threadId).catch(() => undefined)
-  }, [claude, codex])
+  }, [claude, codex, threads])
+
+  const openThread = useCallback((threadId: string) => selectThread(threadId, 'open-thread'), [selectThread])
 
   const createThread = useCallback(async (provider: ConversationProvider = 'codex') => {
     const requestId = ++selectionRequestRef.current
@@ -356,7 +362,7 @@ export function useUnifiedHarness() {
     queues: selectedProvider === 'claude' ? claude.queues : codex.queues,
     pendingSteers: selectedProvider === 'claude' && selectedThreadId ? { ...codex.pendingSteers, [selectedThreadId]: [] } : codex.pendingSteers,
     selectThread,
-    openThread: selectThread,
+    openThread,
     createThread,
     resetThread,
     sendMessage,
