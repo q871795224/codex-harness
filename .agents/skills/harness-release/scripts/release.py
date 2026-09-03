@@ -74,6 +74,11 @@ def current_version(root: Path = REPO_ROOT) -> str:
     return json_version(root / "package.json")
 
 
+def origin_main_version() -> str:
+    package = json.loads(run("git", "show", "origin/main:package.json", capture=True))
+    return str(package["version"])
+
+
 def replace_first(pattern: str, replacement: str, text: str, label: str) -> str:
     updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
     if count != 1:
@@ -141,8 +146,9 @@ def command_prepare(version: str) -> None:
     version = normalized_version(version)
     require_clean_worktree()
     run("git", "fetch", "origin", "--prune", "--tags")
-    if parse_version(version) <= parse_version(current_version()):
-        raise ReleaseError(f"release version {version} must be newer than {current_version()}")
+    base_version = origin_main_version()
+    if parse_version(version) <= parse_version(base_version):
+        raise ReleaseError(f"release version {version} must be newer than origin/main {base_version}")
     tag = f"v{version}"
     if try_run("git", "rev-parse", "--verify", tag).returncode == 0:
         raise ReleaseError(f"local tag already exists: {tag}")
@@ -151,6 +157,8 @@ def command_prepare(version: str) -> None:
     branch = f"release/{tag}"
     if try_run("git", "show-ref", "--verify", f"refs/heads/{branch}").returncode == 0:
         raise ReleaseError(f"local branch already exists: {branch}")
+    if run("git", "ls-remote", "--heads", "origin", f"refs/heads/{branch}", capture=True):
+        raise ReleaseError(f"remote branch already exists: {branch}")
     run("git", "switch", "--create", branch, "origin/main")
     update_version_files(REPO_ROOT, version)
     require_synced_versions(version)
@@ -361,6 +369,11 @@ def command_publish(version: str, github: bool = True) -> None:
         remote_tag = run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}", capture=True)
         if not remote_tag:
             run("git", "push", "origin", f"refs/tags/{tag}")
+        peeled_remote_tag = run(
+            "git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}^{{}}", capture=True
+        ).split()
+        if not peeled_remote_tag or peeled_remote_tag[0] != head:
+            raise ReleaseError(f"remote tag {tag} does not peel to {head}")
         release = try_run("gh", "release", "view", tag, "--json", "url,tagName,assets")
     else:
         release = None
