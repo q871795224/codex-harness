@@ -42,6 +42,10 @@
 - 图片使用 App Server 的 `localImage` 输入，普通文件使用结构化 `mention`；附件只保留在输入草稿和 Codex 会话中。
 - 斜杠命令先由 `composerCommands.ts` 精确匹配并在本地执行；HTTP(S) 链接经 bridge 打开系统浏览器，不让 WebView 离开应用。
 
+## 交付约定
+
+- 本仓库只通过 GitHub Pull Request 交付；不遵循 Jira key、GitLab MR 或对应的分支命名规范。
+
 ## 常用命令
 
 ```bash

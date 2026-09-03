@@ -106,6 +106,7 @@ import { groupTranscriptTurns } from './transcript'
 import {
   isFirstUserTurn,
   activeThreadIdsForRecovery,
+  resolveDefaultWorkspaceCwd,
   resolveNewThreadWorkspaceRoot,
   resumedThreadDetail,
   resumeThreadWithRetry,
@@ -885,7 +886,11 @@ export function useHarness() {
   }, [rememberNextThreadCwd, workspaces])
 
   const startNewThread = useCallback(async (sessionStartSource: 'clear' | undefined, operation: '创建' | '重置') => {
-    const workspaceRoot = resolveNewThreadWorkspaceRoot(selectedThreadIdRef.current, threadsRef.current, nextThreadCwdRef.current)
+    const workspaceRoot = resolveNewThreadWorkspaceRoot(
+      selectedThreadIdRef.current,
+      threadsRef.current,
+      nextThreadCwdRef.current ?? resolveDefaultWorkspaceCwd(workspaces, selectedWorkspaceRoot),
+    )
     if (!workspaceRoot) {
       notify('请先在左侧选择一个 Git 主工作区。', 'error')
       return
@@ -946,7 +951,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, upsertThread])
+  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, selectedWorkspaceRoot, upsertThread, workspaces])
 
   const createThread = useCallback(async () => {
     await startNewThread(undefined, '创建')
