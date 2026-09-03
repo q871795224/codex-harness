@@ -25,7 +25,7 @@ description: Use when preparing, packaging, installing, or publishing a Codex Ha
 .agents/skills/harness-release/scripts/release.py check <version>
 ```
 
-脚本一次执行依赖安装、前端测试和构建、Rust 测试；任一环节失败都不能提交、打 tag 或发布。PR 合并后只执行一次 Tauri 正式构建，避免在 merge 前后重复打包。
+脚本执行 required CI 未覆盖的 Rust 测试；PR 的 `test-and-build` 负责前端测试和构建。任一环节失败都不能合并、打 tag 或发布。PR 合并后只执行一次 Tauri 正式构建，不在本地重复 CI 已完成的前端门禁，也不在 merge 前后重复打包。
 
 ## 提交、合并、安装和发布
 

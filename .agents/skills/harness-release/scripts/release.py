@@ -172,9 +172,6 @@ def ensure_dependencies() -> None:
 
 def command_check(version: str) -> None:
     require_synced_versions(version)
-    ensure_dependencies()
-    run("pnpm", "test")
-    run("pnpm", "build")
     run("cargo", "test", cwd=REPO_ROOT / "src-tauri")
     print(json.dumps({"phase": "checked", "version": normalized_version(version)}))
 
@@ -217,7 +214,8 @@ def command_submit(version: str) -> None:
     run("git", "push", "--set-upstream", "origin", branch)
     body = (
         f"## Summary\n\n- Release Codex Harness v{version}.\n\n"
-        "## Validation\n\n- `pnpm test`\n- `pnpm build`\n- `(cd src-tauri && cargo test)`\n"
+        "## Validation\n\n- `(cd src-tauri && cargo test)`\n"
+        "- required `test-and-build` runs `pnpm test` and `pnpm build`\n"
     )
     pr_url = run(
         "gh",
