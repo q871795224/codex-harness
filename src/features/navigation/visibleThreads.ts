@@ -1,9 +1,18 @@
 import type { Thread } from '../../core/domain/codex'
 
 export function visibleThreads(threads: Thread[], requestedCount?: number, now = Date.now() / 1_000, pinnedThreadIds: string[] = []): Thread[] {
-  const defaultCount = initialVisibleCount(threads, now, pinnedThreadIds)
-  const shown = Math.min(threads.length, Math.max(defaultCount, requestedCount ?? defaultCount))
-  return threads.slice(0, shown)
+  // Keep the timestamp argument for callers that still pass it while the
+  // sidebar count is governed solely by the five-session cap.
+  void now
+  const pinned = new Set(pinnedThreadIds)
+  const pinnedThreads = threads.filter((thread) => pinned.has(thread.id))
+  const unpinnedThreads = threads.filter((thread) => !pinned.has(thread.id))
+  const defaultCount = Math.min(threads.length, 5)
+  const shown = Math.min(
+    threads.length,
+    Math.max(defaultCount, requestedCount ?? defaultCount, pinnedThreads.length),
+  )
+  return [...pinnedThreads, ...unpinnedThreads].slice(0, shown)
 }
 
 export function visibleThreadOrder(options: {
@@ -30,12 +39,4 @@ export function visibleThreadOrder(options: {
   }
   ids.push(...visibleThreads(options.unsorted, options.visibleCounts.unsorted, undefined, options.pinnedThreadIds).map((thread) => thread.id))
   return ids
-}
-
-function initialVisibleCount(threads: Thread[], now: number, pinnedThreadIds: string[] = []): number {
-  const pinnedCount = pinnedThreadIds.length === 0 ? 0 : threads.filter((thread) => pinnedThreadIds.includes(thread.id)).length
-  if (threads.length <= 5) return threads.length
-  const cutoff = now - 3 * 24 * 60 * 60
-  const recentCount = threads.filter((thread) => (thread.recencyAt ?? thread.updatedAt) >= cutoff).length
-  return Math.min(threads.length, Math.max(3, Math.min(5, recentCount), pinnedCount))
 }

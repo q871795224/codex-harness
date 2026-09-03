@@ -812,6 +812,6 @@ export function reorderThreadIds(ids: string[], draggedId: string, targetId: str
 
 export function StatusDot({ badge }: { badge: Badge }) {
   if (!badge) return <span className="status-dot empty" aria-hidden />
-  if (badge === 'working') return <svg className="status-dot working" viewBox="0 0 12 12" aria-label="运行中"><circle cx="6" cy="6" r="4.5" /></svg>
+  if (badge === 'working') return <LoaderCircle className="status-dot working" size={12} aria-label="运行中" />
   return <span className={`status-dot ${badge}`} aria-label={badge === 'approval' ? '等待审批' : badge === 'error' ? '发生错误' : '有新回复'} />
 }
