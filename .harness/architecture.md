@@ -24,6 +24,7 @@
 - Harness 启动时复用或启动共享 `codex app-server daemon`，初始化一次连接并转发事件。关闭 Harness 不停止 daemon。
 - 普通对话经 `useHarness` 调用 `thread/start`、`turn/start`、`turn/steer` 等方法；Quick Agent 经 `harness.agentRuns` 创建独立 child thread。
 - App Server 当前协议的 `UserInput` 支持 `text`、`localImage`、`skill` 和 `mention`；`turn/start` 还支持可选的 `turnTrigger` 来源标识。协议字段必须以当前 CLI 生成的 schema 和实际运行版本为准。
+- Composer 通过 `+`、`@` 或剪贴板添加 PNG、JPEG、GIF、WebP 图片，发送前统一构造成 `localImage`。剪贴板图片由 Rust 原生层读取并转换成系统临时目录下的 PNG，前端草稿只保留路径，不保存 base64；临时文件不在发送后立即删除，以免破坏排队和重试。
 - Composer 选中 `$skill` 后，文本项保留可见 marker，并带 CLI 兼容的 `text_elements`；独立的 `skill` 项仍由 App Server 解析。普通文件只发结构化 `mention`，不要在前端展开文件内容。当前 CLI 0.151.0 的文件选择发送路径文本，和 Harness 的结构化 mention 是已知协议差异。
 - `thread/tokenUsage/updated` 提供 Codex 会话的累计和最近一次 usage，前端已用于会话统计。累计值不能直接当成单 turn 值相加。
 - Rust 原生层在 `~/.codex-harness/logs/harness.jsonl` 留存低基数的 App Server 请求和 usage 诊断；`turnTrigger` 用于区分普通对话、标题生成、Quick Agent 等来源，日志不保存正文。

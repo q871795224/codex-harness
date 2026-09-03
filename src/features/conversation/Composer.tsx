@@ -8,11 +8,13 @@ import { appServer, type FuzzyFileSearchResult } from '../../core/runtime/appSer
 import {
   absoluteMentionPath,
   activeComposerTrigger,
-  composerTextInput,
+  clipboardHasImage,
+  composerInputs,
   expandCollapsedPastes,
   hasSkillMarker,
   insertCollapsedPaste,
   insertComposerPrompt,
+  isSupportedImagePath,
   matchesSendShortcut,
   reconcileCollapsedPastes,
   reasoningEffortTone,
@@ -79,7 +81,7 @@ export interface ComposerDraft {
 }
 
 interface ComposerSuggestion {
-  kind: 'file' | 'skill' | 'command' | 'plugin'
+  kind: 'image' | 'file' | 'skill' | 'command' | 'plugin'
   name: string
   path?: string
   detail: string
@@ -136,7 +138,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
         .filter((match) => match.match_type === 'file')
         .slice(0, 8)
         .map((match) => ({
-          kind: 'file',
+          kind: isSupportedImagePath(match.path) ? 'image' : 'file',
           name: match.file_name || match.path.split(/[\\/]/).pop() || match.path,
           path: absoluteMentionPath(match.root, match.path),
           detail: match.path,
@@ -269,16 +271,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
   useEffect(() => { setHighlightedSuggestion(0) }, [triggerKind, triggerQuery])
 
   const inputs = useMemo<UserInput[]>(() => {
-    const selectedSkillNames = attachments.filter((attachment) => attachment.kind === 'skill').map((attachment) => attachment.name)
-    const text = collapsedPastes.length > 0 ? expandedText : expandedText.trim()
-    return [
-      ...(text ? [composerTextInput(text, selectedSkillNames)] : []),
-      ...attachments.map((attachment): UserInput => attachment.kind === 'image'
-        ? { type: 'localImage', path: attachment.path }
-        : attachment.kind === 'skill'
-          ? { type: 'skill', name: attachment.name, path: attachment.path }
-          : { type: 'mention', name: attachment.name, path: attachment.path }),
-    ]
+    return composerInputs(expandedText, attachments, collapsedPastes.length > 0)
   }, [attachments, collapsedPastes.length, expandedText])
 
   const submit = async () => {
@@ -313,7 +306,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
 
   const runPrimaryAction = () => working && !hasContent ? onStop() : submit()
 
-  const chooseSuggestion = (suggestion: ComposerSuggestion) => {
+  const chooseSuggestion = async (suggestion: ComposerSuggestion) => {
     if (!trigger) return
     if (suggestion.kind === 'plugin') {
       const body = suggestion.insertText ?? ''
@@ -338,6 +331,18 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
       })
       return
     }
+    if (suggestion.kind === 'image') {
+      setAttachmentBusy(true)
+      setActionError(null)
+      try {
+        await runtime.validateComposerImage(suggestion.path!)
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : String(error))
+        return
+      } finally {
+        setAttachmentBusy(false)
+      }
+    }
     const replacement = suggestion.kind === 'skill' ? `$${suggestion.name}` : suggestion.kind === 'command' ? suggestion.replacement ?? `/${suggestion.name}` : ''
     const next = replaceComposerTrigger(text, trigger, replacement)
     setCollapsedPastes((current) => reconcileCollapsedPastes(text, next.text, current))
@@ -358,10 +363,17 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
     setAttachmentBusy(true)
     try {
       const paths = await runtime.chooseComposerFiles()
+      const candidates = await Promise.all(paths.map(async (path) => {
+        const attachment = attachmentFromPath(path)
+        if (attachment.kind === 'image') await runtime.validateComposerImage(path)
+        return attachment
+      }))
       setAttachments((current) => {
         const known = new Set(current.map((item) => item.path))
-        return [...current, ...paths.filter((path) => !known.has(path)).map(attachmentFromPath)]
+        return [...current, ...candidates.filter((attachment) => !known.has(attachment.path))]
       })
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
     } finally {
       setAttachmentBusy(false)
     }
@@ -432,7 +444,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
         <textarea
           ref={ref}
           value={text}
-          disabled={disabled || busy}
+          disabled={disabled || busy || attachmentBusy}
           placeholder={foreignActive ? '等待其他客户端完成当前轮' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
           onChange={(event) => {
             const nextText = event.target.value
@@ -446,6 +458,16 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => setComposing(false)}
           onPaste={(event) => {
+            if (clipboardHasImage(event.clipboardData)) {
+              event.preventDefault()
+              setAttachmentBusy(true)
+              setActionError(null)
+              void runtime.pasteComposerImage()
+                .then((image) => setAttachments((current) => [...current, { path: image.path, name: image.name, kind: 'image' }]))
+                .catch((error) => setActionError(error instanceof Error ? error.message : String(error)))
+                .finally(() => setAttachmentBusy(false))
+              return
+            }
             const content = event.clipboardData.getData('text/plain')
             if (!shouldCollapsePaste(content)) return
             event.preventDefault()
@@ -477,7 +499,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
                   // Let the normal send path execute an already complete local command.
                 } else {
                   event.preventDefault()
-                  chooseSuggestion(suggestion)
+                  void chooseSuggestion(suggestion)
                   return
                 }
               }
@@ -517,9 +539,9 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
                     aria-selected={index === highlightedSuggestion}
                     className={index === highlightedSuggestion ? 'selected' : ''}
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => chooseSuggestion(suggestion)}
+                    onClick={() => void chooseSuggestion(suggestion)}
                   >
-                    {suggestion.kind === 'skill' ? <Sparkles size={14} /> : suggestion.kind === 'command' ? <Terminal size={14} /> : suggestion.kind === 'plugin' ? <NotebookPen size={14} /> : <FileText size={14} />}
+                    {suggestion.kind === 'image' ? <Image size={14} /> : suggestion.kind === 'skill' ? <Sparkles size={14} /> : suggestion.kind === 'command' ? <Terminal size={14} /> : suggestion.kind === 'plugin' ? <NotebookPen size={14} /> : <FileText size={14} />}
                     <span><strong>{suggestion.name}</strong><small>{suggestion.detail}</small></span>
                   </button>
                 </Fragment>
@@ -608,7 +630,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
               <button
                 type="button"
                 className={`send-button${working && !hasContent ? ' stop' : ''}`}
-                disabled={disabled || busy || (!working && !hasContent) || (hasContent && imageUnsupported)}
+                disabled={disabled || busy || attachmentBusy || (!working && !hasContent) || (hasContent && imageUnsupported)}
                 onClick={() => void runPrimaryAction()}
                 title={working && !hasContent ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队' : '插话') : '发送消息'}
                 aria-label={working && !hasContent ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队消息' : '插话') : '发送消息'}
@@ -681,7 +703,7 @@ function commandSuggestions(query: string, models: CodexModel[], selectedModel: 
 
 function attachmentFromPath(path: string): ComposerAttachment {
   const name = path.split(/[\\/]/).pop() || path
-  return { path, name, kind: /\.(avif|bmp|gif|heic|heif|jpe?g|png|tiff?|webp)$/i.test(name) ? 'image' : 'file' }
+  return { path, name, kind: isSupportedImagePath(name) ? 'image' : 'file' }
 }
 
 function ContextRing({ usage, provider }: { usage: ThreadTokenUsage | null; provider: 'codex' | 'claude' }) {

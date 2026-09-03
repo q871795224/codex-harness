@@ -33,6 +33,40 @@ export interface ComposerKeyEvent {
   keyCode: number
 }
 
+interface ClipboardImageData {
+  items?: ArrayLike<{ type: string }>
+  files?: ArrayLike<{ type: string }>
+}
+
+export function clipboardHasImage(data: ClipboardImageData): boolean {
+  return [...Array.from(data.items ?? []), ...Array.from(data.files ?? [])]
+    .some((item) => item.type.toLocaleLowerCase().startsWith('image/'))
+}
+
+export function isSupportedImagePath(path: string): boolean {
+  return /\.(?:gif|jpe?g|png|webp)$/i.test(path)
+}
+
+interface ComposerInputAttachment {
+  path: string
+  name: string
+  kind: 'image' | 'file' | 'skill'
+}
+
+export function composerInputs(text: string, attachments: ComposerInputAttachment[], preserveWhitespace = false): UserInput[] {
+  const selectedSkillNames = attachments.filter((attachment) => attachment.kind === 'skill').map((attachment) => attachment.name)
+  const body = preserveWhitespace ? text : text.trim()
+  const images: UserInput[] = attachments
+    .filter((attachment) => attachment.kind === 'image')
+    .map((attachment) => ({ type: 'localImage', path: attachment.path }))
+  const references: UserInput[] = attachments
+    .filter((attachment) => attachment.kind !== 'image')
+    .map((attachment) => attachment.kind === 'skill'
+      ? { type: 'skill', name: attachment.name, path: attachment.path }
+      : { type: 'mention', name: attachment.name, path: attachment.path })
+  return [...images, ...(body ? [composerTextInput(body, selectedSkillNames)] : []), ...references]
+}
+
 export type ReasoningEffortTone = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
 export function reasoningEffortTone(effort: string): ReasoningEffortTone {
