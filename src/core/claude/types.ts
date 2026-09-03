@@ -68,7 +68,8 @@ export interface ClaudeSessionSettings {
 export const DEFAULT_CLAUDE_SESSION_SETTINGS: ClaudeSessionSettings = {
   model: null,
   effort: null,
-  permissionMode: 'default',
+  // 默认 Dangerous：会话未显式设置过时直接绕过权限审批；用户可在输入框切回 Ask。
+  permissionMode: 'bypassPermissions',
 }
 
 export interface ClaudeModelResponse {

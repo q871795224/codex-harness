@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { threadTitle } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import type { ComposerDraft } from '../conversation/Composer'
-import { extractHandoverSummary, renderHandoverDocument } from './document'
+import { extractHandoverSummary, renderHandoverDocument, renderHandoverFrontMatter } from './document'
 import {
   DEFAULT_HANDOVER_PROMPT,
   DEFAULT_HANDOVER_TEMPLATE,
@@ -85,7 +85,7 @@ export function useHandover(deps: HandoverDeps) {
     const changedFiles = await runtime.gitChangedFiles(thread.cwd).catch(() => '')
 
     const docId = crypto.randomUUID()
-    const document = renderHandoverDocument(template, {
+    const values = {
       docId,
       sourceThreadId: thread.id,
       createdAt: new Date().toISOString(),
@@ -95,7 +95,10 @@ export function useHandover(deps: HandoverDeps) {
       changedFiles: changedFiles.trim() ? changedFiles : '(无改动)',
       title: deps.currentThreadTitle,
       summary,
-    })
+    }
+    // 注入新会话的只是正文；簿记元数据由 Harness 生成文件头，只落在磁盘文档里。
+    const draft = renderHandoverDocument(template, values)
+    const document = `${renderHandoverFrontMatter(values)}\n\n${draft}`
 
     // 5. 落盘交接文档正文到 ~/.codex-harness/handover/<doc-id>.md。
     try {
@@ -105,7 +108,7 @@ export function useHandover(deps: HandoverDeps) {
       return
     }
 
-    // 6. 开新会话（继承当前 cwd），把文档注入新会话草稿（不自动发送）。
+    // 6. 开新会话（继承当前 cwd），把正文注入新会话草稿（不自动发送）。
     const newThreadId = await deps.createThread()
     if (!newThreadId) {
       deps.notify('交接文档已生成，但开启新会话失败。', 'error')
@@ -113,7 +116,7 @@ export function useHandover(deps: HandoverDeps) {
     }
     deps.setComposerDrafts((current) => ({
       ...current,
-      [newThreadId]: { text: document, collapsedPastes: [], attachments: [] },
+      [newThreadId]: { text: draft, collapsedPastes: [], attachments: [] },
     }))
     deps.notify('已生成交接文档并填入新会话草稿。')
   }, [deps])

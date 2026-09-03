@@ -5,7 +5,7 @@
  * 修改这里的默认值只影响尚未物化的全新安装。
  */
 
-export const HANDOVER_TEMPLATE_VERSION = 1
+export const HANDOVER_TEMPLATE_VERSION = 2
 
 export const HANDOVER_PROMPT_FILE_NAME = 'handover.prompt.md'
 export const HANDOVER_TEMPLATE_FILE_NAME = 'handover.template.md'
@@ -47,20 +47,14 @@ export const DEFAULT_HANDOVER_PROMPT = `你要为当前会话生成一份"交接
 约束、易错点、不要做的事。
 `
 
-/** 交接文档骨架（控制"长什么样"），占位符由 Harness / 主 Agent 填充。 */
-export const DEFAULT_HANDOVER_TEMPLATE = `---
-doc_id: {{docId}}
-continued_from: {{sourceThreadId}}
-created_at: {{createdAt}}
-template_version: {{templateVersion}}
-workspace_root: {{workspaceRoot}}
-git_branch: {{gitBranch}}
----
-
-# 交接：{{title}}
-
-> 本文件由 handover 生成，供新会话冷启动继续工作。
-> 源会话：{{sourceThreadId}}（血缘追溯用，无需回读）。
+/**
+ * 交接文档骨架（控制"新 Agent 看到什么"），占位符由 Harness / 主 Agent 填充。
+ *
+ * 只包含新会话需要的正文；doc_id / continued_from / created_at / template_version 等
+ * 簿记元数据由 Harness 生成文件头（见 document.ts renderHandoverFrontMatter），
+ * 不进模板、不进新会话草稿。
+ */
+export const DEFAULT_HANDOVER_TEMPLATE = `# 交接：{{title}}
 
 ## 工作区状态（harness 生成）
 - 工作区：{{workspaceRoot}}

@@ -30,6 +30,23 @@ export function extractHandoverSummary(agentOutput: string): string | null {
 }
 
 /**
+ * 生成落盘文档的 YAML 文件头：血缘与簿记元数据（harness 管理）。
+ * 只进 ~/.codex-harness/handover/<doc-id>.md 的文件头，不进模板、不进新会话草稿。
+ */
+export function renderHandoverFrontMatter(values: HandoverDocumentValues): string {
+  return [
+    '---',
+    `doc_id: ${values.docId}`,
+    `continued_from: ${values.sourceThreadId}`,
+    `created_at: ${values.createdAt}`,
+    `template_version: ${values.templateVersion}`,
+    `workspace_root: ${values.workspaceRoot}`,
+    `git_branch: ${values.gitBranch}`,
+    '---',
+  ].join('\n')
+}
+
+/**
  * 用 values 填充模板里的 {{placeholder}}。
  * 未识别的占位符原样保留（便于用户自定义模板时逐步扩展），已识别但为空的值替换为空字符串。
  */
