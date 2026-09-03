@@ -11,6 +11,7 @@ mod git_workspace;
 mod handover_store;
 mod harness_files;
 mod local_connector;
+mod project_doc_store;
 mod quick_command;
 mod release_command;
 mod store;
@@ -46,6 +47,7 @@ struct AppState {
     codex_radar: CodexRadarClient,
     codex_analytics: CodexAnalytics,
     store: HarnessStore,
+    project_docs: Mutex<Option<project_doc_store::ProjectDocStore>>,
     terminal: Arc<terminal::TerminalManager>,
     api_workbench: api_workbench::ApiWorkbenchStore,
     codex_update: tokio::sync::Mutex<()>,
@@ -533,6 +535,103 @@ fn read_handover_document(file_name: String) -> Result<String, String> {
     handover_store::read_document(&file_name)
 }
 
+/// 惰性开启项目文档库：首次使用时初始化，避免拖累启动路径（项目文档是可选能力）。
+fn project_docs<'a>(
+    state: &'a State<'a, AppState>,
+) -> Result<std::sync::MutexGuard<'a, Option<project_doc_store::ProjectDocStore>>, String> {
+    let mut guard = state
+        .project_docs
+        .lock()
+        .map_err(|_| "项目文档库锁不可用".to_string())?;
+    if guard.is_none() {
+        *guard = Some(project_doc_store::ProjectDocStore::open()?);
+    }
+    Ok(guard)
+}
+
+#[tauri::command]
+fn project_doc_create(
+    state: State<'_, AppState>,
+    project_id: String,
+    name: String,
+) -> Result<project_doc_store::ProjectMeta, String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().create_project(&project_id, &name)
+}
+
+#[tauri::command]
+fn project_doc_list(state: State<'_, AppState>) -> Result<Vec<project_doc_store::ProjectMeta>, String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().list_projects()
+}
+
+#[tauri::command]
+fn project_doc_get(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> Result<project_doc_store::ProjectMeta, String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().get_project(&project_id)
+}
+
+#[tauri::command]
+fn project_doc_bind_workspace(
+    state: State<'_, AppState>,
+    project_id: String,
+    workspace_root: String,
+) -> Result<(), String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().bind_workspace(&project_id, &workspace_root)
+}
+
+#[tauri::command]
+fn project_doc_workspaces(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> Result<Vec<String>, String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().list_workspaces(&project_id)
+}
+
+#[tauri::command]
+fn project_doc_read(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> Result<project_doc_store::ProjectDocSnapshot, String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().read_doc(&project_id)
+}
+
+#[tauri::command]
+fn project_doc_versions(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> Result<Vec<project_doc_store::ProjectVersion>, String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().list_versions(&project_id)
+}
+
+#[tauri::command]
+fn project_doc_write_section(
+    state: State<'_, AppState>,
+    project_id: String,
+    section: String,
+    base_seq: Option<i64>,
+    content: String,
+    updated_by: String,
+    summary: String,
+) -> Result<project_doc_store::WriteOutcome, String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().write_section(
+        &project_id,
+        &section,
+        base_seq,
+        &content,
+        &updated_by,
+        &summary,
+    )
+}
+
 #[tauri::command]
 fn create_agent_worktree(cwd: String, run_id: String) -> Result<String, String> {
     let data_dir = store::harness_data_dir()?;
@@ -815,6 +914,7 @@ pub fn run() {
                 codex_radar: CodexRadarClient::new(),
                 codex_analytics: analytics,
                 store,
+                project_docs: Mutex::new(None),
                 terminal,
                 api_workbench,
                 codex_update: tokio::sync::Mutex::new(()),
@@ -846,6 +946,14 @@ pub fn run() {
             write_handover_template,
             write_handover_document,
             read_handover_document,
+            project_doc_create,
+            project_doc_list,
+            project_doc_get,
+            project_doc_bind_workspace,
+            project_doc_workspaces,
+            project_doc_read,
+            project_doc_versions,
+            project_doc_write_section,
             create_agent_worktree,
             remove_agent_worktree,
             map_thread_workspaces,
