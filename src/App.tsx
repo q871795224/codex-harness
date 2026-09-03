@@ -1,8 +1,8 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
-import { DEFAULT_FONT_SIZES, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
+import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
 import type { CodexRadarService } from './core/codex-radar/types'
 import type { ConversationService } from './core/conversations/types'
@@ -16,6 +16,9 @@ import { resolveQuickPanelAnchor, shouldShowQuickPanels } from './core/plugins/q
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
+import { DelegationReturnCard } from './features/conversation/DelegationReturnCard'
+import { insertComposerPrompt } from './features/conversation/composerInput'
+import { useHandover } from './features/handover/useHandover'
 import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
@@ -178,6 +181,29 @@ function HarnessShell({ harness, agentRuns, codex }: {
     return next
   })
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
+  const handover = useHandover({
+    startTurnInThread: harness.startTurnInThread,
+    onTurnCompleted: harness.onTurnCompleted,
+    readLastAgentMessage: (threadId) => runtime.readLastAgentMessage(threadId),
+    createThread: () => harness.createThread('codex'),
+    setComposerDrafts,
+    notify: harness.notify,
+    currentThread: harness.currentThread,
+    currentThreadTitle: harness.currentThread ? threadTitle(harness.currentThread) : '新会话',
+  })
+  // 把子 Agent 结果前插进指定会话的输入草稿（不自动发送，经人审批）。
+  const injectDraft = useCallback((threadId: string, text: string) => {
+    setComposerDrafts((current) => {
+      const existing = current[threadId]
+      const merged = insertComposerPrompt(existing?.text ?? '', text)
+      return { ...current, [threadId]: { text: merged, collapsedPastes: existing?.collapsedPastes ?? [], attachments: existing?.attachments ?? [] } }
+    })
+  }, [])
+  const agentRunList = useSyncExternalStore(agentRuns.subscribe, agentRuns.snapshot)
+  const pendingReturnRuns = useMemo(
+    () => agentRunList.filter((run) => run.parentThreadId === harness.selectedThreadId),
+    [agentRunList, harness.selectedThreadId],
+  )
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
@@ -650,6 +676,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
 
             {composerVisible && (
               <div className="input-column" ref={inputColumnRef}>
+                {harness.selectedThreadId && (
+                  <DelegationReturnCard
+                    runs={pendingReturnRuns}
+                    agentRuns={agentRuns}
+                    onInjectDraft={injectDraft}
+                  />
+                )}
                 <QueueDock
                   queue={currentQueue}
                   pendingSteers={currentSteers}
@@ -696,6 +729,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     if (command.name === 'raw') setRawMode((current) => !current)
                     else if (command.name === 'new') runAction('thread.new')
                     else if (command.name === 'reset') return harness.resetThread()
+                    else if (command.name === 'handover') return handover.runHandover()
                     else if (command.name === 'model' && codexConversation && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { model: command.model })
                     else if (command.name === 'model' && harness.selectedProvider === 'claude' && harness.selectedThreadId) void harness.updateClaudeSettings(harness.selectedThreadId, { model: command.model })
                     else if (command.name === 'reasoning' && codexConversation && harness.selectedThreadId) void codex.updateThreadSettings(harness.selectedThreadId, { effort: command.effort })

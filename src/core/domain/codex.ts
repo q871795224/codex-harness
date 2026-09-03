@@ -4,6 +4,7 @@ export type JsonObject = Record<string, unknown>
 export type CodexTurnTrigger =
   | 'conversation-restart'
   | 'continue-after-failure'
+  | 'handover'
   | 'quick-agent'
   | 'recap'
   | 'return-to-parent'

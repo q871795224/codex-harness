@@ -4,7 +4,7 @@ import { textInput } from '../../core/domain/codex'
 import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, copyableTranscriptText, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
 import { formatWorkingElapsed, workingElapsedMilliseconds } from './ConversationStats'
 import { parseThreadTitleGenerationSettings } from './useHarness'
-import { isFirstUserTurn, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, threadTitlePrompt, threadTurnContext } from './threadLifecycle'
+import { draftThreadStartRequest, isFirstUserTurn, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, shouldRecreateDraftThread, threadTitlePrompt, threadTurnContext } from './threadLifecycle'
 
 function makeThread(cwd: string): Thread {
   return {
@@ -129,6 +129,33 @@ describe('new thread workspace', () => {
 
   it('requires an explicit cwd without a selected thread or remembered target', () => {
     expect(resolveNewThreadWorkspaceRoot(null, [], null)).toBeNull()
+  })
+
+  it('recreates an unstarted thread when the workspace changed before the first turn', () => {
+    expect(shouldRecreateDraftThread('/repo/old', '/repo/new')).toBe(true)
+    expect(shouldRecreateDraftThread('/repo/current', '/repo/current')).toBe(false)
+    expect(shouldRecreateDraftThread(undefined, '/repo/current')).toBe(false)
+  })
+
+  it('starts the replacement thread in the selected cwd with the draft settings', () => {
+    const detail = {
+      thread: makeThread('/repo/new'), turns: [], items: [], nextTurnsCursor: null,
+      activeTurnId: null, foreignActive: false, runtimeWorkspaceRoots: ['/repo/new'],
+      sandbox: null, activePermissionProfile: null, model: 'gpt-test',
+      threadSettings: {
+        model: 'gpt-test', effort: 'high', serviceTier: 'fast', approvalPolicy: 'never',
+        approvalsReviewer: 'user', sandboxMode: 'danger-full-access',
+      },
+    } satisfies ThreadDetail
+    expect(draftThreadStartRequest('/repo/new', detail)).toEqual({
+      cwd: '/repo/new',
+      runtimeWorkspaceRoots: ['/repo/new'],
+      model: 'gpt-test',
+      serviceTier: 'fast',
+      approvalPolicy: 'never',
+      approvalsReviewer: 'user',
+      sandbox: 'danger-full-access',
+    })
   })
 })
 

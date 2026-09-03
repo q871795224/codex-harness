@@ -235,24 +235,25 @@ export function useUnifiedHarness() {
   const createThread = useCallback(async (provider: ConversationProvider = 'codex') => {
     const requestId = ++selectionRequestRef.current
     if (provider === 'codex') {
-      await codex.createThread()
-      return
+      return codex.createThread()
     }
     let cwd: string | undefined = currentThread?.cwd
       ?? codex.workspaces.find((workspace) => workspace.root === codex.selectedWorkspaceRoot)?.checkoutRoot
       ?? codex.workspaces[0]?.checkoutRoot
     if (!cwd) cwd = (await codex.chooseWorkspace())?.checkoutRoot
-    if (!cwd) return
+    if (!cwd) return undefined
     const sessionCwd = cwd
     try {
       const id = await claude.createSession(sessionCwd)
-      if (selectionRequestRef.current !== requestId) return
+      if (selectionRequestRef.current !== requestId) return undefined
       claude.selectSession(id)
       selectedThreadIdRef.current = id
       setSelectedThreadId(id)
       void runtime.setAppState(SELECTED_CONVERSATION_KEY, id).catch(() => undefined)
+      return id
     } catch {
       // useClaudeHarness surfaces the actionable runtime error.
+      return undefined
     }
   }, [claude, codex, currentThread?.cwd])
 

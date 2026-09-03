@@ -661,6 +661,7 @@ function commandSuggestions(query: string, models: CodexModel[], selectedModel: 
     return [
       { name: 'new', detail: '新建会话', complete: true },
       { name: 'reset', detail: '清空当前会话并开始新会话', complete: true },
+      { name: 'handover', detail: '生成交接文档并开启新会话', complete: true },
       { name: 'model', detail: '选择当前会话模型', complete: false },
       ...(provider === 'codex' ? [
         { name: 'reasoning', detail: '选择推理强度', complete: false },

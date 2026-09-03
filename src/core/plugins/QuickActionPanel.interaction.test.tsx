@@ -65,6 +65,9 @@ class FakeAgentRuns implements AgentRunService {
     for (const listener of this.listeners) listener()
   })
   loadResult = vi.fn()
+  buildReturnDraft = vi.fn(async () => '执行结果草稿')
+  markReturned = vi.fn(async () => undefined)
+  childThreadForFeedback = vi.fn(async () => 'child-1')
   returnToParent = vi.fn(async (runId: string) => {
     if (this.returnError) throw this.returnError
     this.runs = this.runs.map((run) => run.runId === runId ? { ...run, returnedAt: Date.now() } : run)

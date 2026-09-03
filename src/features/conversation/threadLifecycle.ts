@@ -163,6 +163,23 @@ export function shouldDiscardDraftThread(unstarted: boolean, hasContent: boolean
   return unstarted && !hasContent
 }
 
+export function shouldRecreateDraftThread(initialCwd: string | undefined, currentCwd: string): boolean {
+  return initialCwd !== undefined && initialCwd !== currentCwd
+}
+
+export function draftThreadStartRequest(cwd: string, detail: ThreadDetail | undefined): JsonObject {
+  const settings = detail?.threadSettings
+  return {
+    cwd,
+    runtimeWorkspaceRoots: [cwd],
+    ...(settings?.model ? { model: settings.model } : {}),
+    ...(settings?.serviceTier !== undefined ? { serviceTier: settings.serviceTier } : {}),
+    ...(settings?.approvalPolicy ? { approvalPolicy: settings.approvalPolicy } : {}),
+    ...(settings?.approvalsReviewer ? { approvalsReviewer: settings.approvalsReviewer } : {}),
+    ...(settings?.sandboxMode ? { sandbox: settings.sandboxMode } : {}),
+  }
+}
+
 export function sandboxModeForPolicy(policy: SandboxPolicy): ThreadCodexSettings['sandboxMode'] {
   if (policy.type === 'dangerFullAccess') return 'danger-full-access'
   if (policy.type === 'readOnly') return 'read-only'

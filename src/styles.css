@@ -539,6 +539,16 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .input-column { flex: 0 0 auto; width: min(920px, calc(100% - 64px)); margin: 0 auto 10px; }
 .composer-collapse-toggle { z-index: 4; display: grid; width: 20px; height: 20px; padding: 0; place-items: center; border: 1px solid #d5dae2; border-radius: 50%; background: rgba(255, 255, 255, .95); color: #687380; box-shadow: 0 2px 8px rgba(25, 32, 43, .1); cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease, transform .18s ease; backdrop-filter: blur(8px); }.composer-collapse-toggle:hover { border-color: #aeb8c8; background: #fff; color: #334153; transform: translateY(1px); }.composer-collapse-toggle.collapsed:hover { transform: translateY(-1px); }.composer-collapsed-handle { display: grid; flex: 0 0 10px; height: 10px; overflow: hidden; place-items: start center; }
 .queue-dock { --dock-inset: 12px; width: calc(100% - 2 * var(--dock-inset)); margin: 0 auto 8px; }
+.delegation-return-card { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: calc(100% - 24px); margin: 0 auto 8px; padding: 8px 12px; border: 1px solid #dfe3ee; border-radius: 10px; background: #f7f9ff; box-shadow: 0 3px 12px rgba(32, 38, 50, .05); font-size: 12.5px; color: #33415a; }
+.delegation-return-card.reviewing { background: #f4fbf6; border-color: #d3ead9; }
+.delegation-return-icon { display: grid; place-items: center; color: #6a5fd0; }
+.delegation-return-text { flex: 1 1 auto; min-width: 160px; }
+.delegation-return-actions { display: inline-flex; gap: 6px; }
+.delegation-return-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #d4dae6; border-radius: 7px; background: #fff; color: #33415a; font-size: 12px; cursor: pointer; }
+.delegation-return-actions button.primary { background: #4a5fc1; border-color: #4a5fc1; color: #fff; }
+.delegation-return-actions button:disabled { opacity: .55; cursor: default; }
+.delegation-return-feedback { flex: 1 1 220px; min-width: 180px; padding: 5px 9px; border: 1px solid #cfdbca; border-radius: 7px; font-size: 12.5px; background: #fff; color: inherit; }
+.delegation-return-error { flex-basis: 100%; color: #b3261e; font-size: 12px; }
 .steer-panel, .queue-panel { overflow: hidden; border: 1px solid #dedfe3; border-radius: 10px; background: #fbfbfc; box-shadow: 0 3px 12px rgba(32, 38, 50, .035); }
 .steer-panel { margin-bottom: 7px; border-color: #dbe1f4; background: #f9faff; }
 .dock-label { display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-bottom: 1px solid #e7eaf6; color: #7782ac; font-size: 10px; font-weight: 680; }

@@ -110,6 +110,47 @@ export class AgentRunCoordinator implements AgentRunService {
     return this.transport.readLastAgentMessage(run.childThreadId, providerOf(run))
   }
 
+  /**
+   * 回传为「草稿文本」而非直接发起 turn（不变式 3：注入输入框、经人审批发送）。
+   * 返回拼接好的草稿文本；调用方负责塞进发起会话输入框并置 returnedAt。
+   */
+  async buildReturnDraft(runId: string): Promise<string> {
+    await this.initialize()
+    const run = this.requireRun(runId)
+    if (run.mode !== 'delegated' || !run.parentThreadId) throw new Error('该任务没有父会话')
+    if (run.status !== 'completed') throw new Error('任务尚未完成')
+    if (run.returnedAt) throw new Error('该任务已回传过')
+    const result = await this.loadResult(runId)
+    return [
+      `以下是临时子 Agent「${run.title}」的执行结果：`,
+      '',
+      result,
+      '',
+      '请结合当前主会话目标继续处理。',
+    ].join('\n')
+  }
+
+  /** 标记某 run 已回传（草稿模式下由调用方在注入草稿后调用）。 */
+  async markReturned(runId: string): Promise<void> {
+    await this.initialize()
+    const run = this.requireRun(runId)
+    if (run.returnedAt) return
+    await this.persist({ ...run, returnedAt: Date.now(), updatedAt: Date.now() })
+  }
+
+  /**
+   * 反向回传（主会话 → 子 Agent）：返回该 run 的子会话 id，供调用方把验收意见
+   * 注入子会话输入草稿。不直接发 turn，经人审批后由用户在子会话发送。
+   */
+  async childThreadForFeedback(runId: string): Promise<string> {
+    await this.initialize()
+    const run = this.requireRun(runId)
+    if (run.mode !== 'delegated') throw new Error('该任务不是委派任务')
+    if (!run.childThreadId) throw new Error('任务还没有子会话')
+    if (run.status !== 'completed' && run.status !== 'failed') throw new Error('任务仍在运行，等完成后再回传意见')
+    return run.childThreadId
+  }
+
   async returnToParent(runId: string): Promise<void> {
     await this.initialize()
     const run = this.requireRun(runId)
