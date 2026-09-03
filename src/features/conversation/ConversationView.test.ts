@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, copyableTranscriptText, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
-import { formatWorkingElapsed } from './ConversationStats'
+import { formatWorkingElapsed, workingElapsedMilliseconds } from './ConversationStats'
 import { parseThreadTitleGenerationSettings } from './useHarness'
 import { draftThreadStartRequest, isFirstUserTurn, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, shouldRecreateDraftThread, threadTitlePrompt, threadTurnContext } from './threadLifecycle'
 
@@ -93,6 +93,11 @@ describe('working status', () => {
   it('formats elapsed time as a stable minute clock', () => {
     expect(formatWorkingElapsed(0)).toBe('0:00')
     expect(formatWorkingElapsed(65_900)).toBe('1:05')
+  })
+
+  it('treats turn timestamps as milliseconds', () => {
+    expect(workingElapsedMilliseconds(12_000, 8_500, 10_000)).toBe(3_500)
+    expect(workingElapsedMilliseconds(12_000, null, 10_000)).toBe(2_000)
   })
 
   it('attaches to the latest Codex message in the active turn', () => {

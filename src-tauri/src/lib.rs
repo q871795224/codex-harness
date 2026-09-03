@@ -2,6 +2,7 @@ mod api_workbench;
 mod app_launcher;
 mod app_server;
 mod claude_runtime;
+mod clipboard_image;
 mod codex_analytics;
 mod codex_radar;
 mod codex_update;
@@ -112,6 +113,20 @@ async fn api_workbench_send(
 #[tauri::command]
 fn api_workbench_read_import_file(path: String) -> Result<String, String> {
     api_workbench::read_import_file(&path)
+}
+
+#[tauri::command]
+async fn paste_composer_image() -> Result<clipboard_image::ComposerImage, String> {
+    tokio::task::spawn_blocking(clipboard_image::paste)
+        .await
+        .map_err(|error| format!("读取剪贴板图片任务失败：{error}"))?
+}
+
+#[tauri::command]
+async fn validate_composer_image(path: String) -> Result<clipboard_image::ComposerImage, String> {
+    tokio::task::spawn_blocking(move || clipboard_image::validate(&path))
+        .await
+        .map_err(|error| format!("校验图片任务失败：{error}"))?
 }
 
 #[derive(Debug, Deserialize)]
@@ -833,6 +848,8 @@ pub fn run() {
             api_workbench_save,
             api_workbench_send,
             api_workbench_read_import_file,
+            paste_composer_image,
+            validate_composer_image,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错");

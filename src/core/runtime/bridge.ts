@@ -226,6 +226,14 @@ export const runtime = {
     return Array.isArray(paths) ? paths : [paths]
   },
 
+  pasteComposerImage(): Promise<{ path: string; name: string; width: number; height: number }> {
+    return invoke('paste_composer_image')
+  },
+
+  validateComposerImage(path: string): Promise<{ path: string; name: string; width: number; height: number }> {
+    return invoke('validate_composer_image', { path })
+  },
+
   async chooseApiWorkbenchImportFiles(): Promise<string[]> {
     const paths = await open({
       directory: false,

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LoaderCircle } from 'lucide-react'
 import type { ConversationStatsData, ConversationStatsPreferences } from './conversationStatsConfig'
 import { conversationStatSegments } from './conversationStatsConfig'
 
@@ -10,7 +11,8 @@ interface ConversationStatsProps extends ConversationStatsData {
 export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
   const [fallbackStartedAt] = useState(Date.now)
   const [now, setNow] = useState(Date.now)
-  const startedAtMs = startedAt ? startedAt * 1_000 : fallbackStartedAt
+  const elapsed = workingElapsedMilliseconds(now, startedAt, fallbackStartedAt)
+  const elapsedLabel = formatWorkingElapsed(elapsed)
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000)
@@ -18,12 +20,16 @@ export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
   }, [])
 
   return (
-    <div className="working-status" aria-label={`会话正在工作，已运行 ${formatWorkingElapsed(now - startedAtMs)}`}>
-      <span className="working-status-dot" />
+    <div className="working-status" aria-label={`会话正在工作，已运行 ${elapsedLabel}`}>
+      <LoaderCircle className="working-status-loader spin" size={12} strokeWidth={2.4} aria-hidden="true" />
       <span className="working-status-label">Working</span>
-      <span>({formatWorkingElapsed(now - startedAtMs)})</span>
+      <span>({elapsedLabel})</span>
     </div>
   )
+}
+
+export function workingElapsedMilliseconds(now: number, startedAt: number | null, fallbackStartedAt: number): number {
+  return Math.max(0, now - (startedAt ?? fallbackStartedAt))
 }
 
 export function ConversationStats({ turns, items, tokenUsage, costUsd, creditUsage, thread, workspace, taskPlan, preferences, emptyLabel }: ConversationStatsProps) {

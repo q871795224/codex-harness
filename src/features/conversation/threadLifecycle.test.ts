@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Thread, Turn } from '../../core/domain/codex'
+import type { Thread, Turn, Workspace } from '../../core/domain/codex'
 import type { ResumeThreadResponse, StartThreadResponse } from '../../core/runtime/appServerClient'
 import {
   resumedThreadDetail,
   resumeThreadWithRetry,
   resumeThreadRequest,
   activeThreadIdsForRecovery,
+  resolveDefaultWorkspaceCwd,
   runtimeThreadSettings,
   startedThreadDetail,
   threadPermissionOverrides,
@@ -38,6 +39,10 @@ function turn(id: string, status: Turn['status'], text: string): Turn {
     completedAt: status === 'inProgress' ? null : 2,
     durationMs: status === 'inProgress' ? null : 1,
   }
+}
+
+function workspace(root: string, checkoutRoot = root): Workspace {
+  return { root, checkoutRoot, name: root, branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 }
 }
 
 function response(): ResumeThreadResponse {
@@ -181,5 +186,22 @@ describe('thread workspace permissions', () => {
       input,
       turnTrigger: 'quick-agent',
     })
+  })
+})
+
+describe('new thread workspace defaults', () => {
+  it('uses the selected workspace checkout when available', () => {
+    expect(resolveDefaultWorkspaceCwd([
+      workspace('/repo-a', '/repo-a/worktree'),
+      workspace('/repo-b', '/repo-b/worktree'),
+    ], '/repo-b')).toBe('/repo-b/worktree')
+  })
+
+  it('uses the first workspace checkout when no workspace is selected', () => {
+    expect(resolveDefaultWorkspaceCwd([
+      workspace('/repo-a', '/repo-a/worktree'),
+      workspace('/repo-b', '/repo-b/worktree'),
+    ], null)).toBe('/repo-a/worktree')
+    expect(resolveDefaultWorkspaceCwd([], null)).toBeNull()
   })
 })
