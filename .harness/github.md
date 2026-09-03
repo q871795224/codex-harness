@@ -64,12 +64,24 @@ Agent 可以使用当前环境提供的 GitHub 工具、GitHub CLI 或 GitHub AP
 
 ## 发布衔接
 
-发布同样遵守 PR 交付，不在 `main` 上直接制作 release commit：
+发布同样遵守 PR 交付，不在 `main` 上直接制作 release commit。先确认本次任务属于哪种范围：
+
+| 范围 | 版本提交与 tag | 安装 | GitHub 远端 |
+| --- | --- | --- | --- |
+| 开发构建或 smoke test | 不修改版本，不 commit，不打 tag | 不替换稳定版 | 不创建 release PR 或 Release |
+| 本机正式发布 | 修改版本并通过 release PR 合入 `main`；在合并后的 commit 创建本地 annotated tag | 打包并替换本机稳定版 | push release 分支并合并 PR；不 push tag、不上传制品、不创建 GitHub Release |
+| GitHub 正式发布 | 修改版本并通过 release PR 合入 `main`；在合并后的 commit 创建 annotated tag | 打包并替换本机稳定版 | push tag、上传制品并创建 GitHub Release |
+
+“不发布到 GitHub”在本项目中表示不 push tag、不上传制品、不创建 GitHub Release；release PR 仍然需要通过 GitHub 合入受保护的 `main`。如果任务要求完全不写 GitHub 远端，则不能同时形成进入 `main` 的正式版本提交，只能执行开发构建或 smoke test。
+
+本机正式发布和 GitHub 正式发布遵循以下流程：
 
 1. 从最新 `origin/main` 创建 release 分支，按 `harness-release` Skill 修改版本并执行完整门禁。
 2. push release 分支并创建 PR；版本文件、release notes 或其他发布改动都通过该 PR 审核。
 3. required checks 通过且用户明确授权后，将 release PR squash merge 到 `main`。
 4. fetch 并核对远端 `main` 的合并结果。annotated tag 必须指向合并后的 `main` commit，不能指向因 squash 而未进入 `main` 的 release 分支 commit。
-5. 只有用户明确授权正式发布时，才安装稳定版、push tag、上传制品并创建 GitHub Release；具体顺序和验证以 `harness-release` Skill 为准。
+5. 从该 commit 打包并安装稳定版。本机正式发布到此结束，tag 只保留在本地；GitHub 正式发布继续 push tag、上传制品并创建 GitHub Release。
 
 发布授权、PR 合并授权和绕过保护授权是不同权限。用户只授权其中一项时，不扩大为其他动作。
+
+快捷 Agent 的固定 prompt 可以明确声明：启动该 Job 即授权本次 release PR 在 required checks 通过后执行 squash merge，并授权创建本地 tag、打包和安装；该授权不包含 push tag、上传制品或创建 GitHub Release。此类 Job 使用 `isolated-delivery` 工作区，不能以 `shared-write` 直接修改当前 `main` checkout。
