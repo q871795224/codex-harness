@@ -42,6 +42,12 @@ interface PluginInstanceDto {
   updatedAt: number
 }
 
+export interface PersistedComposerDraftRecord {
+  conversationId: string
+  draft: unknown
+  updatedAt: number
+}
+
 export type DiagnosticErrorCode =
   | 'no_rollout_found'
   | 'timeout'
@@ -336,6 +342,18 @@ export const runtime = {
 
   setAppState(key: string, value: string): Promise<void> {
     return invoke<void>('set_app_state', { key, value })
+  },
+
+  listComposerDrafts(): Promise<PersistedComposerDraftRecord[]> {
+    return invoke<PersistedComposerDraftRecord[]>('list_composer_drafts')
+  },
+
+  upsertComposerDraft(conversationId: string, draft: unknown): Promise<void> {
+    return invoke<void>('upsert_composer_draft', { input: { conversationId, draft } })
+  },
+
+  deleteComposerDraft(conversationId: string): Promise<void> {
+    return invoke<void>('delete_composer_draft', { conversationId })
   },
 
   async listPluginInstances(): Promise<PluginInstanceRecord[]> {
