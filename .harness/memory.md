@@ -8,6 +8,11 @@
 - MCP 转 Skill 暂不在本次实现范围，由另一个 Codex 负责。
 - Codex 分析数据永久保留，不做 TTL；采集不得发起额外模型推理请求，也不得阻塞 App Server 主流程。默认使用本地 tokenizer；只有用户在插件设置中明确选择时才可异步调用官方 Input Token Count API，并必须自动回退本地。
 
+## 已确认的协作约定
+
+- Handover 交接文档：注入新会话草稿的只有正文（标题/工作区状态/主 Agent 总结）；doc id、血缘、时间戳等簿记元数据由 Harness 生成文档文件头（`renderHandoverFrontMatter`），不进模板、不进草稿。模板 v2 起只含正文占位符；本机已物化的 v1 模板已随改动重写为 v2。state.sqlite 侧元数据（`handed_over_to` 等）仍未实现。
+- Claude 会话默认 `bypassPermissions`（Dangerous）；用户可在输入框权限下拉切回 Ask，显式选择按会话持久化、不受默认值影响。
+
 ## 待完善的插件功能
 
 1. SeaTalk 草稿
