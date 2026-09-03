@@ -51,6 +51,13 @@
 - **正确做法**：保留目录和分支；有未提交改动时清理必须失败，不使用 `--force`。
 - **适用范围**：Quick Agent、worktree 清理和发布交付。
 
+## 首轮前切换 cwd 不会迁移 thread 的持久 cwd
+
+- **问题**：创建空白 Codex 会话后再切换工作区，首轮 `turn/start` 虽然使用新 cwd，但后续恢复会话时可能回到创建时的 cwd。
+- **原因**：`thread/start` 会写入持久的 thread cwd；`thread/settings/update` 和单次 `turn/start.cwd` 不会迁移这份创建元数据。
+- **正确做法**：如果空白会话在首轮发送前切换了 cwd，用最终 cwd 重建 thread，保留用户选择的模型、推理强度、审批和 sandbox 设置，再删除旧的空 thread。
+- **适用范围**：新会话创建、工作区选择器、首轮发送和会话恢复。
+
 ## Claude Provider daemon 不随文件更新自动重启
 
 - **问题**：`~/.codex-harness/claude-provider/daemon.mjs` 被新版覆盖后，正在运行的 daemon 进程仍执行旧代码，新方法（如 `provider/models`）会报"未知 Claude Provider 方法"。

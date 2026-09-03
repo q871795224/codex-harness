@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Thread, Turn, Workspace } from '../../core/domain/codex'
 import type { ResumeThreadResponse, StartThreadResponse } from '../../core/runtime/appServerClient'
 import {
+  draftThreadStartRequest,
   resumedThreadDetail,
   resumeThreadWithRetry,
   resumeThreadRequest,
   activeThreadIdsForRecovery,
   resolveDefaultWorkspaceCwd,
   runtimeThreadSettings,
+  shouldRecreateDraftThread,
   startedThreadDetail,
   threadPermissionOverrides,
   turnStartRequest,
@@ -203,5 +205,23 @@ describe('new thread workspace defaults', () => {
       workspace('/repo-b', '/repo-b/worktree'),
     ], null)).toBe('/repo-a/worktree')
     expect(resolveDefaultWorkspaceCwd([], null)).toBeNull()
+  })
+
+  it('recreates an unstarted draft only when the selected cwd changed', () => {
+    expect(shouldRecreateDraftThread('/repo-a', '/repo-b')).toBe(true)
+    expect(shouldRecreateDraftThread('/repo-a', '/repo-a')).toBe(false)
+    expect(shouldRecreateDraftThread(undefined, '/repo-a')).toBe(false)
+  })
+
+  it('preserves thread settings when recreating a draft in the selected cwd', () => {
+    expect(draftThreadStartRequest('/repo/new', startedThreadDetail(response()))).toEqual({
+      cwd: '/repo/new',
+      runtimeWorkspaceRoots: ['/repo/new'],
+      model: 'gpt-test',
+      serviceTier: 'fast',
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
+      sandbox: 'read-only',
+    })
   })
 })
