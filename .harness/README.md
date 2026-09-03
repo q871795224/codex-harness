@@ -8,6 +8,7 @@
 | 记录已经确认的长期决策和当前状态 | [memory.md](memory.md) | 需要延续历史决策，或任务完成后沉淀结论 |
 | 执行测试、构建、人工检查和黑箱对照 | [test.md](test.md) | 修改代码或验证行为前 |
 | 遇到已知的脆弱点、协议差异或数据安全问题 | [pitfall.md](pitfall.md) | 相关路径排查或修改前 |
+| 使用 GitHub 分支、Pull Request、合并或衔接发布 | [github.md](github.md) | 开始交付、操作 PR 或准备 release 分支前 |
 | 对齐 Agent 间协作（handover、luna 回传、接力、completion 语义） | [agent-interaction.md](agent-interaction.md) | 新增或修改任何 Agent 间交互能力前 |
 | 对齐沟通术语，确认某个词（如标题栏、turn、item）具体指什么 | [glossary.md](glossary.md) | 沟通中出现名词歧义，或涉及协议概念与界面区域命名时 |
 

@@ -9,6 +9,7 @@
 - 项目长期记忆读 [.harness/memory.md](.harness/memory.md)。
 - 测试和验证要求读 [.harness/test.md](.harness/test.md)。
 - 已确认的坑点读 [.harness/pitfall.md](.harness/pitfall.md)。
+- GitHub 分支、Pull Request、合并和发布衔接读 [.harness/github.md](.harness/github.md)。
 - 沟通术语以 [.harness/glossary.md](.harness/glossary.md) 为准；出现名词歧义（如标题栏、turn、item）时查它，新约定沉淀进去。
 - 发布、打包和安装流程使用项目级 Skill `.agents/skills/harness-release/SKILL.md`，不要把发布清单带入普通开发任务。
 - Codex CLI/Harness 请求对照和 token 成本排查使用项目级 Skill `.agents/skills/harness-codex-audit/SKILL.md`。
@@ -44,7 +45,8 @@
 
 ## 交付约定
 
-- 本仓库只通过 GitHub Pull Request 交付；不遵循 Jira key、GitLab MR 或对应的分支命名规范。
+- 本仓库所有改动都通过 GitHub Pull Request 进入 `main`，不得直接在 `main` 上修改、commit 或 push；详见 [.harness/github.md](.harness/github.md)。
+- branch、commit、PR 和 release 不要求 Jira key，不得因缺少 Jira key 阻塞交付或自行编造 key。
 
 ## 常用命令
 
