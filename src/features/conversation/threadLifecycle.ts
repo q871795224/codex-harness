@@ -6,6 +6,7 @@ import type {
   ThreadCodexSettings,
   ThreadDetail,
   UserInput,
+  Workspace,
 } from '../../core/domain/codex'
 import { emptyThreadDetail, rebaseSandboxPolicy } from '../../core/domain/codex'
 import type { ResumeThreadResponse, StartThreadResponse, ThreadSettingsResponse } from '../../core/runtime/appServerClient'
@@ -99,6 +100,13 @@ export function resolveNewThreadWorkspaceRoot(
   nextThreadCwd: string | null,
 ): string | null {
   return (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId)?.cwd : null) ?? nextThreadCwd
+}
+
+export function resolveDefaultWorkspaceCwd(workspaces: Workspace[], selectedWorkspaceRoot: string | null): string | null {
+  const selectedWorkspace = selectedWorkspaceRoot
+    ? workspaces.find((workspace) => workspace.root === selectedWorkspaceRoot)
+    : undefined
+  return selectedWorkspace?.checkoutRoot ?? workspaces[0]?.checkoutRoot ?? null
 }
 
 export function threadTurnContext(detail: ThreadDetail | undefined, cwd: string): JsonObject {
