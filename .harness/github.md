@@ -84,4 +84,6 @@ Agent 可以使用当前环境提供的 GitHub 工具、GitHub CLI 或 GitHub AP
 
 发布授权、PR 合并授权和绕过保护授权是不同权限。用户只授权其中一项时，不扩大为其他动作。
 
-快捷 Agent 的固定 prompt 必须明确发布范围。当前“发布”Job 对应 GitHub 正式发布：启动该 Job 即授权本次 release PR 在 required checks 通过后执行 squash merge，并授权创建和 push tag、打包、安装、上传制品及创建 GitHub Release。该授权仍不包含绕过分支保护或失败检查。发布 Job 使用 `isolated-delivery` 工作区，不能以 `shared-write` 直接修改当前 `main` checkout。
+Codex Harness 的 GitHub 正式发布使用本项目 workspace 专属的“发布”快捷命令，不使用 Quick Agent。命令只显示基于最新 `origin/main` 计算的 patch 和 minor 两个目标版本号；用户选择版本即授权本次 release PR 在 required checks 通过后 squash merge，并授权创建和 push tag、打包、安装、上传制品及创建 GitHub Release。该授权仍不包含绕过分支保护或失败检查。
+
+发布 runner 使用独立 worktree，并脱离 Harness 应用生命周期执行，避免安装新版本导致发起进程退出后中断任务。运行状态属于 workspace，同 workspace 的所有 thread 展示同一状态和失败卡片；其他项目 workspace 不显示此命令。失败现场和日志保留，只有用户主动要求排查时才启动 Agent。

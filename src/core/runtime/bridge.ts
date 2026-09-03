@@ -19,6 +19,7 @@ import type { AgentRun, ThreadInspection } from '../agent-runs/types'
 import type { LocalConnectorHealth, LocalConnectorMessage, LocalConnectorSendInput } from '../local-connectors/types'
 import type { RadarModelTable } from '../codex-radar/types'
 import type { QuickCommandId, QuickCommandResult } from '../quick-commands/types'
+import type { ReleaseCommandInfo, ReleaseRunStatus } from '../release-command/types'
 import type { SystemNotificationClick, SystemNotificationInput } from '../notifications/types'
 import type { PluginInstanceRecord, PluginScope } from '../../extensions/types'
 import type { HarnessFileTree } from '../harness-files/types'
@@ -459,6 +460,26 @@ export const runtime = {
 
   runQuickCommand(commandId: QuickCommandId): Promise<QuickCommandResult> {
     return invoke<QuickCommandResult>('run_quick_command', { commandId })
+  },
+
+  releaseCommandInfo(workspaceRoot: string, refresh = false): Promise<ReleaseCommandInfo> {
+    return invoke<ReleaseCommandInfo>('release_command_info', { workspaceRoot, refresh })
+  },
+
+  releaseCommandStatus(workspaceRoot: string): Promise<ReleaseRunStatus | null> {
+    return invoke<ReleaseRunStatus | null>('release_command_status', { workspaceRoot })
+  },
+
+  startReleaseCommand(workspaceRoot: string, version: string): Promise<ReleaseRunStatus> {
+    return invoke<ReleaseRunStatus>('start_release_command', { workspaceRoot, version })
+  },
+
+  dismissReleaseFailure(workspaceRoot: string): Promise<ReleaseRunStatus | null> {
+    return invoke<ReleaseRunStatus | null>('dismiss_release_failure', { workspaceRoot })
+  },
+
+  openReleaseLog(workspaceRoot: string): Promise<void> {
+    return invoke<void>('open_release_log', { workspaceRoot })
   },
 
   requestSystemNotificationPermission(): Promise<boolean> {

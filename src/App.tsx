@@ -12,6 +12,7 @@ import type { HarnessFilesService, HarnessInstructionConfig } from './core/harne
 import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, PluginThreadHeaderAction, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
+import { useWorkspaceRelease } from './core/release-command/useWorkspaceRelease'
 import { resolveQuickPanelAnchor, shouldShowQuickPanels } from './core/plugins/quickPanelLayout'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
@@ -22,6 +23,7 @@ import { useHandover } from './features/handover/useHandover'
 import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
+import { WorkspaceReleaseFailureCard } from './features/conversation/WorkspaceReleaseFailureCard'
 import { useUnifiedHarness } from './features/conversation/useUnifiedHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { useCodexUpdate } from './features/codex/useCodexUpdate'
@@ -217,6 +219,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
     () => harness.workspaces.find((item) => item.root === harness.threadRoots[harness.selectedThreadId ?? '']) ?? null,
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
   )
+  const workspaceRelease = useWorkspaceRelease(workspace?.root ?? null)
   const threadCwd = harness.currentThread?.cwd ?? null
   const resolvedThreadHeaderActions = plugins.resolvedThreadHeaderActions({
     provider: harness.selectedProvider,
@@ -676,6 +679,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
 
             {composerVisible && (
               <div className="input-column" ref={inputColumnRef}>
+                <WorkspaceReleaseFailureCard release={workspaceRelease} />
                 {harness.selectedThreadId && (
                   <DelegationReturnCard
                     runs={pendingReturnRuns}
@@ -787,7 +791,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
       </main>
       {quickPanelsVisible && harness.currentThread && (
         <>
-          <QuickCommandPanel commands={quickCommands} anchorBottom={quickPanelBottom} />
+          <QuickCommandPanel commands={quickCommands} release={workspaceRelease} anchorBottom={quickPanelBottom} />
           <QuickActionPanel
             actions={quickActions}
             agentRuns={agentRuns}
