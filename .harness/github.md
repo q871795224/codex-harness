@@ -84,4 +84,4 @@ Agent 可以使用当前环境提供的 GitHub 工具、GitHub CLI 或 GitHub AP
 
 发布授权、PR 合并授权和绕过保护授权是不同权限。用户只授权其中一项时，不扩大为其他动作。
 
-快捷 Agent 的固定 prompt 可以明确声明：启动该 Job 即授权本次 release PR 在 required checks 通过后执行 squash merge，并授权创建本地 tag、打包和安装；该授权不包含 push tag、上传制品或创建 GitHub Release。此类 Job 使用 `isolated-delivery` 工作区，不能以 `shared-write` 直接修改当前 `main` checkout。
+快捷 Agent 的固定 prompt 必须明确发布范围。当前“发布”Job 对应 GitHub 正式发布：启动该 Job 即授权本次 release PR 在 required checks 通过后执行 squash merge，并授权创建和 push tag、打包、安装、上传制品及创建 GitHub Release。该授权仍不包含绕过分支保护或失败检查。发布 Job 使用 `isolated-delivery` 工作区，不能以 `shared-write` 直接修改当前 `main` checkout。
