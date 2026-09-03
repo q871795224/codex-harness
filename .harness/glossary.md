@@ -107,7 +107,7 @@ item 类型取值：`userMessage` / `agentMessage` / `commandExecution` / `fileC
 | **委托 / delegate** | 主从 | 主 Agent 派子 Agent 干活，主 Agent 存续。分单次（fire-and-forget）与带反馈（多轮验收）两种 |
 | **接力 / 继任 / succession** | 接力 | 上一棒会话退役，把状态快照交给新会话接管，不回头。与委托的区别是**主权转移** |
 | **Handover** | 交接命令 | `/handover`，模式 C 的入口：主 Agent 生成交接文档 → 开启继任会话并注入草稿 → 双向血缘标记 |
-| **交接文档** | handover document | 自包含的状态快照（目标/决策/失败方案/当前状态/下一步 + Harness 生成的工作区状态），新会话靠它冷启动，不回读旧会话。正文存文件 `~/.codex-harness/handover/`，元数据存 state.sqlite |
+| **交接文档** | handover document | 自包含的状态快照（目标/决策/失败方案/当前状态/下一步 + Harness 生成的工作区状态），新会话靠它冷启动，不回读旧会话。正文存文件 `~/.codex-harness/handover/` 并注入新会话草稿；簿记元数据（doc id、血缘、时间戳）由 Harness 生成文档文件头，不进草稿 |
 | **回传卡片** | — | 子 Agent run 完成后 Harness 在发起会话生成的待审批卡片（注入/查看/忽略）。只有"子→主"方向自动生成；"主→子"方向靠消息级回传按钮由人显式指定 |
 | **completion** | 完成语义 | run 的完成语义枚举：`silent / notify / return-to-parent / succession` |
 

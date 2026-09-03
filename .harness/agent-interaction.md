@@ -124,17 +124,17 @@ state ∈ executing | awaiting-review | feedback-delivered | closed
 ### 存储边界（沿用 state.sqlite 边界）
 
 - **正文 → 文件**：`~/.codex-harness/handover/<doc-id>.md`。内容类不进库，可直接编辑、可被接力追加、可被 `mention` 引用。
-- **元数据 → state.sqlite**：doc id、源/目标会话、工作区绑定、模板版本、状态、时间戳、血缘链接。
-- 血缘：旧会话元数据记 `handed_over_to: <new-thread-id>`；新文档头记 `continued_from: <old-thread-id>`。
-- draft 注入时把文件内容**拷贝**进草稿（非引用），用户编辑只影响草稿，文件保持官方版本。
+- **簿记元数据 → Harness 生成的文件头**：doc id、源会话、模板版本、时间戳、工作区/分支以 YAML front matter 写在文档头部（`renderHandoverFrontMatter`），**不进模板、不进新会话草稿**——新 Agent 只看正文，血缘簿记是 Harness 自己的事。state.sqlite 侧元数据（含旧会话 `handed_over_to`）尚未实现。
+- 血缘：当前由文档头 `continued_from: <old-thread-id>` 承载；旧会话元数据记 `handed_over_to: <new-thread-id>` 是设计目标，待补。
+- draft 注入时把**正文**（不含文件头）**拷贝**进草稿（非引用），用户编辑只影响草稿，文件保持官方版本。
 
 ### 模板
 
 - 两个文件，均在 `~/.codex-harness/templates/`：
   - `handover.prompt.md` —— 发给主 Agent 的总结指令（控制"怎么总结"）；
-  - `handover.template.md` —— 文档骨架（控制"长什么样"，含占位符）。
+  - `handover.template.md` —— 正文骨架（控制"新 Agent 看到什么"，含占位符）。
 - 默认值内置在代码里，首用时物化到该路径，之后归用户所有；设置对话框新增 `templates` 面板可编辑。
-- 占位符：`{{gitBranch}}` / `{{changedFiles}}` / `{{workspaceRoot}}` / `{{docId}}` / `{{sourceThreadId}}` / `{{createdAt}}` / `{{templateVersion}}` / `{{title}}` 由 Harness 填充；`{{summary}}` 由主 Agent 输出填充。
+- 模板占位符（正文）：`{{title}}` / `{{workspaceRoot}}` / `{{gitBranch}}` / `{{changedFiles}}` 由 Harness 填充；`{{summary}}` 由主 Agent 输出填充。簿记占位符（`{{docId}}` / `{{sourceThreadId}}` / `{{createdAt}}` / `{{templateVersion}}`）v2 起移出模板，由 Harness 直接生成文件头。
 - handover 与提示词接力**共用同一交接文档模板**。
 
 ## 六、提示词接力 = 交接文档的可选载体
