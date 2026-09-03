@@ -12,6 +12,7 @@ mod handover_store;
 mod harness_files;
 mod local_connector;
 mod quick_command;
+mod release_command;
 mod store;
 mod system_notification;
 mod terminal;
@@ -48,6 +49,7 @@ struct AppState {
     terminal: Arc<terminal::TerminalManager>,
     api_workbench: api_workbench::ApiWorkbenchStore,
     codex_update: tokio::sync::Mutex<()>,
+    release_start: tokio::sync::Mutex<()>,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
 }
@@ -235,6 +237,43 @@ async fn run_quick_command(
     command_id: String,
 ) -> Result<quick_command::QuickCommandResult, String> {
     quick_command::run(&command_id).await
+}
+
+#[tauri::command]
+fn release_command_info(
+    workspace_root: String,
+    refresh: bool,
+) -> Result<release_command::ReleaseCommandInfo, String> {
+    release_command::info(&workspace_root, refresh)
+}
+
+#[tauri::command]
+fn release_command_status(
+    workspace_root: String,
+) -> Result<Option<release_command::ReleaseStatus>, String> {
+    release_command::status(&workspace_root)
+}
+
+#[tauri::command]
+async fn start_release_command(
+    state: State<'_, AppState>,
+    workspace_root: String,
+    version: String,
+) -> Result<release_command::ReleaseStatus, String> {
+    let _guard = state.release_start.lock().await;
+    release_command::start(&workspace_root, &version)
+}
+
+#[tauri::command]
+fn dismiss_release_failure(
+    workspace_root: String,
+) -> Result<Option<release_command::ReleaseStatus>, String> {
+    release_command::dismiss(&workspace_root)
+}
+
+#[tauri::command]
+fn open_release_log(workspace_root: String) -> Result<(), String> {
+    release_command::open_log(&workspace_root)
 }
 
 #[tauri::command]
@@ -779,6 +818,7 @@ pub fn run() {
                 terminal,
                 api_workbench,
                 codex_update: tokio::sync::Mutex::new(()),
+                release_start: tokio::sync::Mutex::new(()),
                 usage_refresh: tokio::sync::Mutex::new(()),
                 workspace_cache: Arc::new(Mutex::new(HashMap::new())),
             });
@@ -835,6 +875,11 @@ pub fn run() {
             codex_analytics_snapshot,
             codex_analytics_configure,
             run_quick_command,
+            release_command_info,
+            release_command_status,
+            start_release_command,
+            dismiss_release_failure,
+            open_release_log,
             terminal_create,
             terminal_write,
             terminal_resize,

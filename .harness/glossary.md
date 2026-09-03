@@ -76,6 +76,8 @@ item 类型取值：`userMessage` / `agentMessage` / `commandExecution` / `fileC
 
 > job 是模板，run 是实例。"提交、推送并创建 MR"是一个 job；点一下跑出来的那次是一个 run。
 
+`Release Run` 是另一种 [Harness] 后台任务：它由“发布”快捷命令启动、归属 workspace，并由确定性脚本执行，不创建 Agent thread/turn，也不属于 `AgentRun`。
+
 ### 6. 审批 / 权限
 
 | 术语 | 中文 | 定义 |

@@ -47,7 +47,7 @@ def run(*args: str, cwd: Path = REPO_ROOT, capture: bool = False) -> str:
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
         raise ReleaseError(f"command failed ({result.returncode}): {' '.join(args)}\n{detail}")
-    return (result.stdout or "").strip()
+    return (result.stdout or "").rstrip()
 
 
 def try_run(*args: str, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:

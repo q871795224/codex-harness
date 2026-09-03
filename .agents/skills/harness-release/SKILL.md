@@ -7,15 +7,19 @@ description: Use when preparing, packaging, installing, or publishing a Codex Ha
 
 发布动作需要用户在当前请求中明确授权。先区分 `.harness/github.md` 定义的开发构建、本机正式发布和 GitHub 正式发布。只要求开发构建、测试或 smoke test 时，不执行 release commit、创建/推送 tag、替换稳定版、上传产物或创建 GitHub Release。
 
+正常的 GitHub 正式发布由 Codex Harness 工作区的“发布”快捷命令执行，不启动 Quick Agent。快捷命令显示基于最新 `origin/main` 计算的 patch 和 minor 两个目标版本号；用户选择版本即授权本次 release PR 合并、本机安装、tag push、制品上传和 GitHub Release。后台 runner 脱离 Harness 应用生命周期运行，状态按 workspace 共享；失败时保留 worktree、日志和红色状态卡片，再由用户决定是否启动 Agent 排查。
+
+Agent 只在排查发布失败、执行人工恢复或维护发布实现时使用本 Skill。不要让 Agent 在正常成功路径中逐阶段调用、轮询或复述发布命令。
+
 开始发布前必须读取 `.harness/github.md`。发布改动通过 release 分支和 Pull Request 进入 `main`，不得直接在 `main` 上修改、commit 或 push；branch、commit、PR 和 release 都不要求 Jira key。
 
-固定步骤使用 `scripts/release.py`，不要重新拼装等价命令。脚本按阶段输出 JSON 结果；失败时保留现场，Agent 只判断异常和授权边界。长命令使用工具允许的最长等待时间，不以 1 秒间隔轮询。
+完整快捷发布由 `scripts/release_runner.py` 顺序调用 `scripts/release.py` 的固定阶段。人工恢复时也使用这些脚本，不要重新拼装等价命令，也不要额外运行脚本自身的单元测试。脚本按阶段输出 JSON 结果；失败时保留现场，Agent 只判断异常和授权边界。每个 phase 只启动一次；长命令返回 running session 时只等待同一 session 完成，不检查进程后重新执行，也不以 1 秒间隔轮询。
 
 ## 版本和工作树
 
 - 先检查工作树和 diff，确认没有夹带无关改动。
 - 版本号一旦用于 release commit、构建发布或同名 tag，后续改动必须先按 SemVer 递增版本号；patch/minor 可直接递增，major 需要用户明确确认。
-- 在 `isolated-delivery` worktree 中选择版本后执行 `scripts/release.py prepare <version>`，由脚本从最新 `origin/main` 创建 release 分支并同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`。变更过的内置插件仍由 Agent 检查并同步 manifest 版本。
+- 在 `isolated-delivery` worktree 中选择版本后执行 `scripts/release.py prepare <version>`，由脚本从最新 `origin/main` 创建 release 分支并同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`。变更过的内置插件应在对应开发 PR 中同步更新 manifest 版本，不留到发布阶段判断。
 
 ## 发布前验证
 
