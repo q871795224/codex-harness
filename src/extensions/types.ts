@@ -72,6 +72,22 @@ export interface ComposerActionContribution {
   render(props: ComposerActionProps): ReactNode
 }
 
+export interface ComposerCompletionItem {
+  id: string
+  title: string
+  subtitle?: string
+  group?: string
+  insertText: string
+  collapseAsPaste?: boolean
+}
+
+export interface ComposerCompletionContribution {
+  id: string
+  trigger: string
+  order?: number
+  loadItems(query: string, ctx: PluginViewContext): ComposerCompletionItem[] | Promise<ComposerCompletionItem[]>
+}
+
 export interface ThreadHeaderActionProps extends PluginViewContext {
   disabled: boolean
 }
@@ -152,6 +168,9 @@ export interface PluginSlotAccess {
   }
   composerActions: {
     register(contribution: ComposerActionContribution): void
+  }
+  composerCompletions: {
+    register(contribution: ComposerCompletionContribution): void
   }
   quickActions: {
     register(contribution: QuickActionContribution): void

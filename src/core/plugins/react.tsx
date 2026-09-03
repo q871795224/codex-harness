@@ -3,6 +3,7 @@ import { runtime } from '../runtime/bridge'
 import type {
   ComposerActionContribution,
   ComposerActionProps,
+  ComposerCompletionContribution,
   ConversationTabContribution,
   ConversationTabProps,
   HarnessPlugin,
@@ -31,6 +32,7 @@ interface PluginHostContextValue {
   resolvedThreadHeaderActions(context: PluginViewContext): ResolvedContribution<ThreadHeaderActionContribution>[]
   resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[]
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[]
+  resolvedComposerCompletions(context: PluginViewContext): ResolvedContribution<ComposerCompletionContribution>[]
   resolvedQuickActions(context: PluginViewContext): ResolvedContribution<QuickActionContribution>[]
   resolvedQuickCommands(context: PluginViewContext): ResolvedContribution<QuickCommandContribution>[]
   upsertInstance(instance: PluginInstanceRecord): Promise<void>
@@ -117,6 +119,7 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     resolvedThreadHeaderActions: (context) => host.resolvedThreadHeaderActions(context),
     resolvedNewThreadPanels: (context) => host.resolvedNewThreadPanels(context),
     resolvedComposerActions: (context) => host.resolvedComposerActions(context),
+    resolvedComposerCompletions: (context) => host.resolvedComposerCompletions(context),
     resolvedQuickActions: (context) => host.resolvedQuickActions(context),
     resolvedQuickCommands: (context) => host.resolvedQuickCommands(context),
     upsertInstance: async (instance) => {

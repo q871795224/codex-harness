@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, FileText, Image, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react'
+import { ChevronDown, FileText, Image, NotebookPen, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
+import type { ComposerCompletionItem } from '../../extensions/types'
 import { runtime } from '../../core/runtime/bridge'
 import { appServer, type FuzzyFileSearchResult } from '../../core/runtime/appServerClient'
 import {
@@ -51,6 +52,13 @@ interface ComposerProps {
   onDraftChange?: (draft: ComposerDraft, hasContent: boolean) => void
   onCollapse?: () => void
   actions?: (api: ComposerActionApi) => ReactNode
+  completionProviders?: ComposerCompletionProvider[]
+}
+
+export interface ComposerCompletionProvider {
+  key: string
+  trigger: string
+  loadItems(query: string): Promise<ComposerCompletionItem[]>
 }
 
 export interface ComposerActionApi {
@@ -71,15 +79,19 @@ export interface ComposerDraft {
 }
 
 interface ComposerSuggestion {
-  kind: 'file' | 'skill' | 'command'
+  kind: 'file' | 'skill' | 'command' | 'plugin'
   name: string
   path?: string
   detail: string
   replacement?: string
   complete?: boolean
+  id?: string
+  group?: string
+  insertText?: string
+  collapseAsPaste?: boolean
 }
 
-export function Composer({ provider = 'codex', initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions }: ComposerProps) {
+export function Composer({ provider = 'codex', initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
   const [text, setText] = useState(initialDraft?.text ?? '')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
@@ -87,6 +99,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
   const [attachmentBusy, setAttachmentBusy] = useState(false)
   const [cursor, setCursor] = useState<number | null>(0)
   const [fileMatches, setFileMatches] = useState<FuzzyFileSearchResult[]>([])
+  const [pluginItems, setPluginItems] = useState<ComposerCompletionItem[]>([])
   const [skills, setSkills] = useState<CodexSkill[]>([])
   const [loadedSkillsRoot, setLoadedSkillsRoot] = useState<string | null>(null)
   const [suggestionBusy, setSuggestionBusy] = useState(false)
@@ -98,6 +111,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
   const ref = useRef<HTMLTextAreaElement>(null)
   const previousFocusRequestRef = useRef(focusRequest)
   const onDraftChangeRef = useRef(onDraftChange)
+  const completionProvidersRef = useRef(completionProviders)
   const selectedModel = models.find((model) => model.model === settings.model) ?? models[0] ?? null
   const selectedClaudeModel = claudeModels.find((model) => model.value === claudeSettings?.model) ?? claudeModels[0] ?? null
   const fastTier = fastServiceTier(selectedModel)
@@ -108,8 +122,10 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
   const imageUnsupported = attachments.some((item) => item.kind === 'image') && selectedModel !== null && !selectedModel.inputModalities.includes('image')
   const expandedText = useMemo(() => expandCollapsedPastes(text, collapsedPastes), [collapsedPastes, text])
   const hasContent = Boolean(expandedText.trim() || attachments.length)
-  const trigger = useMemo(() => activeComposerTrigger(text, cursor), [cursor, text])
+  const providerChars = useMemo(() => completionProviders.map((item) => item.trigger).join(''), [completionProviders])
+  const trigger = useMemo(() => activeComposerTrigger(text, cursor, providerChars), [cursor, providerChars, text])
   const triggerKind = trigger?.kind ?? null
+  const triggerChar = trigger?.triggerChar ?? null
   const triggerQuery = trigger?.query ?? ''
 
   const suggestions = useMemo<ComposerSuggestion[]>(() => {
@@ -127,16 +143,28 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
         }))
     }
     if (trigger.kind === 'command') return attachments.length > 0 ? [] : commandSuggestions(trigger.query, models, selectedModel, claudeModels, selectedClaudeModel, provider)
+    if (trigger.kind === 'plugin') {
+      return pluginItems.map((item) => ({
+        kind: 'plugin',
+        id: item.id,
+        name: item.title,
+        detail: item.subtitle ?? '',
+        group: item.group,
+        insertText: item.insertText,
+        collapseAsPaste: item.collapseAsPaste,
+      }))
+    }
     if (provider === 'claude') return []
     const query = trigger.query.toLocaleLowerCase()
     return skills
       .filter((skill) => skill.enabled && (!query || skill.name.toLocaleLowerCase().includes(query) || skill.description.toLocaleLowerCase().includes(query)))
       .slice(0, 8)
       .map((skill) => ({ kind: 'skill', name: skill.name, path: skill.path, detail: skill.description }))
-  }, [attachments.length, claudeModels, fileMatches, models, provider, selectedClaudeModel, selectedModel, skills, suggestionsDismissed, trigger])
+  }, [attachments.length, claudeModels, fileMatches, models, pluginItems, provider, selectedClaudeModel, selectedModel, skills, suggestionsDismissed, trigger])
   const suggestionsOpen = Boolean(trigger && !suggestionsDismissed && !(trigger.kind === 'command' && attachments.length > 0))
 
   useLayoutEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
+  useLayoutEffect(() => { completionProvidersRef.current = completionProviders }, [completionProviders])
 
   useLayoutEffect(() => {
     onDraftChangeRef.current?.({ text, collapsedPastes, attachments }, hasContent)
@@ -208,6 +236,36 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
     }
   }, [provider, triggerKind, triggerQuery, workspaceRoot])
 
+  const providerKeys = completionProviders.map((entry) => `${entry.key}:${entry.trigger}`).join('|')
+  useEffect(() => {
+    if (triggerKind !== 'plugin' || !triggerChar) {
+      setPluginItems([])
+      return undefined
+    }
+    const providers = completionProvidersRef.current.filter((entry) => entry.trigger === triggerChar)
+    if (providers.length === 0) {
+      setPluginItems([])
+      return undefined
+    }
+    let disposed = false
+    setPluginItems([])
+    const timeout = window.setTimeout(() => {
+      setSuggestionBusy(true)
+      setSuggestionError(null)
+      void Promise.all(providers.map((entry) => entry.loadItems(triggerQuery))).then((results) => {
+        if (!disposed) setPluginItems(results.flat())
+      }).catch((error) => {
+        if (!disposed) setSuggestionError(error instanceof Error ? error.message : String(error))
+      }).finally(() => {
+        if (!disposed) setSuggestionBusy(false)
+      })
+    }, 80)
+    return () => {
+      disposed = true
+      window.clearTimeout(timeout)
+    }
+  }, [providerKeys, triggerChar, triggerKind, triggerQuery])
+
   useEffect(() => { setHighlightedSuggestion(0) }, [triggerKind, triggerQuery])
 
   const inputs = useMemo<UserInput[]>(() => {
@@ -248,6 +306,7 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
     setCollapsedPastes([])
     setAttachments([])
     setFileMatches([])
+    setPluginItems([])
     setCursor(0)
     setSuggestionsDismissed(false)
   }
@@ -256,12 +315,35 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
 
   const chooseSuggestion = (suggestion: ComposerSuggestion) => {
     if (!trigger) return
+    if (suggestion.kind === 'plugin') {
+      const body = suggestion.insertText ?? ''
+      const next = suggestion.collapseAsPaste
+        ? (() => {
+          const stripped = replaceComposerTrigger(text, trigger, '')
+          const rebased = reconcileCollapsedPastes(text, stripped.text, collapsedPastes)
+          const label = `[Prompt: ${suggestion.name.replace(/\s+/g, ' ').trim().slice(0, 30)}]`
+          return insertCollapsedPaste(stripped.text, stripped.cursor, stripped.cursor, body, rebased, label)
+        })()
+        : (() => {
+          const replaced = replaceComposerTrigger(text, trigger, body)
+          return { text: replaced.text, cursor: replaced.cursor, pastes: reconcileCollapsedPastes(text, replaced.text, collapsedPastes) }
+        })()
+      setText(next.text)
+      setCollapsedPastes(next.pastes)
+      setCursor(next.cursor)
+      setPluginItems([])
+      requestAnimationFrame(() => {
+        ref.current?.focus()
+        ref.current?.setSelectionRange(next.cursor, next.cursor)
+      })
+      return
+    }
     const replacement = suggestion.kind === 'skill' ? `$${suggestion.name}` : suggestion.kind === 'command' ? suggestion.replacement ?? `/${suggestion.name}` : ''
     const next = replaceComposerTrigger(text, trigger, replacement)
     setCollapsedPastes((current) => reconcileCollapsedPastes(text, next.text, current))
     setText(next.text)
     setCursor(next.cursor)
-    setAttachments((current) => suggestion.kind === 'command' || current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
+    setAttachments((current) => suggestion.kind === 'command' || suggestion.kind === 'plugin' || current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
       ? current
       : [...current, { kind: suggestion.kind, name: suggestion.name, path: suggestion.path! }])
     setFileMatches([])
@@ -422,22 +504,27 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
           wrap="soft"
         />
         {suggestionsOpen && (
-          <div className="composer-suggestions" role="listbox" aria-label={triggerKind === 'file' ? '文件建议' : triggerKind === 'skill' ? '技能建议' : '命令建议'}>
-            <div className="composer-suggestions-label">{triggerKind === 'file' ? '@ 文件' : triggerKind === 'skill' ? '$ Skill' : '/ 命令'}</div>
-            {suggestions.map((suggestion, index) => (
-              <button
-                key={`${suggestion.kind}:${suggestion.path ?? suggestion.replacement ?? suggestion.name}`}
-                type="button"
-                role="option"
-                aria-selected={index === highlightedSuggestion}
-                className={index === highlightedSuggestion ? 'selected' : ''}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => chooseSuggestion(suggestion)}
-              >
-                {suggestion.kind === 'skill' ? <Sparkles size={14} /> : suggestion.kind === 'command' ? <Terminal size={14} /> : <FileText size={14} />}
-                <span><strong>{suggestion.name}</strong><small>{suggestion.detail}</small></span>
-              </button>
-            ))}
+          <div className="composer-suggestions" role="listbox" aria-label={triggerKind === 'file' ? '文件建议' : triggerKind === 'skill' ? '技能建议' : triggerKind === 'plugin' ? '补全建议' : '命令建议'}>
+            <div className="composer-suggestions-label">{triggerKind === 'file' ? '@ 文件' : triggerKind === 'skill' ? '$ Skill' : triggerKind === 'plugin' ? `${triggerChar} 建议` : '/ 命令'}</div>
+            {suggestions.map((suggestion, index) => {
+              const showGroup = suggestion.kind === 'plugin' && Boolean(suggestion.group) && (index === 0 || suggestions[index - 1]?.group !== suggestion.group)
+              return (
+                <Fragment key={`${suggestion.kind}:${suggestion.id ?? suggestion.path ?? suggestion.replacement ?? suggestion.name}`}>
+                  {showGroup && <div className="composer-suggestions-label group">{suggestion.group}</div>}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={index === highlightedSuggestion}
+                    className={index === highlightedSuggestion ? 'selected' : ''}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => chooseSuggestion(suggestion)}
+                  >
+                    {suggestion.kind === 'skill' ? <Sparkles size={14} /> : suggestion.kind === 'command' ? <Terminal size={14} /> : suggestion.kind === 'plugin' ? <NotebookPen size={14} /> : <FileText size={14} />}
+                    <span><strong>{suggestion.name}</strong><small>{suggestion.detail}</small></span>
+                  </button>
+                </Fragment>
+              )
+            })}
             {suggestionBusy && suggestions.length === 0 && <div className="composer-suggestions-state">正在搜索…</div>}
             {!suggestionBusy && !suggestionError && suggestions.length === 0 && <div className="composer-suggestions-state">没有匹配项</div>}
             {suggestionError && <div className="composer-suggestions-state error">{suggestionError}</div>}

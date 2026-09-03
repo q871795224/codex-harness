@@ -45,6 +45,22 @@ describe('activeComposerTrigger', () => {
     const fileTrigger = activeComposerTrigger('检查 @App 后续', 7)
     expect(fileTrigger && replaceComposerTrigger('检查 @App 后续', fileTrigger, '')).toEqual({ text: '检查 后续', cursor: 3 })
   })
+
+  it('detects plugin triggers only when their char is registered', () => {
+    expect(activeComposerTrigger('参考 #背', 5, '#')).toEqual({ kind: 'plugin', query: '背', start: 3, end: 5, triggerChar: '#' })
+    expect(activeComposerTrigger('参考 #背', 5)).toBeNull()
+    expect(activeComposerTrigger('markdown # 标题', 11, '#')).toBeNull()
+  })
+
+  it('escapes regex-special trigger chars safely', () => {
+    expect(activeComposerTrigger('看 +abc', 6, '+')).toEqual({ kind: 'plugin', query: 'abc', start: 2, end: 6, triggerChar: '+' })
+    expect(activeComposerTrigger('看 a+b', 5, '+')).toBeNull()
+  })
+
+  it('replaces a plugin trigger token with the chosen text', () => {
+    const trigger = activeComposerTrigger('参考 #背 继续', 5, '#')
+    expect(trigger && replaceComposerTrigger('参考 #背 继续', trigger, '背景正文')).toEqual({ text: '参考 背景正文 继续', cursor: 7 })
+  })
 })
 
 describe('matchesSendShortcut', () => {
@@ -117,6 +133,14 @@ describe('collapsed pastes', () => {
     expect(draft.text).toBe(`before [Pasted Content ${pastedCharacterCount(content)} chars] after`)
     expect(expandCollapsedPastes(draft.text, draft.pastes)).toBe(`before ${content} after`)
     expect(draft.cursor).toBe(draft.pastes[0].end)
+  })
+
+  it('uses a label override as the visible placeholder', () => {
+    const content = 'x'.repeat(LONG_PASTE_THRESHOLD)
+    const draft = insertCollapsedPaste('前缀 ', 3, 3, content, [], '[Prompt: 任务背景]')
+
+    expect(draft.text).toBe('前缀 [Prompt: 任务背景]')
+    expect(expandCollapsedPastes(draft.text, draft.pastes)).toBe(`前缀 ${content}`)
   })
 
   it('keeps multiple long pastes aligned while editing around them', () => {

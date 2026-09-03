@@ -16,10 +16,11 @@ export interface CollapsedPasteEdit {
 }
 
 export interface ActiveComposerTrigger {
-  kind: 'file' | 'skill' | 'command'
+  kind: 'file' | 'skill' | 'command' | 'plugin'
   query: string
   start: number
   end: number
+  triggerChar?: string
 }
 
 export interface ComposerKeyEvent {
@@ -58,9 +59,10 @@ export function insertCollapsedPaste(
   selectionEnd: number,
   content: string,
   pastes: CollapsedPaste[],
+  labelOverride?: string,
 ): CollapsedPasteEdit {
   const characterCount = pastedCharacterCount(content)
-  const label = `[Pasted Content ${characterCount} chars]`
+  const label = labelOverride ?? `[Pasted Content ${characterCount} chars]`
   const nextText = `${text.slice(0, selectionStart)}${label}${text.slice(selectionEnd)}`
   const nextPastes = reconcileCollapsedPastes(text, nextText, pastes)
   nextPastes.push({
@@ -115,7 +117,7 @@ export function expandCollapsedPastes(text: string, pastes: CollapsedPaste[]): s
   return expanded + text.slice(cursor)
 }
 
-export function activeComposerTrigger(text: string, cursor: number | null): ActiveComposerTrigger | null {
+export function activeComposerTrigger(text: string, cursor: number | null, extraTriggers = ''): ActiveComposerTrigger | null {
   if (cursor === null || cursor < 0) return null
   const beforeCursor = text.slice(0, cursor)
   const command = beforeCursor.match(/^\s*\/([^\n]*)$/)
@@ -123,15 +125,19 @@ export function activeComposerTrigger(text: string, cursor: number | null): Acti
     const start = beforeCursor.indexOf('/')
     return { kind: 'command', query: command[1], start, end: cursor }
   }
-  const match = beforeCursor.match(/(?:^|\s)([@$])([^\s@$]*)$/)
+  const escaped = extraTriggers.replace(/[-.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = beforeCursor.match(new RegExp(`(?:^|\\s)([@$${escaped}])([^\\s@$${escaped}]*)$`))
   if (!match || match.index === undefined) return null
   const triggerOffset = match[0].lastIndexOf(match[1])
   const start = match.index + triggerOffset
+  const symbol = match[1]
+  const kind = symbol === '@' ? 'file' : symbol === '$' ? 'skill' : 'plugin'
   return {
-    kind: match[1] === '@' ? 'file' : 'skill',
+    kind,
     query: match[2],
     start,
     end: cursor,
+    ...(kind === 'plugin' ? { triggerChar: symbol } : {}),
   }
 }
 

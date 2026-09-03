@@ -14,6 +14,7 @@
 - 插件通过 `src/extensions/types.ts` 的 context、service、event 和 slot 契约接入能力；插件不得直接连接 App Server、读取 Harness 数据库或执行任意 shell。
 - Codex 原生设置、Skills、MCP、附件和会话状态由 Harness 核心管理；插件只消费明确暴露的 service。
 - 新会话空白区的增强 UI 使用 `newThreadPanels` slot；宿主把类型化的会话设置更新函数传给插件，插件不能自行连接 App Server。
+- 输入框的符号触发补全（如 `$` Skill、`@` 文件之外的 `#`）使用 `composerCompletions` slot：插件声明单字符触发符并按 query 返回补全项，核心 Composer 负责面板、键盘导航和正文/折叠粘贴插入；插件不得自行渲染输入框弹窗。
 - 内置用量插件只通过 `harness.usage` 读取 Rust 原生层缓存或触发固定刷新；它不能读取凭据或直接执行命令。Codex Business/Personal 历史数据由 Rust 通过 `ccusage` 采集，Codex 额度协议在 `app_server.rs` 封装，AIS 只访问固定 Compass 域名。
 - 内置 Codex 分析插件只通过 `harness.codexAnalytics` 查询本机采集结果；采集点固定在 `app_server.rs`，持久化和聚合固定在 `codex_analytics.rs`，插件本身不能读取 SQLite。
 - Codex Radar 请求由 Rust 固定域名客户端完成并缓存，内置会话启动器只能通过 `harness.codexRadar` 读取整理后的指标。

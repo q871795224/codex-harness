@@ -85,6 +85,28 @@ describe('scoped contributions', () => {
     expect(host.status('instance-1').phase).toBe('active')
     await host.dispose()
   })
+
+  it('resolves composer completions through scope and provider filtering', async () => {
+    const prompts = plugin('prompts', (ctx) => {
+      ctx.slots.composerCompletions.register({ id: 'snippets', trigger: '#', loadItems: () => [] })
+    })
+    const codexOnly = plugin('codex-snippets', (ctx) => {
+      ctx.slots.composerCompletions.register({ id: 'extra', trigger: '%', loadItems: () => [] })
+    }, [], ['codex'])
+    const host = new PluginHost([prompts, codexOnly], { storage: () => storage })
+    await host.syncInstances([
+      instance({ pluginId: 'prompts' }),
+      instance({ instanceId: 'instance-2', pluginId: 'codex-snippets' }),
+    ])
+
+    const context = { provider: 'claude' as const, threadId: 'claude-1', threadCwd: '/repo', workspaceRoot: '/repo' }
+    expect(host.resolvedComposerCompletions(context).map((entry) => entry.contribution.trigger)).toEqual(['#'])
+    expect(host.resolvedComposerCompletions({ ...context, provider: 'codex' })).toHaveLength(2)
+
+    await host.syncInstances([])
+    expect(host.resolvedComposerCompletions({ ...context, provider: 'codex' })).toHaveLength(0)
+    await host.dispose()
+  })
 })
 
 describe('plugin host lifecycle', () => {

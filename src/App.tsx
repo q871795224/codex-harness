@@ -216,6 +216,12 @@ function HarnessShell({ harness, agentRuns, codex }: {
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  const resolvedComposerCompletions = plugins.resolvedComposerCompletions({
+    provider: harness.selectedProvider,
+    threadId: harness.selectedThreadId,
+    threadCwd,
+    workspaceRoot: workspace?.root ?? null,
+  })
   const resolvedQuickActions = plugins.resolvedQuickActions({
     provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
@@ -713,6 +719,16 @@ function HarnessShell({ harness, agentRuns, codex }: {
                       }}
                     />
                   ))}
+                  completionProviders={resolvedComposerCompletions.map((entry) => ({
+                    key: `${entry.pluginId}:${entry.contribution.id}`,
+                    trigger: entry.contribution.trigger,
+                    loadItems: (query) => Promise.resolve(entry.contribution.loadItems(query, {
+                      provider: harness.selectedProvider,
+                      threadId: harness.selectedThreadId,
+                      threadCwd,
+                      workspaceRoot: workspace?.root ?? null,
+                    })),
+                  }))}
                   onDraftChange={(draft, hasContent) => {
                     const threadId = harness.currentThread!.id
                     setComposerDrafts((current) => ({ ...current, [threadId]: draft }))

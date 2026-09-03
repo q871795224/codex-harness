@@ -13,6 +13,7 @@ import { apiWorkbenchDefaultInstance, apiWorkbenchPlugin } from './api-workbench
 import { terminalDefaultInstance, terminalPlugin } from './terminal'
 import { appLauncherDefaultInstance, appLauncherPlugin } from './app-launcher'
 import { codexAnalyticsDefaultInstance, codexAnalyticsPlugin } from './codex-analytics'
+import { promptsDefaultInstance, promptsPlugin } from './prompts'
 
-export const builtInPlugins: HarnessPlugin[] = [sessionLauncherPlugin, tasksPlugin, usagePlugin, codexAnalyticsPlugin, trajectoryPlugin, harnessFilesPlugin, apiWorkbenchPlugin, terminalPlugin, appLauncherPlugin, lunaPlugin, quickAgentPlugin, quickCommandPlugin, seaTalkPlugin, notificationsPlugin]
-export const defaultPluginInstances: PluginInstanceRecord[] = [sessionLauncherDefaultInstance, tasksDefaultInstance, usageDefaultInstance, codexAnalyticsDefaultInstance, ...trajectoryDefaults, harnessFilesDefaultInstance, apiWorkbenchDefaultInstance, terminalDefaultInstance, appLauncherDefaultInstance, lunaDefaultInstance, quickAgentDefaultInstance, ...quickCommandDefaultInstances, seaTalkDefaultInstance, notificationsDefaultInstance]
+export const builtInPlugins: HarnessPlugin[] = [sessionLauncherPlugin, tasksPlugin, usagePlugin, codexAnalyticsPlugin, trajectoryPlugin, harnessFilesPlugin, apiWorkbenchPlugin, terminalPlugin, appLauncherPlugin, lunaPlugin, quickAgentPlugin, quickCommandPlugin, seaTalkPlugin, notificationsPlugin, promptsPlugin]
+export const defaultPluginInstances: PluginInstanceRecord[] = [sessionLauncherDefaultInstance, tasksDefaultInstance, usageDefaultInstance, codexAnalyticsDefaultInstance, ...trajectoryDefaults, harnessFilesDefaultInstance, apiWorkbenchDefaultInstance, terminalDefaultInstance, appLauncherDefaultInstance, lunaDefaultInstance, quickAgentDefaultInstance, ...quickCommandDefaultInstances, seaTalkDefaultInstance, notificationsDefaultInstance, promptsDefaultInstance]
