@@ -3,11 +3,14 @@ import {
   LONG_PASTE_THRESHOLD,
   absoluteMentionPath,
   activeComposerTrigger,
+  clipboardHasImage,
+  composerInputs,
   composerTextInput,
   expandCollapsedPastes,
   hasSkillMarker,
   insertComposerPrompt,
   insertCollapsedPaste,
+  isSupportedImagePath,
   matchesSendShortcut,
   pastedCharacterCount,
   reconcileCollapsedPastes,
@@ -15,6 +18,36 @@ import {
   replaceComposerTrigger,
   shouldCollapsePaste,
 } from './composerInput'
+
+describe('image attachments', () => {
+  it('detects clipboard image data ahead of plain text paste handling', () => {
+    expect(clipboardHasImage({ items: [{ type: 'text/plain' }, { type: 'image/png' }] })).toBe(true)
+    expect(clipboardHasImage({ files: [{ type: 'image/jpeg' }] })).toBe(true)
+    expect(clipboardHasImage({ items: [{ type: 'text/plain' }] })).toBe(false)
+  })
+
+  it('matches the image formats supported by the Codex CLI attachment flow', () => {
+    expect(isSupportedImagePath('/tmp/screenshot.PNG')).toBe(true)
+    expect(isSupportedImagePath('/tmp/photo.jpeg')).toBe(true)
+    expect(isSupportedImagePath('/tmp/animation.gif')).toBe(true)
+    expect(isSupportedImagePath('/tmp/mock.webp')).toBe(true)
+    expect(isSupportedImagePath('/tmp/photo.heic')).toBe(false)
+    expect(isSupportedImagePath('/tmp/image.png.txt')).toBe(false)
+  })
+
+  it('sends local images before text and structured references like the CLI', () => {
+    expect(composerInputs(' inspect ', [
+      { kind: 'file', name: 'README.md', path: '/repo/README.md' },
+      { kind: 'image', name: 'shot.png', path: '/tmp/shot.png' },
+      { kind: 'skill', name: 'tdd', path: '/skills/tdd/SKILL.md' },
+    ])).toEqual([
+      { type: 'localImage', path: '/tmp/shot.png' },
+      { type: 'text', text: 'inspect', text_elements: [] },
+      { type: 'mention', name: 'README.md', path: '/repo/README.md' },
+      { type: 'skill', name: 'tdd', path: '/skills/tdd/SKILL.md' },
+    ])
+  })
+})
 
 describe('reasoningEffortTone', () => {
   it('maps supported and future effort names onto the visual scale', () => {
