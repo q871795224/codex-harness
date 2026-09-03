@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 sys.dont_write_bytecode = True
@@ -15,6 +16,17 @@ SPEC.loader.exec_module(release)
 
 
 class ReleaseScriptTest(unittest.TestCase):
+    def test_check_installs_dependencies_before_cargo_test(self):
+        calls = []
+        with (
+            patch.object(release, "require_synced_versions"),
+            patch.object(release, "ensure_dependencies", side_effect=lambda: calls.append("dependencies")),
+            patch.object(release, "run", side_effect=lambda *args, **kwargs: calls.append(args[0])),
+        ):
+            release.command_check("0.7.7")
+
+        self.assertEqual(calls, ["dependencies", "cargo"])
+
     def test_capture_preserves_porcelain_leading_space(self):
         original_root = release.REPO_ROOT
         with tempfile.TemporaryDirectory() as directory:
