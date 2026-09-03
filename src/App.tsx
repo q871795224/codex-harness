@@ -19,6 +19,7 @@ import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
 import { DelegationReturnCard } from './features/conversation/DelegationReturnCard'
 import { insertComposerPrompt } from './features/conversation/composerInput'
+import { ComposerDraftWriter, restoreComposerDrafts } from './features/conversation/composerDraftStorage'
 import { useHandover } from './features/handover/useHandover'
 import { ConversationStats } from './features/conversation/ConversationStats'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
@@ -183,6 +184,57 @@ function HarnessShell({ harness, agentRuns, codex }: {
     return next
   })
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
+  const [composerDraftsLoaded, setComposerDraftsLoaded] = useState(false)
+  const composerDraftWriterRef = useRef<ComposerDraftWriter | null>(null)
+  const queuedComposerDraftsRef = useRef<Record<string, ComposerDraft>>({})
+  if (!composerDraftWriterRef.current) {
+    composerDraftWriterRef.current = new ComposerDraftWriter(runtime, (error) => {
+      harness.notify(`无法保存输入草稿：${error instanceof Error ? error.message : String(error)}`, 'error')
+    })
+  }
+  useEffect(() => {
+    let disposed = false
+    void runtime.listComposerDrafts().then((records) => {
+      if (!disposed) {
+        const restored = restoreComposerDrafts(records)
+        queuedComposerDraftsRef.current = restored
+        setComposerDrafts(restored)
+      }
+    }).catch((error) => {
+      if (!disposed) harness.notify(`无法恢复输入草稿：${error instanceof Error ? error.message : String(error)}`, 'error')
+    }).finally(() => {
+      if (!disposed) setComposerDraftsLoaded(true)
+    })
+    return () => { disposed = true }
+  }, [harness.notify])
+  useEffect(() => {
+    if (!composerDraftsLoaded) return
+    for (const [conversationId, draft] of Object.entries(composerDrafts)) {
+      if (queuedComposerDraftsRef.current[conversationId] !== draft) {
+        composerDraftWriterRef.current?.update(conversationId, draft)
+      }
+    }
+    queuedComposerDraftsRef.current = composerDrafts
+  }, [composerDrafts, composerDraftsLoaded])
+  useEffect(() => {
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+      const window = getCurrentWindow()
+      return window.onCloseRequested(async (event) => {
+        event.preventDefault()
+        await composerDraftWriterRef.current?.flush()
+        await window.destroy()
+      })
+    }).then((dispose) => {
+      if (disposed) dispose()
+      else unlisten = dispose
+    })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
   const handover = useHandover({
     startTurnInThread: harness.startTurnInThread,
     onTurnCompleted: harness.onTurnCompleted,
@@ -198,7 +250,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
     setComposerDrafts((current) => {
       const existing = current[threadId]
       const merged = insertComposerPrompt(existing?.text ?? '', text)
-      return { ...current, [threadId]: { text: merged, collapsedPastes: existing?.collapsedPastes ?? [], attachments: existing?.attachments ?? [] } }
+      const draft = { text: merged, collapsedPastes: existing?.collapsedPastes ?? [], attachments: existing?.attachments ?? [] }
+      queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [threadId]: draft }
+      composerDraftWriterRef.current?.update(threadId, draft)
+      return { ...current, [threadId]: draft }
     })
   }, [])
   const agentRunList = useSyncExternalStore(agentRuns.subscribe, agentRuns.snapshot)
@@ -698,7 +753,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   onPromote={(queue) => void harness.promoteQueue(queue)}
                   onStart={() => void harness.startQueue()}
                 />
-                <Composer
+                {composerDraftsLoaded && <Composer
                   key={harness.currentThread.id}
                   provider={harness.selectedProvider}
                   initialDraft={composerDrafts[harness.currentThread.id]}
@@ -769,10 +824,12 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   }))}
                   onDraftChange={(draft, hasContent) => {
                     const threadId = harness.currentThread!.id
+                    queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [threadId]: draft }
+                    composerDraftWriterRef.current?.update(threadId, draft)
                     setComposerDrafts((current) => ({ ...current, [threadId]: draft }))
                     harness.setThreadDraftContent(threadId, hasContent)
                   }}
-                />
+                />}
                 <ConversationStats
                   turns={harness.currentDetail?.turns ?? []}
                   items={harness.currentDetail?.items ?? []}

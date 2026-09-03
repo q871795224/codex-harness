@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { capabilitiesForProvider } from './useUnifiedHarness'
+import { capabilitiesForProvider, shouldGenerateClaudeTitle } from './useUnifiedHarness'
 
 describe('conversation provider capabilities', () => {
   it('exposes Claude follow-up controls alongside its supported features', () => {
@@ -24,5 +24,14 @@ describe('conversation provider capabilities', () => {
       skills: true,
       mcpManagement: true,
     })
+  })
+})
+
+describe('Claude automatic title eligibility', () => {
+  it('only titles a new untouched Claude session', () => {
+    expect(shouldGenerateClaudeTitle('Claude 会话', null, false)).toBe(true)
+    expect(shouldGenerateClaudeTitle('手工标题', null, false)).toBe(false)
+    expect(shouldGenerateClaudeTitle('Claude 会话', 'provider-session', false)).toBe(false)
+    expect(shouldGenerateClaudeTitle('Claude 会话', null, true)).toBe(false)
   })
 })

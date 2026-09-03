@@ -30,6 +30,21 @@ pub struct ThreadUiState {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ComposerDraftInput {
+    pub conversation_id: String,
+    pub draft: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposerDraftRecord {
+    pub conversation_id: String,
+    pub draft: Value,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClaudeSessionInput {
     pub id: String,
     pub provider_session_id: Option<String>,
@@ -151,6 +166,11 @@ impl HarnessStore {
             CREATE TABLE IF NOT EXISTS app_state (
               state_key TEXT PRIMARY KEY NOT NULL,
               state_value TEXT NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS composer_drafts (
+              conversation_id TEXT PRIMARY KEY NOT NULL,
+              draft_json TEXT NOT NULL,
               updated_at INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS plugin_instances (
@@ -414,6 +434,74 @@ impl HarnessStore {
                 params![key, value, now_ms()],
             )
             .map_err(|error| format!("无法保存应用状态: {error}"))?;
+        Ok(())
+    }
+
+    pub fn list_composer_drafts(&self) -> Result<Vec<ComposerDraftRecord>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        let mut statement = connection
+            .prepare("SELECT conversation_id, draft_json, updated_at FROM composer_drafts ORDER BY updated_at")
+            .map_err(|error| format!("无法读取输入草稿: {error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                let raw: String = row.get(1)?;
+                let draft = serde_json::from_str(&raw).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        1,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
+                Ok(ComposerDraftRecord {
+                    conversation_id: row.get(0)?,
+                    draft,
+                    updated_at: row.get(2)?,
+                })
+            })
+            .map_err(|error| format!("无法读取输入草稿: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("无法读取输入草稿: {error}"))
+    }
+
+    pub fn upsert_composer_draft(&self, input: &ComposerDraftInput) -> Result<(), String> {
+        if input.conversation_id.trim().is_empty() || !input.draft.is_object() {
+            return Err("会话 id 和输入草稿不能为空".to_string());
+        }
+        let draft_json = serde_json::to_string(&input.draft)
+            .map_err(|error| format!("无法序列化输入草稿: {error}"))?;
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        connection
+            .execute(
+                r#"
+                INSERT INTO composer_drafts (conversation_id, draft_json, updated_at)
+                VALUES (?1, ?2, ?3)
+                ON CONFLICT(conversation_id) DO UPDATE SET
+                  draft_json = excluded.draft_json,
+                  updated_at = excluded.updated_at
+                "#,
+                params![input.conversation_id, draft_json, now_ms()],
+            )
+            .map_err(|error| format!("无法保存输入草稿: {error}"))?;
+        Ok(())
+    }
+
+    pub fn delete_composer_draft(&self, conversation_id: &str) -> Result<(), String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "本地状态库锁不可用".to_string())?;
+        connection
+            .execute(
+                "DELETE FROM composer_drafts WHERE conversation_id = ?1",
+                [conversation_id],
+            )
+            .map_err(|error| format!("无法删除输入草稿: {error}"))?;
         Ok(())
     }
 
@@ -1010,6 +1098,38 @@ mod tests {
                 .expect("reads saved state"),
             Some("thread-2".to_string())
         );
+    }
+
+    #[test]
+    fn persists_and_deletes_composer_drafts() {
+        let directory = TestDir::new();
+        let store = HarnessStore::open_at(directory.0.clone()).expect("opens isolated store");
+
+        store
+            .upsert_composer_draft(&ComposerDraftInput {
+                conversation_id: "thread-1".to_string(),
+                draft: serde_json::json!({
+                    "version": 1,
+                    "text": "未发送内容",
+                    "collapsedPastes": [],
+                    "attachments": []
+                }),
+            })
+            .expect("stores composer draft");
+        drop(store);
+
+        let reloaded = HarnessStore::open_at(directory.0.clone()).expect("reopens isolated store");
+        let drafts = reloaded
+            .list_composer_drafts()
+            .expect("lists composer drafts");
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].conversation_id, "thread-1");
+        assert_eq!(drafts[0].draft["text"], "未发送内容");
+
+        reloaded
+            .delete_composer_draft("thread-1")
+            .expect("deletes composer draft");
+        assert!(reloaded.list_composer_drafts().unwrap().is_empty());
     }
 
     #[test]

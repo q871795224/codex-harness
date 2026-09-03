@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ApprovalRequest, UserInput } from '../../core/domain/codex'
 import { recordWorkspaceContextDiagnostic, runtime } from '../../core/runtime/bridge'
-import { useClaudeHarness } from '../claude/useClaudeHarness'
+import { DEFAULT_CLAUDE_SESSION_TITLE, useClaudeHarness } from '../claude/useClaudeHarness'
 import { useHarness, type ThreadSelectionSource } from './useHarness'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
 
@@ -45,6 +45,10 @@ export function capabilitiesForProvider(provider: ConversationProvider): Convers
     skills: true,
     mcpManagement: true,
   }
+}
+
+export function shouldGenerateClaudeTitle(title: string, providerSessionId: string | null, active: boolean): boolean {
+  return title === DEFAULT_CLAUDE_SESSION_TITLE && providerSessionId === null && !active
 }
 
 export function useUnifiedHarness() {
@@ -257,7 +261,7 @@ export function useUnifiedHarness() {
     }
   }, [claude, codex, currentThread?.cwd])
 
-  const sendMessage = useCallback((input: UserInput[], mode: 'interject' | 'queue') => {
+  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue') => {
     recordWorkspaceContextDiagnostic({
       level: 'info',
       event: 'conversation.message.dispatch',
@@ -272,7 +276,23 @@ export function useUnifiedHarness() {
         mode,
       },
     })
-    if (selectedProvider === 'claude' && selectedThreadId) return claude.sendMessage(selectedThreadId, input, mode)
+    if (selectedProvider === 'claude' && selectedThreadId) {
+      const session = claude.sessions.find((candidate) => candidate.id === selectedThreadId)
+      const userText = input
+        .filter((item): item is Extract<UserInput, { type: 'text' }> => item.type === 'text')
+        .map((item) => item.text)
+        .join('\n')
+      const shouldGenerateTitle = Boolean(session
+        && userText.trim()
+        && shouldGenerateClaudeTitle(session.title, session.providerSessionId, Boolean(claude.activeTurnIds[selectedThreadId])))
+      await claude.sendMessage(selectedThreadId, input, mode)
+      if (shouldGenerateTitle && session) {
+        void codex.generateConversationTitle(session.id, session.cwd, userText)
+          .then((title) => title ? claude.applyGeneratedTitle(session.id, title) : undefined)
+          .catch(() => undefined)
+      }
+      return
+    }
     return codex.sendMessage(input, mode)
   }, [claude, codex, selectedProvider, selectedThreadId])
 

@@ -33,8 +33,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 use store::{
-    ClaudeSession, ClaudeSessionInput, HarnessStore, PluginInstance, PluginInstanceInput,
-    PluginRun, PluginRunInput, ThreadUiState, Workspace,
+    ClaudeSession, ClaudeSessionInput, ComposerDraftInput, ComposerDraftRecord, HarnessStore,
+    PluginInstance, PluginInstanceInput, PluginRun, PluginRunInput, ThreadUiState, Workspace,
 };
 use tauri::{Manager, State};
 
@@ -597,6 +597,27 @@ fn set_app_state(state: State<'_, AppState>, key: String, value: String) -> Resu
 }
 
 #[tauri::command]
+fn list_composer_drafts(state: State<'_, AppState>) -> Result<Vec<ComposerDraftRecord>, String> {
+    state.store.list_composer_drafts()
+}
+
+#[tauri::command]
+fn upsert_composer_draft(
+    state: State<'_, AppState>,
+    input: ComposerDraftInput,
+) -> Result<(), String> {
+    state.store.upsert_composer_draft(&input)
+}
+
+#[tauri::command]
+fn delete_composer_draft(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<(), String> {
+    state.store.delete_composer_draft(&conversation_id)
+}
+
+#[tauri::command]
 fn list_plugin_instances(state: State<'_, AppState>) -> Result<Vec<PluginInstance>, String> {
     state.store.list_plugin_instances()
 }
@@ -853,6 +874,9 @@ pub fn run() {
             set_thread_state,
             get_app_state,
             set_app_state,
+            list_composer_drafts,
+            upsert_composer_draft,
+            delete_composer_draft,
             list_plugin_instances,
             upsert_plugin_instance,
             delete_plugin_instance,
