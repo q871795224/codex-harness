@@ -4,6 +4,12 @@ import { usePluginHost } from '../../core/plugins/react'
 import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, HarnessActionId, HarnessActionShortcuts, RecapGenerationSettings, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, DEFAULT_RECAP_GENERATION, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
+import {
+  DEFAULT_HANDOVER_PROMPT,
+  DEFAULT_HANDOVER_TEMPLATE,
+  HANDOVER_PROMPT_FILE_NAME,
+  HANDOVER_TEMPLATE_FILE_NAME,
+} from '../handover/templates'
 import { appServer } from '../../core/runtime/appServerClient'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
 import type { useCodexCore } from '../codex/useCodexCore'
@@ -53,7 +59,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'skills' | 'mcp'
+type SettingsPage = 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'handover' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -75,6 +81,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
     models: { heading: '模型', kicker: 'CODEX' },
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
     recap: { heading: '会话回顾', kicker: 'AUTOMATION' },
+    handover: { heading: '交接', kicker: 'AUTOMATION' },
     skills: { heading: '技能', kicker: 'CODEX' },
     mcp: { heading: 'MCP', kicker: 'CODEX' },
   }
@@ -139,6 +146,9 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
             <button type="button" className={page === 'recap' ? 'selected' : ''} aria-current={page === 'recap' ? 'page' : undefined} onClick={() => setPage('recap')}>
               <Sparkles size={16} />会话回顾
             </button>
+            <button type="button" className={page === 'handover' ? 'selected' : ''} aria-current={page === 'handover' ? 'page' : undefined} onClick={() => setPage('handover')}>
+              <MessageSquareText size={16} />交接
+            </button>
             <button type="button" className={page === 'skills' ? 'selected' : ''} aria-current={page === 'skills' ? 'page' : undefined} onClick={() => setPage('skills')}>
               <Sparkles size={16} />技能
             </button>
@@ -163,6 +173,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
           {page === 'models' && <ModelsSettings codex={codex} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'recap' && <RecapSettings codex={codex} settings={recapGeneration} onChange={onRecapGeneration} />}
+          {page === 'handover' && <HandoverSettings />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
           {page === 'mcp' && <McpSettings codex={codex} />}
           <SettingsVersions
@@ -301,6 +312,72 @@ function RecapSettings({ codex, settings, onChange }: {
           <button type="button" onClick={() => { setPromptDraft(DEFAULT_RECAP_GENERATION.prompt); onChange({ ...settings, prompt: DEFAULT_RECAP_GENERATION.prompt }) }}>恢复默认</button>
           <button type="button" className="primary" disabled={!promptDraft.trim() || promptDraft === settings.prompt} onClick={() => onChange({ ...settings, prompt: promptDraft.trim() })}>保存提示词</button>
         </div>
+      </section>
+    </div>
+  )
+}
+
+function HandoverSettings() {
+  const [promptDraft, setPromptDraft] = useState('')
+  const [templateDraft, setTemplateDraft] = useState('')
+  const [savedPrompt, setSavedPrompt] = useState('')
+  const [savedTemplate, setSavedTemplate] = useState('')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [prompt, template] = await Promise.all([
+          runtime.readHandoverTemplate(HANDOVER_PROMPT_FILE_NAME, DEFAULT_HANDOVER_PROMPT),
+          runtime.readHandoverTemplate(HANDOVER_TEMPLATE_FILE_NAME, DEFAULT_HANDOVER_TEMPLATE),
+        ])
+        if (cancelled) return
+        setPromptDraft(prompt)
+        setSavedPrompt(prompt)
+        setTemplateDraft(template)
+        setSavedTemplate(template)
+      } catch (error) {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  const persist = async (fileName: string, content: string, apply: (value: string) => void, label: string) => {
+    setNotice(null)
+    try {
+      await runtime.writeHandoverTemplate(fileName, content)
+      apply(content)
+      setNotice(`${label}已保存。`)
+    } catch (error) {
+      setNotice(`保存失败：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  return (
+    <div className="settings-section codex-settings">
+      <section className="codex-setting-card">
+        <div className="settings-section-title"><MessageSquareText size={17} /><div><h3>交接（handover）</h3><p>编辑 /handover 命令使用的总结指令与文档模板。文件保存在 ~/.codex-harness/templates/，可直接用编辑器修改。</p></div></div>
+        {loadError && <p className="settings-error">加载模板失败：{loadError}</p>}
+        <label className="title-prompt-field">
+          <span>总结指令（发给主 Agent）</span>
+          <textarea value={promptDraft} onChange={(event) => setPromptDraft(event.target.value)} spellCheck={false} rows={10} />
+        </label>
+        <div className="title-prompt-actions">
+          <button type="button" onClick={() => void persist(HANDOVER_PROMPT_FILE_NAME, DEFAULT_HANDOVER_PROMPT, (value) => { setPromptDraft(value); setSavedPrompt(value) }, '总结指令')}>恢复默认</button>
+          <button type="button" className="primary" disabled={!promptDraft.trim() || promptDraft === savedPrompt} onClick={() => void persist(HANDOVER_PROMPT_FILE_NAME, promptDraft, setSavedPrompt, '总结指令')}>保存</button>
+        </div>
+        <label className="title-prompt-field">
+          <span>文档模板（含 {'{{占位符}}'}）</span>
+          <textarea value={templateDraft} onChange={(event) => setTemplateDraft(event.target.value)} spellCheck={false} rows={12} />
+        </label>
+        <div className="title-prompt-actions">
+          <button type="button" onClick={() => void persist(HANDOVER_TEMPLATE_FILE_NAME, DEFAULT_HANDOVER_TEMPLATE, (value) => { setTemplateDraft(value); setSavedTemplate(value) }, '文档模板')}>恢复默认</button>
+          <button type="button" className="primary" disabled={!templateDraft.trim() || templateDraft === savedTemplate} onClick={() => void persist(HANDOVER_TEMPLATE_FILE_NAME, templateDraft, setSavedTemplate, '文档模板')}>保存</button>
+        </div>
+        {notice && <p className="settings-note">{notice}</p>}
       </section>
     </div>
   )

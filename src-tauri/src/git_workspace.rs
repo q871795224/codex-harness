@@ -255,6 +255,16 @@ fn git_optional<const N: usize>(cwd: &Path, args: [&str; N]) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+/// 返回 `git status --porcelain` 的原始输出（未暂存/已暂存/未跟踪的改动清单）。
+/// 非 git 目录或无改动时返回空串，不报错。
+pub fn changed_files(path: &str) -> Result<String, String> {
+    let selected = fs::canonicalize(path).map_err(|error| format!("无法访问目录: {error}"))?;
+    if !selected.is_dir() {
+        return Err("所选路径不是目录".to_string());
+    }
+    Ok(git(&selected, ["status", "--porcelain"]).unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -46,6 +46,12 @@ export interface AgentRunService {
   start(input: StartAgentRunInput): Promise<AgentRun>
   cancel(runId: string): Promise<void>
   loadResult(runId: string): Promise<string>
+  /** 回传为草稿文本（不发起 turn），由调用方塞进发起会话输入框 */
+  buildReturnDraft(runId: string): Promise<string>
+  /** 草稿模式注入后标记已回传 */
+  markReturned(runId: string): Promise<void>
+  /** 反向回传：返回子会话 id，供注入验收意见草稿 */
+  childThreadForFeedback(runId: string): Promise<string>
   returnToParent(runId: string): Promise<void>
   openWorkspace(runId: string): Promise<void>
   deliveryContext(runId: string): Promise<WorkspaceDeliveryContext>

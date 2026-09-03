@@ -7,6 +7,7 @@ mod codex_radar;
 mod codex_update;
 mod diagnostics;
 mod git_workspace;
+mod handover_store;
 mod harness_files;
 mod local_connector;
 mod quick_command;
@@ -454,6 +455,31 @@ fn workspace_delivery_context(
 }
 
 #[tauri::command]
+fn git_changed_files(cwd: String) -> Result<String, String> {
+    git_workspace::changed_files(&cwd)
+}
+
+#[tauri::command]
+fn read_handover_template(file_name: String, default_content: String) -> Result<String, String> {
+    handover_store::read_template(&file_name, &default_content)
+}
+
+#[tauri::command]
+fn write_handover_template(file_name: String, content: String) -> Result<(), String> {
+    handover_store::write("templates", &file_name, &content)
+}
+
+#[tauri::command]
+fn write_handover_document(file_name: String, content: String) -> Result<(), String> {
+    handover_store::write_document(&file_name, &content)
+}
+
+#[tauri::command]
+fn read_handover_document(file_name: String) -> Result<String, String> {
+    handover_store::read_document(&file_name)
+}
+
+#[tauri::command]
 fn create_agent_worktree(cwd: String, run_id: String) -> Result<String, String> {
     let data_dir = store::harness_data_dir()?;
     git_workspace::create_agent_worktree(&cwd, &run_id, &data_dir)
@@ -760,6 +786,11 @@ pub fn run() {
             list_workspaces,
             register_workspace,
             workspace_delivery_context,
+            git_changed_files,
+            read_handover_template,
+            write_handover_template,
+            write_handover_document,
+            read_handover_document,
             create_agent_worktree,
             remove_agent_worktree,
             map_thread_workspaces,

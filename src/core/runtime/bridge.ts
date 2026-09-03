@@ -285,6 +285,26 @@ export const runtime = {
     return invoke<WorkspaceDeliveryContext>('workspace_delivery_context', { cwd })
   },
 
+  gitChangedFiles(cwd: string): Promise<string> {
+    return invoke<string>('git_changed_files', { cwd })
+  },
+
+  readHandoverTemplate(fileName: string, defaultContent: string): Promise<string> {
+    return invoke<string>('read_handover_template', { fileName, defaultContent })
+  },
+
+  writeHandoverTemplate(fileName: string, content: string): Promise<void> {
+    return invoke<void>('write_handover_template', { fileName, content })
+  },
+
+  writeHandoverDocument(fileName: string, content: string): Promise<void> {
+    return invoke<void>('write_handover_document', { fileName, content })
+  },
+
+  readHandoverDocument(fileName: string): Promise<string> {
+    return invoke<string>('read_handover_document', { fileName })
+  },
+
   async listenTerminalEvents(handler: (event: TerminalEvent) => void): Promise<() => void> {
     return listen<TerminalEvent>('harness-terminal', (event) => handler(event.payload))
   },

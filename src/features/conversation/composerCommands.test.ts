@@ -6,6 +6,7 @@ describe('composer commands', () => {
     expect(parseComposerCommand('  /raw\n', false)).toEqual({ name: 'raw' })
     expect(parseComposerCommand('/new', false)).toEqual({ name: 'new' })
     expect(parseComposerCommand('/reset', false)).toEqual({ name: 'reset' })
+    expect(parseComposerCommand('/handover', false)).toEqual({ name: 'handover' })
     expect(parseComposerCommand('/model gpt-5.6-luna', false)).toEqual({ name: 'model', model: 'gpt-5.6-luna' })
     expect(parseComposerCommand('/reasoning high', false)).toEqual({ name: 'reasoning', effort: 'high' })
     expect(parseComposerCommand('/permissions never', false)).toEqual({ name: 'permissions', approvalPolicy: 'never' })

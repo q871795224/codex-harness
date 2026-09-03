@@ -104,6 +104,7 @@ import {
 } from './recapGenerator'
 import { groupTranscriptTurns } from './transcript'
 import {
+  draftThreadStartRequest,
   isFirstUserTurn,
   activeThreadIdsForRecovery,
   resolveNewThreadWorkspaceRoot,
@@ -112,6 +113,7 @@ import {
   resumeThreadRequest,
   runtimeThreadSettings,
   shouldDiscardDraftThread,
+  shouldRecreateDraftThread,
   startedThreadDetail,
   threadPermissionOverrides,
   threadTitlePrompt,
@@ -205,6 +207,7 @@ export function useHarness() {
   const locallyStartingRef = useRef(new Set<string>())
   const unstartedDraftThreadIdsRef = useRef(new Set<string>())
   const draftContentThreadIdsRef = useRef(new Set<string>())
+  const draftInitialCwdsRef = useRef(new Map<string, string>())
   const activeTurnIdsRef = useRef<Record<string, string>>({})
   const ownedActiveThreadsRef = useRef<Record<string, boolean>>({})
   const completedTurnIdsRef = useRef(new Map<string, number>())
@@ -619,6 +622,7 @@ export function useHarness() {
       draftContentThreadIdsRef.current.has(threadId),
     )) return
     unstartedDraftThreadIdsRef.current.delete(threadId)
+    draftInitialCwdsRef.current.delete(threadId)
     setThreads((current) => current.filter((thread) => thread.id !== threadId))
     setDetails((current) => {
       const next = { ...current }
@@ -916,6 +920,7 @@ export function useHarness() {
       })
       const previousThreadId = selectedThreadIdRef.current
       unstartedDraftThreadIdsRef.current.add(response.thread.id)
+      draftInitialCwdsRef.current.set(response.thread.id, response.thread.cwd)
       upsertThread(response.thread)
       void mapThreadRoots([response.thread])
       selectedThreadIdRef.current = response.thread.id
@@ -941,6 +946,7 @@ export function useHarness() {
         ...current,
         [response.thread.id]: startedThreadDetail(response),
       }))
+      return response.thread.id
     } catch (error) {
       notify(`无法${operation}会话：${messageOf(error)}`, 'error')
     } finally {
@@ -949,7 +955,7 @@ export function useHarness() {
   }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, upsertThread])
 
   const createThread = useCallback(async () => {
-    await startNewThread(undefined, '创建')
+    return startNewThread(undefined, '创建')
   }, [startNewThread])
 
   const resetThread = useCallback(async () => {
@@ -1343,6 +1349,69 @@ export function useHarness() {
     }
   }, [cancelRecapTimer, handleRecapFocusGained, handleRecapFocusLost])
 
+  const recreateDraftThreadForSelectedCwd = useCallback(async (threadId: string) => {
+    if (!unstartedDraftThreadIdsRef.current.has(threadId)) return threadId
+    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+    const initialCwd = draftInitialCwdsRef.current.get(threadId)
+    if (!thread || !shouldRecreateDraftThread(initialCwd, thread.cwd)) return threadId
+
+    const detail = detailsRef.current[threadId]
+    const response = await appServer.startThread(draftThreadStartRequest(thread.cwd, detail))
+    const replacementId = response.thread.id
+    try {
+      if (detail?.threadSettings?.effort) {
+        await appServer.updateThreadSettings({ threadId: replacementId, effort: detail.threadSettings.effort })
+      }
+    } catch (error) {
+      await appServer.deleteThread(replacementId).catch(() => undefined)
+      throw error
+    }
+
+    const replacementDetail = startedThreadDetail(response)
+    if (detail?.threadSettings) replacementDetail.threadSettings = detail.threadSettings
+    const nextThreads = [response.thread, ...threadsRef.current.filter((candidate) => candidate.id !== threadId && candidate.id !== replacementId)]
+    const nextDetails = { ...detailsRef.current, [replacementId]: replacementDetail }
+    delete nextDetails[threadId]
+    threadsRef.current = nextThreads
+    detailsRef.current = nextDetails
+    setThreads(nextThreads)
+    setDetails(nextDetails)
+    setThreadRoots((current) => {
+      const next = { ...current }
+      delete next[threadId]
+      return next
+    })
+    setThreadGitCwds((current) => {
+      const next = { ...current }
+      delete next[threadId]
+      return next
+    })
+    unstartedDraftThreadIdsRef.current.delete(threadId)
+    draftContentThreadIdsRef.current.delete(threadId)
+    draftInitialCwdsRef.current.delete(threadId)
+    unstartedDraftThreadIdsRef.current.add(replacementId)
+    draftInitialCwdsRef.current.set(replacementId, response.thread.cwd)
+    selectedThreadIdRef.current = replacementId
+    setSelectedThreadId(replacementId)
+    rememberNextThreadCwd(response.thread.cwd)
+    void runtime.setAppState('selectedThreadId', replacementId).catch(() => undefined)
+    void mapThreadRoots([response.thread])
+    void appServer.deleteThread(threadId).catch(() => undefined)
+    recordWorkspaceContextDiagnostic({
+      level: 'info',
+      event: 'thread.draft-recreated',
+      threadId: replacementId,
+      method: 'thread/start',
+      context: {
+        source: 'useHarness.recreateDraftThreadForSelectedCwd',
+        replacedThreadId: threadId,
+        initialCwd: initialCwd ?? null,
+        selectedCwd: response.thread.cwd,
+      },
+    })
+    return replacementId
+  }, [mapThreadRoots, rememberNextThreadCwd])
+
   const startTurn = useCallback(async (
     threadId: string,
     text: string | null,
@@ -1351,6 +1420,7 @@ export function useHarness() {
   ) => {
     unstartedDraftThreadIdsRef.current.delete(threadId)
     draftContentThreadIdsRef.current.delete(threadId)
+    draftInitialCwdsRef.current.delete(threadId)
     locallyStartingRef.current.add(threadId)
     setThreadStarting(threadId, true)
     try {
@@ -1426,15 +1496,16 @@ export function useHarness() {
     setBusy((current) => ({ ...current, composer: true }))
     try {
       if (!activeTurnId) {
-        await startTurn(threadId, null, input)
+        const startedThreadId = await recreateDraftThreadForSelectedCwd(threadId)
+        await startTurn(startedThreadId, null, input)
         if (text.trim()) {
-          updateThread(threadId, (thread) => withInitialThreadPreview(thread, text))
-          updateDetail(threadId, (detail) => ({
+          updateThread(startedThreadId, (thread) => withInitialThreadPreview(thread, text))
+          updateDetail(startedThreadId, (detail) => ({
             ...detail,
             thread: withInitialThreadPreview(detail.thread, text),
           }))
         }
-        if (shouldEvaluateTitle) void maybeGenerateThreadTitle(threadId, text)
+        if (shouldEvaluateTitle) void maybeGenerateThreadTitle(startedThreadId, text)
         return
       }
 
@@ -1459,7 +1530,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, composer: false }))
     }
-  }, [loadQueue, maybeGenerateThreadTitle, notify, startTurn, updateDetail, updateThread])
+  }, [loadQueue, maybeGenerateThreadTitle, notify, recreateDraftThreadForSelectedCwd, startTurn, updateDetail, updateThread])
 
   const continueAfterFailure = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -2043,6 +2114,7 @@ export function useHarness() {
       if (threadId) {
         unstartedDraftThreadIdsRef.current.delete(threadId)
         draftContentThreadIdsRef.current.delete(threadId)
+        draftInitialCwdsRef.current.delete(threadId)
         setThreads((current) => current.filter((thread) => thread.id !== threadId))
       }
     }
@@ -2166,6 +2238,7 @@ export function useHarness() {
     openThread,
     forkThreadAtTurn,
     onTurnCompleted,
+    notify,
     loadOlderTurns,
     chooseWorkspace,
     createThread,
