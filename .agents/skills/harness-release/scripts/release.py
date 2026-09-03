@@ -172,6 +172,7 @@ def ensure_dependencies() -> None:
 
 def command_check(version: str) -> None:
     require_synced_versions(version)
+    ensure_dependencies()
     run("cargo", "test", cwd=REPO_ROOT / "src-tauri")
     print(json.dumps({"phase": "checked", "version": normalized_version(version)}))
 
