@@ -9,7 +9,7 @@ description: Use when preparing, packaging, installing, or publishing a Codex Ha
 
 开始发布前必须读取 `.harness/github.md`。发布改动通过 release 分支和 Pull Request 进入 `main`，不得直接在 `main` 上修改、commit 或 push；branch、commit、PR 和 release 都不要求 Jira key。
 
-固定步骤使用 `scripts/release.py`，不要重新拼装等价命令。脚本按阶段输出 JSON 结果；失败时保留现场，Agent 只判断异常和授权边界。长命令使用工具允许的最长等待时间，不以 1 秒间隔轮询。
+固定步骤使用 `scripts/release.py`，不要重新拼装等价命令，也不要额外运行脚本自身的单元测试。脚本按阶段输出 JSON 结果；失败时保留现场，Agent 只判断异常和授权边界。每个 phase 只启动一次；长命令返回 running session 时只等待同一 session 完成，不检查进程后重新执行，也不以 1 秒间隔轮询。
 
 ## 版本和工作树
 
