@@ -1,6 +1,6 @@
 import type { ThreadItemEntry } from '../../core/domain/codex'
 import type { ProjectDocUpdateProposal } from '../project-doc/document'
-import { extractProjectDocUpdates } from '../project-doc/document'
+import { APPEND_SECTIONS, CONTROLLED_SECTIONS, extractProjectDocUpdates } from '../project-doc/document'
 import { groupTranscriptItems } from './transcript'
 
 /** 一条带出来源的提议：从某条 agent 消息里提取出的 <project-doc-update> 块。 */
@@ -30,4 +30,14 @@ export function collectProjectDocProposals(items: ThreadItemEntry[]): ProjectDoc
     })
   }
   return entries
+}
+
+/** 受控区提议（必须过审批卡 + CAS）。 */
+export function collectControlledProposals(items: ThreadItemEntry[]): ProjectDocProposalEntry[] {
+  return collectProjectDocProposals(items).filter((entry) => CONTROLLED_SECTIONS.has(entry.proposal.section))
+}
+
+/** 追加区提议（免审批，落盘时由 Harness 按 seq 定序）。 */
+export function collectAppendProposals(items: ThreadItemEntry[]): ProjectDocProposalEntry[] {
+  return collectProjectDocProposals(items).filter((entry) => APPEND_SECTIONS.has(entry.proposal.section))
 }

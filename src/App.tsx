@@ -39,6 +39,7 @@ import type { TerminalService } from './core/terminal/types'
 import type { AppLauncherService } from './core/app-launcher/types'
 import { createProjectDocService } from './core/project-docs/service'
 import { ProjectDocApprovalCards } from './features/conversation/ProjectDocApprovalCards'
+import { ProjectDocLogAutoWriter } from './features/conversation/ProjectDocLogAutoWriter'
 import { PROJECT_DOC_TAB_KEY } from './plugins/project-doc'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
@@ -718,6 +719,14 @@ function HarnessShell({ harness, agentRuns, codex }: {
                       setPendingProjectConflict(request?.conflict ?? null)
                       setTab(PROJECT_DOC_TAB_KEY)
                     }}
+                  />
+                )}
+                {harness.selectedThreadId && boundProjectId && (
+                  <ProjectDocLogAutoWriter
+                    items={harness.currentDetail?.items ?? []}
+                    projectDoc={projectDocs}
+                    projectId={boundProjectId}
+                    updatedBy={harness.selectedThreadId}
                   />
                 )}
                 <QueueDock

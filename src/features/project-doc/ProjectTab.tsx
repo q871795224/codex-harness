@@ -8,12 +8,14 @@ import {
   FilePlus2,
   GitCompareArrows,
   History,
+  KanbanSquare,
   LoaderCircle,
   NotebookPen,
   Pencil,
   X,
 } from 'lucide-react'
 import type { ProjectDocService } from '../../core/project-docs/types'
+import { parseProjectBoard } from './board'
 import type { ProjectDocSnapshot, ProjectMeta, ProjectVersion } from './types'
 import type { SectionKey } from './document'
 
@@ -22,7 +24,7 @@ export interface ProjectTabConflictRequest {
   section: string
 }
 
-type DetailView = 'doc' | 'edit' | 'history' | 'diff'
+type DetailView = 'doc' | 'board' | 'edit' | 'history' | 'diff'
 
 /**
  * 项目文档 tab：项目列表 → 详情（文档渲染、当前 seq、版本历史、编辑、冲突 diff）。
@@ -192,6 +194,9 @@ function ProjectDetail({ service, projectId, conflictRequest, onBack, onConflict
           <button type="button" className={view === 'doc' ? 'active' : ''} onClick={() => setView('doc')} title="查看文档">
             <NotebookPen size={12} />文档
           </button>
+          <button type="button" className={view === 'board' ? 'active' : ''} onClick={() => setView('board')} title="按 run 聚合的进度看板">
+            <KanbanSquare size={12} />看板
+          </button>
           <button type="button" className={view === 'edit' ? 'active' : ''} onClick={() => setView('edit')} title="编辑 Status 区（走 seq 校验）">
             <Pencil size={12} />编辑
           </button>
@@ -212,6 +217,11 @@ function ProjectDetail({ service, projectId, conflictRequest, onBack, onConflict
       {view === 'doc' && (
         snapshot
           ? <div className="project-doc-body markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{snapshot.content}</ReactMarkdown></div>
+          : <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
+      )}
+      {view === 'board' && (
+        snapshot
+          ? <ProjectBoardView content={snapshot.content} />
           : <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
       )}
       {view === 'edit' && snapshot && (
@@ -308,8 +318,57 @@ function ProjectEditPanel({ service, projectId, snapshot, onSaved, onCancel }: {
   )
 }
 
-function ProjectHistory({ versions }: { versions: ProjectVersion[] | null }) {
-  if (versions === null) return <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
+/**
+ * 场景二看板：Status 区按 run 聚合（`### run-xxx: 标题`），Log 区按条目聚合（新的在前）。
+ * 解析是展示层的尽力而为；文档缺 Status/Log 区时给空态提示，不报错。
+ */
+function ProjectBoardView({ content }: { content: string }) {
+  const board = useMemo(() => parseProjectBoard(content), [content])
+  if (!board.hasStatus && !board.hasLog) {
+    return <p className="project-tab-empty">文档还没有 Status / Log 分区，看板无内容。让 Agent 按 project-doc 协议提议写入后这里会按 run 聚合。</p>
+  }
+  return (
+    <div className="project-board">
+      {board.hasStatus && (
+        <section className="project-board-section">
+          <h3><KanbanSquare size={14} />Status · 按 run</h3>
+          {board.shared && <div className="project-board-shared markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{board.shared}</ReactMarkdown></div>}
+          {board.runs.length === 0 ? (
+            <p className="project-tab-empty">Status 区还没有 `### run-xxx` 子区。</p>
+          ) : (
+            <div className="project-board-runs">
+              {board.runs.map((run) => (
+                <article key={run.runId} className="project-board-run">
+                  <header>
+                    <code>{run.runId}</code>
+                    {run.title && <strong>{run.title}</strong>}
+                  </header>
+                  {run.body && <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{run.body}</ReactMarkdown></div>}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+      {board.hasLog && (
+        <section className="project-board-section">
+          <h3><History size={14} />Log · 新的在前</h3>
+          {board.logEntries.length === 0 ? (
+            <p className="project-tab-empty">Log 区还没有条目。</p>
+          ) : (
+            <ol className="project-board-log">
+              {board.logEntries.map((entry, index) => (
+                <li key={index}><div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{entry}</ReactMarkdown></div></li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
+    </div>
+  )
+}
+
+function ProjectHistory({ versions }: { versions: ProjectVersion[] | null }) {  if (versions === null) return <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
   if (versions.length === 0) return <p className="project-tab-empty">还没有版本记录。</p>
   return (
     <ol className="project-history">
