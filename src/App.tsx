@@ -37,8 +37,14 @@ import type { CodexAnalyticsService } from './core/codex-analytics/types'
 import type { ApiWorkbenchService } from './core/api-workbench/types'
 import type { TerminalService } from './core/terminal/types'
 import type { AppLauncherService } from './core/app-launcher/types'
+import { createProjectDocService } from './core/project-docs/service'
+import { ProjectDocApprovalCards } from './features/conversation/ProjectDocApprovalCards'
+import { ProjectDocLogAutoWriter } from './features/conversation/ProjectDocLogAutoWriter'
+import { PROJECT_DOC_TAB_KEY } from './plugins/project-doc'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
+// 项目文档服务是无状态桥接封装，模块级单例即可（绑定走 appState，读写直连 Rust store）。
+const projectDocs = createProjectDocService()
 const SettingsDialog = lazy(() => import('./features/settings/SettingsDialog').then((module) => ({ default: module.SettingsDialog })))
 const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDialog').then((module) => ({ default: module.PluginSettingsDialog })))
 
@@ -54,6 +60,7 @@ export default function App() {
   harnessInstructionConfig.current = resolveHarnessInstructionConfig(codex.config)
   const services = useMemo(() => ({
     'harness.agentRuns': agentRuns,
+    'harness.projectDocs': projectDocs,
     'harness.localConnectors': {
       health: runtime.localConnectorHealth,
       listMessages: runtime.localConnectorListMessages,
@@ -206,6 +213,21 @@ function HarnessShell({ harness, agentRuns, codex }: {
     () => agentRunList.filter((run) => run.parentThreadId === harness.selectedThreadId),
     [agentRunList, harness.selectedThreadId],
   )
+  // 项目文档：当前会话绑定的 projectId + 跳项目 tab 时挂起的冲突 diff 请求。
+  const [boundProjectId, setBoundProjectId] = useState<string | null>(null)
+  const [pendingProjectConflict, setPendingProjectConflict] = useState<{ proposalContent: string; section: string } | null>(null)
+  useEffect(() => {
+    const threadId = harness.selectedThreadId
+    if (!threadId) {
+      setBoundProjectId(null)
+      return undefined
+    }
+    let disposed = false
+    void projectDocs.threadProject(threadId)
+      .then((projectId) => { if (!disposed) setBoundProjectId(projectId) })
+      .catch(() => undefined)
+    return () => { disposed = true }
+  }, [projectDocs, harness.selectedThreadId])
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
@@ -685,6 +707,26 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     runs={pendingReturnRuns}
                     agentRuns={agentRuns}
                     onInjectDraft={injectDraft}
+                  />
+                )}
+                {harness.selectedThreadId && boundProjectId && (
+                  <ProjectDocApprovalCards
+                    items={harness.currentDetail?.items ?? []}
+                    projectDoc={projectDocs}
+                    projectId={boundProjectId}
+                    updatedBy={harness.selectedThreadId}
+                    onOpenProject={(request) => {
+                      setPendingProjectConflict(request?.conflict ?? null)
+                      setTab(PROJECT_DOC_TAB_KEY)
+                    }}
+                  />
+                )}
+                {harness.selectedThreadId && boundProjectId && (
+                  <ProjectDocLogAutoWriter
+                    items={harness.currentDetail?.items ?? []}
+                    projectDoc={projectDocs}
+                    projectId={boundProjectId}
+                    updatedBy={harness.selectedThreadId}
                   />
                 )}
                 <QueueDock
