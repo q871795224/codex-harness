@@ -10,6 +10,8 @@ use tokio::sync::Mutex;
 
 const INSIGHTS_URL: &str = "https://codexradar.com/api/radar-insights";
 const EFFICIENCY_URL: &str = "https://codexradar.com/data/intelligence-efficiency.json";
+const ASTRA_MODEL: &str = "gpt-6-astra";
+const ASTRA_EFFORTS: [&str; 2] = ["low", "medium"];
 const CACHE_TTL: Duration = Duration::from_secs(30 * 60);
 const MAX_STALE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
@@ -143,6 +145,36 @@ fn build_model_table(
         .get("points")
         .and_then(Value::as_array)
         .ok_or_else(|| "Codex Radar 缺少效率数据".to_string())?;
+    // comprehensive_points is the canonical IQ benchmark; cost and time come
+    // from the matching efficiency point because comprehensive_points omits them.
+    if let Some(comprehensive_points) = insights
+        .get("comprehensive_points")
+        .and_then(Value::as_array)
+    {
+        for effort in ASTRA_EFFORTS {
+            let Some(iq_entry) = comprehensive_points.iter().find(|entry| {
+                entry.get("model").and_then(Value::as_str) == Some(ASTRA_MODEL)
+                    && entry.get("effort").and_then(Value::as_str) == Some(effort)
+            }) else {
+                continue;
+            };
+            let Some(efficiency_entry) = points.iter().find(|entry| {
+                entry.get("model").and_then(Value::as_str) == Some(ASTRA_MODEL)
+                    && entry.get("effort").and_then(Value::as_str) == Some(effort)
+            }) else {
+                continue;
+            };
+            if candidates
+                .iter()
+                .any(|row| row.model == ASTRA_MODEL && row.effort == effort)
+            {
+                continue;
+            }
+            if let Some(row) = astra_candidate(iq_entry, efficiency_entry, effort) {
+                candidates.push(row);
+            }
+        }
+    }
     let simple = points
         .iter()
         .find(|entry| {
@@ -235,6 +267,21 @@ fn candidate(
         iq: number("iq")?,
         price: number(price_key)?,
         minutes: number(minutes_key)?,
+    })
+}
+
+fn astra_candidate(iq_entry: &Value, efficiency_entry: &Value, effort: &str) -> Option<Candidate> {
+    Some(Candidate {
+        group: "agi",
+        model: ASTRA_MODEL.to_string(),
+        effort: effort.to_string(),
+        iq: iq_entry.get("iq").and_then(Value::as_f64)?,
+        price: efficiency_entry
+            .get("average_price_usd")
+            .and_then(Value::as_f64)?,
+        minutes: efficiency_entry
+            .get("average_minutes")
+            .and_then(Value::as_f64)?,
     })
 }
 
@@ -343,5 +390,45 @@ mod tests {
             1
         );
         assert!(table.rows.iter().any(|row| row.automatic));
+    }
+
+    #[test]
+    fn joins_comprehensive_iq_with_efficiency_cost_and_time_for_astra() {
+        let insights = json!({
+            "recommendations": [{"key": "hard_problems", "items": [
+                {"model":"gpt-5.6-sol","effort":"ultra","iq":105.0,"average_cost_usd":20.0,"average_duration_minutes":44.0}
+            ]}],
+            "comprehensive_points": [
+                {"model":"gpt-6-astra","effort":"low","iq":106.96,"software_iq":102.7,"visual_iq":136.47,"samples":127},
+                {"model":"gpt-6-astra","effort":"medium","iq":110.46,"software_iq":106.19,"visual_iq":140.59,"samples":129}
+            ]
+        });
+        let efficiency = json!({"points": [
+            {"model":"gpt-6-astra","effort":"low","iq":1.0,"average_price_usd":2.029284,"average_minutes":9.35},
+            {"model":"gpt-6-astra","effort":"medium","iq":1.0,"average_price_usd":2.297875,"average_minutes":8.87},
+            {"model":"gpt-5.6-sol","effort":"high","iq":93.0,"average_price_usd":4.0,"average_minutes":20.0},
+            {"model":"gpt-5.6-terra","effort":"max","iq":95.0,"average_price_usd":2.0,"average_minutes":18.0},
+            {"model":"gpt-5.6-luna","effort":"max","iq":96.0,"average_price_usd":0.48,"average_minutes":34.0},
+            {"model":"gpt-5.6-luna","effort":"xhigh","iq":94.0,"average_price_usd":0.3,"average_minutes":33.0}
+        ]});
+
+        let table = build_model_table(&insights, &efficiency, 42).unwrap();
+        let low = table
+            .rows
+            .iter()
+            .find(|row| row.model == ASTRA_MODEL && row.effort == "low")
+            .unwrap();
+        let medium = table
+            .rows
+            .iter()
+            .find(|row| row.model == ASTRA_MODEL && row.effort == "medium")
+            .unwrap();
+
+        assert_eq!(low.group, "agi");
+        assert_eq!((low.iq, low.price, low.minutes), (106.96, 2.029284, 9.35));
+        assert_eq!(
+            (medium.iq, medium.price, medium.minutes),
+            (110.46, 2.297875, 8.87)
+        );
     }
 }

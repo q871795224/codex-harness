@@ -39,9 +39,11 @@ describe('session launcher model selection', () => {
     bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor,
   })
 
-  it('places fixed Astra efforts between references and simple tasks', () => {
+  it('places Astra efforts between references and simple tasks with Radar metrics', () => {
     const rows = availableRows([
       row('gpt-5.6-sol', 'high', true),
+      { ...row('gpt-6-astra', 'low'), iq: 106.96, price: 2.029284, minutes: 9.35 },
+      { ...row('gpt-6-astra', 'medium'), iq: 110.46, price: 2.297875, minutes: 8.87 },
       { ...row('gpt-5.6-luna', 'max'), group: 'simple' },
     ], [model('gpt-5.6-sol', ['high']), model('gpt-5.6-luna', ['max']), model('gpt-6-astra', ['low', 'medium', 'high'])], base)
     expect(rows.map(({ group, model, effort }) => [group, model, effort])).toEqual([
@@ -51,7 +53,8 @@ describe('session launcher model selection', () => {
       ['simple', 'gpt-5.6-luna', 'max'],
     ])
     expect(defaultRadarRow(rows)?.model).toBe('gpt-5.6-sol')
-    expect(rows[1].iq).toBeNull()
+    expect(rows[1]).toMatchObject({ iq: 106.96, price: 2.029284, minutes: 9.35 })
+    expect(rows[2]).toMatchObject({ iq: 110.46, price: 2.297875, minutes: 8.87 })
     expect(selectedRadarRow(rows, { model: 'gpt-6-astra', effort: 'medium' })).toBe(rows[2])
   })
 
@@ -62,9 +65,9 @@ describe('session launcher model selection', () => {
   })
 
   it('moves existing Astra rows into AGI without duplicating or losing metrics', () => {
-    const rows = availableRows([{ ...row('gpt-6-astra', 'low', true), iq: 99 }], [model('gpt-6-astra', ['low', 'medium'])], base)
+    const rows = availableRows([{ ...row('gpt-6-astra', 'low', true), iq: 99, price: 1.23, minutes: 4.5 }], [model('gpt-6-astra', ['low', 'medium'])], base)
     expect(rows).toHaveLength(2)
-    expect(rows[0]).toMatchObject({ group: 'agi', effort: 'low', iq: 99, defaultCursor: true })
+    expect(rows[0]).toMatchObject({ group: 'agi', effort: 'low', iq: 99, price: 1.23, minutes: 4.5, defaultCursor: true })
   })
 
   it('uses the exact session settings when a Radar row matches', () => {
