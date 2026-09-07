@@ -292,9 +292,19 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
         setActionError(`当前模型不支持推理强度 ${command.effort}。`)
         return
       }
-      await onCommand(command)
+      try {
+        await onCommand(command)
+      } catch {
+        return
+      }
     }
-    else await onSend(inputs, followUpMode)
+    else {
+      try {
+        await onSend(inputs, followUpMode)
+      } catch {
+        return
+      }
+    }
     setText('')
     setCollapsedPastes([])
     setAttachments([])

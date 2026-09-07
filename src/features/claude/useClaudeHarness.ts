@@ -10,6 +10,7 @@ import type { TurnCompletedEvent } from '../../core/conversations/types'
 
 const CLAUDE_MAX_TURNS = 65_536
 const CLAUDE_SESSION_SETTINGS_KEY = 'claude.sessionSettings'
+export const DEFAULT_CLAUDE_SESSION_TITLE = 'Claude 会话'
 
 interface ClaudeToast {
   kind: 'error' | 'info'
@@ -551,7 +552,7 @@ export function useClaudeHarness() {
         id: `claude:${crypto.randomUUID()}`,
         providerSessionId: null,
         cwd,
-        title: 'Claude 会话',
+        title: DEFAULT_CLAUDE_SESSION_TITLE,
       })
       setSessions((current) => {
         const next = [session, ...current.filter((candidate) => candidate.id !== session.id)]
@@ -610,9 +611,27 @@ export function useClaudeHarness() {
       id: session.id,
       providerSessionId: session.providerSessionId,
       cwd: session.cwd,
-      title: title.trim() || 'Claude 会话',
+      title: title.trim() || DEFAULT_CLAUDE_SESSION_TITLE,
     })
     setSessions((current) => {
+      const next = current.map((candidate) => candidate.id === saved.id ? saved : candidate)
+      sessionsRef.current = next
+      return next
+    })
+  }, [])
+
+  const applyGeneratedTitle = useCallback(async (sessionId: string, title: string) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session || session.title !== DEFAULT_CLAUDE_SESSION_TITLE || !title.trim()) return
+    const saved = await runtime.upsertClaudeSession({
+      id: session.id,
+      providerSessionId: session.providerSessionId,
+      cwd: session.cwd,
+      title: title.trim(),
+    })
+    setSessions((current) => {
+      const latest = current.find((candidate) => candidate.id === sessionId)
+      if (!latest || latest.title !== DEFAULT_CLAUDE_SESSION_TITLE) return current
       const next = current.map((candidate) => candidate.id === saved.id ? saved : candidate)
       sessionsRef.current = next
       return next
@@ -698,6 +717,7 @@ export function useClaudeHarness() {
     startQueue: (sessionId: string) => startQueue(sessionId),
     answerApproval,
     renameSession,
+    applyGeneratedTitle,
     changeSessionWorkspace,
     archiveSession: (sessionId: string) => setArchived(sessionId, true),
     unarchiveSession: (sessionId: string) => setArchived(sessionId, false),

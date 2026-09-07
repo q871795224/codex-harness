@@ -220,6 +220,7 @@ export function useHarness() {
   const generatingTitlesRef = useRef(new Set<string>())
   const attemptedTitleThreadsRef = useRef(new Set<string>())
   const titleGeneratorsRef = useRef(new Map<string, TitleGeneratorState>())
+  const titleGeneratorResolversRef = useRef(new Map<string, (title: string | null) => void>())
   const threadTitleGenerationRef = useRef(threadTitleGeneration)
   const recapGeneratorsRef = useRef(new Map<string, RecapGeneratorState>())
   const recapGenerationRef = useRef(recapGeneration)
@@ -1058,30 +1059,7 @@ export function useHarness() {
     persistBadge(threadId, 'working')
   }, [commitTurnOwnership, persistBadge, setThreadStarting, updateDetail, updateThread])
 
-  const maybeGenerateThreadTitle = useCallback(async (threadId: string, userText: string) => {
-    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
-    if (!thread) {
-      recordTitleDiagnostic({
-        level: 'info',
-        event: 'generation.skipped',
-        threadId,
-        stage: 'preflight',
-        reason: 'thread_not_found',
-        trigger: 'first-user-input',
-      })
-      return
-    }
-    if (thread.name?.trim()) {
-      recordTitleDiagnostic({
-        level: 'info',
-        event: 'generation.skipped',
-        threadId,
-        stage: 'preflight',
-        reason: 'already_named',
-        trigger: 'first-user-input',
-      })
-      return
-    }
+  const generateConversationTitle = useCallback(async (threadId: string, cwd: string, userText: string): Promise<string | null> => {
     const prompt = threadTitlePrompt(userText)
     if (!prompt) {
       recordTitleDiagnostic({
@@ -1092,7 +1070,7 @@ export function useHarness() {
         reason: 'empty_user_input',
         trigger: 'first-user-input',
       })
-      return
+      return null
     }
     if (attemptedTitleThreadsRef.current.has(threadId)) {
       recordTitleDiagnostic({
@@ -1103,7 +1081,7 @@ export function useHarness() {
         reason: generatingTitlesRef.current.has(threadId) ? 'in_flight' : 'already_attempted',
         trigger: 'first-user-input',
       })
-      return
+      return null
     }
 
     attemptedTitleThreadsRef.current.add(threadId)
@@ -1127,8 +1105,8 @@ export function useHarness() {
     let stage = 'thread/start'
     try {
       const response: StartThreadResponse = await appServer.startThread({
-        cwd: thread.cwd,
-        runtimeWorkspaceRoots: [thread.cwd],
+        cwd,
+        runtimeWorkspaceRoots: [cwd],
         model: settings.model,
         approvalPolicy: 'never',
         sandbox: 'read-only',
@@ -1137,6 +1115,9 @@ export function useHarness() {
         config: EPHEMERAL_THREAD_DISABLED_CONFIG,
       })
       generatorThreadId = response.thread.id
+      const result = new Promise<string | null>((resolve) => {
+        titleGeneratorResolversRef.current.set(response.thread.id, resolve)
+      })
       titleGeneratorsRef.current.set(response.thread.id, {
         targetThreadId: threadId,
         attemptId,
@@ -1160,8 +1141,8 @@ export function useHarness() {
         threadId: response.thread.id,
         clientUserMessageId: newClientId(),
         input: [textInput(prompt)],
-        cwd: thread.cwd,
-        runtimeWorkspaceRoots: [thread.cwd],
+        cwd,
+        runtimeWorkspaceRoots: [cwd],
         approvalPolicy: 'never',
         sandboxPolicy: { type: 'readOnly', networkAccess: false },
         effort: settings.effort,
@@ -1178,8 +1159,12 @@ export function useHarness() {
         model: settings.model,
         effort: settings.effort,
       })
+      return await result
     } catch (error) {
-      if (generatorThreadId) titleGeneratorsRef.current.delete(generatorThreadId)
+      if (generatorThreadId) {
+        titleGeneratorsRef.current.delete(generatorThreadId)
+        titleGeneratorResolversRef.current.delete(generatorThreadId)
+      }
       generatingTitlesRef.current.delete(threadId)
       recordTitleDiagnostic({
         level: 'error',
@@ -1195,8 +1180,50 @@ export function useHarness() {
         errorCode: diagnosticErrorCode(error),
         durationMs: Math.round(performance.now() - startedAt),
       })
+      return null
     }
   }, [])
+
+  const maybeGenerateThreadTitle = useCallback(async (threadId: string, userText: string) => {
+    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+    if (!thread) {
+      recordTitleDiagnostic({
+        level: 'info', event: 'generation.skipped', threadId, stage: 'preflight',
+        reason: 'thread_not_found', trigger: 'first-user-input',
+      })
+      return
+    }
+    if (thread.name?.trim()) {
+      recordTitleDiagnostic({
+        level: 'info', event: 'generation.skipped', threadId, stage: 'preflight',
+        reason: 'already_named', trigger: 'first-user-input',
+      })
+      return
+    }
+    const title = await generateConversationTitle(threadId, thread.cwd, userText)
+    if (!title) return
+    const target = threadsRef.current.find((candidate) => candidate.id === threadId)
+    if (!target || target.name?.trim()) return
+    const nameSetStartedAt = performance.now()
+    try {
+      await appServer.renameThread(target.id, title)
+      updateThread(target.id, (current) => current.name?.trim() ? current : { ...current, name: title })
+      updateDetail(target.id, (detail) => detail.thread.name?.trim()
+        ? detail
+        : { ...detail, thread: { ...detail.thread, name: title } })
+      recordTitleDiagnostic({
+        level: 'info', event: 'name_set.completed', method: 'thread/name/set',
+        threadId: target.id, stage: 'thread/name/set', accepted: true,
+        durationMs: Math.round(performance.now() - nameSetStartedAt),
+      })
+    } catch (error) {
+      recordTitleDiagnostic({
+        level: 'error', event: 'name_set.failed', method: 'thread/name/set',
+        threadId: target.id, stage: 'thread/name/set', errorCode: diagnosticErrorCode(error),
+        durationMs: Math.round(performance.now() - nameSetStartedAt),
+      })
+    }
+  }, [generateConversationTitle, updateDetail, updateThread])
 
   // --- Recap: mirror the Codex CLI's "Conversation recap" state machine. ---
   const RECAP_DELAY_MS = 3 * 60_000
@@ -1532,6 +1559,7 @@ export function useHarness() {
       }))
     } catch (error) {
       notify(`无法发送消息：${messageOf(error)}`, 'error')
+      throw error
     } finally {
       setBusy((current) => ({ ...current, composer: false }))
     }
@@ -1767,79 +1795,11 @@ export function useHarness() {
       })
       titleGeneratorsRef.current.delete(generatorThreadId)
       generatingTitlesRef.current.delete(generator.targetThreadId)
-      const target = threadsRef.current.find((thread) => thread.id === generator.targetThreadId)
-      if (!title) {
-        recordTitleDiagnostic({
-          level: 'info',
-          event: 'name_set.skipped',
-          method: 'thread/name/set',
-          threadId: generator.targetThreadId,
-          generatorThreadId,
-          attemptId: generator.attemptId,
-          stage: 'thread/name/set',
-          reason: 'empty_generated_title',
-        })
-        return true
-      }
-      if (!target) {
-        recordTitleDiagnostic({
-          level: 'info',
-          event: 'name_set.skipped',
-          method: 'thread/name/set',
-          threadId: generator.targetThreadId,
-          generatorThreadId,
-          attemptId: generator.attemptId,
-          stage: 'thread/name/set',
-          reason: 'thread_not_found',
-        })
-        return true
-      }
-      if (target.name?.trim()) {
-        recordTitleDiagnostic({
-          level: 'info',
-          event: 'name_set.skipped',
-          method: 'thread/name/set',
-          threadId: target.id,
-          generatorThreadId,
-          attemptId: generator.attemptId,
-          stage: 'thread/name/set',
-          reason: 'already_named',
-        })
-        return true
-      }
-      const nameSetStartedAt = performance.now()
-      void appServer.renameThread(target.id, title).then(() => {
-        updateThread(target.id, (thread) => thread.name?.trim() ? thread : { ...thread, name: title })
-        updateDetail(target.id, (detail) => detail.thread.name?.trim()
-          ? detail
-          : { ...detail, thread: { ...detail.thread, name: title } })
-        recordTitleDiagnostic({
-          level: 'info',
-          event: 'name_set.completed',
-          method: 'thread/name/set',
-          threadId: target.id,
-          generatorThreadId,
-          attemptId: generator.attemptId,
-          stage: 'thread/name/set',
-          accepted: true,
-          durationMs: Math.round(performance.now() - nameSetStartedAt),
-        })
-      }).catch((error) => {
-        recordTitleDiagnostic({
-          level: 'error',
-          event: 'name_set.failed',
-          method: 'thread/name/set',
-          threadId: target.id,
-          generatorThreadId,
-          attemptId: generator.attemptId,
-          stage: 'thread/name/set',
-          errorCode: diagnosticErrorCode(error),
-          durationMs: Math.round(performance.now() - nameSetStartedAt),
-        })
-      })
+      titleGeneratorResolversRef.current.get(generatorThreadId)?.(title)
+      titleGeneratorResolversRef.current.delete(generatorThreadId)
     }
     return true
-  }, [updateDetail, updateThread])
+  }, [])
 
   const handleRecapGeneratorEvent = useCallback((method: string, params: JsonObject): boolean => {
     const generatorThreadId = eventThreadId(params)
@@ -2249,6 +2209,7 @@ export function useHarness() {
     createThread,
     resetThread,
     setThreadDraftContent,
+    generateConversationTitle,
     startTurnInThread: (threadId: string, prompt: string, trigger?: CodexTurnTrigger) => startTurn(threadId, prompt, undefined, trigger),
     sendMessage,
     continueAfterFailure,

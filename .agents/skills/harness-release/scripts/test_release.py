@@ -16,6 +16,14 @@ SPEC.loader.exec_module(release)
 
 
 class ReleaseScriptTest(unittest.TestCase):
+    def test_process_lookup_includes_ancestor_processes(self):
+        executable = Path("/Applications/Codex Harness.app/Contents/MacOS/codex-harness")
+
+        with patch.object(release, "try_run") as try_run:
+            release.find_processes(executable)
+
+        try_run.assert_called_once_with("pgrep", "-a", "-f", str(executable))
+
     def test_check_installs_dependencies_before_cargo_test(self):
         calls = []
         with (

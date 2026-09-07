@@ -285,6 +285,10 @@ def verify_app(app: Path, version: str) -> list[str]:
     return archs
 
 
+def find_processes(executable: Path):
+    return try_run("pgrep", "-a", "-f", str(executable))
+
+
 def install_app(app: Path, version: str) -> tuple[Path, Path | None]:
     applications = Path.home() / "Applications"
     applications.mkdir(parents=True, exist_ok=True)
@@ -292,12 +296,12 @@ def install_app(app: Path, version: str) -> tuple[Path, Path | None]:
     backup = None
     if destination.exists():
         executable = destination / "Contents/MacOS/codex-harness"
-        running = try_run("pgrep", "-f", str(executable))
+        running = find_processes(executable)
         if running.returncode == 0:
             for pid in running.stdout.split():
                 run("kill", "-TERM", pid)
             for _ in range(15):
-                if try_run("pgrep", "-f", str(executable)).returncode != 0:
+                if find_processes(executable).returncode != 0:
                     break
                 time.sleep(1)
             else:
@@ -318,7 +322,7 @@ def install_app(app: Path, version: str) -> tuple[Path, Path | None]:
     run("open", str(destination))
     executable = destination / "Contents/MacOS/codex-harness"
     for _ in range(15):
-        if try_run("pgrep", "-f", str(executable)).returncode == 0:
+        if find_processes(executable).returncode == 0:
             break
         time.sleep(1)
     else:

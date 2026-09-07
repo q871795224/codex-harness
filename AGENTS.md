@@ -37,7 +37,7 @@
 
 ## 状态、安全与运行时
 
-- UI 状态保存在 `~/.codex-harness/state.sqlite`；不得写入会话正文、凭据或 prompt/response 内容。API Workbench 使用独立数据库，Secret 变量只进 macOS Keychain。
+- UI 状态和输入区未发送草稿保存在 `~/.codex-harness/state.sqlite`；草稿成功发送后清除，不得写入已发送的会话正文、凭据或模型 response。API Workbench 使用独立数据库，Secret 变量只进 macOS Keychain。
 - Harness 复用或启动共享 `codex app-server daemon`；关闭 Harness 不停止 daemon。由 Harness 启动 daemon 时，必须从实际 `.codex` 安装路径推导并显式设置真实用户的 `HOME`、`CODEX_HOME`，文件描述符软限制为 4096。
 - Claude Provider 是独立常驻 daemon；涉及 Claude 时先读 `.harness/architecture.md`，本次 Codex token 工作不主动扩展 Claude 范围。
 - 图片使用 App Server 的 `localImage` 输入，普通文件使用结构化 `mention`；附件只保留在输入草稿和 Codex 会话中。

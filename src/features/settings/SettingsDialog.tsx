@@ -237,7 +237,7 @@ function ThreadTitleSettings({ codex, settings, onChange }: {
   return (
     <div className="settings-section codex-settings">
       <section className="codex-setting-card">
-        <div className="settings-section-title"><MessageSquareText size={17} /><div><h3>自动命名</h3><p>在未命名会话的回合完成后，用独立的只读临时会话生成标题。</p></div></div>
+        <div className="settings-section-title"><MessageSquareText size={17} /><div><h3>自动命名</h3><p>首次发送消息时，用独立的只读 Codex 临时会话为 Codex 或 Claude 会话生成标题。</p></div></div>
         <div className="settings-row-list">
           <label className="settings-row">
             <span>模型</span>
