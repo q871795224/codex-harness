@@ -32,6 +32,9 @@ function fakeService(outcome: ProjectDocWriteOutcome = { kind: 'applied', newSeq
     threadProject: vi.fn(async () => null),
     bindThread: vi.fn(async () => undefined),
     unbindThread: vi.fn(async () => undefined),
+    threadBinding: vi.fn(async () => null),
+    lockThreadBinding: vi.fn(async () => undefined),
+    subscribeBindings: vi.fn(() => () => undefined),
   }
 }
 

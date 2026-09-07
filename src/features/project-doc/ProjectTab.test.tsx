@@ -14,6 +14,8 @@ function service(content = ''): ProjectDocService {
     versions: vi.fn(async () => []), workspaces: vi.fn(async () => []), bindWorkspace: vi.fn(),
     writeSection: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
     threadProject: vi.fn(async () => null), bindThread: vi.fn(), unbindThread: vi.fn(),
+    threadBinding: vi.fn(async () => null), lockThreadBinding: vi.fn(async () => undefined),
+    subscribeBindings: vi.fn(() => () => undefined),
   }
 }
 function mount(svc: ProjectDocService, selectedProjectId: string | null = null) {
