@@ -28,6 +28,8 @@ VERSION_FILES = (
 APP_RELATIVE = Path(
     "src-tauri/target/universal-apple-darwin/release/bundle/macos/Codex Harness.app"
 )
+REMOTE_ASSET_VERIFY_RETRIES = 3
+REMOTE_ASSET_VERIFY_INITIAL_WAIT_SECONDS = 1
 
 
 class ReleaseError(RuntimeError):
@@ -374,6 +376,27 @@ def tag_message(tag: str) -> str:
     return f"Codex Harness {tag}\n\n{bullets}".rstrip()
 
 
+def verify_remote_asset(tag: str, asset_name: str, checksum: str) -> dict[str, object]:
+    expected_digest = f"sha256:{checksum}"
+    details: dict[str, object] | None = None
+    asset: dict[str, object] | None = None
+    for attempt in range(REMOTE_ASSET_VERIFY_RETRIES + 1):
+        details = json.loads(
+            run("gh", "release", "view", tag, "--json", "url,tagName,assets", capture=True)
+        )
+        asset = next((item for item in details["assets"] if item["name"] == asset_name), None)
+        if asset and asset.get("digest") == expected_digest:
+            return details
+        if attempt < REMOTE_ASSET_VERIFY_RETRIES:
+            delay = REMOTE_ASSET_VERIFY_INITIAL_WAIT_SECONDS * (2**attempt)
+            print(
+                f"remote release asset verification incomplete; retrying in {delay}s",
+                flush=True,
+            )
+            time.sleep(delay)
+    raise ReleaseError(f"remote release asset verification failed: {asset}")
+
+
 def command_publish(version: str, github: bool = True) -> None:
     version = normalized_version(version)
     if sys.platform != "darwin":
@@ -442,12 +465,7 @@ def command_publish(version: str, github: bool = True) -> None:
             notes,
         )
     if github:
-        details = json.loads(
-            run("gh", "release", "view", tag, "--json", "url,tagName,assets", capture=True)
-        )
-        asset = next((item for item in details["assets"] if item["name"] == zip_path.name), None)
-        if not asset or asset.get("digest") != f"sha256:{checksum}":
-            raise ReleaseError(f"remote release asset verification failed: {asset}")
+        details = verify_remote_asset(tag, zip_path.name, checksum)
     print(
         json.dumps(
             {
