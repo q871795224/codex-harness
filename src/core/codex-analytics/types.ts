@@ -1,75 +1,26 @@
-export type CodexAnalyticsRange = '7d' | '30d' | 'all'
 export type CodexAnalyticsCounterMode = 'local' | 'official'
-
-export interface CodexAnalyticsCounterStatus {
-  mode: CodexAnalyticsCounterMode
-  apiKeyConfigured: boolean
-  localEstimator: string
-}
-
+export interface CodexAnalyticsCounterStatus { mode: CodexAnalyticsCounterMode; apiKeyConfigured: boolean; localEstimator: string }
 export interface CodexTokenBreakdown {
-  totalTokens: number
-  inputTokens: number
-  cachedInputTokens: number
-  cacheWriteInputTokens: number
-  outputTokens: number
-  reasoningOutputTokens: number
+  totalTokens: number; inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningOutputTokens: number
 }
-
+export type HotspotKind = 'skill' | 'mcp' | 'agents'
+export interface CodexAnalyticsQuery { since: number; until: number; model?: string; threadId?: string; kind?: HotspotKind; name?: string; sort?: 'tokensDesc' | 'tokensAsc' | 'recent'; offset?: number }
+export interface AnalyticsHotspot {
+  kind: HotspotKind; name: string; calls: number; selected: number; reads: number; sessions: number; failed: number
+  tokens: number; argumentTokens: number; resultTokens: number; missingCounts: number
+}
+export interface AnalyticsSession { threadId: string; project: string; startedAt: number; turns: number; actual: CodexTokenBreakdown; incomplete: boolean; rerouted: boolean }
+export interface AnalyticsContent { kind: HotspotKind | 'input'; name: string; at: number; selected: number; reads: number; status: string; tokens: number | null; argumentTokens: number | null; resultTokens: number | null; estimator: string }
+export interface AnalyticsTurn { turnId: string; startedAt: number; model: string | null; source: string; status: string; actual: CodexTokenBreakdown; incomplete: boolean; rerouted: boolean; content: AnalyticsContent[] }
 export interface CodexAnalyticsSnapshot {
-  range: CodexAnalyticsRange
-  generatedAt: number
-  retention: 'permanent'
-  estimatorVersion: string
-  counter: CodexAnalyticsCounterStatus & {
-    officialRequests: number
-    officialSuccesses: number
-    officialFailures: number
-    officialFallbacks: number
-  }
-  summary: {
-    sessions: number
-    turns: number
-    usageUpdates: number
-    actual: CodexTokenBreakdown
-    userChars: number
-    estimatedUserTokens: number
-    estimatedSkillTokens: number
-    estimatedMcpTokens: number
-    droppedEvents: number
-    writeErrors: number
-  }
-  daily: Array<{
-    date: string
-    turns: number
-    actualTotalTokens: number
-    estimatedUserTokens: number
-  }>
-  sources: Array<{ id: string; label: string; turns: number; actualTotalTokens: number }>
-  models: Array<{ model: string; turns: number; actualTotalTokens: number }>
-  skills: Array<{ name: string; calls: number; chars: number; estimatedTokens: number }>
-  mcpTools: Array<{
-    server: string
-    tool: string
-    calls: number
-    argumentChars: number
-    resultChars: number
-    estimatedTokens: number
-  }>
-  recentTurns: Array<{
-    threadId: string
-    turnId: string
-    startedAt: number
-    trigger: string | null
-    model: string | null
-    source: string
-    userChars: number
-    estimatedUserTokens: number
-    actualTotalTokens: number
-  }>
+  capturedSince: number; generatedAt: number; counter: CodexAnalyticsCounterStatus
+  droppedEvents: number; writeErrors: number; officialFallbacks: number
+  summary: { sessions: number; turns: number; actual: CodexTokenBreakdown; inputContentTokens: number; inputContentIncomplete: boolean; incompleteTurns: number; reroutedTurns: number }
+  daily: Array<{ date: string; turns: number; actual: CodexTokenBreakdown }>
+  models: Array<{ model: string | null; turns: number; sessions: number; actual: CodexTokenBreakdown; reroutedTurns: number }>
+  availableModels: string[]; hotspots: AnalyticsHotspot[]; sessions: AnalyticsSession[]; turns: AnalyticsTurn[]; totalSessions: number; totalTurns: number
 }
-
 export interface CodexAnalyticsService {
   configure(mode: CodexAnalyticsCounterMode): Promise<CodexAnalyticsCounterStatus>
-  snapshot(range: CodexAnalyticsRange): Promise<CodexAnalyticsSnapshot>
+  snapshot(query: CodexAnalyticsQuery): Promise<CodexAnalyticsSnapshot>
 }

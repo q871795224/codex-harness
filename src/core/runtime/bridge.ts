@@ -28,7 +28,7 @@ import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-wo
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/types'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
-import type { CodexAnalyticsCounterMode, CodexAnalyticsCounterStatus, CodexAnalyticsRange, CodexAnalyticsSnapshot } from '../codex-analytics/types'
+import type { CodexAnalyticsCounterMode, CodexAnalyticsCounterStatus, CodexAnalyticsQuery, CodexAnalyticsSnapshot } from '../codex-analytics/types'
 import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntimeStatus, ClaudeSessionHistory, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
 import type { ProjectDocSnapshot, ProjectDocWriteOutcome, ProjectMeta, ProjectVersion } from '../../features/project-doc/types'
 import type { SectionKey } from '../../features/project-doc/document'
@@ -529,8 +529,8 @@ export const runtime = {
     return invoke<UsageSnapshot>('usage_refresh_snapshot', { since, until })
   },
 
-  codexAnalyticsSnapshot(range: CodexAnalyticsRange): Promise<CodexAnalyticsSnapshot> {
-    return invoke<CodexAnalyticsSnapshot>('codex_analytics_snapshot', { range })
+  codexAnalyticsSnapshot(query: CodexAnalyticsQuery): Promise<CodexAnalyticsSnapshot> {
+    return invoke<CodexAnalyticsSnapshot>('codex_analytics_snapshot', { query })
   },
 
   codexAnalyticsConfigure(mode: CodexAnalyticsCounterMode): Promise<CodexAnalyticsCounterStatus> {

@@ -81,9 +81,12 @@ impl AppServerManager {
     pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
         let started = Instant::now();
         let request_context = request_context(&params);
-        let pending_turn = (method == "turn/start")
-            .then(|| self.analytics.prepare_turn(&params))
-            .flatten();
+        let pending_turn = match method.as_str() {
+            "turn/start" => self.analytics.prepare_turn(&params),
+            "turn/steer" => self.analytics.prepare_steer(&params),
+            _ => None,
+        };
+        let analytics_settings = json!({"model": params.get("model"), "cwd": params.get("cwd"), "reasoningEffort": params.get("reasoningEffort")});
         self.diagnostics.record(
             "info",
             "app-server",
@@ -95,8 +98,15 @@ impl AppServerManager {
             Err(error) => Err(error),
         };
         let duration_ms = started.elapsed().as_millis() as u64;
-        if let (Some(pending_turn), Ok(response)) = (pending_turn, &result) {
-            self.analytics.record_turn_start(pending_turn, response);
+        if let Some(pending_turn) = pending_turn {
+            match &result {
+                Ok(response) => self.analytics.record_turn_start(pending_turn, response),
+                Err(_) => self.analytics.cancel_turn_start(pending_turn),
+            }
+        }
+        if let Ok(response) = &result {
+            self.analytics
+                .record_response(&method, &analytics_settings, response);
         }
         match &result {
             Ok(response) => self.diagnostics.record(
