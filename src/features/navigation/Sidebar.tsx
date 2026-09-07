@@ -648,8 +648,8 @@ export function Sidebar({
             <button
               type="button"
               className="archive-old-button"
-              title="归档 3 天前会话"
-              aria-label="归档 3 天前会话"
+              title="归档 3 天前未置顶的 Codex 会话"
+              aria-label="归档 3 天前未置顶的 Codex 会话"
               onClick={onArchiveOldThreads}
               disabled={archivingOldThreads}
             >

@@ -483,6 +483,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .radar-group.hard { background: #f5efff; color: #7858a8; }
 .radar-group.simple { background: #edf8f1; color: #43805b; }
 .radar-group.reference { background: #eef5ff; color: #52709b; }
+.radar-group.agi { background: #fff3df; color: #92651f; }
 .radar-best { display: inline-flex; align-items: center; gap: 3px; min-width: 48px; justify-content: flex-end; padding: 4px 7px; border-radius: 6px; color: #fff; font-weight: 780; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); }
 .radar-best b { color: #ffe45c; font-size: 14px; line-height: 1; text-shadow: 0 1px 1px rgba(0, 0, 0, .24); }
 .radar-best.iq { background: #7650a7; }.radar-best.price { background: #247a50; }.radar-best.time { background: #26758a; }
@@ -1345,6 +1346,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .radar-group.hard { background: #382d47; color: #c4a4ec; }
 .app-shell[data-theme='dark'] .radar-group.simple { background: #243a2d; color: #8bc8a1; }
 .app-shell[data-theme='dark'] .radar-group.reference { background: #283647; color: #9db9dc; }
+.app-shell[data-theme='dark'] .radar-group.agi { background: #443522; color: #e4bc7d; }
 .app-shell[data-theme='dark'] .radar-table-state { background: rgba(25, 28, 33, .9); color: #a6adb8; }
 .app-shell[data-theme='dark'] .session-launcher-foot { color: #959da8; }
 .app-shell[data-theme='dark'] .launch-mode-summary { color: #c0c5cd; }

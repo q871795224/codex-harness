@@ -51,6 +51,27 @@ describe('thread catalog listing', () => {
 })
 
 describe('old thread archiving', () => {
+  it('preserves pinned old threads across pages and excludes them from counts', async () => {
+    const client = transport()
+    vi.mocked(client.listThreads)
+      .mockResolvedValueOnce({ data: [thread('pinned-1', 10), thread('old', 20)], nextCursor: 'page-2' })
+      .mockResolvedValueOnce({ data: [thread('pinned-2', 30), thread('recent', 200)], nextCursor: null })
+
+    await expect(archiveThreadsBefore(client, 100, ['pinned-1', 'pinned-2'])).resolves.toEqual({
+      candidateCount: 1, archivedIds: ['old'], failedCount: 0,
+    })
+    expect(client.archiveThread).toHaveBeenCalledExactlyOnceWith('old')
+  })
+
+  it('does not archive when all old threads are pinned', async () => {
+    const client = transport()
+    vi.mocked(client.listThreads).mockResolvedValue({ data: [thread('pinned', 10)], nextCursor: null })
+    await expect(archiveThreadsBefore(client, 100, ['pinned'])).resolves.toEqual({
+      candidateCount: 0, archivedIds: [], failedCount: 0,
+    })
+    expect(client.archiveThread).not.toHaveBeenCalled()
+  })
+
   it('returns successful and failed IDs without aborting the batch', async () => {
     const client = transport()
     vi.mocked(client.listThreads).mockResolvedValue({
