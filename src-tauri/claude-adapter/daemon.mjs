@@ -36,7 +36,7 @@ try {
 } catch {
   sdk = await import('./sdk.mjs')
 }
-const { query } = sdk
+const { getSessionMessages, query } = sdk
 
 const PROTOCOL_VERSION = 2
 const MAX_REPLAY_EVENTS = 5_000
@@ -502,6 +502,29 @@ async function readContext(params) {
   }
 }
 
+async function readHistory(params) {
+  const providerSessionId = typeof params.providerSessionId === 'string'
+    ? params.providerSessionId.trim()
+    : ''
+  if (!providerSessionId) return { messages: [] }
+  if (typeof getSessionMessages !== 'function') {
+    throw new Error('当前 Claude Agent SDK 不支持读取历史会话')
+  }
+
+  const cwd = typeof params.cwd === 'string' && params.cwd ? params.cwd : undefined
+  const messages = await getSessionMessages(providerSessionId, cwd ? { dir: cwd } : {})
+  return {
+    messages: messages.map((message) => ({
+      type: message.type,
+      uuid: message.uuid,
+      sessionId: typeof message.session_id === 'string' ? message.session_id : providerSessionId,
+      message: message.message,
+      parentToolUseId: message.parent_tool_use_id ?? null,
+      timestamp: typeof message.timestamp === 'string' ? message.timestamp : null,
+    })),
+  }
+}
+
 function contextFromUsage(usage, model) {
   const totalTokens = number(usage.last?.totalTokens ?? usage.total?.totalTokens)
   const maxTokens = number(usage.modelContextWindow)
@@ -549,6 +572,10 @@ async function handle(client, request) {
   }
   if (method === 'provider/models') {
     respond(client, id, await listModels(params))
+    return
+  }
+  if (method === 'session/history') {
+    respond(client, id, await readHistory(params))
     return
   }
   if (method === 'session/context') {
