@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link2, Link2Off, LoaderCircle, Lock, NotebookPen } from 'lucide-react'
+import { LoaderCircle, Lock, NotebookPen } from 'lucide-react'
 import type { ProjectDocService } from '../../core/project-docs/types'
 import { useProjectBinding } from './useProjectBinding'
 
@@ -41,11 +41,6 @@ export function ProjectBindingPanel({ service, threadId, workspaceRoot, onOpenPr
         </>
       ) : (
         <>
-          <span className="project-binding-text">
-            {project
-              ? '绑定项目后，首页输入框会带上项目背景；发送第一轮后锁定。'
-              : '绑定项目文档后，首页会注入项目背景，Agent 写入提议走审批卡。'}
-          </span>
           <span className="project-binding-actions">
             {loading ? (
               <LoaderCircle className="spin" size={13} />
@@ -98,19 +93,13 @@ function BindingSelect({ service, currentProjectId, onBind, onUnbind, onOpenProj
           else onUnbind()
         }}
       >
-        <option value="">不绑定项目</option>
+        <option value="">绑定项目（可选）…</option>
         {projects.map((project) => (
           <option key={project.projectId} value={project.projectId}>{project.name}（v{project.currentSeq}）</option>
         ))}
       </select>
       {hasProject && currentProjectId && (
         <button type="button" onClick={() => onOpenProject(currentProjectId)} title="打开项目文档">查看</button>
-      )}
-      {hasProject && (
-        <span className="project-binding-hint"><Link2 size={11} />第 0 轮可改，发送后锁定</span>
-      )}
-      {!hasProject && (
-        <span className="project-binding-hint"><Link2Off size={11} />不绑定则首页不注入背景</span>
       )}
     </>
   )

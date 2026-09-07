@@ -97,9 +97,8 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
       {open ? (
         <section className="quick-action-panel" aria-label="快捷 Agent">
           <header>
-            <span><Bot size={15} />快捷 Agent</span>
-            <button type="button" aria-label="收起快捷 Agent" title="收起" onClick={() => setOpen(false)}>
-              <ChevronRight size={15} />
+            <button type="button" className="quick-panel-header-title" aria-label="快捷 Agent 面板，点击收起" onClick={() => setOpen(false)}>
+              <Bot size={15} />快捷 Agent
             </button>
           </header>
           <div className="quick-action-list">
@@ -194,7 +193,6 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
           onClick={() => { setError(null); setOpen(true) }}
         >
           <Bot size={17} />
-          <ChevronDown size={13} />
         </button>
       )}
     </div>
