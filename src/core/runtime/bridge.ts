@@ -30,6 +30,8 @@ import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/t
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
 import type { CodexAnalyticsCounterMode, CodexAnalyticsCounterStatus, CodexAnalyticsRange, CodexAnalyticsSnapshot } from '../codex-analytics/types'
 import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntimeStatus, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
+import type { ProjectDocSnapshot, ProjectDocWriteOutcome, ProjectMeta, ProjectVersion } from '../../features/project-doc/types'
+import type { SectionKey } from '../../features/project-doc/document'
 
 interface PluginInstanceDto {
   instanceId: string
@@ -318,6 +320,53 @@ export const runtime = {
 
   readHandoverDocument(fileName: string): Promise<string> {
     return invoke<string>('read_handover_document', { fileName })
+  },
+
+  // 项目文档（活文档 / 共享白板）：seq 语义与落盘在 Rust `project_doc_store` 强制。
+  projectDocCreate(projectId: string, name: string): Promise<ProjectMeta> {
+    return invoke<ProjectMeta>('project_doc_create', { projectId, name })
+  },
+
+  projectDocList(): Promise<ProjectMeta[]> {
+    return invoke<ProjectMeta[]>('project_doc_list')
+  },
+
+  projectDocGet(projectId: string): Promise<ProjectMeta> {
+    return invoke<ProjectMeta>('project_doc_get', { projectId })
+  },
+
+  projectDocBindWorkspace(projectId: string, workspaceRoot: string): Promise<void> {
+    return invoke<void>('project_doc_bind_workspace', { projectId, workspaceRoot })
+  },
+
+  projectDocWorkspaces(projectId: string): Promise<string[]> {
+    return invoke<string[]>('project_doc_workspaces', { projectId })
+  },
+
+  projectDocRead(projectId: string): Promise<ProjectDocSnapshot> {
+    return invoke<ProjectDocSnapshot>('project_doc_read', { projectId })
+  },
+
+  projectDocVersions(projectId: string): Promise<ProjectVersion[]> {
+    return invoke<ProjectVersion[]>('project_doc_versions', { projectId })
+  },
+
+  projectDocWriteSection(input: {
+    projectId: string
+    section: SectionKey
+    baseSeq?: number
+    content: string
+    updatedBy: string
+    summary?: string
+  }): Promise<ProjectDocWriteOutcome> {
+    return invoke<ProjectDocWriteOutcome>('project_doc_write_section', {
+      projectId: input.projectId,
+      section: input.section,
+      baseSeq: input.baseSeq ?? null,
+      content: input.content,
+      updatedBy: input.updatedBy,
+      summary: input.summary ?? '',
+    })
   },
 
   async listenTerminalEvents(handler: (event: TerminalEvent) => void): Promise<() => void> {
