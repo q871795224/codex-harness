@@ -24,25 +24,33 @@ export interface ProjectTabConflictRequest {
   section: string
 }
 
-type DetailView = 'doc' | 'board' | 'edit' | 'history' | 'diff'
+/** 归档确认请求：人点归档通知后进入，展示 Agent 提炼的 Status 草稿与当前 Status 的 diff。 */
+export interface ProjectTabArchiveRequest {
+  /** Agent 提炼出的 Status 新内容（人可再改）。 */
+  statusDraft: string
+  /** 产出时读到的当前 Status（diff 对比基线）。 */
+  baseStatus: string
+  /** 产出时读到的 seq（保存冲突检测）。 */
+  baseSeq: number
+}
 
-export const PROJECT_STATUS_TEMPLATE = `**项目目标**
+type DetailView = 'doc' | 'board' | 'edit' | 'history' | 'diff' | 'archive'
+
+export const PROJECT_STATUS_TEMPLATE = `### 项目目标
 填写要解决的问题和期望结果。
 
-**范围与约束**
+### 验收标准
+- [ ] 填写可验证的完成条件
+
+### 范围与约束（可选）
 - 工作范围：
 - 限制条件：
 
-**验收标准**
-- [ ] 填写可验证的完成条件
+### 参考链接
+-
 
-**当前进展**
-- 已完成：
-- 进行中：
-- 下一步：
-
-**待确认事项**
-- 暂无
+### 项目 MR
+-
 `
 
 function ProjectMetaActions({ service, project, onChanged, onArchived }: {
@@ -89,12 +97,14 @@ function ProjectMetaActions({ service, project, onChanged, onArchived }: {
  * 项目文档 tab：项目列表 → 详情（文档渲染、当前 seq、版本历史、编辑、冲突 diff）。
  * 编辑与 Agent 写入走同一条 `writeSection` 通道（updatedBy = 'user'），seq 校验在 Rust 强制。
  */
-export function ProjectTab({ service, selectedProjectId, conflictRequest, onSelectProject, onConflictHandled }: {
+export function ProjectTab({ service, selectedProjectId, conflictRequest, archiveRequest, onSelectProject, onConflictHandled, onArchiveHandled }: {
   service: ProjectDocService
   selectedProjectId: string | null
   conflictRequest: ProjectTabConflictRequest | null
+  archiveRequest?: ProjectTabArchiveRequest | null
   onSelectProject: (projectId: string | null) => void
   onConflictHandled: () => void
+  onArchiveHandled?: () => void
 }) {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -119,11 +129,13 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, onSele
         service={service}
         projectId={selectedProjectId}
         conflictRequest={conflictRequest}
+        archiveRequest={archiveRequest ?? null}
         onBack={() => {
           onSelectProject(null)
           void refresh()
         }}
         onConflictHandled={onConflictHandled}
+        onArchiveHandled={onArchiveHandled ?? (() => undefined)}
         onChanged={() => void refresh()}
       />
     )
@@ -214,12 +226,14 @@ function ProjectCreateRow({ service, onCreated }: {
   )
 }
 
-function ProjectDetail({ service, projectId, conflictRequest, onBack, onConflictHandled, onChanged }: {
+function ProjectDetail({ service, projectId, conflictRequest, archiveRequest, onBack, onConflictHandled, onArchiveHandled, onChanged }: {
   service: ProjectDocService
   projectId: string
   conflictRequest: ProjectTabConflictRequest | null
+  archiveRequest: ProjectTabArchiveRequest | null
   onBack: () => void
   onConflictHandled: () => void
+  onArchiveHandled: () => void
   onChanged: () => void
 }) {
   const [meta, setMeta] = useState<ProjectMeta | null>(null)
@@ -252,6 +266,11 @@ function ProjectDetail({ service, projectId, conflictRequest, onBack, onConflict
   useEffect(() => {
     if (conflictRequest) setView('diff')
   }, [conflictRequest])
+
+  // 归档确认请求到达：强制进 archive 视图。
+  useEffect(() => {
+    if (archiveRequest) setView('archive')
+  }, [archiveRequest])
 
   return (
     <div className="project-tab">
@@ -290,7 +309,7 @@ function ProjectDetail({ service, projectId, conflictRequest, onBack, onConflict
         snapshot
           ? <div className="project-doc-body markdown-body">{snapshot.content.trim()
               ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{snapshot.content}</ReactMarkdown>
-              : <p className="project-tab-empty">项目文档尚未填写。点击「编辑」，基于模板补充目标、范围和当前进展。</p>}
+              : <p className="project-tab-empty">项目文档尚未填写。点击「编辑」，基于模板补充目标与验收标准。</p>}
             </div>
           : <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
       )}
@@ -327,6 +346,103 @@ function ProjectDetail({ service, projectId, conflictRequest, onBack, onConflict
           }}
         />
       )}
+      {view === 'archive' && archiveRequest && snapshot && (
+        <ProjectArchiveConfirmPanel
+          service={service}
+          projectId={projectId}
+          snapshot={snapshot}
+          request={archiveRequest}
+          onSaved={() => {
+            onArchiveHandled()
+            void reload()
+            onChanged()
+            setView('doc')
+          }}
+          onCancel={() => {
+            onArchiveHandled()
+            setView('doc')
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * 归档确认面板：展示 Agent 提炼的 Status 草稿与当前 Status 的逐行 diff（绿增红减），
+ * 人可再编辑后保存（writeSection(status, baseSeq)）。
+ */
+function ProjectArchiveConfirmPanel({ service, projectId, snapshot, request, onSaved, onCancel }: {
+  service: ProjectDocService
+  projectId: string
+  snapshot: ProjectDocSnapshot
+  request: ProjectTabArchiveRequest
+  onSaved: () => void
+  onCancel: () => void
+}) {
+  const [content, setContent] = useState(request.statusDraft)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [conflict, setConflict] = useState<number | null>(null)
+  const rows = useMemo(() => buildLineDiff(request.baseStatus, content), [request.baseStatus, content])
+  const seqDrift = snapshot.currentSeq !== request.baseSeq
+
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    setConflict(null)
+    try {
+      const outcome = await service.writeSection({
+        projectId,
+        section: 'status' satisfies SectionKey,
+        baseSeq: snapshot.currentSeq,
+        content,
+        updatedBy: 'user',
+        summary: '归档会话进展',
+      })
+      if (outcome.kind === 'applied') onSaved()
+      else setConflict(outcome.currentSeq)
+    } catch (nextError) {
+      setError(messageOf(nextError))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="project-edit-panel project-archive-confirm">
+      <p className="project-edit-hint">
+        归档确认（Status 区，当前 v{snapshot.currentSeq}）：下方为 Agent 提炼结果与当前 Status 的差异（绿=新增/改动，红=删除）。可直接编辑后保存。
+      </p>
+      {seqDrift && (
+        <p className="project-tab-warning"><CircleAlert size={13} />归档产出后文档已被更新（产出基于 v{request.baseSeq}，当前 v{snapshot.currentSeq}），diff 以最新文档为基线可能有出入，请核对后再保存。</p>
+      )}
+      <div className="project-diff-body project-archive-diff" role="table" aria-label="归档草稿与当前 Status 差异">
+        {rows.map((row, index) => (
+          <div key={index} className={`project-diff-row ${row.kind}`}>
+            <code>{row.left}</code>
+            <code>{row.right}</code>
+          </div>
+        ))}
+      </div>
+      <textarea
+        value={content}
+        onChange={(event) => setContent(event.target.value)}
+        aria-label="编辑归档后的 Status"
+        className="project-archive-textarea"
+      />
+      {error && <p className="project-tab-error">{error}</p>}
+      {conflict !== null && (
+        <p className="project-tab-warning">版本冲突：当前已是 v{conflict}。请放弃或基于最新版重新编辑。</p>
+      )}
+      <div className="project-edit-actions">
+        <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
+          {busy ? <LoaderCircle className="spin" size={12} /> : <Check size={12} />}保存到项目文档
+        </button>
+        <button type="button" disabled={busy} onClick={onCancel}>
+          <X size={12} />放弃
+        </button>
+      </div>
     </div>
   )
 }
@@ -375,7 +491,6 @@ function ProjectEditPanel({ service, projectId, snapshot, onSaved, onCancel }: {
         value={content}
         onChange={(event) => setContent(event.target.value)}
         aria-label="编辑项目文档"
-        rows={16}
       />
       {error && <p className="project-tab-error">{error}</p>}
       {conflict !== null && (

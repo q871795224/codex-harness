@@ -2,11 +2,18 @@ import type { SendShortcut, UserInput } from '../../core/domain/codex'
 
 export const LONG_PASTE_THRESHOLD = 1_000
 
+export interface CollapsedPasteOrigin {
+  kind: 'project-doc'
+  projectId: string
+}
+
 export interface CollapsedPaste {
   start: number
   end: number
   content: string
   label: string
+  /** 标识这条折叠区间的来源；普通粘贴为空，项目背景卡为 project-doc。 */
+  origin?: CollapsedPasteOrigin
 }
 
 export interface CollapsedPasteEdit {
@@ -94,6 +101,7 @@ export function insertCollapsedPaste(
   content: string,
   pastes: CollapsedPaste[],
   labelOverride?: string,
+  origin?: CollapsedPasteOrigin,
 ): CollapsedPasteEdit {
   const characterCount = pastedCharacterCount(content)
   const label = labelOverride ?? `[Pasted Content ${characterCount} chars]`
@@ -104,6 +112,7 @@ export function insertCollapsedPaste(
     end: selectionStart + label.length,
     content,
     label,
+    ...(origin ? { origin } : {}),
   })
   nextPastes.sort((left, right) => left.start - right.start)
   return { text: nextText, pastes: nextPastes, cursor: selectionStart + label.length }

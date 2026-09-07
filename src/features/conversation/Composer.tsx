@@ -22,13 +22,26 @@ import {
   shouldCollapsePaste,
   type CollapsedPaste,
 } from './composerInput'
+import { findProjectCard, projectCardLabel } from '../project-doc/projectCard'
 import { parseComposerCommand, type ComposerCommand } from './composerCommands'
 import { fastServiceTier, fastServiceTierTooltip } from '../codex/serviceTier'
 import { isYoloMode, yoloModeSettings } from '../codex/yoloMode'
 
+export interface ComposerProjectCard {
+  projectId: string
+  name: string
+  seq: number
+  /** 项目文档正文（注入内容，仅正文）。 */
+  content: string
+}
+
 interface ComposerProps {
   provider?: 'codex' | 'claude'
   initialDraft?: ComposerDraft
+  /** 第 0 轮的项目背景卡意图；非空时 Composer 在输入框第一行维护一张对应折叠卡。 */
+  projectCard?: ComposerProjectCard | null
+  /** 用户手动删掉项目背景卡时回调（用于解绑）。 */
+  onProjectCardDismissed?: () => void
   disabled: boolean
   working: boolean
   foreignActive: boolean
@@ -93,7 +106,7 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ provider = 'codex', initialDraft, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ provider = 'codex', initialDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
   const [text, setText] = useState(initialDraft?.text ?? '')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
@@ -167,6 +180,55 @@ export function Composer({ provider = 'codex', initialDraft, disabled, working, 
 
   useLayoutEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
   useLayoutEffect(() => { completionProvidersRef.current = completionProviders }, [completionProviders])
+
+  // —— 项目背景卡（第 0 轮注入）同步 ——
+  // spec（App 驱动的绑定意图）是单一事实源；折叠卡是它在输入框里的投影。
+  // 本 effect 负责把 spec 同步成第一张项目卡：插入 / 替换 / 移除。
+  // 用户手动删卡的检测见下方 effect。
+  const syncingProjectCardRef = useRef(false)
+  useLayoutEffect(() => {
+    const existing = findProjectCard(collapsedPastes)
+    const wantId = projectCard?.projectId ?? null
+    const haveId = existing?.origin?.kind === 'project-doc' ? existing.origin.projectId : null
+    const label = projectCard ? projectCardLabel(projectCard) : null
+    // 已同步：卡的 projectId 与 label 都与 spec 一致，不动。
+    if (haveId === wantId && (wantId === null || existing?.label === label)) return
+
+    syncingProjectCardRef.current = true
+    try {
+      // 先移除现有项目卡（如有），再按需插入新卡。移除 = 删掉 label 文本区间。
+      let nextText = text
+      let nextPastes = collapsedPastes
+      if (existing) {
+        nextText = `${text.slice(0, existing.start)}${text.slice(existing.end)}`
+        nextPastes = reconcileCollapsedPastes(text, nextText, collapsedPastes)
+      }
+      if (projectCard && label) {
+        // 项目卡固定在输入框最开头（第一行）。
+        const inserted = insertCollapsedPaste(nextText, 0, 0, projectCard.content, nextPastes, label, {
+          kind: 'project-doc',
+          projectId: projectCard.projectId,
+        })
+        nextText = inserted.text
+        nextPastes = inserted.pastes
+      }
+      setText(nextText)
+      setCollapsedPastes(nextPastes)
+    } finally {
+      syncingProjectCardRef.current = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectCard?.projectId, projectCard?.seq, projectCard?.name, projectCard?.content])
+
+  // 检测「用户手动删掉项目卡」：spec 仍想要卡（projectCard 非空），但 reconcile 后卡不见了。
+  // 程序性同步（上面的 effect）期间不判定为「用户删除」。
+  useEffect(() => {
+    if (!projectCard) return
+    if (syncingProjectCardRef.current) return
+    if (findProjectCard(collapsedPastes)) return
+    onProjectCardDismissed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsedPastes])
 
   useLayoutEffect(() => {
     onDraftChangeRef.current?.({ text, collapsedPastes, attachments }, hasContent)
