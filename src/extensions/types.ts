@@ -63,6 +63,10 @@ export interface ConversationTabContribution {
 
 export interface ComposerActionProps extends PluginViewContext {
   disabled: boolean
+  /** 当前会话的消息条目（供需要读取对话内容的动作，如归档）。 */
+  items: ThreadItemEntry[]
+  /** 当前会话的工作目录（起独立 run 时用）；无工作目录会话为 null。 */
+  checkoutRoot: string | null
   insertSkillPrompt(skillName: string, prompt: string): Promise<boolean>
 }
 

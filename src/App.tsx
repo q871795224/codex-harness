@@ -42,6 +42,7 @@ import { createProjectDocService } from './core/project-docs/service'
 import { ProjectDocApprovalCards } from './features/conversation/ProjectDocApprovalCards'
 import { ProjectDocLogAutoWriter } from './features/conversation/ProjectDocLogAutoWriter'
 import { useProjectBinding } from './features/project-doc/useProjectBinding'
+import { ArchiveNoticeBar } from './features/project-doc/ArchiveNoticeBar'
 import { PROJECT_DOC_TAB_KEY } from './plugins/project-doc'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
@@ -271,7 +272,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   )
   // 项目文档：绑定意图（方案乙，pending→locked）由 useProjectBinding 管理；
   // boundProjectId 供审批卡/自动追加用（派生自绑定），pendingProjectConflict 是跳项目 tab 时挂起的冲突 diff 请求。
-  const projectBinding = useProjectBinding(projectDocs, harness.selectedThreadId, workspace?.root ?? null)
+  const projectBinding = useProjectBinding(projectDocs, harness.selectedThreadId, harness.currentThread?.cwd ?? null)
   const boundProjectId = projectBinding.binding?.projectId ?? null
   const [pendingProjectConflict, setPendingProjectConflict] = useState<{ proposalContent: string; section: string } | null>(null)
   // 折叠项目卡 spec：仅第 0 轮（pending 且有项目正文）下发给 Composer；锁定后不再注入。
@@ -869,6 +870,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
                         threadId: harness.selectedThreadId,
                         threadCwd,
                         workspaceRoot: workspace?.root ?? null,
+                        items: harness.currentDetail?.items ?? [],
+                        checkoutRoot: harness.currentThread?.cwd ?? null,
                         ...api,
                       }}
                     />
@@ -978,6 +981,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         /></Suspense>
       )}
       {harness.toast && <div className={`toast ${harness.toast.kind}`}>{harness.toast.message}</div>}
+      <ArchiveNoticeBar onOpenArchiveTab={() => setTab(PROJECT_DOC_TAB_KEY)} />
     </div>
   )
 }
