@@ -4,6 +4,8 @@ import os
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +19,72 @@ SPEC.loader.exec_module(release)
 
 
 class ReleaseScriptTest(unittest.TestCase):
+    def test_command_logging_includes_duration(self):
+        completed = release.subprocess.CompletedProcess(
+            args=("echo", "ok"), returncode=0, stdout="ok\n", stderr=""
+        )
+        output = StringIO()
+        with (
+            patch.object(release.subprocess, "run", return_value=completed),
+            patch.object(release.time, "monotonic", side_effect=[10.0, 10.25]),
+            redirect_stdout(output),
+        ):
+            result = release.run("echo", "ok", capture=True)
+
+        self.assertEqual(result, "ok")
+        self.assertIn('"event": "command.started"', output.getvalue())
+        self.assertIn('"event": "command.finished"', output.getvalue())
+        self.assertIn('"durationMs": 250', output.getvalue())
+
+    def test_application_path_uses_configured_cargo_target_dir(self):
+        with patch.dict(os.environ, {"CARGO_TARGET_DIR": "/tmp/codex-harness-target"}):
+            self.assertEqual(
+                release.application_path(),
+                Path("/tmp/codex-harness-target/universal-apple-darwin/release/bundle/macos/Codex Harness.app"),
+            )
+
+    def test_configure_release_environment_normalizes_relative_target_dir(self):
+        with patch.dict(os.environ, {"CARGO_TARGET_DIR": "release-target"}):
+            target_dir = release.configure_release_environment()
+            configured = os.environ["CARGO_TARGET_DIR"]
+
+        self.assertEqual(target_dir, release.REPO_ROOT / "release-target")
+        self.assertEqual(configured, str(target_dir))
+
+    def test_prepare_uses_the_provided_base_sha_without_fetching(self):
+        calls = []
+        with (
+            patch.object(release, "require_clean_worktree"),
+            patch.object(release, "run", side_effect=lambda *args, **kwargs: calls.append(args) or {
+                ("git", "rev-parse", "base-sha^{commit}"): "base-sha",
+                ("git", "rev-parse", "HEAD"): "base-sha",
+                ("git", "show", "base-sha:package.json"): '{"version":"0.7.6"}',
+                ("git", "ls-remote", "--tags", "origin", "refs/tags/v0.7.7"): "",
+                ("git", "ls-remote", "--heads", "origin", "refs/heads/release/v0.7.7"): "",
+            }.get(args, "")),
+            patch.object(release, "try_run", return_value=release.subprocess.CompletedProcess([], 1)),
+            patch.object(release, "update_version_files"),
+            patch.object(release, "require_synced_versions"),
+        ):
+            release.command_prepare("0.7.7", "base-sha")
+
+        self.assertNotIn(("git", "fetch", "origin", "--prune", "--tags"), calls)
+        self.assertIn(("git", "switch", "--create", "release/v0.7.7", "base-sha"), calls)
+
+    def test_universal_build_uses_parallel_cargo_runner(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"CARGO_TARGET_DIR": directory}
+        ), patch.object(release, "run") as run:
+            release.build_universal_app()
+
+        args = run.call_args.args
+        self.assertEqual(
+            args[:5],
+            ("pnpm", "tauri", "build", "--target", "universal-apple-darwin"),
+        )
+        self.assertEqual(args[5], "--runner")
+        self.assertEqual(Path(args[6]), release.PARALLEL_CARGO_RUNNER)
+
     def test_process_lookup_includes_ancestor_processes(self):
         executable = Path("/Applications/Codex Harness.app/Contents/MacOS/codex-harness")
 
@@ -51,11 +119,11 @@ class ReleaseScriptTest(unittest.TestCase):
 
     def test_check_installs_dependencies_before_cargo_test(self):
         calls = []
-        with (
-            patch.object(release, "require_synced_versions"),
-            patch.object(release, "ensure_dependencies", side_effect=lambda: calls.append("dependencies")),
-            patch.object(release, "run", side_effect=lambda *args, **kwargs: calls.append(args[0])),
-        ):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"CARGO_TARGET_DIR": directory}
+        ), patch.object(release, "require_synced_versions"), patch.object(
+            release, "ensure_dependencies", side_effect=lambda: calls.append("dependencies")
+        ), patch.object(release, "run", side_effect=lambda *args, **kwargs: calls.append(args[0])):
             release.command_check("0.7.7")
 
         self.assertEqual(calls, ["dependencies", "cargo"])

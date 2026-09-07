@@ -9,6 +9,8 @@ description: Use when preparing, packaging, installing, or publishing a Codex Ha
 
 正常的 GitHub 正式发布由 Codex Harness 工作区的“发布”快捷命令执行，不启动 Quick Agent。快捷命令显示基于最新 `origin/main` 计算的 patch 和 minor 两个目标版本号；用户选择版本即授权本次 release PR 合并、本机安装、tag push、制品上传和 GitHub Release。后台 runner 脱离 Harness 应用生命周期运行，状态按 workspace 共享；失败时保留 worktree、日志和红色状态卡片，再由用户决定是否启动 Agent 排查。
 
+发布菜单打开后立即显示缓存版本，同时后台执行一次 `git fetch origin --prune --tags`。刷新结果会固定 `origin/main` 的 commit SHA；选择版本时等待这次刷新完成，并把同一个 SHA 传给 runner。runner 直接从该 SHA 创建 worktree，`release.py prepare` 复用该 SHA，不再重复 fetch。合并后的 `publish` 阶段仍需单独 fetch `origin/main`，用于确认构建基线。
+
 Agent 只在排查发布失败、执行人工恢复或维护发布实现时使用本 Skill。不要让 Agent 在正常成功路径中逐阶段调用、轮询或复述发布命令。
 
 开始发布前必须读取 `.harness/github.md`。发布改动通过 release 分支和 Pull Request 进入 `main`，不得直接在 `main` 上修改、commit 或 push；branch、commit、PR 和 release 都不要求 Jira key。
@@ -19,7 +21,7 @@ Agent 只在排查发布失败、执行人工恢复或维护发布实现时使�
 
 - 先检查工作树和 diff，确认没有夹带无关改动。
 - 版本号一旦用于 release commit、构建发布或同名 tag，后续改动必须先按 SemVer 递增版本号；patch/minor 可直接递增，major 需要用户明确确认。
-- 在 `isolated-delivery` worktree 中选择版本后执行 `scripts/release.py prepare <version>`，由脚本从最新 `origin/main` 创建 release 分支并同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`。变更过的内置插件应在对应开发 PR 中同步更新 manifest 版本，不留到发布阶段判断。
+- 在 `isolated-delivery` worktree 中选择版本后执行 `scripts/release.py prepare <version>`，由脚本从最新 `origin/main` 创建 release 分支并同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`。快捷发布 runner 会额外传入已 fetch 的 `--base-sha`，此时 prepare 从该精确 commit 创建 release 分支。变更过的内置插件应在对应开发 PR 中同步更新 manifest 版本，不留到发布阶段判断。
 
 ## 发布前验证
 
@@ -36,7 +38,7 @@ Agent 只在排查发布失败、执行人工恢复或维护发布实现时使�
 本机正式发布和 GitHub 正式发布获得对应授权且所有门禁通过后：
 
 1. 检查通过且用户已授权本次 PR 合并后，执行 `scripts/release.py submit <version>`。脚本提交并 push release 分支、创建 PR、等待 required checks、校验 head SHA、squash merge，并切到合并后的 `origin/main` commit。
-2. GitHub 正式发布获得授权后执行 `scripts/release.py publish <version>`。脚本只在合并后的 `origin/main` 上运行，完成 Tauri 构建、bundle 版本/签名/双架构校验、可恢复安装、进程启动、本地与远端 annotated tag、版本化 zip、SHA-256、GitHub Release 和远端 asset digest 回读。
+2. GitHub 正式发布获得授权后执行 `scripts/release.py publish <version>`。脚本只在合并后的 `origin/main` 上运行，完成 Tauri 构建、bundle 版本/签名/双架构校验、可恢复安装、进程启动、本地与远端 annotated tag、版本化 zip、SHA-256、GitHub Release 和远端 asset digest 回读。Tauri universal 的两个架构 Cargo 编译并行执行，最终仍由 Tauri 完成 lipo、bundle 和签名。
 3. 本机正式发布执行 `scripts/release.py publish <version> --local`，使用同一套机械校验，只保留本地 tag、zip 和安装结果，不 push tag 或创建 GitHub Release。
 
 安装验证不使用截图、OCR、AppleScript UI 遍历或 `pnpm tauri dev`。版本、签名、架构、安装路径和进程启动都通过脚本机械校验；只有用户明确要求 UI 验收时才进行人工界面检查。

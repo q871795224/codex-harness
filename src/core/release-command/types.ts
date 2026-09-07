@@ -20,12 +20,20 @@ export interface ReleaseRunStatus {
   completedAt: number | null
   dismissed: boolean
   logPath?: string
+  baseSha?: string | null
+  phaseStartedAt?: number | null
+  phaseDurationMs?: number | null
+  phaseDurations?: Record<string, number>
+  step?: string | null
+  stepStartedAt?: number | null
+  stepDurationMs?: number | null
 }
 
 export interface ReleaseCommandInfo {
   supported: boolean
   currentVersion: string | null
   versions: string[]
+  originMainSha: string | null
   status: ReleaseRunStatus | null
 }
 

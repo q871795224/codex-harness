@@ -9,24 +9,31 @@ import json
 import os
 import plistlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - release publishing only runs on macOS
+    fcntl = None
 
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[4]
+DEFAULT_CARGO_TARGET_DIR = Path.home() / ".codex-harness/release-cache/cargo-target"
+UNIVERSAL_TARGET = "universal-apple-darwin"
+PARALLEL_CARGO_RUNNER = SCRIPT_PATH.with_name("parallel_cargo_runner.py")
 VERSION_FILES = (
     Path("package.json"),
     Path("src-tauri/Cargo.toml"),
     Path("src-tauri/Cargo.lock"),
     Path("src-tauri/tauri.conf.json"),
-)
-APP_RELATIVE = Path(
-    "src-tauri/target/universal-apple-darwin/release/bundle/macos/Codex Harness.app"
 )
 REMOTE_ASSET_VERIFY_RETRIES = 3
 REMOTE_ASSET_VERIFY_INITIAL_WAIT_SECONDS = 1
@@ -36,20 +43,89 @@ class ReleaseError(RuntimeError):
     pass
 
 
+def now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def log_event(event: str, **fields: object) -> None:
+    record = {"timestamp": timestamp(), "event": event, **fields}
+    print(json.dumps(record, ensure_ascii=False, sort_keys=True), flush=True)
+
+
 def run(*args: str, cwd: Path = REPO_ROOT, capture: bool = False) -> str:
-    print("+", " ".join(args), flush=True)
-    result = subprocess.run(
-        args,
-        cwd=cwd,
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE if capture else None,
-        stderr=subprocess.PIPE if capture else None,
+    started = time.monotonic()
+    command = shlex.join(args)
+    log_event("command.started", command=command, cwd=str(cwd))
+    try:
+        result = subprocess.run(
+            args,
+            cwd=cwd,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.PIPE if capture else None,
+        )
+    except OSError as error:
+        log_event(
+            "command.finished",
+            command=command,
+            cwd=str(cwd),
+            durationMs=round((time.monotonic() - started) * 1000),
+            outcome="failed",
+            error=str(error),
+        )
+        raise ReleaseError(f"command failed to start: {command}\n{error}") from error
+    duration_ms = round((time.monotonic() - started) * 1000)
+    log_event(
+        "command.finished",
+        command=command,
+        cwd=str(cwd),
+        durationMs=duration_ms,
+        outcome="succeeded" if result.returncode == 0 else "failed",
+        returnCode=result.returncode,
     )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
         raise ReleaseError(f"command failed ({result.returncode}): {' '.join(args)}\n{detail}")
     return (result.stdout or "").rstrip()
+
+
+def cargo_target_dir(root: Path = REPO_ROOT) -> Path:
+    configured = os.environ.get("CARGO_TARGET_DIR")
+    if configured:
+        path = Path(configured).expanduser()
+        return path if path.is_absolute() else root / path
+    return DEFAULT_CARGO_TARGET_DIR
+
+
+def configure_release_environment() -> Path:
+    target_dir = cargo_target_dir()
+    os.environ["CARGO_TARGET_DIR"] = str(target_dir)
+    log_event("build.environment", cargoTargetDir=str(target_dir))
+    return target_dir
+
+
+@contextmanager
+def cargo_target_lock():
+    target_dir = configure_release_environment()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = target_dir / ".release.lock"
+    with lock_path.open("w") as lock:
+        if fcntl is not None:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def application_path(root: Path = REPO_ROOT) -> Path:
+    return cargo_target_dir(root) / UNIVERSAL_TARGET / "release" / "bundle" / "macos" / "Codex Harness.app"
 
 
 def try_run(*args: str, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
@@ -112,8 +188,8 @@ def current_version(root: Path = REPO_ROOT) -> str:
     return json_version(root / "package.json")
 
 
-def origin_main_version() -> str:
-    package = json.loads(run("git", "show", "origin/main:package.json", capture=True))
+def origin_main_version(ref: str = "origin/main") -> str:
+    package = json.loads(run("git", "show", f"{ref}:package.json", capture=True))
     return str(package["version"])
 
 
@@ -180,11 +256,18 @@ def require_synced_versions(version: str) -> None:
         raise ReleaseError(f"version sources are not synchronized at {expected}: {mismatched}")
 
 
-def command_prepare(version: str) -> None:
+def command_prepare(version: str, base_sha: str | None = None) -> None:
     version = normalized_version(version)
     require_clean_worktree()
-    run("git", "fetch", "origin", "--prune", "--tags")
-    base_version = origin_main_version()
+    if base_sha is None:
+        run("git", "fetch", "origin", "--prune", "--tags")
+        base_sha = run("git", "rev-parse", "origin/main", capture=True)
+    else:
+        resolved_sha = run("git", "rev-parse", f"{base_sha}^{{commit}}", capture=True)
+        head_sha = run("git", "rev-parse", "HEAD", capture=True)
+        if resolved_sha != base_sha or head_sha != base_sha:
+            raise ReleaseError(f"release worktree is not at fetched base commit {base_sha}")
+    base_version = origin_main_version(base_sha)
     if parse_version(version) <= parse_version(base_version):
         raise ReleaseError(f"release version {version} must be newer than origin/main {base_version}")
     tag = f"v{version}"
@@ -197,7 +280,7 @@ def command_prepare(version: str) -> None:
         raise ReleaseError(f"local branch already exists: {branch}")
     if run("git", "ls-remote", "--heads", "origin", f"refs/heads/{branch}", capture=True):
         raise ReleaseError(f"remote branch already exists: {branch}")
-    run("git", "switch", "--create", branch, "origin/main")
+    run("git", "switch", "--create", branch, base_sha)
     update_version_files(REPO_ROOT, version)
     require_synced_versions(version)
     print(json.dumps({"phase": "prepared", "version": version, "branch": branch}))
@@ -209,9 +292,11 @@ def ensure_dependencies() -> None:
 
 
 def command_check(version: str) -> None:
+    configure_release_environment()
     require_synced_versions(version)
     ensure_dependencies()
-    run("cargo", "test", cwd=REPO_ROOT / "src-tauri")
+    with cargo_target_lock():
+        run("cargo", "test", cwd=REPO_ROOT / "src-tauri")
     print(json.dumps({"phase": "checked", "version": normalized_version(version)}))
 
 
@@ -376,6 +461,36 @@ def tag_message(tag: str) -> str:
     return f"Codex Harness {tag}\n\n{bullets}".rstrip()
 
 
+def build_universal_app() -> None:
+    if not PARALLEL_CARGO_RUNNER.is_file():
+        raise ReleaseError(f"parallel Cargo runner is missing: {PARALLEL_CARGO_RUNNER}")
+    build_id = f"{now_ms()}-{os.getpid()}"
+    previous_build_id = os.environ.get("TAURI_PARALLEL_BUILD_ID")
+    os.environ["TAURI_PARALLEL_BUILD_ID"] = build_id
+    log_event(
+        "universal-build.configured",
+        buildId=build_id,
+        cargoTargetDir=str(cargo_target_dir()),
+        runner=str(PARALLEL_CARGO_RUNNER),
+    )
+    try:
+        with cargo_target_lock():
+            run(
+                "pnpm",
+                "tauri",
+                "build",
+                "--target",
+                UNIVERSAL_TARGET,
+                "--runner",
+                str(PARALLEL_CARGO_RUNNER),
+            )
+    finally:
+        if previous_build_id is None:
+            os.environ.pop("TAURI_PARALLEL_BUILD_ID", None)
+        else:
+            os.environ["TAURI_PARALLEL_BUILD_ID"] = previous_build_id
+
+
 def verify_remote_asset(tag: str, asset_name: str, checksum: str) -> dict[str, object]:
     expected_digest = f"sha256:{checksum}"
     details: dict[str, object] | None = None
@@ -401,6 +516,7 @@ def command_publish(version: str, github: bool = True) -> None:
     version = normalized_version(version)
     if sys.platform != "darwin":
         raise ReleaseError("publishing Codex Harness requires macOS")
+    configure_release_environment()
     require_clean_worktree()
     run("git", "fetch", "origin", "main", "--tags")
     head = run("git", "rev-parse", "HEAD", capture=True)
@@ -414,8 +530,8 @@ def command_publish(version: str, github: bool = True) -> None:
             raise ReleaseError(f"existing tag {tag} points to {peeled}, expected {head}")
 
     ensure_dependencies()
-    run("pnpm", "tauri:build")
-    app = REPO_ROOT / APP_RELATIVE
+    build_universal_app()
+    app = application_path()
     archs = verify_app(app, version)
     zip_path = app.parent / f"Codex-Harness-v{version}-macos-universal.zip"
     if zip_path.exists():
@@ -489,6 +605,11 @@ def parser() -> argparse.ArgumentParser:
     for name in ("prepare", "check", "submit", "publish"):
         command = subcommands.add_parser(name)
         command.add_argument("version", help="stable SemVer, for example 0.7.6")
+        if name == "prepare":
+            command.add_argument(
+                "--base-sha",
+                help="fetched origin/main commit used by the release runner",
+            )
         if name == "publish":
             command.add_argument(
                 "--local",
@@ -504,9 +625,10 @@ def main() -> int:
     try:
         if args.command == "publish":
             command_publish(args.version, github=not args.local)
+        elif args.command == "prepare":
+            command_prepare(args.version, args.base_sha)
         else:
             {
-                "prepare": command_prepare,
                 "check": command_check,
                 "submit": command_submit,
             }[args.command](args.version)

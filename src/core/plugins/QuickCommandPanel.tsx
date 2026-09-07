@@ -50,22 +50,20 @@ export function QuickCommandPanel({ commands, release, anchorBottom }: QuickComm
     }
   }
 
-  const toggleReleasePicker = async () => {
+  const toggleReleasePicker = () => {
     if (!release) return
     if (releasePicker) {
       setReleasePicker(false)
       return
     }
     setReleaseError(null)
+    setReleasePicker(true)
     setReleaseRefreshing(true)
-    try {
-      await release.refresh()
-      setReleasePicker(true)
-    } catch (error) {
-      setReleaseError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setReleaseRefreshing(false)
-    }
+    void release.refresh()
+      .catch((error) => {
+        setReleaseError(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => setReleaseRefreshing(false))
   }
 
   return (
@@ -81,7 +79,7 @@ export function QuickCommandPanel({ commands, release, anchorBottom }: QuickComm
               <div className="quick-command-release">
                 <button
                   type="button"
-                  disabled={releaseRunning || releaseRefreshing}
+                  disabled={releaseRunning}
                   onClick={() => void toggleReleasePicker()}
                   aria-expanded={releasePicker}
                   aria-label="发布 Codex Harness"
