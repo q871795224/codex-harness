@@ -41,6 +41,7 @@ import type { AppLauncherService } from './core/app-launcher/types'
 import { createProjectDocService } from './core/project-docs/service'
 import { ProjectDocApprovalCards } from './features/conversation/ProjectDocApprovalCards'
 import { ProjectDocLogAutoWriter } from './features/conversation/ProjectDocLogAutoWriter'
+import { useProjectBinding } from './features/project-doc/useProjectBinding'
 import { PROJECT_DOC_TAB_KEY } from './plugins/project-doc'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
@@ -268,21 +269,35 @@ function HarnessShell({ harness, agentRuns, codex }: {
     () => agentRunList.filter((run) => run.parentThreadId === harness.selectedThreadId),
     [agentRunList, harness.selectedThreadId],
   )
-  // 项目文档：当前会话绑定的 projectId + 跳项目 tab 时挂起的冲突 diff 请求。
-  const [boundProjectId, setBoundProjectId] = useState<string | null>(null)
+  // 项目文档：绑定意图（方案乙，pending→locked）由 useProjectBinding 管理；
+  // boundProjectId 供审批卡/自动追加用（派生自绑定），pendingProjectConflict 是跳项目 tab 时挂起的冲突 diff 请求。
+  const projectBinding = useProjectBinding(projectDocs, harness.selectedThreadId, workspace?.root ?? null)
+  const boundProjectId = projectBinding.binding?.projectId ?? null
   const [pendingProjectConflict, setPendingProjectConflict] = useState<{ proposalContent: string; section: string } | null>(null)
+  // 折叠项目卡 spec：仅第 0 轮（pending 且有项目正文）下发给 Composer；锁定后不再注入。
+  const [projectCardContent, setProjectCardContent] = useState<string | null>(null)
   useEffect(() => {
-    const threadId = harness.selectedThreadId
-    if (!threadId) {
-      setBoundProjectId(null)
+    const binding = projectBinding.binding
+    if (!binding || binding.phase !== 'pending') {
+      setProjectCardContent(null)
       return undefined
     }
     let disposed = false
-    void projectDocs.threadProject(threadId)
-      .then((projectId) => { if (!disposed) setBoundProjectId(projectId) })
-      .catch(() => undefined)
+    void projectDocs.read(binding.projectId)
+      .then((snapshot) => { if (!disposed) setProjectCardContent(snapshot.content) })
+      .catch(() => { if (!disposed) setProjectCardContent(null) })
     return () => { disposed = true }
-  }, [projectDocs, harness.selectedThreadId])
+  }, [projectBinding.binding])
+  const projectCard = useMemo(() => {
+    const binding = projectBinding.binding
+    if (!binding || binding.phase !== 'pending' || !projectBinding.project || projectCardContent === null) return null
+    return {
+      projectId: binding.projectId,
+      name: projectBinding.project.name,
+      seq: projectBinding.project.currentSeq,
+      content: projectCardContent,
+    }
+  }, [projectBinding.binding, projectBinding.project, projectCardContent])
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
@@ -799,6 +814,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   key={harness.currentThread.id}
                   provider={harness.selectedProvider}
                   initialDraft={composerDrafts[harness.currentThread.id]}
+                  projectCard={projectCard}
+                  onProjectCardDismissed={() => void projectBinding.unbind()}
                   disabled={codexUpdate.updating || harness.currentForeignActive || Boolean(harness.busy.composer)}
                   working={harness.isCurrentWorking}
                   foreignActive={harness.currentForeignActive}
@@ -820,11 +837,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     ? harness.updateClaudeSettings(harness.selectedThreadId, patch)
                     : undefined}
                   onFollowUpModeChange={harness.setFollowUpMode}
-                  onSend={(input, mode) => {
+                  onSend={async (input, mode) => {
                     const threadId = harness.currentThread!.id
                     scrollRequestSequence.current += 1
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
-                    return harness.sendMessage(input, mode)
+                    await harness.sendMessage(input, mode)
+                    // 第 1 轮发送成功：绑定 pending → locked，此后只读、不再注入项目卡。
+                    void projectBinding.lockOnSend()
                   }}
                   onCommand={(command) => {
                     if (command.name === 'raw') setRawMode((current) => !current)
