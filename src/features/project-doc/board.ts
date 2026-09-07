@@ -38,7 +38,7 @@ export function parseProjectBoard(content: string): ProjectBoard {
 }
 
 /** 取 `## <heading>` 的正文（到下一个同级或更高级标题为止）；没有该 section 返回 null。 */
-function sectionBody(content: string, heading: string): string | null {
+export function sectionBody(content: string, heading: string): string | null {
   const target = `## ${heading}`
   const lines = content.split('\n')
   let start = -1

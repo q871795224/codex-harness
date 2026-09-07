@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import type { ProjectDocService } from '../../core/project-docs/types'
-import { parseProjectBoard } from './board'
+import { parseProjectBoard, sectionBody } from './board'
 import type { ProjectDocSnapshot, ProjectMeta, ProjectVersion } from './types'
 import type { SectionKey } from './document'
 
@@ -25,6 +25,65 @@ export interface ProjectTabConflictRequest {
 }
 
 type DetailView = 'doc' | 'board' | 'edit' | 'history' | 'diff'
+
+export const PROJECT_STATUS_TEMPLATE = `**项目目标**
+填写要解决的问题和期望结果。
+
+**范围与约束**
+- 工作范围：
+- 限制条件：
+
+**验收标准**
+- [ ] 填写可验证的完成条件
+
+**当前进展**
+- 已完成：
+- 进行中：
+- 下一步：
+
+**待确认事项**
+- 暂无
+`
+
+function ProjectMetaActions({ service, project, onChanged, onArchived }: {
+  service: ProjectDocService
+  project: ProjectMeta
+  onChanged: () => void
+  onArchived?: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(project.name)
+  const [confirmArchive, setConfirmArchive] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const update = async (archive: boolean) => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      if (archive) await service.archive(project.projectId)
+      else await service.rename(project.projectId, name.trim())
+      setEditing(false)
+      setConfirmArchive(false)
+      onChanged()
+      if (archive) onArchived?.()
+    } catch (err) { setError(messageOf(err)) }
+    finally { setBusy(false) }
+  }
+  return <div className="project-meta-actions">
+    {editing ? <>
+      <input aria-label="项目名称" value={name} onChange={(event) => setName(event.target.value)} />
+      <button disabled={busy || !name.trim()} onClick={() => void update(false)}>保存名称</button>
+      <button disabled={busy} onClick={() => setEditing(false)}>取消</button>
+    </> : <button disabled={busy} onClick={() => { setName(project.name); setEditing(true) }}>重命名</button>}
+    {confirmArchive ? <>
+      <span>归档后保留文档和历史</span>
+      <button disabled={busy} onClick={() => void update(true)}>确认归档</button>
+      <button disabled={busy} onClick={() => setConfirmArchive(false)}>取消</button>
+    </> : <button disabled={busy} onClick={() => setConfirmArchive(true)}>归档</button>}
+    {error && <span role="alert" className="project-tab-error">{error}</span>}
+  </div>
+}
 
 /**
  * 项目文档 tab：项目列表 → 详情（文档渲染、当前 seq、版本历史、编辑、冲突 diff）。
@@ -56,6 +115,7 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, onSele
   if (selectedProjectId) {
     return (
       <ProjectDetail
+        key={selectedProjectId}
         service={service}
         projectId={selectedProjectId}
         conflictRequest={conflictRequest}
@@ -73,7 +133,6 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, onSele
     <div className="project-tab">
       <header className="project-tab-header">
         <h2><NotebookPen size={16} />项目文档</h2>
-        <small>多 Agent 共享的活文档；写入经审批 + seq 版本控制。</small>
       </header>
       {error && <p className="project-tab-error"><CircleAlert size={13} />{error}</p>}
       <ProjectCreateRow service={service} onCreated={(project) => {
@@ -85,17 +144,18 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, onSele
       ) : projects.length === 0 ? (
         <p className="project-tab-empty">还没有项目。创建一个，或在会话里绑定后让 Agent 提议写入。</p>
       ) : (
-        <ul className="project-list">
+        <div className="project-table-scroll"><table className="project-table">
+          <thead><tr><th>项目名称</th><th>版本</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody>
           {projects.map((project) => (
-            <li key={project.projectId}>
-              <button type="button" onClick={() => onSelectProject(project.projectId)}>
-                <strong>{project.name}</strong>
-                <small>v{project.currentSeq} · {project.projectId}</small>
-                <small>更新于 {formatTime(project.updatedAt)}</small>
-              </button>
-            </li>
+            <tr key={project.projectId}>
+              <td><button type="button" className="project-name" onClick={() => onSelectProject(project.projectId)}>{project.name}</button></td>
+              <td>v{project.currentSeq}</td><td>{formatTime(project.updatedAt)}</td>
+              <td><ProjectMetaActions service={service} project={project} onChanged={() => void refresh()} /></td>
+            </tr>
           ))}
-        </ul>
+          </tbody>
+        </table></div>
       )}
     </div>
   )
@@ -107,21 +167,25 @@ function ProjectCreateRow({ service, onCreated }: {
 }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
+  const composing = useRef(false)
+  const creating = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const create = async () => {
     const trimmed = name.trim()
-    if (!trimmed) return
+    if (!trimmed || creating.current) return
+    creating.current = true
     setBusy(true)
     setError(null)
     try {
-      const projectId = slugify(trimmed) || crypto.randomUUID().slice(0, 8)
+      const projectId = `${slugify(trimmed) || 'project'}-${crypto.randomUUID().slice(0, 8)}`
       const project = await service.create(projectId, trimmed)
       setName('')
       onCreated(project)
     } catch (nextError) {
       setError(messageOf(nextError))
     } finally {
+      creating.current = false
       setBusy(false)
     }
   }
@@ -133,7 +197,14 @@ function ProjectCreateRow({ service, onCreated }: {
         onChange={(event) => setName(event.target.value)}
         placeholder="新项目名称"
         aria-label="新项目名称"
-        onKeyDown={(event) => { if (event.key === 'Enter') void create() }}
+        onCompositionStart={() => { composing.current = true }}
+        onCompositionEnd={() => { composing.current = false }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !composing.current && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+            event.preventDefault()
+            void create()
+          }
+        }}
       />
       <button type="button" className="primary" disabled={busy || !name.trim()} onClick={() => void create()}>
         {busy ? <LoaderCircle className="spin" size={12} /> : <FilePlus2 size={12} />}创建
@@ -189,6 +260,7 @@ function ProjectDetail({ service, projectId, conflictRequest, onBack, onConflict
           <ChevronLeft size={14} />项目
         </button>
         <h2>{meta?.name ?? projectId}</h2>
+        {meta && <ProjectMetaActions service={service} project={meta} onChanged={() => { void reload(); onChanged() }} onArchived={onBack} />}
         {meta && <small>v{meta.currentSeq} · 更新于 {formatTime(meta.updatedAt)}</small>}
         <span className="project-tab-views">
           <button type="button" className={view === 'doc' ? 'active' : ''} onClick={() => setView('doc')} title="查看文档">
@@ -216,7 +288,10 @@ function ProjectDetail({ service, projectId, conflictRequest, onBack, onConflict
       )}
       {view === 'doc' && (
         snapshot
-          ? <div className="project-doc-body markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{snapshot.content}</ReactMarkdown></div>
+          ? <div className="project-doc-body markdown-body">{snapshot.content.trim()
+              ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{snapshot.content}</ReactMarkdown>
+              : <p className="project-tab-empty">项目文档尚未填写。点击「编辑」，基于模板补充目标、范围和当前进展。</p>}
+            </div>
           : <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
       )}
       {view === 'board' && (
@@ -263,7 +338,7 @@ function ProjectEditPanel({ service, projectId, snapshot, onSaved, onCancel }: {
   onSaved: () => void
   onCancel: () => void
 }) {
-  const [content, setContent] = useState(snapshot.content)
+  const [content, setContent] = useState(() => sectionBody(snapshot.content, 'Status') || PROJECT_STATUS_TEMPLATE)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState<number | null>(null)
@@ -295,7 +370,7 @@ function ProjectEditPanel({ service, projectId, snapshot, onSaved, onCancel }: {
 
   return (
     <div className="project-edit-panel">
-      <p className="project-edit-hint">基于 v{snapshot.currentSeq} 编辑 Status 区；保存走与 Agent 写入相同的 seq 校验通道。</p>
+      <p className="project-edit-hint">编辑项目状态（v{snapshot.currentSeq}）。可基于模板填写目标、范围和进展；保存后保留其他分区。</p>
       <textarea
         value={content}
         onChange={(event) => setContent(event.target.value)}
@@ -456,7 +531,7 @@ function slugify(name: string): string {
   return name
     .trim()
     .toLowerCase()
-    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+    .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48)
 }

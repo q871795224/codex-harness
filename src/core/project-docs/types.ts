@@ -15,6 +15,8 @@ export interface ProjectDocService {
   create(projectId: string, name: string): Promise<ProjectMeta>
   list(): Promise<ProjectMeta[]>
   get(projectId: string): Promise<ProjectMeta>
+  rename(projectId: string, name: string): Promise<void>
+  archive(projectId: string): Promise<void>
   bindWorkspace(projectId: string, workspaceRoot: string): Promise<void>
   workspaces(projectId: string): Promise<string[]>
   read(projectId: string): Promise<ProjectDocSnapshot>

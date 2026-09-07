@@ -38,7 +38,7 @@ export const projectDocPlugin: HarnessPlugin = {
       order: 30,
       icon: NotebookPen,
       focusable: true,
-      hideComposer: true,
+      hideComposer: false,
       render: () => <ProjectTabHost service={service} />,
     })
 

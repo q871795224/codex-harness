@@ -566,6 +566,18 @@ fn project_doc_list(state: State<'_, AppState>) -> Result<Vec<project_doc_store:
 }
 
 #[tauri::command]
+fn project_doc_rename(state: State<'_, AppState>, project_id: String, name: String) -> Result<(), String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().rename_project(&project_id, &name)
+}
+
+#[tauri::command]
+fn project_doc_archive(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().archive_project(&project_id)
+}
+
+#[tauri::command]
 fn project_doc_get(
     state: State<'_, AppState>,
     project_id: String,
@@ -969,6 +981,8 @@ pub fn run() {
             read_handover_document,
             project_doc_create,
             project_doc_list,
+            project_doc_rename,
+            project_doc_archive,
             project_doc_get,
             project_doc_bind_workspace,
             project_doc_workspaces,
