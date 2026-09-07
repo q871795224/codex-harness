@@ -7,7 +7,7 @@ import type { HarnessPlugin, NewThreadPanelProps, PluginInstanceRecord } from '.
 type LaunchMode = 'yolo' | 'auto-review' | 'manual'
 
 export interface PickerRow {
-  group: 'hard' | 'simple' | 'reference' | 'fallback'
+  group: 'hard' | 'simple' | 'reference' | 'agi' | 'fallback'
   model: string
   effort: string
   iq: number | null
@@ -195,16 +195,31 @@ export function defaultRadarRow(rows: PickerRow[]): PickerRow | null {
 export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel[], settings: ThreadCodexSettings): PickerRow[] {
   if (remoteRows === null) return []
   const supported = remoteRows.filter((row) => modelSupports(models, row.model, row.effort))
-  if (supported.length > 0) return supported
+  if (supported.length > 0) return withAgiRows(supported, models)
   const preferred = models.find((model) => model.model === 'gpt-5.6-sol') ?? models.find((model) => model.model === settings.model) ?? models[0]
   if (!preferred) return []
   const effort = preferred.supportedReasoningEfforts.some((candidate) => candidate.reasoningEffort === 'xhigh')
     ? 'xhigh'
     : preferred.defaultReasoningEffort
-  return [{
+  return withAgiRows([{
     group: 'fallback', model: preferred.model, effort, iq: null, price: null, minutes: null,
     bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: true,
-  }]
+  }], models)
+}
+
+function withAgiRows(rows: PickerRow[], models: CodexModel[]): PickerRow[] {
+  const agiRows: PickerRow[] = ['low', 'medium']
+    .filter((effort) => modelSupports(models, 'gpt-6-astra', effort))
+    .map((effort) => ({
+      model: 'gpt-6-astra', effort, iq: null, price: null, minutes: null,
+      bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: false,
+      ...rows.find((row) => row.model === 'gpt-6-astra' && row.effort === effort),
+      group: 'agi',
+    }))
+  const remaining = rows.filter((row) => !agiRows.some((agi) => agi.model === row.model && agi.effort === row.effort))
+  const simpleIndex = remaining.findIndex((row) => row.group === 'simple')
+  const insertionIndex = simpleIndex < 0 ? remaining.length : simpleIndex
+  return [...remaining.slice(0, insertionIndex), ...agiRows, ...remaining.slice(insertionIndex)]
 }
 
 function modelSupports(models: CodexModel[], modelId: string, effort: string): boolean {
@@ -232,10 +247,12 @@ function groupLabel(group: PickerRow['group']): string {
   if (group === 'hard') return '复杂任务'
   if (group === 'simple') return '简单任务'
   if (group === 'reference') return '参考模型'
+  if (group === 'agi') return 'AGI 模型'
   return 'FALLBACK'
 }
 
 function modelLabel(model: string): string {
+  if (model === 'gpt-6-astra') return '6 Astra'
   if (model === 'gpt-5.6-sol') return '5.6 Sol'
   if (model === 'gpt-5.6-terra') return '5.6 Terra'
   if (model === 'gpt-5.6-luna') return '5.6 Luna'

@@ -1713,7 +1713,7 @@ export function useHarness() {
     setBusy((current) => ({ ...current, archiveOldThreads: true }))
     try {
       const cutoff = Date.now() / 1_000 - 3 * 24 * 60 * 60
-      const result = await archiveThreadsBefore(appServer, cutoff)
+      const result = await archiveThreadsBefore(appServer, cutoff, navigation.pinnedThreadIds)
       if (result.candidateCount === 0) {
         notify('没有超过 3 天的会话需要归档')
         return
@@ -1742,7 +1742,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, archiveOldThreads: false }))
     }
-  }, [busy.archiveOldThreads, notify])
+  }, [busy.archiveOldThreads, navigation.pinnedThreadIds, notify])
 
   const unarchiveThread = useCallback(async (threadId: string) => {
     try {

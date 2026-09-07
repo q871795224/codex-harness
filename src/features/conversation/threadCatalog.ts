@@ -48,8 +48,11 @@ export async function listAllActiveThreads(transport: ThreadCatalogTransport): P
 export async function archiveThreadsBefore(
   transport: ThreadCatalogTransport,
   cutoff: number,
+  pinnedThreadIds: readonly string[] = [],
 ): Promise<{ candidateCount: number; archivedIds: string[]; failedCount: number }> {
+  const pinned = new Set(pinnedThreadIds)
   const candidates = threadsOlderThan(await listAllActiveThreads(transport), cutoff)
+    .filter((thread) => !pinned.has(thread.id))
   const archivedIds: string[] = []
   let failedCount = 0
 
