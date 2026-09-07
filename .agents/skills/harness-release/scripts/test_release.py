@@ -25,6 +25,30 @@ class ReleaseScriptTest(unittest.TestCase):
 
         try_run.assert_called_once_with("pgrep", "-a", "-f", str(executable))
 
+    def test_remote_asset_verification_retries_with_exponential_backoff(self):
+        checksum = "abc123"
+        command = ("gh", "release", "view", "v0.7.11", "--json", "url,tagName,assets")
+        missing_digest = json.dumps({"assets": [{"name": "bundle.zip"}]})
+        matching_digest = json.dumps(
+            {"assets": [{"name": "bundle.zip", "digest": f"sha256:{checksum}"}]}
+        )
+
+        with (
+            patch.object(
+                release,
+                "run",
+                side_effect=[missing_digest, missing_digest, missing_digest, matching_digest],
+            ) as run,
+            patch.object(release.time, "sleep") as sleep,
+        ):
+            details = release.verify_remote_asset("v0.7.11", "bundle.zip", checksum)
+
+        self.assertEqual(details["assets"][0]["digest"], f"sha256:{checksum}")
+        self.assertEqual(run.call_count, 4)
+        self.assertEqual([call.args for call in run.call_args_list], [command] * 4)
+        self.assertEqual([call.kwargs for call in run.call_args_list], [{"capture": True}] * 4)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2, 4])
+
     def test_check_installs_dependencies_before_cargo_test(self):
         calls = []
         with (
