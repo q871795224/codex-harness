@@ -45,6 +45,19 @@ export interface ClaudeSessionRecord {
   updatedAt: number
 }
 
+export interface ClaudeSessionMessage {
+  type: 'user' | 'assistant' | 'system'
+  uuid: string
+  sessionId: string
+  message: unknown
+  parentToolUseId: string | null
+  timestamp: string | null
+}
+
+export interface ClaudeSessionHistory {
+  messages: ClaudeSessionMessage[]
+}
+
 export type ClaudePermissionMode = 'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
 
 export interface ClaudeModel {

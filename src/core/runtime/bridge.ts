@@ -29,7 +29,7 @@ import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/types'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
 import type { CodexAnalyticsCounterMode, CodexAnalyticsCounterStatus, CodexAnalyticsRange, CodexAnalyticsSnapshot } from '../codex-analytics/types'
-import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntimeStatus, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
+import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntimeStatus, ClaudeSessionHistory, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
 import type { ProjectDocSnapshot, ProjectDocWriteOutcome, ProjectMeta, ProjectVersion } from '../../features/project-doc/types'
 import type { SectionKey } from '../../features/project-doc/document'
 
@@ -124,6 +124,10 @@ export const runtime = {
 
   upsertClaudeSession(input: ClaudeSessionInput): Promise<ClaudeSessionRecord> {
     return invoke<ClaudeSessionRecord>('upsert_claude_session', { input })
+  },
+
+  readClaudeHistory(sessionId: string, cwd: string, providerSessionId: string): Promise<ClaudeSessionHistory> {
+    return this.claudeRequest<ClaudeSessionHistory>('session/history', { sessionId, cwd, providerSessionId })
   },
 
   setClaudeSessionArchived(sessionId: string, archived: boolean): Promise<void> {
