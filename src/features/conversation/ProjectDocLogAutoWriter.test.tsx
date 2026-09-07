@@ -19,6 +19,8 @@ function snapshot(projectId = 'demo', currentSeq = 3): ProjectDocSnapshot {
 
 function fakeService(outcome: ProjectDocWriteOutcome = { kind: 'applied', newSeq: 4, contentHash: 'h' }): ProjectDocService {
   return {
+    rename: vi.fn(async () => undefined),
+    archive: vi.fn(async () => undefined),
     create: vi.fn(async () => meta()),
     list: vi.fn(async () => [meta()]),
     get: vi.fn(async () => meta()),

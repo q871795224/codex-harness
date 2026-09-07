@@ -225,9 +225,14 @@ fn find_section(content: &str, heading: &str) -> Option<(usize, usize)> {
 impl ProjectDocStore {
     pub fn open() -> Result<Self, String> {
         let root = store::harness_data_dir()?;
-        fs::create_dir_all(&root).map_err(|e| format!("无法创建数据目录 {}: {e}", root.display()))?;
-        let connection = Connection::open(root.join(DB_FILE))
-            .map_err(|e| format!("无法打开项目文档库: {e}"))?;
+        Self::open_at(root)
+    }
+
+    fn open_at(root: PathBuf) -> Result<Self, String> {
+        fs::create_dir_all(&root)
+            .map_err(|e| format!("无法创建数据目录 {}: {e}", root.display()))?;
+        let connection =
+            Connection::open(root.join(DB_FILE)).map_err(|e| format!("无法打开项目文档库: {e}"))?;
         connection
             .execute_batch(
                 r#"
@@ -245,6 +250,10 @@ impl ProjectDocStore {
                   workspace_root TEXT NOT NULL,
                   PRIMARY KEY(project_id, workspace_root),
                   FOREIGN KEY(project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS archived_projects (
+                  project_id TEXT PRIMARY KEY REFERENCES projects(project_id),
+                  archived_at INTEGER NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS project_versions (
                   project_id TEXT NOT NULL,
@@ -323,7 +332,7 @@ impl ProjectDocStore {
         let connection = self.lock()?;
         let mut stmt = connection
             .prepare(
-                "SELECT project_id, name, current_seq, created_at, updated_at FROM projects ORDER BY updated_at DESC",
+                "SELECT project_id, name, current_seq, created_at, updated_at FROM projects WHERE project_id NOT IN (SELECT project_id FROM archived_projects) ORDER BY updated_at DESC",
             )
             .map_err(|e| format!("无法查询项目列表: {e}"))?;
         let rows = stmt
@@ -342,6 +351,36 @@ impl ProjectDocStore {
             result.push(row.map_err(|e| format!("无法读取项目: {e}"))?);
         }
         Ok(result)
+    }
+
+    pub fn rename_project(&self, project_id: &str, name: &str) -> Result<(), String> {
+        let id = validate_project_id(project_id)?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("项目名称不能为空".into());
+        }
+        let changed = self
+            .lock()?
+            .execute(
+                "UPDATE projects SET name = ?2, updated_at = ?3 WHERE project_id = ?1",
+                params![id, name, now_ms()],
+            )
+            .map_err(|e| format!("无法重命名项目: {e}"))?;
+        if changed == 0 {
+            return Err("项目不存在".into());
+        }
+        Ok(())
+    }
+
+    pub fn archive_project(&self, project_id: &str) -> Result<(), String> {
+        self.get_project(project_id)?;
+        self.lock()?
+            .execute(
+                "INSERT OR IGNORE INTO archived_projects (project_id, archived_at) VALUES (?1, ?2)",
+                params![project_id, now_ms()],
+            )
+            .map_err(|e| format!("无法归档项目: {e}"))?;
+        Ok(())
     }
 
     /// 绑定 / 解绑工作区（多对多，支撑跨 workspace 项目）。
@@ -489,7 +528,17 @@ impl ProjectDocStore {
         }
 
         let body = self.read_body(id)?;
-        let next_body = apply_section_write(&body, section, content)?;
+        // 旧版创建的是空文件；首次写入在 CAS 通过后补齐分区，不改已有正文。
+        let initial_body = "## Status\n\n## Log\n\n## Decisions\n\n## Open Questions\n";
+        let next_body = apply_section_write(
+            if body.trim().is_empty() {
+                initial_body
+            } else {
+                &body
+            },
+            section,
+            content,
+        )?;
         let new_seq = current_seq + 1;
         let now = now_ms();
         // 落盘 = front matter（Harness 簿记）+ 正文；hash 对落盘全文算，覆盖 front matter 的漂移防护。
@@ -531,6 +580,49 @@ impl ProjectDocStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rename_and_archive_preserve_document_and_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ProjectDocStore::open_at(dir.path().to_path_buf()).unwrap();
+        store.create_project("demo", "Original").unwrap();
+        store
+            .write_section(
+                "demo",
+                "status",
+                Some(0),
+                "Initial progress",
+                "user",
+                "Initial edit",
+            )
+            .unwrap();
+        assert!(store
+            .read_doc("demo")
+            .unwrap()
+            .content
+            .contains("Initial progress"));
+        store.rename_project("demo", " Renamed ").unwrap();
+        assert_eq!(store.get_project("demo").unwrap().name, "Renamed");
+        assert!(store.rename_project("demo", " ").is_err());
+        assert!(store.rename_project("missing", "Name").is_err());
+        let path = store.project_dir("demo").join(CURRENT_FILE);
+        let original = fs::read(&path).unwrap();
+        store.archive_project("demo").unwrap();
+        store.archive_project("demo").unwrap();
+        assert!(store.list_projects().unwrap().is_empty());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_eq!(store.get_project("demo").unwrap().name, "Renamed");
+        drop(store);
+        let reopened = ProjectDocStore::open_at(dir.path().to_path_buf()).unwrap();
+        assert!(reopened.list_projects().unwrap().is_empty());
+        assert_eq!(reopened.list_versions("demo").unwrap().len(), 1);
+        assert!(reopened
+            .project_dir("demo")
+            .join(HISTORY_DIR)
+            .join("1.md")
+            .exists());
+        assert!(reopened.archive_project("missing").is_err());
+    }
 
     #[test]
     fn validates_project_id() {

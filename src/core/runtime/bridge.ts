@@ -335,6 +335,14 @@ export const runtime = {
     return invoke<ProjectMeta[]>('project_doc_list')
   },
 
+  projectDocRename(projectId: string, name: string): Promise<void> {
+    return invoke<void>('project_doc_rename', { projectId, name })
+  },
+
+  projectDocArchive(projectId: string): Promise<void> {
+    return invoke<void>('project_doc_archive', { projectId })
+  },
+
   projectDocGet(projectId: string): Promise<ProjectMeta> {
     return invoke<ProjectMeta>('project_doc_get', { projectId })
   },
