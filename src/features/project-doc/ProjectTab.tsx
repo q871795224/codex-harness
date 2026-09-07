@@ -36,23 +36,21 @@ export interface ProjectTabArchiveRequest {
 
 type DetailView = 'doc' | 'board' | 'edit' | 'history' | 'diff' | 'archive'
 
-export const PROJECT_STATUS_TEMPLATE = `**项目目标**
+export const PROJECT_STATUS_TEMPLATE = `### 项目目标
 填写要解决的问题和期望结果。
 
-**范围与约束**
+### 验收标准
+- [ ] 填写可验证的完成条件
+
+### 范围与约束（可选）
 - 工作范围：
 - 限制条件：
 
-**验收标准**
-- [ ] 填写可验证的完成条件
+### 参考链接
+-
 
-**当前进展**
-- 已完成：
-- 进行中：
-- 下一步：
-
-**待确认事项**
-- 暂无
+### 项目 MR
+-
 `
 
 function ProjectMetaActions({ service, project, onChanged, onArchived }: {
@@ -311,7 +309,7 @@ function ProjectDetail({ service, projectId, conflictRequest, archiveRequest, on
         snapshot
           ? <div className="project-doc-body markdown-body">{snapshot.content.trim()
               ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{snapshot.content}</ReactMarkdown>
-              : <p className="project-tab-empty">项目文档尚未填写。点击「编辑」，基于模板补充目标、范围和当前进展。</p>}
+              : <p className="project-tab-empty">项目文档尚未填写。点击「编辑」，基于模板补充目标与验收标准。</p>}
             </div>
           : <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
       )}

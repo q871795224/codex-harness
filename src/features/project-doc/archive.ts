@@ -65,12 +65,15 @@ export function renderArchiveTranscript(messages: ArchiveTranscriptMessage[]): s
 
 export const DEFAULT_ARCHIVE_PROMPT_TEMPLATE = `下面是某个工作会话最近几轮的对话记录，以及该项目当前的项目文档（Status 区）。
 
-请把这段会话中**对项目有长期价值的进展**提炼成项目文档 Status 区的最新内容：完成的结论、已拍板的决定、当前进行到哪、下一步、遗留问题。忽略闲聊、过程性试探和已被后续推翻的中间态。
+Status 区是项目的「当前全貌」，覆盖式维护：既含静态背景（目标、验收标准、范围、参考链接、项目 MR），也含截至目前的结论性状态。动态的流水、待确认问题、已拍板决定由 Log / Open Questions / Decisions 分区逐条追加，不在 Status 里记。
+
+请基于本次会话，把 Status 区**覆盖式刷新**成最新全貌：保留仍然有效的背景与结论，吸收本次会话产生的新理解（如目标更明确、验收标准勾掉已完成项、结论性进展），剔除已被推翻或过时的内容。忽略闲聊、过程性试探和中间态。
 
 要求：
-- 只输出 Status 区的**完整新内容**（markdown 正文，不要带 \`## Status\` 标题行，不要带 YAML front matter）。
-- 基于"当前 Status"做覆盖式更新：保留仍然有效的内容，用本次会话的新进展刷新它。
-- 不要编造会话里没有的结论；没有新进展时原样返回当前 Status。
+- 只输出 Status 区的**完整新内容**（markdown 正文，覆盖整个 Status；不要带 \`## Status\` 标题行，不要带 YAML front matter）。
+- 用 \`###\` 三级标题组织小节，沿用当前 Status 已有的小节结构（如「项目目标」「验收标准」等），按需增删。
+- 不写流水式的"进行到哪 / 下一步 / 遗留问题"——那些属于 Log / Open Questions，不属于 Status。
+- 不要编造会话里没有的结论；没有需要更新的地方时，原样返回当前 Status。
 
 【当前 Status】
 {{currentStatus}}
