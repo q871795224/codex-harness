@@ -125,6 +125,7 @@ export function useUnifiedHarness() {
         restoreSource = 'codex-unified-state-only'
       } else {
         const fallback = codex.selectedThreadId ?? claude.sessions[0]?.id ?? null
+        if (fallback?.startsWith('claude:')) claude.selectSession(fallback)
         selectedThreadIdRef.current = fallback
         setSelectedThreadId(fallback)
       }

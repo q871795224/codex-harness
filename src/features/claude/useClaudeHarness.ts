@@ -5,6 +5,7 @@ import { approvalRequestFromEvent, reconcileClaudeApprovalSnapshot } from '../..
 import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeProviderSnapshot, ClaudeRuntimeStatus, ClaudeSessionRecord, ClaudeSessionSettings, ClaudeTransportEvent } from '../../core/claude/types'
 import { DEFAULT_CLAUDE_SESSION_SETTINGS } from '../../core/claude/types'
 import { reduceClaudeEvent } from '../../core/claude/eventReducer'
+import { hydrateClaudeHistory, mergeClaudeHistory } from '../../core/claude/history'
 import { reduceThreadDetailEvent } from '../conversation/conversationEventReducer'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
 
@@ -30,6 +31,7 @@ export function useClaudeHarness() {
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [toast, setToast] = useState<ClaudeToast | null>(null)
   const sessionsRef = useRef<ClaudeSessionRecord[]>([])
+  const detailsRef = useRef<Record<string, ThreadDetail>>({})
   const activeTurnIdsRef = useRef<Record<string, string>>({})
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
   const queuesRef = useRef<Record<string, QueuedSubmission[]>>({})
@@ -40,8 +42,11 @@ export function useClaudeHarness() {
   const daemonInstanceIdRef = useRef<string | null>(null)
   const approvalEventSeqRef = useRef<Record<string, number>>({})
   const approvalResolvedSeqRef = useRef<Record<string, number>>({})
+  const historyLoadedRef = useRef(new Set<string>())
+  const historyLoadsRef = useRef(new Map<string, Promise<void>>())
 
   useEffect(() => { sessionsRef.current = sessions }, [sessions])
+  useEffect(() => { detailsRef.current = details }, [details])
   useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => { queuesRef.current = queues }, [queues])
@@ -136,9 +141,47 @@ export function useClaudeHarness() {
     }
   }, [])
 
+  const loadSessionHistory = useCallback(async (sessionId: string) => {
+    if (historyLoadedRef.current.has(sessionId)) return
+    const pending = historyLoadsRef.current.get(sessionId)
+    if (pending) return pending
+
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    if (!session.providerSessionId) {
+      historyLoadedRef.current.add(sessionId)
+      return
+    }
+
+    const activeTurnId = activeTurnIdsRef.current[sessionId] ?? null
+    const activeUserInput = activeTurnId
+      ? detailsRef.current[sessionId]?.items.find((entry) => entry.turnId === activeTurnId && entry.item.type === 'userMessage')?.item.content ?? null
+      : null
+    const request = (async () => {
+      try {
+        const history = await runtime.readClaudeHistory(sessionId, session.cwd, session.providerSessionId!)
+        const hydrated = hydrateClaudeHistory(history.messages, { activeTurnId, activeUserInput })
+        setDetails((current) => {
+          const latestSession = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+          if (!latestSession) return current
+          const detail = current[sessionId] ?? emptyThreadDetail(sessionThread(latestSession))
+          return { ...current, [sessionId]: mergeClaudeHistory(detail, hydrated) }
+        })
+        historyLoadedRef.current.add(sessionId)
+      } catch (error) {
+        notify(`无法读取 Claude 历史会话：${messageOf(error)}`, 'error')
+      } finally {
+        historyLoadsRef.current.delete(sessionId)
+      }
+    })()
+    historyLoadsRef.current.set(sessionId, request)
+    return request
+  }, [notify])
+
   const persistProviderSession = useCallback(async (sessionId: string, providerSessionId: string) => {
     const current = sessionsRef.current.find((session) => session.id === sessionId)
     if (!current || current.providerSessionId === providerSessionId) return
+    historyLoadedRef.current.delete(sessionId)
     const saved = await runtime.upsertClaudeSession({
       id: current.id,
       providerSessionId,
@@ -156,6 +199,10 @@ export function useClaudeHarness() {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session || input.length === 0) return
     if (activeTurnIdsRef.current[sessionId]) throw new Error('Claude 会话当前正在运行')
+    await loadSessionHistory(sessionId)
+    const latestSession = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!latestSession) return
+    if (activeTurnIdsRef.current[sessionId]) throw new Error('Claude 会话当前正在运行')
     const userItemId = `${turnId}:user`
     const startedAt = Date.now()
     const newTurn: Turn = {
@@ -172,7 +219,7 @@ export function useClaudeHarness() {
     setActiveTurnIds(nextActive)
     setBusy((current) => ({ ...current, composer: true }))
     setDetails((current) => {
-      const base = current[sessionId] ?? emptyThreadDetail(sessionThread(session))
+      const base = current[sessionId] ?? emptyThreadDetail(sessionThread(latestSession))
       const withTurn = reduceThreadDetailEvent(base, { type: 'turnStarted', turn: newTurn })
       const withUser = reduceThreadDetailEvent(withTurn, {
         type: 'itemUpserted',
@@ -190,9 +237,9 @@ export function useClaudeHarness() {
     try {
       await runtime.startClaudeTurn({
         sessionId,
-        providerSessionId: session.providerSessionId,
+        providerSessionId: latestSession.providerSessionId,
         turnId,
-        cwd: session.cwd,
+        cwd: latestSession.cwd,
         input,
         ...(model ? { model } : {}),
         ...(effort ? { effort } : {}),
@@ -220,7 +267,7 @@ export function useClaudeHarness() {
     } finally {
       setBusy((current) => ({ ...current, composer: false }))
     }
-  }, [models, notify])
+  }, [loadSessionHistory, models, notify])
 
   const drainQueue = useCallback(async (sessionId: string) => {
     if (activeTurnIdsRef.current[sessionId]) return
@@ -540,7 +587,8 @@ export function useClaudeHarness() {
     setDetails((current) => current[sessionId]
       ? current
       : { ...current, [sessionId]: emptyThreadDetail(sessionThread(session)) })
-  }, [])
+    void loadSessionHistory(sessionId)
+  }, [loadSessionHistory])
 
   const createSession = useCallback(async (cwd: string) => {
     setBusy((current) => ({ ...current, createThread: true }))
