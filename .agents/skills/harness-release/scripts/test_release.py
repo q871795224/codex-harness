@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -96,6 +97,48 @@ class ReleaseScriptTest(unittest.TestCase):
         for value in ("0.7", "0.7.6-beta.1", "01.2.3", "latest"):
             with self.subTest(value=value), self.assertRaises(release.ReleaseError):
                 release.parse_version(value)
+
+    def test_prepend_path_adds_missing_directory_once(self):
+        with patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
+            release._prepend_path(Path("/custom/bin"))
+            release._prepend_path(Path("/custom/bin"))
+            self.assertEqual(os.environ["PATH"], "/custom/bin:/usr/bin:/bin")
+
+    def test_bootstrap_tool_path_finds_pnpm_and_cargo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            nvm_bin = home / ".nvm/versions/node/v22.0.0/bin"
+            nvm_bin.mkdir(parents=True)
+            (nvm_bin / "pnpm").write_text("")
+            (nvm_bin / "cargo").write_text("")
+
+            with (
+                patch.object(release.Path, "home", return_value=home),
+                # Force "not found" until a dir is prepended: report found only
+                # once a dir containing the tool is on PATH.
+                patch.object(
+                    release.shutil,
+                    "which",
+                    side_effect=lambda tool: (
+                        str(nvm_bin / tool) if str(nvm_bin) in os.environ.get("PATH", "") else None
+                    ),
+                ),
+                patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}),
+            ):
+                release.bootstrap_tool_path()
+                path_entries = os.environ["PATH"].split(os.pathsep)
+                self.assertIn(str(nvm_bin), path_entries)
+                self.assertEqual(release.shutil.which("pnpm"), str(nvm_bin / "pnpm"))
+                self.assertEqual(release.shutil.which("cargo"), str(nvm_bin / "cargo"))
+
+    def test_bootstrap_tool_path_noop_when_tools_already_present(self):
+        original_path = os.environ.get("PATH", "")
+        with (
+            patch.object(release.shutil, "which", return_value="/usr/local/bin/tool"),
+            patch.dict(os.environ, {"PATH": original_path}),
+        ):
+            release.bootstrap_tool_path()
+            self.assertEqual(os.environ["PATH"], original_path)
 
 
 if __name__ == "__main__":

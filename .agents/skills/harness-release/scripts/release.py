@@ -54,6 +54,42 @@ def try_run(*args: str, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[st
     return subprocess.run(args, cwd=cwd, check=False, text=True, capture_output=True)
 
 
+def _prepend_path(directory: Path) -> None:
+    resolved = str(directory)
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    if resolved not in entries:
+        os.environ["PATH"] = os.pathsep.join([resolved, *entries])
+
+
+def _nvm_bin_dirs(home: Path) -> list[Path]:
+    versions_dir = home / ".nvm/versions/node"
+    if not versions_dir.is_dir():
+        return []
+    return [bin_dir for version in sorted(versions_dir.iterdir()) if (bin_dir := version / "bin").is_dir()]
+
+
+def bootstrap_tool_path() -> None:
+    # The release runner spawns release.py without an interactive shell, so PATH
+    # misses toolchain dirs that only shell rc files add (nvm, cargo). Top up PATH
+    # with well-known locations so `pnpm`/`cargo` resolve without manual symlinks.
+    home = Path.home()
+    candidates = [
+        home / ".cargo/bin",
+        home / ".volta/bin",
+        Path("/opt/homebrew/bin"),
+        Path("/usr/local/bin"),
+        *_nvm_bin_dirs(home),
+    ]
+    needed = [tool for tool in ("pnpm", "cargo") if shutil.which(tool) is None]
+    for directory in candidates:
+        if not needed:
+            break
+        if not directory.is_dir():
+            continue
+        _prepend_path(directory)
+        needed = [tool for tool in needed if shutil.which(tool) is None]
+
+
 def parse_version(value: str) -> tuple[int, int, int]:
     match = re.fullmatch(r"(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", value)
     if not match:
@@ -446,6 +482,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
+    bootstrap_tool_path()
     try:
         if args.command == "publish":
             command_publish(args.version, github=not args.local)
