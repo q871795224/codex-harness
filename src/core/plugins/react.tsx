@@ -17,6 +17,7 @@ import type {
   ThreadHeaderActionContribution,
   ThreadHeaderActionProps,
 } from '../../extensions/types'
+import { mergeUsagePlugins } from './usageMigration'
 import { defaultPluginInstancesToSeed, removedDefaultPluginInstanceIds } from './defaults'
 import { PluginHost, type ResolvedContribution } from './runtime'
 
@@ -70,7 +71,11 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     let disposed = false
     const load = async () => {
       try {
-        const stored = await runtime.listPluginInstances()
+        let stored = await runtime.listPluginInstances()
+        const merged = mergeUsagePlugins(stored)
+        for (const instance of merged.save) await runtime.upsertPluginInstance(instance)
+        for (const id of merged.remove) await runtime.deletePluginInstance(id)
+        if (merged.remove.length) stored = await runtime.listPluginInstances()
         let next = [...stored]
         const removedDefaultInstanceIds = removedDefaultPluginInstanceIds(
           await runtime.getAppState(REMOVED_DEFAULT_PLUGIN_INSTANCE_IDS_KEY),

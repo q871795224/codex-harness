@@ -41,7 +41,7 @@ describe('usage plugin', () => {
   it('registers one global tab backed by the restricted usage service', async () => {
     const host = new PluginHost([usagePlugin], {
       storage: () => ({ get: async () => null, set: async () => undefined }),
-      services: { 'harness.usage': {
+      services: { 'harness.codexAnalytics': { configure: async () => ({}), snapshot: async () => ({}) }, 'harness.conversations': { openThread: async () => undefined }, 'harness.usage': {
         cachedSnapshot: async () => null,
         refreshSnapshot: async () => ({ fetchedAt: 0, since: '', until: '', providers: [] }),
       } },
@@ -49,7 +49,7 @@ describe('usage plugin', () => {
     await host.syncInstances([usageDefaultInstance])
     const tabs = host.resolvedTabs({ threadId: 'thread-1', threadCwd: '/repo', workspaceRoot: '/repo' })
     expect(tabs).toHaveLength(1)
-    expect(tabs[0].contribution.label).toBe('用量')
+    expect(tabs[0].contribution.label).toBe('用量分析')
     await host.dispose()
   })
 })

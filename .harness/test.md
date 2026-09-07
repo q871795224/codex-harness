@@ -49,6 +49,6 @@ rg '"area":"codex-usage"' ~/.codex-harness/logs/harness.jsonl | tail -20
 `resultMeta.turnId`，可和 `usage.updated.fields.turnId` 关联，避免只按时间猜测
 某个 turn 的来源。
 
-长期分析数据由 `src-tauri/src/codex_analytics.rs` 写入 `state.sqlite`，与轮转诊断日志分开。测试至少覆盖：同一 turn 的多次 `last` 正确累加、`total` 不参与累加、测试数据库不出现输入正文、MCP completed item 按 call ID 幂等、查询在缺少插件归因时安全降级。所有测试必须使用临时目录。
+长期分析数据由 `src-tauri/src/codex_analytics.rs` 及子模块写入 `state.sqlite`，与轮转诊断日志分开。测试覆盖：重复累计签名不重复累加、相同 `last` 不同累计值正常计入、回退/缺口标记不完整、未登记轮次隔离、启动应答/子 Agent 的事件顺序、Skill 选择与读取分离、MCP call ID 幂等、模型覆盖、按事件时间过滤、全范围汇总与分页。测试数据库及 WAL 不得出现正文或完整 Skill 路径，所有测试使用临时目录或内存数据库。
 
-默认计数器不调用模型或网络，使用 `tiktoken-rs` 的 `o200k_base` 在后台线程本地分词；超过 1 MiB 的单项内容才回退 `unicode-heuristic-v1`。可选官方模式调用 `/responses/input_tokens`，必须使用有界队列、单并发和短超时，缺少密钥、限流或网络失败时保留本地结果。官方 usage 与细分计数只并列分析，不能相加后冒充实际 Token。
+默认计数器不调用模型或网络，使用 `tiktoken-rs` 的 `o200k_base` 在后台线程本地分词；超过 64 KiB 或缺失的单项内容保留事件并标记未计数，不按整文件猜测部分读取体积。可选官方模式调用 `/responses/input_tokens`，必须使用有界队列、单并发和短超时，缺少密钥、限流或网络失败时保留本地结果。官方 usage 与细分计数只并列分析，不能相加后冒充实际 Token。

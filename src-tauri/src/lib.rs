@@ -21,7 +21,7 @@ mod usage;
 
 use app_server::AppServerManager;
 use claude_runtime::{ClaudeRuntime, ClaudeRuntimeStatus};
-use codex_analytics::{AnalyticsCounterStatus, AnalyticsSnapshot, CodexAnalytics};
+use codex_analytics::{AnalyticsCounterStatus, AnalyticsQuery, AnalyticsSnapshot, CodexAnalytics};
 use codex_radar::{CodexRadarClient, RadarModelTable};
 use diagnostics::DiagnosticLog;
 use local_connector::{
@@ -888,10 +888,10 @@ fn upsert_plugin_run(
 #[tauri::command]
 async fn codex_analytics_snapshot(
     state: State<'_, AppState>,
-    range: String,
+    query: AnalyticsQuery,
 ) -> Result<AnalyticsSnapshot, String> {
     let analytics = state.codex_analytics.clone();
-    tauri::async_runtime::spawn_blocking(move || analytics.snapshot(&range))
+    tauri::async_runtime::spawn_blocking(move || analytics.snapshot(&query))
         .await
         .map_err(|error| format!("等待 Codex 分析查询失败: {error}"))?
 }

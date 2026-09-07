@@ -12,9 +12,8 @@ import { usageDefaultInstance, usagePlugin } from './usage'
 import { apiWorkbenchDefaultInstance, apiWorkbenchPlugin } from './api-workbench'
 import { terminalDefaultInstance, terminalPlugin } from './terminal'
 import { appLauncherDefaultInstance, appLauncherPlugin } from './app-launcher'
-import { codexAnalyticsDefaultInstance, codexAnalyticsPlugin } from './codex-analytics'
 import { promptsDefaultInstance, promptsPlugin } from './prompts'
 import { projectDocDefaultInstance, projectDocPlugin } from './project-doc'
 
-export const builtInPlugins: HarnessPlugin[] = [sessionLauncherPlugin, tasksPlugin, usagePlugin, codexAnalyticsPlugin, trajectoryPlugin, harnessFilesPlugin, apiWorkbenchPlugin, terminalPlugin, appLauncherPlugin, lunaPlugin, quickAgentPlugin, quickCommandPlugin, seaTalkPlugin, notificationsPlugin, promptsPlugin, projectDocPlugin]
-export const defaultPluginInstances: PluginInstanceRecord[] = [sessionLauncherDefaultInstance, tasksDefaultInstance, usageDefaultInstance, codexAnalyticsDefaultInstance, ...trajectoryDefaults, harnessFilesDefaultInstance, apiWorkbenchDefaultInstance, terminalDefaultInstance, appLauncherDefaultInstance, lunaDefaultInstance, quickAgentDefaultInstance, ...quickCommandDefaultInstances, seaTalkDefaultInstance, notificationsDefaultInstance, promptsDefaultInstance, projectDocDefaultInstance]
+export const builtInPlugins: HarnessPlugin[] = [sessionLauncherPlugin, tasksPlugin, usagePlugin, trajectoryPlugin, harnessFilesPlugin, apiWorkbenchPlugin, terminalPlugin, appLauncherPlugin, lunaPlugin, quickAgentPlugin, quickCommandPlugin, seaTalkPlugin, notificationsPlugin, promptsPlugin, projectDocPlugin]
+export const defaultPluginInstances: PluginInstanceRecord[] = [sessionLauncherDefaultInstance, tasksDefaultInstance, usageDefaultInstance, ...trajectoryDefaults, harnessFilesDefaultInstance, apiWorkbenchDefaultInstance, terminalDefaultInstance, appLauncherDefaultInstance, lunaDefaultInstance, quickAgentDefaultInstance, ...quickCommandDefaultInstances, seaTalkDefaultInstance, notificationsDefaultInstance, promptsDefaultInstance, projectDocDefaultInstance]
