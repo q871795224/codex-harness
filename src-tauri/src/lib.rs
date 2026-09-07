@@ -261,9 +261,10 @@ async fn start_release_command(
     state: State<'_, AppState>,
     workspace_root: String,
     version: String,
+    base_sha: Option<String>,
 ) -> Result<release_command::ReleaseStatus, String> {
     let _guard = state.release_start.lock().await;
-    release_command::start(&workspace_root, &version)
+    release_command::start(&workspace_root, &version, base_sha.as_deref())
 }
 
 #[tauri::command]

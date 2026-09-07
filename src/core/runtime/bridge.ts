@@ -549,8 +549,8 @@ export const runtime = {
     return invoke<ReleaseRunStatus | null>('release_command_status', { workspaceRoot })
   },
 
-  startReleaseCommand(workspaceRoot: string, version: string): Promise<ReleaseRunStatus> {
-    return invoke<ReleaseRunStatus>('start_release_command', { workspaceRoot, version })
+  startReleaseCommand(workspaceRoot: string, version: string, baseSha: string): Promise<ReleaseRunStatus> {
+    return invoke<ReleaseRunStatus>('start_release_command', { workspaceRoot, version, baseSha })
   },
 
   dismissReleaseFailure(workspaceRoot: string): Promise<ReleaseRunStatus | null> {

@@ -24,6 +24,7 @@ function failedRelease(): WorkspaceReleaseController {
     supported: true,
     currentVersion: '0.7.6',
     versions: ['0.7.7', '0.8.0'],
+    originMainSha: 'base-sha',
     loading: false,
     refresh: vi.fn(async () => undefined),
     status: {

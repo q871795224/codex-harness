@@ -2,6 +2,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    collections::HashMap,
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
@@ -32,6 +33,20 @@ pub struct ReleaseStatus {
     pub dismissed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_sha: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_started_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub phase_durations: HashMap<String, u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_started_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,6 +55,7 @@ pub struct ReleaseCommandInfo {
     pub supported: bool,
     pub current_version: Option<String>,
     pub versions: Vec<String>,
+    pub origin_main_sha: Option<String>,
     pub status: Option<ReleaseStatus>,
 }
 
@@ -49,6 +65,7 @@ pub fn info(path: &str, refresh: bool) -> Result<ReleaseCommandInfo, String> {
             supported: false,
             current_version: None,
             versions: Vec::new(),
+            origin_main_sha: None,
             status: None,
         });
     };
@@ -64,23 +81,24 @@ pub fn info(path: &str, refresh: bool) -> Result<ReleaseCommandInfo, String> {
         )?;
     }
     let current_version = origin_main_version(&workspace.checkout_root)?;
+    let origin_main_sha = origin_main_sha(&workspace.checkout_root)?;
     let versions = next_versions(&current_version)?;
     Ok(ReleaseCommandInfo {
         supported: true,
         current_version: Some(current_version),
         versions,
+        origin_main_sha: Some(origin_main_sha),
         status,
     })
 }
 
-pub fn status(path: &str) -> Result<Option<ReleaseStatus>, String> {
-    let Some(workspace) = harness_workspace(path)? else {
-        return Ok(None);
-    };
-    read_status(&workspace.root)
+pub fn status(workspace_root: &str) -> Result<Option<ReleaseStatus>, String> {
+    // The frontend polls with the canonical root returned by `info`. Avoid
+    // re-running Git workspace and remote validation once per second.
+    read_status(workspace_root)
 }
 
-pub fn start(path: &str, version: &str) -> Result<ReleaseStatus, String> {
+pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<ReleaseStatus, String> {
     let Some(workspace) = harness_workspace(path)? else {
         return Err("发布命令只适用于 Codex Harness 工作区".to_string());
     };
@@ -90,11 +108,14 @@ pub fn start(path: &str, version: &str) -> Result<ReleaseStatus, String> {
         }
     }
 
-    git(
-        &workspace.checkout_root,
-        ["fetch", "origin", "--prune", "--tags"],
-    )?;
     let current_version = origin_main_version(&workspace.checkout_root)?;
+    let current_sha = origin_main_sha(&workspace.checkout_root)?;
+    if let Some(expected_sha) = base_sha {
+        if expected_sha != current_sha {
+            return Err("版本列表对应的 origin/main 已更新，请重新打开发布菜单".to_string());
+        }
+    }
+    let release_base_sha = base_sha.unwrap_or(current_sha.as_str());
     if !next_versions(&current_version)?
         .iter()
         .any(|item| item == version)
@@ -126,6 +147,13 @@ pub fn start(path: &str, version: &str) -> Result<ReleaseStatus, String> {
         completed_at: None,
         dismissed: false,
         log_path: Some(log_path.to_string_lossy().into_owned()),
+        base_sha: Some(release_base_sha.to_owned()),
+        phase_started_at: None,
+        phase_duration_ms: None,
+        phase_durations: HashMap::new(),
+        step: None,
+        step_started_at: None,
+        step_duration_ms: None,
     };
     write_status(&state_path, &initial)?;
 
@@ -141,7 +169,14 @@ pub fn start(path: &str, version: &str) -> Result<ReleaseStatus, String> {
         .arg(&worktree)
         .arg("--state")
         .arg(&state_path)
-        .args(["--run-id", &run_id, "--version", version])
+        .args([
+            "--run-id",
+            &run_id,
+            "--version",
+            version,
+            "--base-sha",
+            release_base_sha,
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
@@ -239,6 +274,10 @@ fn origin_main_version(cwd: &str) -> Result<String, String> {
         .and_then(Value::as_str)
         .map(str::to_owned)
         .ok_or_else(|| "origin/main package.json 缺少 version".to_string())
+}
+
+fn origin_main_sha(cwd: &str) -> Result<String, String> {
+    git(cwd, ["rev-parse", "origin/main"])
 }
 
 fn next_versions(current: &str) -> Result<Vec<String>, String> {

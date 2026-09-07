@@ -21,6 +21,22 @@ describe('QuickCommandPanel workspace release', () => {
     await waitFor(() => expect(release.start).toHaveBeenCalledWith('0.7.7'))
   })
 
+  it('opens the version menu before the remote refresh completes', async () => {
+    let resolveRefresh!: () => void
+    const refresh = vi.fn(() => new Promise<void>((resolve) => { resolveRefresh = resolve }))
+    const release = controller({ refresh })
+    render(<QuickCommandPanel commands={[]} release={release} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '打开快捷命令' }))
+    fireEvent.click(screen.getByRole('button', { name: '发布 Codex Harness' }))
+
+    expect(screen.getByRole('menu', { name: '选择发布版本' })).toBeTruthy()
+    expect(refresh).toHaveBeenCalledOnce()
+
+    resolveRefresh()
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+  })
+
   it('does not add the release command for another workspace', () => {
     render(<QuickCommandPanel commands={[]} release={controller({ supported: false })} />)
     expect(screen.queryByRole('button', { name: '打开快捷命令' })).toBeNull()
@@ -32,6 +48,7 @@ function controller(overrides: Partial<WorkspaceReleaseController> = {}): Worksp
     supported: true,
     currentVersion: '0.7.6',
     versions: ['0.7.7', '0.8.0'],
+    originMainSha: 'base-sha',
     status: null,
     loading: false,
     refresh: vi.fn(async () => undefined),
