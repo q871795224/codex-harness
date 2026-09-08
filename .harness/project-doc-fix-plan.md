@@ -36,11 +36,10 @@
 - PR 2(#38):#1（大，砍文本协议 + 起 HTTP 服务 + skill 命令）— 已合并
 - 分支从 origin/main 拉；不动 main；走 GitHub PR。
 
-## 待办：skill 命令的上 PATH 方式（待定）
+## skill 命令上 PATH（已定：方案 B，#40 修 wrapper）
 
-`~/.codex/skills/project-doc` 是指向仓库 `.agents/skills/project-doc/` 的软链，SKILL.md 改动随仓库即时生效。但新增的 `project-doc` **可执行命令**不会因属于 skill 就自动上 PATH。两个候选：
+`~/.codex/skills/project-doc` 是指向仓库 `.agents/skills/project-doc/` 的软链，SKILL.md 改动随仓库即时生效。但 `project-doc` **可执行命令**不会因属于 skill 就自动上 PATH。
 
-- **方案 A（倾向）**:SKILL.md 教 Agent 直接 `python3 ~/.agents/skills/project-doc/project_doc.py ...`，删掉 `install.toml` 与 `bin/`。零安装、仓库即真相。
-- **方案 B**：保留 bin 包装 + install.toml，靠 yf-skill 一次性把 `project-doc` 链接到 `~/.local/bin`。
+**定案（方案 B）**：保留 `bin/project-doc` 包装 + `install.toml`，把 wrapper 软链进 `~/.local/bin`（与 yf-skill 装的 bin 同目录）。project-doc 属本仓库 skill、不在 yf-agent-skills 仓库，故不经 `yf-skill install`，直接 `ln -sf` 指向仓库 wrapper。
 
-待与需求方确认后落地。
+注意（#40 修复）：wrapper 不能硬编码 `$HOME/.agents/skills/...`——该 skill 在仓库里、经 `~/.codex/skills/` 软链，wrapper 必须按脚本自身所在目录解析 `project_doc.py`。
