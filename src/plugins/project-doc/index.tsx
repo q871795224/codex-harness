@@ -1,3 +1,4 @@
+import type { NotificationService } from '../../core/notifications/store'
 import { Archive, LoaderCircle, NotebookPen } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { AgentRunService } from '../../core/agent-runs/types'
@@ -78,6 +79,7 @@ export const projectDocPlugin: HarnessPlugin = {
         <ArchiveButton
           props={props}
           service={service}
+          notifications={ctx.services.get<NotificationService>('harness.notifications')}
           agentRuns={ctx.services.get<AgentRunService>('harness.agentRuns')}
           instanceId={ctx.instanceId}
           config={readProjectDocConfig(ctx.config)}
@@ -94,6 +96,7 @@ export const projectDocPlugin: HarnessPlugin = {
         <ArchiveTurnButton
           props={props}
           service={service}
+          notifications={ctx.services.get<NotificationService>('harness.notifications')}
           agentRuns={ctx.services.get<AgentRunService>('harness.agentRuns')}
           instanceId={ctx.instanceId}
           config={readProjectDocConfig(ctx.config)}
@@ -109,6 +112,7 @@ interface ArchiveDeps {
   agentRuns: AgentRunService
   instanceId: string
   config: ReturnType<typeof readProjectDocConfig>
+  notifications?: NotificationService
   persistDraft: (draft: ArchiveDraft) => Promise<void>
 }
 
@@ -124,7 +128,7 @@ async function runArchive(deps: ArchiveDeps, input: {
   const projectId = await deps.service.threadProject(input.threadId)
   if (!projectId) return '当前会话未绑定项目。先在上方绑定项目。'
   await startArchiveRun(
-    { agentRuns: deps.agentRuns, projectDocs: deps.service, store: archiveStore, persistDraft: deps.persistDraft },
+    { agentRuns: deps.agentRuns, projectDocs: deps.service, store: archiveStore, persistDraft: deps.persistDraft, notifications: deps.notifications },
     {
       instanceId: deps.instanceId,
       threadId: input.threadId,
@@ -138,17 +142,18 @@ async function runArchive(deps: ArchiveDeps, input: {
   return null
 }
 
-function ArchiveButton({ props, service, agentRuns, instanceId, config, persistDraft }: {
+function ArchiveButton({ props, service, agentRuns, instanceId, config, persistDraft, notifications }: {
   props: ComposerActionProps
   service: ProjectDocService
   agentRuns: AgentRunService
   instanceId: string
   config: ReturnType<typeof readProjectDocConfig>
+  notifications?: NotificationService
   persistDraft: (draft: ArchiveDraft) => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const deps: ArchiveDeps = { service, agentRuns, instanceId, config, persistDraft }
+  const deps: ArchiveDeps = { service, agentRuns, instanceId, config, persistDraft, notifications }
 
   const archive = async () => {
     setError(null)
@@ -188,18 +193,19 @@ function ArchiveButton({ props, service, agentRuns, instanceId, config, persistD
  * turn 右下角的归档按钮（与 copy/raw/fork 同行、右对齐）。
  * 仅当会话绑定了项目时渲染；点击把最近进展提炼进项目 Status（与 composer 按钮同一条 run 链路）。
  */
-function ArchiveTurnButton({ props, service, agentRuns, instanceId, config, persistDraft }: {
+function ArchiveTurnButton({ props, service, agentRuns, instanceId, config, persistDraft, notifications }: {
   props: TurnActionProps
   service: ProjectDocService
   agentRuns: AgentRunService
   instanceId: string
   config: ReturnType<typeof readProjectDocConfig>
+  notifications?: NotificationService
   persistDraft: (draft: ArchiveDraft) => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [bound, setBound] = useState(false)
-  const deps: ArchiveDeps = { service, agentRuns, instanceId, config, persistDraft }
+  const deps: ArchiveDeps = { service, agentRuns, instanceId, config, persistDraft, notifications }
 
   // 仅在绑定了项目的会话渲染；绑定是异步读，未确认前先不渲染。
   useEffect(() => {

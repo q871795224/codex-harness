@@ -43,6 +43,13 @@
 - “发布”是 Codex Harness 仓库 workspace 专属的受控快捷命令，其他项目不显示。发布状态按 workspace root 共享给其中所有 thread；后台 runner 脱离 Harness 生命周期执行并将状态、日志写入 `~/.codex-harness/release-runs/`，正常路径不启动 Agent。
 - macOS 系统通知默认由 `src-tauri/Info.plist` 的 `NSUserNotificationAlertStyle=alert` 保持到用户处理，系统通知设置仍可覆盖。
 
+## 应用内通知
+
+- 核心通知服务位于 `src/core/notifications/`，插件通过 `harness.notifications` 发布结构化通知。正文使用可读说明，原始错误放 `details`；级别为绿色 `info`、黄色 `warning`、红色 `error`。
+- 浮层位于对话内容区右上角，最多显示三条；关闭或超时仅收起浮层。通知中心是独立页面，按最新时间排序，支持类型/当前会话筛选、已读和关联操作。
+- 历史通过现有 appState 接口写入 `state.sqlite` 的 `notifications.history`，永久保留，不做自动过期或脱敏。存储通知说明、原始错误和关联标识，不复制会话正文、归档草稿或完整日志。
+- 发布和项目归档按一次任务更新同一条通知；发布跨会话继续跟踪，历史日志按 run ID 打开。系统通知插件仍独立负责 macOS 回复完成提醒。
+
 ## 状态与 Provider
 
 - UI 状态、插件实例、插件 Run、输入区未发送草稿和用量快照保存在 `~/.codex-harness/state.sqlite`；草稿只保存文本、折叠粘贴和附件路径，成功发送后清除。已发送的会话正文、凭据和模型 response 不写入 Harness 状态库。

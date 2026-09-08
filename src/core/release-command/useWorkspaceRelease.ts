@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { runtime } from '../runtime/bridge'
-import type { ReleaseCommandInfo, ReleaseRunStatus, WorkspaceReleaseController } from './types'
+import type { ReleaseCommandInfo, WorkspaceReleaseController } from './types'
 
 const EMPTY_INFO: ReleaseCommandInfo = {
   supported: false,
@@ -160,12 +160,4 @@ export function useWorkspaceRelease(workspaceRoot: string | null): WorkspaceRele
   }, [workspaceRoot])
 
   return { ...info, loading, refresh, start, dismissFailure, openLog }
-}
-
-export function releaseFailureVisible(status: ReleaseRunStatus | null): boolean {
-  return status?.status === 'failed' && !status.dismissed
-}
-
-export function releaseWarningVisible(status: ReleaseRunStatus | null): boolean {
-  return status?.status === 'succeeded' && status.warning === true && !status.dismissed
 }

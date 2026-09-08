@@ -280,8 +280,8 @@ fn dismiss_release_failure(
 }
 
 #[tauri::command]
-fn open_release_log(workspace_root: String) -> Result<(), String> {
-    release_command::open_log(&workspace_root)
+fn open_release_log(workspace_root: String, run_id: Option<String>) -> Result<(), String> {
+    release_command::open_log(&workspace_root, run_id.as_deref())
 }
 
 #[tauri::command]

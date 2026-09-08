@@ -1,3 +1,5 @@
+import { notifications } from '../../core/notifications/service'
+import { errorDetails, type NotificationLevel } from '../../core/notifications/store'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AppServerEvent,
@@ -138,11 +140,6 @@ export type ThreadSelectionSource =
 
 type ViewMode = ThreadViewMode
 
-interface HookToast {
-  kind: 'error' | 'info'
-  message: string
-}
-
 type DetailDeltaType = 'agentMessageDelta' | 'commandOutputDelta'
 
 interface PendingDetailDelta {
@@ -199,7 +196,6 @@ export function useHarness() {
   const viewModeRef = useRef<ViewMode>('active')
   const threadListRequestRef = useRef(0)
   const threadSearchRef = useRef('')
-  const [toast, setToast] = useState<HookToast | null>(null)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [forkingTurnId, setForkingTurnId] = useState<string | null>(null)
 
@@ -283,8 +279,13 @@ export function useHarness() {
     })
   }, [])
 
-  const notify = useCallback((message: string, kind: HookToast['kind'] = 'info') => {
-    setToast({ message, kind })
+  const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string }) => {
+    notifications.publish({
+      source: '会话', level: kind, title: message,
+      details: error === undefined ? undefined : errorDetails(error),
+      threadId: context?.threadId,
+      workspaceRoot: context?.workspaceRoot ?? (context?.threadId ? threadsRef.current.find((thread) => thread.id === context.threadId)?.cwd : undefined),
+    })
   }, [])
 
   const updateNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
@@ -440,11 +441,6 @@ export function useHarness() {
     })
   }, [])
 
-  useEffect(() => {
-    if (!toast) return undefined
-    const timeout = window.setTimeout(() => setToast(null), toast.kind === 'error' ? 6_000 : 3_500)
-    return () => window.clearTimeout(timeout)
-  }, [toast])
 
   const updateThread = useCallback((threadId: string, change: (thread: Thread) => Thread) => {
     setThreads((current) => current.map((thread) => thread.id === threadId ? change(thread) : thread))
@@ -647,7 +643,7 @@ export function useHarness() {
       const response = await appServer.listQueue(threadId)
       setQueues((current) => ({ ...current, [threadId]: response.data }))
     } catch (error) {
-      notify(`无法读取排队消息：${messageOf(error)}`, 'error')
+      notify('无法读取排队消息', 'error', error, { threadId })
     }
   }, [notify])
 
@@ -670,7 +666,7 @@ export function useHarness() {
       return next
     })
     void appServer.deleteThread(threadId).catch((error) => {
-      notify(`无法清理空白会话：${messageOf(error)}`, 'error')
+      notify('无法清理空白会话', 'error', error, { threadId })
       void refreshThreads()
     })
   }, [notify, refreshThreads])
@@ -770,7 +766,7 @@ export function useHarness() {
         setDetails((current) => ({ ...current, [threadId]: emptyThreadDetail(thread) }))
         return
       }
-      notify(`无法恢复会话：${messageOf(error)}`, 'error')
+      notify('无法恢复会话', 'error', error, { threadId })
     } finally {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
     }
@@ -868,7 +864,7 @@ export function useHarness() {
       await selectThread(response.thread.id, 'fork')
       notify('已创建分支会话。对话历史已复制，代码文件仍与来源会话共用同一工作目录。')
     } catch (error) {
-      notify(`无法创建分支会话：${messageOf(error)}`, 'error')
+      notify('无法创建分支会话', 'error', error, { threadId: sourceThreadId })
     } finally {
       setForkingTurnId(null)
     }
@@ -891,7 +887,7 @@ export function useHarness() {
       if (selectedThreadIdRef.current !== threadId) return
       updateDetail(threadId, (detail) => prependOlderTurns(detail, response))
     } catch (error) {
-      notify(`无法加载更早消息：${messageOf(error)}`, 'error')
+      notify('无法加载更早消息', 'error', error, { threadId })
     } finally {
       setBusy((current) => ({ ...current, olderTurns: false }))
     }
@@ -908,7 +904,7 @@ export function useHarness() {
       await refreshThreads()
       return workspace
     } catch (error) {
-      notify(messageOf(error), 'error')
+      notify('操作未完成，请查看详情后重试。', 'error', error)
       return null
     }
   }, [notify, refreshThreads, rememberNextThreadCwd])
@@ -935,7 +931,7 @@ export function useHarness() {
       nextThreadCwdRef.current ?? resolveDefaultWorkspaceCwd(workspaces, selectedWorkspaceRoot),
     )
     if (!workspaceRoot) {
-      notify('请先在左侧选择一个 Git 主工作区。', 'error')
+      notify('请先在左侧选择一个 Git 主工作区。', 'warning')
       return
     }
     const previousThread = threadsRef.current.find((thread) => thread.id === selectedThreadIdRef.current)
@@ -993,7 +989,7 @@ export function useHarness() {
       }))
       return response.thread.id
     } catch (error) {
-      notify(`无法${operation}会话：${messageOf(error)}`, 'error')
+      notify(`无法${operation}会话`, 'error', error)
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
@@ -1007,7 +1003,7 @@ export function useHarness() {
     const threadId = selectedThreadIdRef.current
     if (!threadId) return
     if (activeTurnIdsRef.current[threadId]) {
-      notify('请先停止或等待当前回合结束，再重置会话。', 'error')
+      notify('请先停止或等待当前回合结束，再重置会话。', 'warning')
       return
     }
     await startNewThread('clear', '重置')
@@ -1017,7 +1013,7 @@ export function useHarness() {
     const currentThread = threadsRef.current.find((thread) => thread.id === threadId)
     if (!checkoutRoot || !currentThread || currentThread.cwd === checkoutRoot) return
     if (activeTurnIdsRef.current[threadId]) {
-      notify('请先停止或等待当前轮完成，再切换工作目录。', 'error')
+      notify('请先停止或等待当前轮完成，再切换工作目录。', 'warning')
       return
     }
     setBusy((current) => ({ ...current, threadWorkspace: true }))
@@ -1081,7 +1077,7 @@ export function useHarness() {
         },
       })
     } catch (error) {
-      notify(`无法切换工作区：${messageOf(error)}`, 'error')
+      notify('无法切换工作区', 'error', error, { threadId })
     } finally {
       setBusy((current) => ({ ...current, threadWorkspace: false }))
     }
@@ -1549,7 +1545,7 @@ export function useHarness() {
       if (firstSubmission) {
         // A refresh failure must not turn an accepted message into a send failure.
         void refreshThreads().catch((error) => {
-          notify(`消息已发送，但无法刷新会话列表：${messageOf(error)}`, 'error')
+          notify('消息已发送，但会话列表暂未更新。', 'warning', error, { threadId })
         })
       }
       return response.turn.id
@@ -1573,7 +1569,7 @@ export function useHarness() {
     )
     const owned = ownedActiveThreadsRef.current[threadId] === true
     if (activeTurnId && !owned) {
-      notify('该会话正由其他客户端运行；请等待当前轮结束。', 'error')
+      notify('该会话正由其他客户端运行；请等待当前轮结束。', 'warning')
       return
     }
     setBusy((current) => ({ ...current, composer: true }))
@@ -1609,7 +1605,7 @@ export function useHarness() {
         [threadId]: [...(current[threadId] ?? []), result.pending],
       }))
     } catch (error) {
-      notify(`无法发送消息：${messageOf(error)}`, 'error')
+      notify('无法发送消息', 'error', error, { threadId })
       throw error
     } finally {
       setBusy((current) => ({ ...current, composer: false }))
@@ -1623,7 +1619,7 @@ export function useHarness() {
     const latestTurn = detailsRef.current[threadId]?.turns.at(-1)
     if (!latestTurn || latestTurn.status !== 'failed') return
     if (thread?.canAcceptDirectInput === false) {
-      notify('当前会话不接受继续输入。', 'error')
+      notify('当前会话不接受继续输入。', 'warning')
       return
     }
     continuingFailedThreadsRef.current.add(threadId)
@@ -1631,7 +1627,7 @@ export function useHarness() {
     try {
       await startTurn(threadId, '继续', undefined, 'continue-after-failure')
     } catch (error) {
-      notify(`无法继续会话：${messageOf(error)}`, 'error')
+      notify('无法继续会话', 'error', error, { threadId })
     } finally {
       continuingFailedThreadsRef.current.delete(threadId)
       setBusy((current) => ({ ...current, composer: false }))
@@ -1650,7 +1646,7 @@ export function useHarness() {
       await appServer.interruptTurn(threadId, turnId)
     } catch (error) {
       delete pendingRestartRef.current[threadId]
-      notify(`无法停止当前轮：${messageOf(error)}`, 'error')
+      notify('无法停止当前轮', 'error', error, { threadId })
     } finally {
       setBusy((current) => ({ ...current, stop: false }))
     }
@@ -1659,13 +1655,13 @@ export function useHarness() {
   const interruptAgentThread = useCallback(async (threadId: string) => {
     const turnId = activeTurnIdsRef.current[threadId]
     if (!turnId) {
-      notify('子 Agent 当前没有可停止的运行轮次。', 'error')
+      notify('子 Agent 当前没有可停止的运行轮次。', 'warning')
       return
     }
     try {
       await appServer.interruptTurn(threadId, turnId)
     } catch (error) {
-      notify(`无法停止子 Agent：${messageOf(error)}`, 'error')
+      notify('无法停止子 Agent', 'error', error, { threadId })
     }
   }, [notify])
 
@@ -1676,7 +1672,7 @@ export function useHarness() {
       await appServer.updateQueue(threadId, queueId, [textInput(text.trim())])
       await loadQueue(threadId)
     } catch (error) {
-      notify(`无法修改排队消息：${messageOf(error)}`, 'error')
+      notify('无法修改排队消息', 'error', error, { threadId })
     }
   }, [loadQueue, notify])
 
@@ -1687,7 +1683,7 @@ export function useHarness() {
       await appServer.deleteQueue(threadId, queueId)
       setQueues((current) => ({ ...current, [threadId]: (current[threadId] ?? []).filter((item) => item.id !== queueId) }))
     } catch (error) {
-      notify(`无法撤回排队消息：${messageOf(error)}`, 'error')
+      notify('无法撤回排队消息', 'error', error, { threadId })
     }
   }, [notify])
 
@@ -1696,7 +1692,7 @@ export function useHarness() {
     if (!threadId) return
     const activeTurnId = activeTurnIdsRef.current[threadId]
     if (!activeTurnId || !ownedActiveThreadsRef.current[threadId]) {
-      notify('只有 Harness 正在运行该会话时，才能将排队消息改为插话。', 'error')
+      notify('只有 Harness 正在运行该会话时，才能将排队消息改为插话。', 'warning')
       return
     }
     setBusy((current) => ({ ...current, [`promote:${queue.id}`]: true }))
@@ -1708,7 +1704,7 @@ export function useHarness() {
       setQueues((current) => ({ ...current, [threadId]: (current[threadId] ?? []).filter((item) => item.id !== queue.id) }))
     } catch (error) {
       await loadQueue(threadId)
-      notify(`未能改为插话；消息已尝试恢复到队列：${messageOf(error)}`, 'error')
+      notify('未能改为插话；消息已尝试恢复到队列', 'error', error, { threadId })
     } finally {
       setBusy((current) => ({ ...current, [`promote:${queue.id}`]: false }))
     }
@@ -1725,7 +1721,7 @@ export function useHarness() {
       const response = await appServer.startQueue(threadId, queue[0].id)
       if (!completedTurnIdsRef.current.delete(response.turn.id)) setActiveTurn(threadId, response.turn.id, true)
     } catch (error) {
-      notify(`无法继续队列：${messageOf(error)}`, 'error')
+      notify('无法继续队列', 'error', error, { threadId })
     } finally {
       locallyStartingRef.current.delete(threadId)
       setThreadStarting(threadId, false)
@@ -1738,7 +1734,7 @@ export function useHarness() {
       updateThread(threadId, (thread) => ({ ...thread, name: name.trim() || null }))
       updateDetail(threadId, (detail) => ({ ...detail, thread: { ...detail.thread, name: name.trim() || null } }))
     } catch (error) {
-      notify(`无法重命名会话：${messageOf(error)}`, 'error')
+      notify('无法重命名会话', 'error', error, { threadId })
     }
   }, [notify, updateDetail, updateThread])
 
@@ -1754,9 +1750,9 @@ export function useHarness() {
         selectedThreadIdRef.current = null
         setSelectedThreadId(null)
       }
-      notify('已归档会话')
+      notify('已归档会话', 'info', undefined, { threadId })
     } catch (error) {
-      notify(`无法归档会话：${messageOf(error)}`, 'error')
+      notify('无法归档会话', 'error', error, { threadId })
     }
   }, [notify, rememberNextThreadCwd])
 
@@ -1786,12 +1782,12 @@ export function useHarness() {
         const message = archivedIds.size > 0
           ? `已归档 ${archivedIds.size} 个 3 天前的会话；${result.failedCount} 个未能归档`
           : `未能归档 ${result.failedCount} 个 3 天前的会话`
-        notify(message, 'error')
+        notify(message, archivedIds.size > 0 ? 'warning' : 'error')
       } else {
         notify(`已归档 ${archivedIds.size} 个 3 天前的会话`)
       }
     } catch (error) {
-      notify(`无法归档旧会话：${messageOf(error)}`, 'error')
+      notify(`无法归档旧会话`, 'error', error)
     } finally {
       setBusy((current) => ({ ...current, archiveOldThreads: false }))
     }
@@ -1802,9 +1798,9 @@ export function useHarness() {
       await appServer.unarchiveThread(threadId)
       setThreads((current) => current.filter((thread) => thread.id !== threadId))
       if (selectedThreadIdRef.current === threadId) setSelectedThreadId(null)
-      notify('已恢复会话')
+      notify('已恢复会话', 'info', undefined, { threadId })
     } catch (error) {
-      notify(`无法恢复会话：${messageOf(error)}`, 'error')
+      notify('无法恢复会话', 'error', error, { threadId })
     }
   }, [notify])
 
@@ -1818,7 +1814,7 @@ export function useHarness() {
       const remaining = (approvalsRef.current[request.threadId] ?? []).filter((item) => item.id !== request.id)
       if (remaining.length === 0 && activeTurnIdsRef.current[request.threadId]) persistBadge(request.threadId, 'working')
     } catch (error) {
-      notify(`无法提交审批结果：${messageOf(error)}`, 'error')
+      notify('无法提交审批结果', 'error', error, { threadId: request.threadId })
     }
   }, [notify, persistBadge])
 
@@ -1908,7 +1904,7 @@ export function useHarness() {
       const thread = params.thread as Thread | undefined
       if (thread && !thread.ephemeral) {
         // Started/resumed notifications do not carry archive membership.
-        void refreshThreads().catch((error) => notify(`无法刷新会话：${messageOf(error)}`, 'error'))
+        void refreshThreads().catch((error) => notify(`无法刷新会话`, 'error', error))
       }
       return
     }
@@ -2102,7 +2098,7 @@ export function useHarness() {
           delete pendingRestartRef.current[threadId]
           setPendingSteers((current) => ({ ...current, [threadId]: [] }))
           void startTurn(threadId, null, restartInputs(restarts), 'conversation-restart').catch((error) => {
-            notify(`插话未能在停止后继续发送：${messageOf(error)}`, 'error')
+            notify('插话未能在停止后继续发送', 'error', error, { threadId })
           })
         }
       }
@@ -2177,11 +2173,11 @@ export function useHarness() {
       (event) => {
         if (event.kind === 'disconnected') {
           handleTransportDisconnect()
-          notify(`${String(event.message ?? 'Codex App Server 连接已断开。')} 正在尝试恢复会话。`, 'error')
+          notify('与 Codex 的连接已断开，正在尝试恢复会话。', 'warning', event.message)
           scheduleTransportRecovery()
         }
       },
-      (error) => notify(`无法监听 App Server：${messageOf(error)}`, 'error'),
+      (error) => notify(`无法监听 App Server`, 'error', error),
     )
     return () => {
       disposed = true
@@ -2243,7 +2239,6 @@ export function useHarness() {
     selectedWorkspaceRoot,
     nextThreadCwd,
     viewMode,
-    toast,
     busy,
     forkingTurnId,
     currentThread,
@@ -2306,7 +2301,7 @@ export function useHarness() {
       try {
         await refreshThreads(mode)
       } catch (error) {
-        notify(`无法读取会话：${messageOf(error)}`, 'error')
+        notify(`无法读取会话`, 'error', error)
       }
     },
     searchThreads: async (term: string) => {
@@ -2314,14 +2309,14 @@ export function useHarness() {
       try {
         await refreshThreads(viewModeRef.current, term)
       } catch (error) {
-        notify(`无法搜索会话：${messageOf(error)}`, 'error')
+        notify(`无法搜索会话`, 'error', error)
       }
     },
     refresh: async () => {
       try {
         await refreshThreads()
       } catch (error) {
-        notify(`无法刷新会话：${messageOf(error)}`, 'error')
+        notify(`无法刷新会话`, 'error', error)
       }
     },
   }

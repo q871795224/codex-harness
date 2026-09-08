@@ -1,3 +1,5 @@
+import { notifications } from '../../core/notifications/service'
+import { errorDetails, type NotificationLevel } from '../../core/notifications/store'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { emptyThreadDetail, textInput, type ApprovalRequest, type QueuedSubmission, type Thread, type ThreadDetail, type Turn, type UserInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
@@ -14,11 +16,6 @@ const CLAUDE_MAX_TURNS = 65_536
 const CLAUDE_SESSION_SETTINGS_KEY = 'claude.sessionSettings'
 export const DEFAULT_CLAUDE_SESSION_TITLE = 'Claude 会话'
 
-interface ClaudeToast {
-  kind: 'error' | 'info'
-  message: string
-}
-
 export function useClaudeHarness() {
   const [status, setStatus] = useState<ClaudeRuntimeStatus | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -32,7 +29,6 @@ export function useClaudeHarness() {
   const [models, setModels] = useState<ClaudeModel[]>([])
   const [sessionSettings, setSessionSettings] = useState<Record<string, ClaudeSessionSettings>>({})
   const [busy, setBusy] = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<ClaudeToast | null>(null)
   const sessionsRef = useRef<ClaudeSessionRecord[]>([])
   const detailsRef = useRef<Record<string, ThreadDetail>>({})
   const activeTurnIdsRef = useRef<Record<string, string>>({})
@@ -54,11 +50,6 @@ export function useClaudeHarness() {
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => { queuesRef.current = queues }, [queues])
   useEffect(() => { settingsRef.current = sessionSettings }, [sessionSettings])
-  useEffect(() => {
-    if (!toast) return undefined
-    const timer = window.setTimeout(() => setToast(null), toast.kind === 'error' ? 6_000 : 3_500)
-    return () => window.clearTimeout(timer)
-  }, [toast])
 
   useEffect(() => {
     void runtime.getAppState(CLAUDE_SESSION_SETTINGS_KEY).then((value) => {
@@ -68,8 +59,13 @@ export function useClaudeHarness() {
     }).catch(() => undefined)
   }, [])
 
-  const notify = useCallback((message: string, kind: ClaudeToast['kind'] = 'info') => {
-    setToast({ message, kind })
+  const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string }) => {
+    notifications.publish({
+      source: 'Claude', level: kind, title: message,
+      details: error === undefined ? undefined : errorDetails(error),
+      threadId: context?.threadId,
+      workspaceRoot: context?.workspaceRoot,
+    })
   }, [])
 
   const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
@@ -84,7 +80,7 @@ export function useClaudeHarness() {
     void runtime.listClaudeModels(cwd).then((result) => {
       if (!disposed) setModels(result.models)
     }).catch((error) => {
-      if (!disposed) notify(`无法读取 Claude 模型列表：${messageOf(error)}`, 'error')
+      if (!disposed) notify(`无法读取 Claude 模型列表`, 'error', error)
     })
     return () => { disposed = true }
   }, [notify, sessions[0]?.cwd, status?.available])
@@ -179,7 +175,7 @@ export function useClaudeHarness() {
         })
         historyLoadedRef.current.add(sessionId)
       } catch (error) {
-        notify(`无法读取 Claude 历史会话：${messageOf(error)}`, 'error')
+        notify(`无法读取 Claude 历史会话`, 'error', error)
       } finally {
         historyLoadsRef.current.delete(sessionId)
       }
@@ -272,7 +268,7 @@ export function useClaudeHarness() {
       if (next[sessionId] === turnId) delete next[sessionId]
       activeTurnIdsRef.current = next
       setActiveTurnIds(next)
-      notify(`无法发送 Claude 消息：${messageOf(error)}`, 'error')
+      notify(`无法发送 Claude 消息`, 'error', error)
       throw error
     } finally {
       setBusy((current) => ({ ...current, composer: false }))
@@ -315,7 +311,7 @@ export function useClaudeHarness() {
         await runtime.interruptClaudeTurn(sessionId)
       } catch (error) {
         interjectRef.current.delete(sessionId)
-        notify(`无法插话 Claude turn：${messageOf(error)}`, 'error')
+        notify(`无法插话 Claude turn`, 'error', error)
       }
     }
   }, [beginTurn, notify])
@@ -349,7 +345,7 @@ export function useClaudeHarness() {
         await runtime.interruptClaudeTurn(sessionId)
       } catch (error) {
         interjectRef.current.delete(sessionId)
-        notify(`无法插话 Claude turn：${messageOf(error)}`, 'error')
+        notify(`无法插话 Claude turn`, 'error', error)
       }
     } else {
       await drainQueue(sessionId)
@@ -413,7 +409,7 @@ export function useClaudeHarness() {
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null
     if (!sessionId) return
     if (event.method === 'session/started' && typeof params.providerSessionId === 'string') {
-      void persistProviderSession(sessionId, params.providerSessionId).catch((error) => notify(messageOf(error), 'error'))
+      void persistProviderSession(sessionId, params.providerSessionId).catch((error) => notify('操作未完成，请查看详情后重试。', 'error', error))
       return
     }
     if ((event.method === 'approval/resolved' || event.method === 'approval/expired') && typeof params.requestId === 'string') {
@@ -473,7 +469,7 @@ export function useClaudeHarness() {
         return next
       })
       replaceApprovals({ ...approvalsRef.current, [sessionId]: [] })
-      if (event.method === 'turn/failed') notify(typeof params.message === 'string' ? params.message : 'Claude turn 失败', 'error')
+      if (event.method === 'turn/failed') notify('Claude 执行失败，请查看详情后重试。', 'error', params.message)
       if (event.method === 'turn/completed') {
         const providerSessionId = typeof params.providerSessionId === 'string' ? params.providerSessionId : null
         if (providerSessionId) {
@@ -494,7 +490,7 @@ export function useClaudeHarness() {
           for (const listener of turnCompletedListenersRef.current) listener(completedEvent)
         }
       }
-      void drainQueue(sessionId).catch((error) => notify(`无法继续 Claude 排队消息：${messageOf(error)}`, 'error'))
+      void drainQueue(sessionId).catch((error) => notify(`无法继续 Claude 排队消息`, 'error', error))
     }
   }, [drainQueue, notify, persistProviderSession, refreshContext, removeApproval, replaceApprovals])
 
@@ -626,7 +622,7 @@ export function useClaudeHarness() {
       })
       return session.id
     } catch (error) {
-      notify(`无法创建 Claude 会话：${messageOf(error)}`, 'error')
+      notify(`无法创建 Claude 会话`, 'error', error)
       throw error
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
@@ -641,7 +637,7 @@ export function useClaudeHarness() {
       await runtime.interruptClaudeTurn(sessionId)
     } catch (error) {
       manualStopRef.current.delete(sessionId)
-      notify(`无法停止 Claude turn：${messageOf(error)}`, 'error')
+      notify(`无法停止 Claude turn`, 'error', error)
     } finally {
       setBusy((current) => ({ ...current, stop: false }))
     }
@@ -659,7 +655,7 @@ export function useClaudeHarness() {
       }
       removeApproval(request.threadId, String(request.id))
     } catch (error) {
-      notify(`无法提交 Claude 审批：${messageOf(error)}`, 'error')
+      notify(`无法提交 Claude 审批`, 'error', error)
     }
   }, [notify, removeApproval])
 
@@ -701,7 +697,7 @@ export function useClaudeHarness() {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!workspaceRoot || !session) return
     if (activeTurnIdsRef.current[sessionId]) {
-      notify('请先停止或等待当前轮完成，再切换工作目录。', 'error')
+      notify('请先停止或等待当前轮完成，再切换工作目录。', 'warning')
       return
     }
     // The workspace picker passes a workspace root; normalize it to the
@@ -760,7 +756,6 @@ export function useClaudeHarness() {
     models,
     sessionSettings,
     busy,
-    toast,
     refresh,
     settingsForSession,
     updateSessionSettings,

@@ -225,16 +225,32 @@ pub fn dismiss(path: &str) -> Result<Option<ReleaseStatus>, String> {
     Ok(Some(current))
 }
 
-pub fn open_log(path: &str) -> Result<(), String> {
+fn historical_log_path(directory: &Path, run_id: &str) -> Result<PathBuf, String> {
+    if run_id.is_empty()
+        || !run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err("发布任务编号无效".to_string());
+    }
+    Ok(directory.join(format!("{run_id}.log")))
+}
+
+pub fn open_log(path: &str, run_id: Option<&str>) -> Result<(), String> {
     let Some(workspace) = harness_workspace(path)? else {
         return Err("发布命令只适用于 Codex Harness 工作区".to_string());
     };
-    let status = read_status(&workspace.root)?.ok_or_else(|| "没有发布记录".to_string())?;
-    let log_path = status
-        .log_path
-        .ok_or_else(|| "发布日志不存在".to_string())?;
-    let log_path = PathBuf::from(log_path);
     let expected = release_data_dir(&workspace.root)?;
+    let log_path = if let Some(run_id) = run_id {
+        historical_log_path(&expected, run_id)?
+    } else {
+        let status = read_status(&workspace.root)?.ok_or_else(|| "没有发布记录".to_string())?;
+        PathBuf::from(
+            status
+                .log_path
+                .ok_or_else(|| "发布日志不存在".to_string())?,
+        )
+    };
     if !log_path.starts_with(&expected) || !log_path.is_file() {
         return Err("发布日志路径无效".to_string());
     }
@@ -455,5 +471,22 @@ mod tests {
         assert!(!installed_version_is_older("0.8.7", "0.8.7"));
         assert!(!installed_version_is_older("0.8.8", "0.8.7"));
         assert!(!installed_version_is_older("invalid", "0.8.7"));
+    }
+}
+
+#[cfg(test)]
+mod notification_log_tests {
+    use super::*;
+
+    #[test]
+    fn historical_logs_are_bound_to_the_requested_run() {
+        let directory = std::env::temp_dir().join("harness-notification-test");
+        assert_eq!(
+            historical_log_path(&directory, "123-456").unwrap(),
+            directory.join("123-456.log")
+        );
+        for invalid in ["", "../123", "/tmp/123", "abc", "123/456"] {
+            assert!(historical_log_path(&directory, invalid).is_err());
+        }
     }
 }

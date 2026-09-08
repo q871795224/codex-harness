@@ -1,3 +1,5 @@
+import { notifications } from '../notifications/service'
+import { errorDetails } from '../notifications/store'
 import { useState } from 'react'
 import { Check, ChevronRight, CircleAlert, LoaderCircle, PackageOpen, Play, Terminal } from 'lucide-react'
 import type { QuickCommandContribution } from '../../extensions/types'
@@ -7,12 +9,14 @@ import type { ResolvedContribution } from './runtime'
 interface QuickCommandPanelProps {
   commands: ResolvedContribution<QuickCommandContribution>[]
   release?: WorkspaceReleaseController
+  workspaceRoot?: string | null
+  threadId?: string | null
   anchorBottom?: number
 }
 
 type CommandState = { phase: 'running' | 'success' | 'failed'; message: string }
 
-export function QuickCommandPanel({ commands, release, anchorBottom }: QuickCommandPanelProps) {
+export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRoot, threadId }: QuickCommandPanelProps) {
   const [open, setOpen] = useState(false)
   const [releasePicker, setReleasePicker] = useState(false)
   const [releaseRefreshing, setReleaseRefreshing] = useState(false)
@@ -25,16 +29,20 @@ export function QuickCommandPanel({ commands, release, anchorBottom }: QuickComm
   const run = async (entry: ResolvedContribution<QuickCommandContribution>) => {
     const key = entry.instanceId
     setStates((current) => ({ ...current, [key]: { phase: 'running', message: '后台执行中…' } }))
+    const id = notifications.publish({ level: 'info', source: '快捷命令', title: `${entry.contribution.label}：执行中`, workspaceRoot, threadId, state: 'running' })
     try {
       const result = await entry.contribution.run()
+      const message = result.success ? `${entry.contribution.label}：已完成` : `${entry.contribution.label}：未完成，请查看详情后重试。`
+      notifications.publish({ id, level: result.success ? 'info' : 'error', source: '快捷命令', title: message, details: result.message, workspaceRoot, threadId, state: 'done' })
       setStates((current) => ({
         ...current,
-        [key]: { phase: result.success ? 'success' : 'failed', message: result.message },
+        [key]: { phase: result.success ? 'success' : 'failed', message },
       }))
     } catch (error) {
+      notifications.publish({ id, level: 'error', source: '快捷命令', title: `${entry.contribution.label}：未完成`, message: '请查看详情后重试。', details: errorDetails(error), workspaceRoot, threadId, state: 'done' })
       setStates((current) => ({
         ...current,
-        [key]: { phase: 'failed', message: error instanceof Error ? error.message : String(error) },
+        [key]: { phase: 'failed', message: '执行失败，请在通知中心查看详情。' },
       }))
     }
   }
@@ -46,7 +54,8 @@ export function QuickCommandPanel({ commands, release, anchorBottom }: QuickComm
     try {
       await release.start(version)
     } catch (error) {
-      setReleaseError(error instanceof Error ? error.message : String(error))
+      setReleaseError('发布操作未完成，请在通知中心查看详情。')
+      notifications.publish({ level: 'error', source: '发布', title: '发布操作未完成', message: '请查看详情后重新选择发布版本。', details: errorDetails(error), workspaceRoot })
     }
   }
 
@@ -61,7 +70,8 @@ export function QuickCommandPanel({ commands, release, anchorBottom }: QuickComm
     setReleaseRefreshing(true)
     void release.refresh()
       .catch((error) => {
-        setReleaseError(error instanceof Error ? error.message : String(error))
+        setReleaseError('发布版本暂时无法读取，请在通知中心查看详情。')
+        notifications.publish({ level: 'error', source: '发布', title: '发布操作未完成', message: '请查看详情后重新选择发布版本。', details: errorDetails(error), workspaceRoot })
       })
       .finally(() => setReleaseRefreshing(false))
   }

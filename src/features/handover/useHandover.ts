@@ -23,7 +23,7 @@ export interface HandoverDeps {
   /** 预填某个 thread 的输入草稿 */
   setComposerDrafts: (updater: (current: Record<string, ComposerDraft>) => Record<string, ComposerDraft>) => void
   /** 轻提示 */
-  notify: (message: string, kind?: 'info' | 'error') => void
+  notify: (message: string, kind?: 'info' | 'warning' | 'error', error?: unknown) => void
   currentThread: { id: string; cwd: string; gitInfo?: { branch?: string | null } | null } | null
   currentThreadTitle: string
 }
@@ -38,7 +38,7 @@ export function useHandover(deps: HandoverDeps) {
   const runHandover = useCallback(async () => {
     const thread = deps.currentThread
     if (!thread) {
-      deps.notify('请先选择一个会话再执行 /handover。', 'error')
+      deps.notify('请先选择一个会话再执行 /handover。', 'warning')
       return
     }
     if (!thread.cwd) {
@@ -55,7 +55,7 @@ export function useHandover(deps: HandoverDeps) {
     try {
       turnId = await deps.startTurnInThread(thread.id, summaryPrompt, 'handover')
     } catch (error) {
-      deps.notify(`无法发起交接总结：${messageOf(error)}`, 'error')
+      deps.notify(`无法发起交接总结`, 'error', error)
       return
     }
 
@@ -63,7 +63,7 @@ export function useHandover(deps: HandoverDeps) {
     try {
       await waitForTurn(deps.onTurnCompleted, thread.id, turnId)
     } catch (error) {
-      deps.notify(messageOf(error), 'error')
+      deps.notify('操作未完成，请查看详情后重试。', 'error', error)
       return
     }
 
@@ -72,7 +72,7 @@ export function useHandover(deps: HandoverDeps) {
     try {
       summary = extractHandoverSummary(await deps.readLastAgentMessage(thread.id))
     } catch (error) {
-      deps.notify(`无法读取交接总结：${messageOf(error)}`, 'error')
+      deps.notify(`无法读取交接总结`, 'error', error)
       return
     }
     if (!summary) {
@@ -104,7 +104,7 @@ export function useHandover(deps: HandoverDeps) {
     try {
       await runtime.writeHandoverDocument(`${docId}.md`, document)
     } catch (error) {
-      deps.notify(`无法写入交接文档：${messageOf(error)}`, 'error')
+      deps.notify(`无法写入交接文档`, 'error', error)
       return
     }
 

@@ -1,3 +1,4 @@
+import { notifications } from '../../core/notifications/service'
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -124,7 +125,7 @@ describe('archive view navigation', () => {
     await act(async () => { await result.current.setViewMode('archived') })
     expect(result.current.viewMode).toBe('archived')
     expect(result.current.threads).toEqual([])
-    expect(result.current.toast?.message).toContain('offline')
+    expect(notifications.snapshot().records[0]?.details).toContain('offline')
   })
 
   it('keeps the latest search when responses arrive out of order', async () => {
@@ -242,8 +243,8 @@ describe('first-turn catalog refresh', () => {
     await act(async () => { await result.current.sendMessage(input, 'queue') })
     expect(result.current.activeTurnId).toBe('turn-1')
     expect(result.current.currentThread?.id).toBe('draft')
-    expect(result.current.toast?.message).toContain('list offline')
-    expect(result.current.toast?.message).not.toContain('无法发送消息')
+    expect(notifications.snapshot().records[0]?.details).toContain('list offline')
+    expect(notifications.snapshot().records[0]).toMatchObject({ level: 'warning', title: '消息已发送，但会话列表暂未更新。' })
     await act(async () => { await result.current.refresh() })
     expect(result.current.currentThread?.id).toBe('draft')
     const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]

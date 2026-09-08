@@ -11,6 +11,7 @@ import { version as harnessVersion } from '../../../package.json'
 import {
   Archive,
   ArchiveRestore,
+  Bell,
   Blocks,
   ChevronDown,
   ChevronRight,
@@ -84,6 +85,9 @@ interface SidebarProps {
   onToggleWorkspacePinned: (workspaceRoot: string) => void
   onSidebarWidth: (width: number) => void
   onSidebarListSplitRatio: (ratio: number) => void
+  onOpenNotifications?: () => void
+  notificationsOpen?: boolean
+  unreadNotifications?: number
   onOpenSettings: () => void
   onOpenPlugins: () => void
   onVisibleThreadOrder: (threadIds: string[]) => void
@@ -126,6 +130,9 @@ export function Sidebar({
   onToggleWorkspacePinned,
   onSidebarWidth,
   onSidebarListSplitRatio,
+  onOpenNotifications,
+  notificationsOpen,
+  unreadNotifications = 0,
   onOpenSettings,
   onOpenPlugins,
   onVisibleThreadOrder,
@@ -634,6 +641,7 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-footer">
+        {onOpenNotifications && <button type="button" className={`notification-nav${notificationsOpen ? ' active' : ''}`} onClick={onOpenNotifications}><Bell size={16} />通知中心{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>}
         <div className="archive-split">
           <button
             type="button"
