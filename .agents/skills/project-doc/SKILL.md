@@ -7,51 +7,61 @@ description: Use when working in a Codex Harness session bound to a project docu
 
 项目文档是多个 Agent 围绕同一目标协作的**共享中间态**。你不是唯一写者：其他 Agent 和人也会改它。本协议保证你的写入不覆盖别人、可被追溯。
 
-文档落在 Harness 管理的目录，**你不能直接写文件**。你通过在输出里 emit 一个结构化提议块来表达"想改文档"，由 Harness 校验、经人审批后落盘。
+文档落在 Harness 管理的目录，**你不能直接写文件**。你用 skill 自带的 `project-doc` 命令把写意图回传给本机 Codex Harness，由 Harness 校验、经人审批后落盘。
+
+## 你的会话标识
+
+绑定项目的会话，首轮消息会注入项目文档正文，正文开头有一行机器可读标记：
+
+```
+<!-- project-doc: project_id=<项目ID> thread_id=<会话ID> -->
+```
+
+调用 `project-doc` 命令时，`--project-id` 和 `--thread-id` 用这行里的值。命令会校验该项目确实绑定在该会话上；传错会被拒绝。
 
 ## 文档分区
 
 文档正文按分区组织（推荐约定，非强制 schema）：
 
-| 分区 | 性质 | 你能怎么写 |
+| 分区 | 性质 | 你怎么写 |
 | --- | --- | --- |
-| `Status` | 受控区：当前阶段、结论 | **必须带 `base_seq`**（见下），整段替换你的子区 |
-| `Log` | 追加区：进展流水 | 追加一条，无需 `base_seq` |
-| `Decisions` | 追加区：已拍板决定 | 追加一条（带你的 run 标识），无需 `base_seq` |
-| `Open Questions` | 追加区：留给后续 Agent / 人的问题 | 追加一条，无需 `base_seq` |
+| `Status` | 受控区：当前阶段、结论 | `project-doc propose --section status`，**整段替换你的子区**；需经人审批 |
+| `Log` | 追加区：进展流水 | `project-doc propose --section log`，追加一条，免审批直落盘 |
+| `Decisions` | 追加区：已拍板决定 | `project-doc propose --section decisions`，追加一条（带你的 run 标识），免审批 |
+| `Open Questions` | 追加区：留给后续 Agent / 人的问题 | `project-doc propose --section openQuestions`，追加一条，免审批 |
 
 多 Agent 并行时，Status 里每个活跃 run 有自己的子区，用 `### <run-id>: <一句标题>` 标识，**只改你自己的子区**，不动别人的。
 
-## 提议格式：`<project-doc-update>`
+## 写：用 `project-doc propose`
 
-想写文档时，在输出里 emit 一个块（头 + 空行 + 内容）：
+```bash
+# 追加一条进展（Log 区，免审批，立即落盘）
+project-doc propose --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
+  --section log --content "跑完测试，全绿"
 
-```
-<project-doc-update>
-section: status
-base_seq: 5
-
-### run-abc: 实现速率限制改造
-已完成代码改动，测试通过
-</project-doc-update>
+# 提议更新 Status（受控区，进审批卡，人确认后才落盘）
+project-doc propose --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
+  --section status --file /tmp/status.md
 ```
 
-- `section`：目标分区，必填，取值 `status` / `log` / `decisions` / `openQuestions`。
-- `base_seq`：**仅 `status` 必填**，填你读到的当前 `seq`（CAS：你基于哪个版本改）。追加区不要填。
-- 头部与内容之间**必须有一个空行**。
-- 一次输出可 emit 多个块，各自独立审批。
+- `--section` 取值 `status` / `log` / `decisions` / `openQuestions`。
+- 内容用 `--content`（单行）或 `--file`（多行正文）或标准输入提供。
+- **不用管版本号（`base_seq`）**：Harness 收到提议时按当前 seq 自动处理。status 进审批队列；追加区直接落盘。
+- 提交后立即返回，**不阻塞你**：status 提议等人确认；追加区已生效。提议即继续，不要把"文档已更新"当作后续步骤的前提。
 
 ## 读：动手前先读
 
-- 会话绑定项目后，**首轮消息会注入项目文档正文**（仅正文，作为对话背景）；之后不再重复注入，以对话中已有的正文为准。
-- **改 Status 前必须先确认最新 `seq`**——期间别人可能改过。正文里看不到 seq 时，以人 / Harness 提供的当前版本为准，不确定就先向人确认再写。追加区（Log 等）不要求先读。
-- 不要假设能直接读到文档文件路径；你通过 emit 提议块表达写意图，读取以首轮注入的正文为准。
+```bash
+project-doc read --thread-id "$THREAD_ID" --project-id "$PROJECT_ID"
+```
+
+- 返回当前**正文 + seq**。改 Status 前建议先读一次，确认最新全貌（期间别人可能改过）。
+- 首轮注入的正文也是背景；要最新 seq 或不确定时，以 `read` 的结果为准。追加区（Log 等）不要求先读。
 
 ## 审批与冲突
 
-- 你的提议会渲染成审批卡，**人确认后才落盘**。落盘后 `seq` 自动 +1。
-- **提议即继续**：emit 提议后继续手头工作，不要把"文档已更新"当作后续步骤的前提。如果某次更新确实是前提（罕见），提议后结束本轮，等人确认再继续。
-- **冲突**：你确认时 `base_seq` 已不是最新（别人先改了），提议进冲突态，人决定覆盖 / 放弃 / 回传给你。**收到回传时**：重新读最新文档，把你的意图合并进最新版本，再 emit 一个带新 `base_seq` 的提议。不要重发旧 `base_seq` 的提议。
+- **status 提议**会渲染成审批卡，**人确认后才落盘**，落盘后 `seq` 自动 +1。
+- **冲突**：你确认时别人已先改了 Status（版本过期），审批卡进冲突态，由人决定覆盖 / 放弃 / 让你重写。如需你重写：重新 `project-doc read` 拿最新正文，把你的意图合并进去，再 `propose` 一次（不用管版本号，Harness 会按最新 seq 处理）。
 
 ## 纪律
 
