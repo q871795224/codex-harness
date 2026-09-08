@@ -63,7 +63,6 @@ export function visibleTodos(items: TodoItem[], context: PluginViewContext, filt
           || (item.scope === 'workspace' && item.workspaceRoot === context.workspaceRoot)
           || (item.scope === 'thread' && item.threadId === context.threadId))
     .sort((left, right) => Number(left.completed) - Number(right.completed)
-      || (left.dueAt ?? Number.MAX_SAFE_INTEGER) - (right.dueAt ?? Number.MAX_SAFE_INTEGER)
       || left.createdAt - right.createdAt)
 }
 
@@ -102,7 +101,6 @@ export function todoScopePatch(scope: TodoScope, context: PluginViewContext): Pi
 export function TasksTab({ storage, context }: { storage: PluginStorage; context: ConversationTabProps }) {
   const [items, setItems] = useState<TodoItem[]>([])
   const [content, setContent] = useState('')
-  const [dueAt, setDueAt] = useState('')
   const [scope, setScope] = useState<TodoScope>(DEFAULT_TODO_SCOPE)
   const [filter, setFilter] = useState<TodoFilter>(DEFAULT_TODO_FILTER)
   const [copiedTodoId, setCopiedTodoId] = useState<string | null>(null)
@@ -170,7 +168,7 @@ export function TasksTab({ storage, context }: { storage: PluginStorage; context
       id: crypto.randomUUID(),
       content: nextContent,
       completed: false,
-      dueAt: dueAt ? new Date(dueAt).getTime() : null,
+      dueAt: null,
       scope,
       workspaceRoot: scope === 'workspace' ? context.workspaceRoot : null,
       threadId: scope === 'thread' ? context.threadId : null,
@@ -179,7 +177,6 @@ export function TasksTab({ storage, context }: { storage: PluginStorage; context
     }
     commit([...items, item])
     setContent('')
-    setDueAt('')
   }
 
   const update = (id: string, patch: Partial<TodoItem>) => {
@@ -230,7 +227,6 @@ export function TasksTab({ storage, context }: { storage: PluginStorage; context
         <form className="tasks-create" onSubmit={createTodo}>
           <button type="submit" disabled={!content.trim()} title="新增待办"><Plus size={15} /></button>
           <input value={content} onChange={(event) => setContent(event.target.value)} placeholder="添加一项待办…" aria-label="待办内容" />
-          <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} aria-label="计划时间" />
           <select value={scope} onChange={(event) => setScope(event.target.value as TodoScope)} aria-label="待办级别">
             <option value="global">全局</option>
             <option value="workspace" disabled={!context.workspaceRoot}>当前工作区</option>
@@ -266,18 +262,7 @@ export function TasksTab({ storage, context }: { storage: PluginStorage; context
                 >
                   {copiedTodoId === item.id ? <Check size={13} /> : <Copy size={13} />}
                 </button>
-                <div className="task-dates">
-                  <span className="task-created">创建：{todoCreatedTime(item.createdAt)}</span>
-                  <label className="task-planned">计划：{item.dueAt === null && <span>未设置</span>}
-                    <input
-                      className="task-time"
-                      type="datetime-local"
-                      value={toDateTimeInput(item.dueAt)}
-                      onChange={(event) => update(item.id, { dueAt: event.target.value ? new Date(event.target.value).getTime() : null })}
-                      aria-label="编辑计划时间"
-                    />
-                  </label>
-                </div>
+                <span className="task-created">{todoCreatedTime(item.createdAt)}</span>
                 <select
                   className={`task-scope ${item.scope}`}
                   value={item.scope}
@@ -376,13 +361,6 @@ export function todoCreatedTime(value: number): string {
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return '未知'
   return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-}
-
-function toDateTimeInput(value: number | null): string {
-  if (value === null) return ''
-  const date = new Date(value)
-  const local = new Date(value - date.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 16)
 }
 
 function messageOf(error: unknown): string {

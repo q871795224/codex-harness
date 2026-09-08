@@ -609,8 +609,20 @@ export function useHarness() {
         selectedThreadCwd: selectedThread?.cwd ?? null,
       },
     })
-    threadsRef.current = response.data
-    setThreads(response.data)
+    setThreads((current) => {
+      // Empty local drafts have no persisted rollout and are absent from thread/list.
+      // Keep them in the active catalog, including after an archive-view round trip.
+      const drafts = new Map<string, Thread>()
+      if (mode === 'active') {
+        for (const candidate of [...Object.values(detailsRef.current).map((detail) => detail.thread), ...current]) {
+          if (unstartedDraftThreadIdsRef.current.has(candidate.id)) drafts.set(candidate.id, candidate)
+        }
+      }
+      for (const thread of response.data) drafts.delete(thread.id)
+      const next = [...drafts.values(), ...response.data]
+      threadsRef.current = next
+      return next
+    })
     setThreadRoots((current) => {
       const next = { ...current }
       for (const thread of response.data) delete next[thread.id]
@@ -946,6 +958,7 @@ export function useHarness() {
         ...(sessionStartSource ? { sessionStartSource } : {}),
       })
       const previousThreadId = selectedThreadIdRef.current
+      setViewMode('active')
       unstartedDraftThreadIdsRef.current.add(response.thread.id)
       draftInitialCwdsRef.current.set(response.thread.id, response.thread.cwd)
       upsertThread(response.thread)
@@ -979,7 +992,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, selectedWorkspaceRoot, upsertThread, workspaces])
+  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, selectedWorkspaceRoot, setViewMode, upsertThread, workspaces])
 
   const createThread = useCallback(async () => {
     return startNewThread(undefined, '创建')
