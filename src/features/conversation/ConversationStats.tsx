@@ -29,7 +29,14 @@ export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
 }
 
 export function workingElapsedMilliseconds(now: number, startedAt: number | null, fallbackStartedAt: number): number {
-  return Math.max(0, now - (startedAt ?? fallbackStartedAt))
+  const start = startedAt !== null && Number.isFinite(startedAt) && startedAt > 0 ? startedAt : fallbackStartedAt
+  return Math.max(0, now - start)
+}
+
+/** Codex Turn timestamps are Unix seconds; Claude history/events use milliseconds. */
+export function turnStartedAtMilliseconds(provider: 'codex' | 'claude', startedAt: number | null): number | null {
+  if (startedAt === null || !Number.isFinite(startedAt) || startedAt <= 0) return null
+  return provider === 'codex' ? startedAt * 1_000 : startedAt
 }
 
 export function ConversationStats({ turns, items, tokenUsage, costUsd, creditUsage, thread, workspace, taskPlan, preferences, emptyLabel }: ConversationStatsProps) {

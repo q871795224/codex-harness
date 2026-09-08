@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Gauge, LoaderCircle, RefreshCw, Shield, ShieldCheck, ShieldOff, Sparkles } from 'lucide-react'
 import type { CodexRadarService } from '../../core/codex-radar/types'
 import type { CodexModel, ThreadCodexSettings } from '../../core/domain/codex'
-import type { HarnessPlugin, NewThreadPanelProps, PluginInstanceRecord } from '../../extensions/types'
+import type { HarnessPlugin, NewThreadPanelProps, PluginInstanceRecord, PluginStorage } from '../../extensions/types'
 
 type LaunchMode = 'yolo' | 'auto-review' | 'manual'
 
@@ -39,7 +39,7 @@ export const sessionLauncherPlugin: HarnessPlugin = {
     ctx.slots.newThreadPanels.register({
       id: 'session-launcher',
       order: 10,
-      render: (props) => <SessionLauncher radar={radar} {...props} />,
+      render: (props) => <SessionLauncher radar={radar} storage={ctx.storage} {...props} />,
     })
   },
 }
@@ -54,7 +54,7 @@ export const sessionLauncherDefaultInstance: PluginInstanceRecord = {
   updatedAt: 0,
 }
 
-function SessionLauncher({ radar, threadId, isNewThread, models, settings, disabled, onSettingsChange }: NewThreadPanelProps & { radar: CodexRadarService }) {
+export function SessionLauncher({ radar, storage, threadId, isNewThread, models, settings, disabled, onSettingsChange }: NewThreadPanelProps & { radar: CodexRadarService; storage: PluginStorage }) {
   const [remoteRows, setRemoteRows] = useState<PickerRow[] | null>(null)
   const [fetchedAt, setFetchedAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -62,6 +62,7 @@ function SessionLauncher({ radar, threadId, isNewThread, models, settings, disab
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const defaultInitializedThreads = useRef(new Set<string>())
+  const [loadedDefaultThread, setLoadedDefaultThread] = useState<string | null>(null)
   const rows = useMemo(() => availableRows(remoteRows, models, settings), [models, remoteRows, settings])
   const selectedRow = useMemo(() => selectedRadarRow(rows, settings), [rows, settings])
   const defaultRow = useMemo(() => defaultRadarRow(rows), [rows])
@@ -85,6 +86,17 @@ function SessionLauncher({ radar, threadId, isNewThread, models, settings, disab
   useEffect(() => { void load() }, [])
 
   useEffect(() => {
+    if (!threadId) return
+    let disposed = false
+    void storage.get<boolean>(`model-initialized:${threadId}`).then((initialized) => {
+      if (disposed) return
+      if (initialized) defaultInitializedThreads.current.add(threadId)
+      setLoadedDefaultThread(threadId)
+    }).catch((error) => { if (!disposed) setSettingsError(messageOf(error)) })
+    return () => { disposed = true }
+  }, [storage, threadId])
+
+  useEffect(() => {
     if (!threadId || disabled || yoloInitializedThreads.has(threadId)) return
     yoloInitializedThreads.add(threadId)
     if (launchMode(settings) !== 'yolo') {
@@ -93,25 +105,25 @@ function SessionLauncher({ radar, threadId, isNewThread, models, settings, disab
   }, [disabled, onSettingsChange, settings, threadId])
 
   useEffect(() => {
-    if (!threadId || !isNewThread || disabled || loading || models.length === 0 || !defaultRow || defaultInitializedThreads.current.has(threadId)) return
-    if (selectedRow) {
-      defaultInitializedThreads.current.add(threadId)
-      return
-    }
+    if (!threadId || loadedDefaultThread !== threadId || !isNewThread || disabled || loading || models.length === 0 || !defaultRow || defaultInitializedThreads.current.has(threadId)) return
     defaultInitializedThreads.current.add(threadId)
-    void Promise.resolve(onSettingsChange({ model: defaultRow.model, effort: defaultRow.effort })).catch((nextError) => {
-      defaultInitializedThreads.current.delete(threadId)
-      setSettingsError(messageOf(nextError))
-    })
-  }, [defaultRow, disabled, isNewThread, loading, models.length, onSettingsChange, selectedRow, threadId])
+    setSaving(true)
+    void Promise.resolve(onSettingsChange({ model: defaultRow.model, effort: defaultRow.effort }))
+      .then(() => storage.set(`model-initialized:${threadId}`, true)).catch((nextError) => {
+        defaultInitializedThreads.current.delete(threadId)
+        setSettingsError(messageOf(nextError))
+      }).finally(() => setSaving(false))
+  }, [defaultRow, disabled, isNewThread, loading, loadedDefaultThread, models.length, onSettingsChange, storage, threadId])
 
   const apply = async (patch: Partial<ThreadCodexSettings>) => {
     if (disabled || saving) return
-    if (threadId && (patch.model !== undefined || patch.effort !== undefined)) defaultInitializedThreads.current.delete(threadId)
+    const selectingModel = threadId && (patch.model !== undefined || patch.effort !== undefined)
+    if (selectingModel) defaultInitializedThreads.current.add(threadId)
     setSaving(true)
     setSettingsError(null)
     try {
       await onSettingsChange(patch)
+      if (selectingModel) await storage.set(`model-initialized:${threadId}`, true)
     } catch (nextError) {
       setSettingsError(messageOf(nextError))
     } finally {
@@ -189,7 +201,12 @@ export function selectedRadarRow(rows: PickerRow[], settings: Pick<ThreadCodexSe
 }
 
 export function defaultRadarRow(rows: PickerRow[]): PickerRow | null {
-  return rows.find((row) => row.defaultCursor) ?? rows[0] ?? null
+  const ranked = rows.filter((row) => (row.group === 'reference' || row.group === 'agi') && row.iq !== null && Number.isFinite(row.iq))
+    .sort((left, right) => right.iq! - left.iq! || (left.price ?? Infinity) - (right.price ?? Infinity))
+  const [highest, second] = ranked
+  if (!highest) return rows.find((row) => row.defaultCursor) ?? rows[0] ?? null
+  if (second && highest.iq! - second.iq! <= 2 && highest.price !== null && second.price !== null && second.price < highest.price) return second
+  return highest
 }
 
 export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel[], settings: ThreadCodexSettings): PickerRow[] {

@@ -124,6 +124,8 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
   const [composing, setComposing] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const highlightRef = useRef<HTMLDivElement>(null)
+  const pendingProjectCursor = useRef<{ text: string; cursor: number } | null>(null)
   const previousFocusRequestRef = useRef(focusRequest)
   const onDraftChangeRef = useRef(onDraftChange)
   const completionProvidersRef = useRef(completionProviders)
@@ -186,6 +188,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
   // 本 effect 负责把 spec 同步成第一张项目卡：插入 / 替换 / 移除。
   // 用户手动删卡的检测见下方 effect。
   const syncingProjectCardRef = useRef(false)
+  const synchronizedProjectPastes = useRef<CollapsedPaste[] | null>(null)
   useLayoutEffect(() => {
     const existing = findProjectCard(collapsedPastes)
     const wantId = projectCard?.projectId ?? null
@@ -205,14 +208,21 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
       }
       if (projectCard && label) {
         // 项目卡固定在输入框最开头（第一行）。
+        if (!nextText.startsWith('\n')) {
+          const separated = `\n${nextText}`
+          nextPastes = reconcileCollapsedPastes(nextText, separated, nextPastes)
+          nextText = separated
+        }
         const inserted = insertCollapsedPaste(nextText, 0, 0, projectCard.content, nextPastes, label, {
           kind: 'project-doc',
           projectId: projectCard.projectId,
         })
         nextText = inserted.text
         nextPastes = inserted.pastes
+        if (!existing) pendingProjectCursor.current = { text: nextText, cursor: inserted.cursor + 1 }
       }
       setText(nextText)
+      synchronizedProjectPastes.current = nextPastes
       setCollapsedPastes(nextPastes)
     } finally {
       syncingProjectCardRef.current = false
@@ -220,9 +230,26 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectCard?.projectId, projectCard?.seq, projectCard?.name, projectCard?.content])
 
+  useLayoutEffect(() => {
+    const pending = pendingProjectCursor.current
+    if (!pending || pending.text !== text) return
+    ref.current?.setSelectionRange(pending.cursor, pending.cursor)
+    setCursor(pending.cursor)
+    pendingProjectCursor.current = null
+    // Browser focus/selection restoration can run after layout effects.
+    const frame = requestAnimationFrame(() => {
+      if (ref.current?.value === pending.text) ref.current.setSelectionRange(pending.cursor, pending.cursor)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [text])
+
   // 检测「用户手动删掉项目卡」：spec 仍想要卡（projectCard 非空），但 reconcile 后卡不见了。
   // 程序性同步（上面的 effect）期间不判定为「用户删除」。
   useEffect(() => {
+    if (synchronizedProjectPastes.current) {
+      if (synchronizedProjectPastes.current === collapsedPastes) synchronizedProjectPastes.current = null
+      return
+    }
     if (!projectCard) return
     if (syncingProjectCardRef.current) return
     if (findProjectCard(collapsedPastes)) return
@@ -253,7 +280,21 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     const nextHeight = Math.min(textarea.scrollHeight, maximumHeight)
     textarea.style.height = `${Math.max(28, nextHeight)}px`
     textarea.style.overflowY = textarea.scrollHeight > maximumHeight ? 'auto' : 'hidden'
+    if (highlightRef.current) {
+      highlightRef.current.style.width = `${textarea.clientWidth}px`
+      highlightRef.current.scrollTop = textarea.scrollTop
+    }
   }, [composing, text])
+
+  useEffect(() => {
+    const textarea = ref.current
+    if (!textarea || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (highlightRef.current) highlightRef.current.style.width = `${textarea.clientWidth}px`
+    })
+    observer.observe(textarea)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     setSkills([])
@@ -513,9 +554,14 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
             ))}
           </div>
         )}
+        <div className={`composer-text-editor${findProjectCard(collapsedPastes) ? ' has-project-card' : ''}`}>
+          <div className="composer-text-highlight" ref={highlightRef} aria-hidden="true">
+            <ProjectCardHighlight text={text} pastes={collapsedPastes} />
+          </div>
         <textarea
           ref={ref}
           value={text}
+          onScroll={(event) => { if (highlightRef.current) highlightRef.current.scrollTop = event.currentTarget.scrollTop }}
           disabled={disabled || busy || attachmentBusy}
           placeholder={foreignActive ? '等待其他客户端完成当前轮' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
           onChange={(event) => {
@@ -597,6 +643,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
           rows={1}
           wrap="soft"
         />
+        </div>
         {suggestionsOpen && (
           <div className="composer-suggestions" role="listbox" aria-label={triggerKind === 'file' ? '文件建议' : triggerKind === 'skill' ? '技能建议' : triggerKind === 'plugin' ? '补全建议' : '命令建议'}>
             <div className="composer-suggestions-label">{triggerKind === 'file' ? '@ 文件' : triggerKind === 'skill' ? '$ Skill' : triggerKind === 'plugin' ? `${triggerChar} 建议` : '/ 命令'}</div>
@@ -724,6 +771,12 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
       </div>
     </div>
   )
+}
+
+export function ProjectCardHighlight({ text, pastes }: { text: string; pastes: CollapsedPaste[] }) {
+  const card = findProjectCard(pastes)
+  if (!card) return <>{text}{'\n'}</>
+  return <>{text.slice(0, card.start)}<span className="composer-project-label">{text.slice(card.start, card.end)}</span>{text.slice(card.end)}{'\n'}</>
 }
 
 function commandSuggestions(query: string, models: CodexModel[], selectedModel: CodexModel | null, claudeModels: ClaudeModel[], selectedClaudeModel: ClaudeModel | null, provider: 'codex' | 'claude'): ComposerSuggestion[] {
