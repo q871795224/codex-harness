@@ -106,7 +106,10 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ provider = 'codex', initialDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, busy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ provider = 'codex', initialDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+  const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
+  const busy = externallyBusy || submitting
   const [text, setText] = useState(initialDraft?.text ?? '')
   const [collapsedPastes, setCollapsedPastes] = useState<CollapsedPaste[]>(initialDraft?.collapsedPastes ?? [])
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialDraft?.attachments ?? [])
@@ -186,9 +189,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
   // —— 项目背景卡（第 0 轮注入）同步 ——
   // spec（App 驱动的绑定意图）是单一事实源；折叠卡是它在输入框里的投影。
   // 本 effect 负责把 spec 同步成第一张项目卡：插入 / 替换 / 移除。
-  // 用户手动删卡的检测见下方 effect。
-  const syncingProjectCardRef = useRef(false)
-  const synchronizedProjectPastes = useRef<CollapsedPaste[] | null>(null)
+  // 只有用户编辑事件可以触发解绑；同步和发送清空都不触发。
   useLayoutEffect(() => {
     const existing = findProjectCard(collapsedPastes)
     const wantId = projectCard?.projectId ?? null
@@ -197,36 +198,30 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     // 已同步：卡的 projectId 与 label 都与 spec 一致，不动。
     if (haveId === wantId && (wantId === null || existing?.label === label)) return
 
-    syncingProjectCardRef.current = true
-    try {
-      // 先移除现有项目卡（如有），再按需插入新卡。移除 = 删掉 label 文本区间。
-      let nextText = text
-      let nextPastes = collapsedPastes
-      if (existing) {
-        nextText = `${text.slice(0, existing.start)}${text.slice(existing.end)}`
-        nextPastes = reconcileCollapsedPastes(text, nextText, collapsedPastes)
-      }
-      if (projectCard && label) {
-        // 项目卡固定在输入框最开头（第一行）。
-        if (!nextText.startsWith('\n')) {
-          const separated = `\n${nextText}`
-          nextPastes = reconcileCollapsedPastes(nextText, separated, nextPastes)
-          nextText = separated
-        }
-        const inserted = insertCollapsedPaste(nextText, 0, 0, projectCard.content, nextPastes, label, {
-          kind: 'project-doc',
-          projectId: projectCard.projectId,
-        })
-        nextText = inserted.text
-        nextPastes = inserted.pastes
-        if (!existing) pendingProjectCursor.current = { text: nextText, cursor: inserted.cursor + 1 }
-      }
-      setText(nextText)
-      synchronizedProjectPastes.current = nextPastes
-      setCollapsedPastes(nextPastes)
-    } finally {
-      syncingProjectCardRef.current = false
+    // 先移除现有项目卡（如有），再按需插入新卡。移除 = 删掉 label 文本区间。
+    let nextText = text
+    let nextPastes = collapsedPastes
+    if (existing) {
+      nextText = `${text.slice(0, existing.start)}${text.slice(existing.end)}`
+      nextPastes = reconcileCollapsedPastes(text, nextText, collapsedPastes)
     }
+    if (projectCard && label) {
+      // 项目卡固定在输入框最开头（第一行）。
+      if (!nextText.startsWith('\n')) {
+        const separated = `\n${nextText}`
+        nextPastes = reconcileCollapsedPastes(nextText, separated, nextPastes)
+        nextText = separated
+      }
+      const inserted = insertCollapsedPaste(nextText, 0, 0, projectCard.content, nextPastes, label, {
+        kind: 'project-doc',
+        projectId: projectCard.projectId,
+      })
+      nextText = inserted.text
+      nextPastes = inserted.pastes
+      if (!existing) pendingProjectCursor.current = { text: nextText, cursor: inserted.cursor + 1 }
+    }
+    setText(nextText)
+    setCollapsedPastes(nextPastes)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectCard?.projectId, projectCard?.seq, projectCard?.name, projectCard?.content])
 
@@ -243,19 +238,12 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     return () => cancelAnimationFrame(frame)
   }, [text])
 
-  // 检测「用户手动删掉项目卡」：spec 仍想要卡（projectCard 非空），但 reconcile 后卡不见了。
-  // 程序性同步（上面的 effect）期间不判定为「用户删除」。
-  useEffect(() => {
-    if (synchronizedProjectPastes.current) {
-      if (synchronizedProjectPastes.current === collapsedPastes) synchronizedProjectPastes.current = null
-      return
+  const updatePastesFromUserEdit = (nextPastes: CollapsedPaste[]) => {
+    if (projectCard && findProjectCard(collapsedPastes) && !findProjectCard(nextPastes)) {
+      onProjectCardDismissed?.()
     }
-    if (!projectCard) return
-    if (syncingProjectCardRef.current) return
-    if (findProjectCard(collapsedPastes)) return
-    onProjectCardDismissed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapsedPastes])
+    setCollapsedPastes(nextPastes)
+  }
 
   useLayoutEffect(() => {
     onDraftChangeRef.current?.({ text, collapsedPastes, attachments }, hasContent)
@@ -377,7 +365,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     return composerInputs(expandedText, attachments, collapsedPastes.length > 0)
   }, [attachments, collapsedPastes.length, expandedText])
 
-  const submit = async () => {
+  const submitDraft = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return
     const command = parseComposerCommand(expandedText, attachments.length > 0)
     if (command) {
@@ -417,6 +405,19 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     setSuggestionsDismissed(false)
   }
 
+  // onSend 包括发送后的绑定落盘；在整个流程结束前不接受重复提交。
+  const submit = async () => {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      await submitDraft()
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }
+
   const runPrimaryAction = () => working && !hasContent ? onStop() : submit()
 
   const chooseSuggestion = async (suggestion: ComposerSuggestion) => {
@@ -435,7 +436,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
           return { text: replaced.text, cursor: replaced.cursor, pastes: reconcileCollapsedPastes(text, replaced.text, collapsedPastes) }
         })()
       setText(next.text)
-      setCollapsedPastes(next.pastes)
+      updatePastesFromUserEdit(next.pastes)
       setCursor(next.cursor)
       setPluginItems([])
       requestAnimationFrame(() => {
@@ -458,7 +459,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     }
     const replacement = suggestion.kind === 'skill' ? `$${suggestion.name}` : suggestion.kind === 'command' ? suggestion.replacement ?? `/${suggestion.name}` : ''
     const next = replaceComposerTrigger(text, trigger, replacement)
-    setCollapsedPastes((current) => reconcileCollapsedPastes(text, next.text, current))
+    updatePastesFromUserEdit(reconcileCollapsedPastes(text, next.text, collapsedPastes))
     setText(next.text)
     setCursor(next.cursor)
     setAttachments((current) => suggestion.kind === 'command' || suggestion.kind === 'plugin' || current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
@@ -567,7 +568,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
           onChange={(event) => {
             const nextText = event.target.value
             setActionError(null)
-            setCollapsedPastes((current) => reconcileCollapsedPastes(text, nextText, current))
+            updatePastesFromUserEdit(reconcileCollapsedPastes(text, nextText, collapsedPastes))
             setText(nextText)
             setCursor(event.target.selectionStart)
             setSuggestionsDismissed(false)
@@ -592,7 +593,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
             const textarea = event.currentTarget
             const next = insertCollapsedPaste(text, textarea.selectionStart, textarea.selectionEnd, content, collapsedPastes)
             setText(next.text)
-            setCollapsedPastes(next.pastes)
+            updatePastesFromUserEdit(next.pastes)
             setCursor(next.cursor)
             setSuggestionsDismissed(false)
             setAttachments((current) => current.filter((item) => item.kind !== 'skill' || hasSkillMarker(next.text, item.name)))
