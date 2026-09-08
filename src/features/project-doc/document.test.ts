@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   checkWrite,
-  extractProjectDocUpdates,
   isSectionKey,
   renderProjectDocFrontMatter,
   requiresBaseSeq,
@@ -19,110 +18,6 @@ describe('isSectionKey', () => {
     expect(isSectionKey('Status')).toBe(false)
     expect(isSectionKey('random')).toBe(false)
     expect(isSectionKey('')).toBe(false)
-  })
-})
-
-describe('extractProjectDocUpdates', () => {
-  it('提取单个受控区提议（含 base_seq 与 version）', () => {
-    const output = [
-      '前文',
-      '<project-doc-update>',
-      'section: status',
-      'base_seq: 5',
-      'version: 1',
-      '',
-      '### run-abc: 当前在做 X',
-      '已完成 A、B',
-      '</project-doc-update>',
-      '后文',
-    ].join('\n')
-    expect(extractProjectDocUpdates(output)).toEqual([
-      { section: 'status', baseSeq: 5, version: 1, content: '### run-abc: 当前在做 X\n已完成 A、B' },
-    ])
-  })
-
-  it('提取追加区提议（无 base_seq）', () => {
-    const output = [
-      '<project-doc-update>',
-      'section: log',
-      '',
-      '跑完测试，全绿',
-      '</project-doc-update>',
-    ].join('\n')
-    expect(extractProjectDocUpdates(output)).toEqual([
-      { section: 'log', baseSeq: undefined, version: undefined, content: '跑完测试，全绿' },
-    ])
-  })
-
-  it('一次输出提取多个块', () => {
-    const output = [
-      '<project-doc-update>',
-      'section: decisions',
-      '',
-      '决定用 seq 而非锁',
-      '</project-doc-update>',
-      '中间文字',
-      '<project-doc-update>',
-      'section: openQuestions',
-      '',
-      '要不要加 Log 审批？',
-      '</project-doc-update>',
-    ].join('\n')
-    const result = extractProjectDocUpdates(output)
-    expect(result).toHaveLength(2)
-    expect(result[0]).toMatchObject({ section: 'decisions', content: '决定用 seq 而非锁' })
-    expect(result[1]).toMatchObject({ section: 'openQuestions', content: '要不要加 Log 审批？' })
-  })
-
-  it('忽略未知 header 字段（前向兼容）', () => {
-    const output = [
-      '<project-doc-update>',
-      'section: log',
-      'future_field: whatever',
-      '',
-      '内容',
-      '</project-doc-update>',
-    ].join('\n')
-    expect(extractProjectDocUpdates(output)).toEqual([
-      { section: 'log', baseSeq: undefined, version: undefined, content: '内容' },
-    ])
-  })
-
-  it('section 未知时跳过该块', () => {
-    const output = [
-      '<project-doc-update>',
-      'section: unknown',
-      '',
-      '内容',
-      '</project-doc-update>',
-    ].join('\n')
-    expect(extractProjectDocUpdates(output)).toEqual([])
-  })
-
-  it('没有块时返回空数组', () => {
-    expect(extractProjectDocUpdates('普通输出，没有标记')).toEqual([])
-  })
-
-  it('缺少空行分隔（无内容）时跳过', () => {
-    const output = ['<project-doc-update>', 'section: status', '</project-doc-update>'].join('\n')
-    expect(extractProjectDocUpdates(output)).toEqual([])
-  })
-
-  it('内容为空时跳过', () => {
-    const output = ['<project-doc-update>', 'section: log', '', '   ', '</project-doc-update>'].join('\n')
-    expect(extractProjectDocUpdates(output)).toEqual([])
-  })
-
-  it('只有开标记没有闭标记时不提取', () => {
-    const output = ['<project-doc-update>', 'section: log', '', '内容没有闭合'].join('\n')
-    expect(extractProjectDocUpdates(output)).toEqual([])
-  })
-
-  it('base_seq 非整数时跳过', () => {
-    const output = ['<project-doc-update>', 'section: status', 'base_seq: abc', '', '内容', '</project-doc-update>'].join(
-      '\n',
-    )
-    expect(extractProjectDocUpdates(output)).toEqual([])
   })
 })
 

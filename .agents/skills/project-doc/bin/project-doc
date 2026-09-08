@@ -1,0 +1,2 @@
+#!/bin/sh
+exec python3 "$HOME/.agents/skills/project-doc/project_doc.py" "$@"

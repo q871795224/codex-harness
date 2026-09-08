@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, GitCompareArrows, LoaderCircle, NotebookPen, RefreshCw, X } from 'lucide-react'
-import type { ThreadItemEntry } from '../../core/domain/codex'
-import type { ProjectDocService } from '../../core/project-docs/types'
-import { requiresBaseSeq } from '../project-doc/document'
-import { collectProjectDocProposals, type ProjectDocProposalEntry } from './projectDocProposals'
+import type { ProjectDocService, ProjectDocProposal } from '../../core/project-docs/types'
 
 /** 审批卡状态机：pending → applying → applied / conflict / rejected / error。 */
 type CardState =
@@ -15,85 +12,110 @@ type CardState =
   | { kind: 'error'; message: string }
 
 /**
- * 项目文档审批卡（场景一写 Status 过人的关键闭环）。
+ * 项目文档审批卡（受控区 status 写入过人的关键闭环）。
  *
- * 扫描当前会话 items 里 agent emit 的 <project-doc-update> 受控区提议，
- * 逐条渲染成卡片；确认后经 `projectDoc.writeSection` 落盘（seq CAS 在 Rust 兜底），
- * base_seq 过期 → 冲突态，可跳项目 tab 看 diff 或重读最新版后重写。
- *
- * 只处理受控区（requiresBaseSeq）：追加区提议一期不在这里承载，避免绕过审批。
+ * 数据源是 Harness 的**待审批提议队列**（Agent 经 `project-doc propose` 命令回传，
+ * 不再扫会话文本里的标记块）。确认时经 `projectDoc.approveProposal` 落盘——
+ * 服务端在写入时按队列里存的 base_seq 走 seq CAS，过期则冲突，可跳项目 tab 看 diff。
  */
-export function ProjectDocApprovalCards({ items, projectDoc, projectId, updatedBy, onOpenProject }: {
-  items: ThreadItemEntry[]
+export function ProjectDocApprovalCards({ projectDoc, projectId, onOpenProject }: {
   projectDoc: ProjectDocService
   projectId: string
-  /** 写入者标识（血缘）：当前会话 threadId。 */
-  updatedBy: string
   /** 跳项目 tab；携带冲突上下文时 tab 内打开 diff 面板。 */
   onOpenProject: (request?: { conflict?: { proposalContent: string; section: string } }) => void
 }) {
-  const proposals = useMemo(
-    () => collectProjectDocProposals(items).filter((entry) => requiresBaseSeq(entry.proposal.section)),
-    [items],
-  )
+  const [proposals, setProposals] = useState<ProjectDocProposal[]>([])
   const [states, setStates] = useState<Record<string, CardState>>({})
   const [currentSeq, setCurrentSeq] = useState<number | null>(null)
 
-  const refreshSeq = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
-      const snapshot = await projectDoc.read(projectId)
+      const [snapshot, pending] = await Promise.all([
+        projectDoc.read(projectId),
+        projectDoc.listProposals(projectId),
+      ])
       setCurrentSeq(snapshot.currentSeq)
+      setProposals(pending)
     } catch {
       setCurrentSeq(null)
     }
   }, [projectDoc, projectId])
 
   useEffect(() => {
-    void refreshSeq()
-  }, [refreshSeq])
+    void refresh()
+    // 轮询待审批队列（Agent 随时可能回传新提议）。
+    const timer = window.setInterval(() => void refresh(), 2_000)
+    return () => window.clearInterval(timer)
+  }, [refresh])
 
   const setState = (key: string, state: CardState) =>
     setStates((current) => ({ ...current, [key]: state }))
 
-  if (proposals.length === 0) return null
+  // 已落定的提议（applied/conflict/rejected）可能已从队列移除；保留最后一份内容让结果卡可见。
+  const settledRef = useRef<Record<string, ProjectDocProposal>>({})
+  useEffect(() => {
+    for (const proposal of proposals) {
+      if (states[proposal.id]) settledRef.current[proposal.id] = proposal
+    }
+  }, [proposals, states])
 
-  const apply = async (entry: ProjectDocProposalEntry) => {
-    const { key, proposal } = entry
-    setState(key, { kind: 'applying' })
-    try {
-      const outcome = await projectDoc.writeSection({
-        projectId,
-        section: proposal.section,
-        baseSeq: proposal.baseSeq,
-        content: proposal.content,
-        updatedBy,
-        summary: `Agent 提议（${proposal.section}）经审批落盘`,
-      })
-      if (outcome.kind === 'applied') {
-        setState(key, { kind: 'applied', newSeq: outcome.newSeq })
-        setCurrentSeq(outcome.newSeq)
-      } else {
-        setState(key, { kind: 'conflict', currentSeq: outcome.currentSeq, baseSeq: proposal.baseSeq })
-        setCurrentSeq(outcome.currentSeq)
+  const visible = useMemo(() => {
+    const byId = new Map<string, ProjectDocProposal>()
+    for (const proposal of proposals) byId.set(proposal.id, proposal)
+    // 队列里没有但已落定的，用缓存内容补回（让结果卡短暂可见）。
+    for (const [id, state] of Object.entries(states)) {
+      if (!byId.has(id) && settledRef.current[id] && (state.kind === 'applied' || state.kind === 'conflict')) {
+        byId.set(id, settledRef.current[id])
       }
+    }
+    return [...byId.values()].filter((proposal) => states[proposal.id]?.kind !== 'rejected')
+  }, [proposals, states])
+
+  const apply = async (proposal: ProjectDocProposal) => {
+    setState(proposal.id, { kind: 'applying' })
+    try {
+      const outcome = await projectDoc.approveProposal(proposal.id)
+      if (outcome.kind === 'applied') {
+        setState(proposal.id, { kind: 'applied', newSeq: outcome.newSeq })
+        setCurrentSeq(outcome.newSeq)
+        // 落盘后提议已从队列移除；延迟刷新，让「已落盘为 v{N}」卡片短暂可见再消失。
+        window.setTimeout(() => void refresh(), 2_500)
+        return
+      }
+      setState(proposal.id, { kind: 'conflict', currentSeq: outcome.currentSeq, baseSeq: proposal.baseSeq })
+      setCurrentSeq(outcome.currentSeq)
+      // 冲突时提议保留在队列（服务端不移除），刷新以反映最新队列。
+      void refresh()
     } catch (error) {
-      setState(key, { kind: 'error', message: messageOf(error) })
+      setState(proposal.id, { kind: 'error', message: messageOf(error) })
     }
   }
 
+  const reject = async (proposal: ProjectDocProposal) => {
+    setState(proposal.id, { kind: 'rejected' })
+    try {
+      await projectDoc.rejectProposal(proposal.id)
+    } catch {
+      // 拒绝失败不阻塞 UI（卡片已隐藏）。
+    }
+    void refresh()
+  }
+
+  if (visible.length === 0) return null
+
   return (
     <div className="project-doc-approvals" role="group" aria-label="项目文档写入审批">
-      {proposals.map((entry) => (
+      {visible.map((proposal) => (
         <ProjectDocApprovalCard
-          key={entry.key}
-          entry={entry}
-          state={states[entry.key] ?? { kind: 'pending' }}
+          key={proposal.id}
+          proposal={proposal}
+          state={states[proposal.id] ?? { kind: 'pending' }}
           currentSeq={currentSeq}
-          onApply={() => void apply(entry)}
-          onReject={() => setState(entry.key, { kind: 'rejected' })}
-          onReset={() => setState(entry.key, { kind: 'pending' })}
+          onApply={() => void apply(proposal)}
+          onReject={() => void reject(proposal)}
+          onReset={() => setState(proposal.id, { kind: 'pending' })}
           onOpenConflict={() => onOpenProject({
-            conflict: { proposalContent: entry.proposal.content, section: entry.proposal.section },
+            conflict: { proposalContent: proposal.content, section: proposal.section },
           })}
         />
       ))}
@@ -101,8 +123,8 @@ export function ProjectDocApprovalCards({ items, projectDoc, projectId, updatedB
   )
 }
 
-function ProjectDocApprovalCard({ entry, state, currentSeq, onApply, onReject, onReset, onOpenConflict }: {
-  entry: ProjectDocProposalEntry
+function ProjectDocApprovalCard({ proposal, state, currentSeq, onApply, onReject, onReset, onOpenConflict }: {
+  proposal: ProjectDocProposal
   state: CardState
   currentSeq: number | null
   onApply: () => void
@@ -110,12 +132,10 @@ function ProjectDocApprovalCard({ entry, state, currentSeq, onApply, onReject, o
   onReset: () => void
   onOpenConflict: () => void
 }) {
-  const { proposal } = entry
   const busy = state.kind === 'applying'
-  // 本地已读到的 seq 与提议 base_seq 不一致时提前给出冲突提示；最终仍以写入时 CAS 为准。
+  // 本地已读到的 seq 与提议入队时的 base_seq 不一致时提前给出冲突提示；最终仍以写入时 CAS 为准。
   const staleHint = state.kind === 'pending'
     && currentSeq !== null
-    && proposal.baseSeq !== undefined
     && proposal.baseSeq !== currentSeq
 
   return (
@@ -125,7 +145,7 @@ function ProjectDocApprovalCard({ entry, state, currentSeq, onApply, onReject, o
         <div className="project-doc-approval-head">
           <strong>写入项目文档 · {sectionLabel(proposal.section)}</strong>
           <small>
-            {proposal.baseSeq !== undefined ? `基于 v${proposal.baseSeq}` : '未声明 base_seq'}
+            基于 v{proposal.baseSeq}
             {currentSeq !== null && ` · 当前 v${currentSeq}`}
           </small>
         </div>
@@ -186,3 +206,5 @@ function sectionLabel(section: string): string {
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+export type { ProjectDocProposal }
