@@ -36,5 +36,8 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Test release scripts
+        run: python3 -m unittest discover -s .agents/skills/harness-release/scripts -p 'test_release*.py'
+
       - name: Build frontend
         run: pnpm build

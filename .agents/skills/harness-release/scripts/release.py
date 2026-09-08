@@ -13,6 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -273,8 +274,14 @@ def command_prepare(version: str, base_sha: str | None = None) -> None:
         if resolved_sha != base_sha or head_sha != base_sha:
             raise ReleaseError(f"release worktree is not at fetched base commit {base_sha}")
     base_version = origin_main_version(base_sha)
-    if parse_version(version) <= parse_version(base_version):
-        raise ReleaseError(f"release version {version} must be newer than origin/main {base_version}")
+    if parse_version(version) < parse_version(base_version):
+        raise ReleaseError(f"release version {version} must not be older than origin/main {base_version}")
+    if version == base_version:
+        require_matching_release_tag(version, base_sha)
+        run("git", "switch", "--detach", base_sha)
+        require_synced_versions(version)
+        print(json.dumps({"phase": "prepared", "version": version, "resumed": True, "commit": base_sha}))
+        return
     tag = f"v{version}"
     if try_run("git", "rev-parse", "--verify", tag).returncode == 0:
         raise ReleaseError(f"local tag already exists: {tag}")
@@ -331,6 +338,21 @@ def command_submit(version: str) -> None:
     require_synced_versions(version)
     changed = set(filter(None, run("git", "status", "--porcelain", capture=True).splitlines()))
     changed_paths = {line[3:] for line in changed}
+    if not changed_paths:
+        head = run("git", "rev-parse", "HEAD", capture=True)
+        run("git", "fetch", "origin", "main")
+        if head != run("git", "rev-parse", "origin/main", capture=True):
+            raise ReleaseError("same-version release must resume from origin/main")
+        require_matching_release_tag(version, head)
+        checks = json.loads(run(
+            "gh", "api", f"repos/{{owner}}/{{repo}}/commits/{head}/check-runs?per_page=100",
+            capture=True,
+        ))
+        required = [item for item in checks["check_runs"] if item["name"] == "test-and-build"]
+        if not required or max(required, key=lambda item: item["id"])["conclusion"] != "success":
+            raise ReleaseError("origin/main test-and-build must succeed before resuming release")
+        print(json.dumps({"phase": "submitted", "version": version, "resumed": True, "mergeCommit": head}))
+        return
     expected = {str(path) for path in VERSION_FILES}
     if changed_paths != expected:
         raise ReleaseError(f"expected only synchronized version files, found: {sorted(changed_paths)}")
@@ -519,6 +541,46 @@ def verify_remote_asset(tag: str, asset_name: str, checksum: str) -> dict[str, o
     raise ReleaseError(f"remote release asset verification failed: {asset}")
 
 
+def require_matching_release_tag(version: str, head: str) -> bool:
+    tag = f"v{version}"
+    if try_run("git", "rev-parse", "--verify", f"refs/tags/{tag}").returncode == 0:
+        peeled = run("git", "rev-parse", f"refs/tags/{tag}^{{}}", capture=True)
+        if peeled != head:
+            raise ReleaseError(f"existing tag {tag} points to {peeled}, expected {head}; choose a newer version")
+    remote = run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}", capture=True)
+    refs = dict(line.split()[::-1] for line in remote.splitlines())
+    if refs and refs.get(f"refs/tags/{tag}^{{}}") != head:
+        raise ReleaseError(f"remote tag {tag} does not peel to {head}; choose a newer version")
+    return bool(refs)
+
+
+def restore_published_app(version: str, head: str, details: dict[str, object]) -> None:
+    tag = f"v{version}"
+    asset_name = f"Codex-Harness-v{version}-macos-universal.zip"
+    if not any(item["name"] == asset_name for item in details["assets"]):
+        raise ReleaseError(f"existing release {tag} is missing {asset_name}; restore the original asset before retrying")
+    with tempfile.TemporaryDirectory(prefix="harness-release-restore-") as directory:
+        root = Path(directory)
+        run("gh", "release", "download", tag, "--pattern", asset_name, "--dir", directory)
+        archive = root / asset_name
+        checksum = sha256(archive)
+        try:
+            details = verify_remote_asset(tag, asset_name, checksum)
+        except ReleaseError as error:
+            if str(error) == ASSET_DIGEST_PENDING_MESSAGE:
+                raise ReleaseError("existing asset digest is still pending; retry restoration later") from error
+            raise
+        run("ditto", "-x", "-k", str(archive), directory)
+        app = root / "Codex Harness.app"
+        verify_app(app, version)
+        destination, backup = install_app(app, version)
+        print(json.dumps({
+            "phase": "published", "version": version, "commit": head, "tag": tag,
+            "release": details["url"], "sha256": checksum, "resumed": True,
+            "installed": str(destination), "backup": str(backup) if backup else None,
+        }))
+
+
 def command_publish(version: str, github: bool = True) -> None:
     version = normalized_version(version)
     if sys.platform != "darwin":
@@ -531,10 +593,19 @@ def command_publish(version: str, github: bool = True) -> None:
         raise ReleaseError("publish must run from the merged origin/main commit")
     require_synced_versions(version)
     tag = f"v{version}"
-    if try_run("git", "rev-parse", "--verify", tag).returncode == 0:
-        peeled = run("git", "rev-parse", f"{tag}^{{}}", capture=True)
-        if peeled != head:
-            raise ReleaseError(f"existing tag {tag} points to {peeled}, expected {head}")
+    remote_tag_exists = require_matching_release_tag(version, head)
+    if github:
+        # Listing must succeed: authentication/network errors are not an absent release.
+        releases = json.loads(run("gh", "api", "--paginate", "--slurp", "repos/{owner}/{repo}/releases", capture=True))
+        existing = next((item for page in releases for item in page if item["tag_name"] == tag), None)
+        if existing:
+            if not remote_tag_exists:
+                raise ReleaseError(f"existing release {tag} has no matching remote tag")
+            if existing["draft"]:
+                raise ReleaseError(f"existing release {tag} is a draft; finish or remove the draft before retrying")
+            details = json.loads(run("gh", "release", "view", tag, "--json", "url,tagName,assets", capture=True))
+            restore_published_app(version, head, details)
+            return
 
     ensure_dependencies()
     build_universal_app()

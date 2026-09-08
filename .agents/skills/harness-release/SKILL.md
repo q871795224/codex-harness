@@ -7,7 +7,7 @@ description: Use when preparing, packaging, installing, or publishing a Codex Ha
 
 发布动作需要用户在当前请求中明确授权。先区分 `.harness/github.md` 定义的开发构建、本机正式发布和 GitHub 正式发布。只要求开发构建、测试或 smoke test 时，不执行 release commit、创建/推送 tag、替换稳定版、上传产物或创建 GitHub Release。
 
-正常的 GitHub 正式发布由 Codex Harness 工作区的“发布”快捷命令执行，不启动 Quick Agent。快捷命令显示基于最新 `origin/main` 计算的 patch 和 minor 两个目标版本号；用户选择版本即授权本次 release PR 合并、本机安装、tag push、制品上传和 GitHub Release。后台 runner 脱离 Harness 应用生命周期运行，状态按 workspace 共享；失败时保留 worktree、日志和红色状态卡片，再由用户决定是否启动 Agent 排查。
+正常的 GitHub 正式发布由 Codex Harness 工作区的“发布”快捷命令执行，不启动 Quick Agent。快捷命令以本机安装版本和最新 `origin/main` 的较小值计算 patch 和 minor 两个目标版本号（本机版本不可用时使用 main）；用户选择版本即授权本次 release PR 合并、本机安装、tag push、制品上传和 GitHub Release。后台 runner 脱离 Harness 应用生命周期运行，状态按 workspace 共享；失败时保留 worktree、日志和红色状态卡片，再由用户决定是否启动 Agent 排查。
 
 发布菜单打开后立即显示缓存版本，同时后台执行一次 `git fetch origin --prune --tags`。刷新结果会固定 `origin/main` 的 commit SHA；选择版本时等待这次刷新完成，并把同一个 SHA 传给 runner。runner 直接从该 SHA 创建 worktree，`release.py prepare` 复用该 SHA，不再重复 fetch。合并后的 `publish` 阶段仍需单独 fetch `origin/main`，用于确认构建基线。
 
@@ -24,6 +24,10 @@ Agent 只在排查发布失败、执行人工恢复或维护发布实现时使�
 - 在 `isolated-delivery` worktree 中选择版本后执行 `scripts/release.py prepare <version>`，由脚本从最新 `origin/main` 创建 release 分支并同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`。快捷发布 runner 会额外传入已 fetch 的 `--base-sha`，此时 prepare 从该精确 commit 创建 release 分支。变更过的内置插件应在对应开发 PR 中同步更新 manifest 版本，不留到发布阶段判断。
 
 ## 发布前验证
+
+目标版本等于 main 时走同版本恢复：`prepare` 保留 main 的版本文件并切到该精确 commit，`check` 仍执行 Rust 门禁，`submit` 确认 main 未移动且该 commit 最新的 `test-and-build` 已成功，不创建重复的版本提交或 PR。已有 release 分支不影响这条路径。目标版本低于 main 仍拒绝。
+
+同版本恢复只允许已有 tag 指向本次 main commit，不能移动 tag 或用旧版本承载新 commit。GitHub Release 已存在时下载原始 zip，验证摘要、bundle 版本、签名和架构后安装，不重新构建或覆盖远端产物；摘要尚未生成时恢复失败并等待重试，不报告安装成功。缺失产物、draft 或 tag 冲突保留现场并报错。
 
 版本修改完成后执行：
 
