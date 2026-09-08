@@ -660,7 +660,53 @@ fn codex_command(codex: &Path) -> Command {
         }
         command.env("CODEX_HOME", codex_home);
     }
+    // 注入 MCP 环境变量（优先级：进程已有 > 文件加载）
+    for (key, value) in load_mcp_env() {
+        if env::var(&key).is_err() {
+            command.env(&key, &value);
+        }
+    }
     command
+}
+
+/// 加载 MCP 需要的环境变量：
+/// 1. 从 ~/.smc/smc_token.json 读动态 token（TEST_TOKEN / LIVE_TOKEN）
+/// 2. 从 ~/.codex-harness/secrets 读静态 token（MGW_MCP_*）
+fn load_mcp_env() -> HashMap<String, String> {
+    let mut env_map = HashMap::new();
+
+    // 1. 动态 token：~/.smc/smc_token.json
+    if let Some(home) = env::var_os("HOME") {
+        let smc_token_path = PathBuf::from(&home).join(".smc/smc_token.json");
+        if let Ok(content) = fs::read_to_string(&smc_token_path) {
+            if let Ok(json) = serde_json::from_str::<Value>(&content) {
+                if let Some(token) = json["shopee"]["space_token"].as_str() {
+                    env_map.insert("LIVE_TOKEN".to_string(), token.to_string());
+                }
+                if let Some(token) = json["shopeetest"]["space_token"].as_str() {
+                    env_map.insert("TEST_TOKEN".to_string(), token.to_string());
+                }
+            }
+        }
+    }
+
+    // 2. 静态 token：~/.codex-harness/secrets
+    if let Some(home) = env::var_os("HOME") {
+        let secrets_path = PathBuf::from(&home).join(".codex-harness/secrets");
+        if let Ok(content) = fs::read_to_string(&secrets_path) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some((key, value)) = line.split_once('=') {
+                    env_map.insert(key.trim().to_string(), value.trim().to_string());
+                }
+            }
+        }
+    }
+
+    env_map
 }
 
 fn managed_codex_home(codex: &Path) -> Option<PathBuf> {

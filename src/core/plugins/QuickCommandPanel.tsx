@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, ChevronUp, CircleAlert, LoaderCircle, PackageOpen, Play, Terminal } from 'lucide-react'
+import { Check, ChevronRight, CircleAlert, LoaderCircle, PackageOpen, Play, Terminal } from 'lucide-react'
 import type { QuickCommandContribution } from '../../extensions/types'
 import { RELEASE_PHASE_LABELS, type WorkspaceReleaseController } from '../release-command/types'
 import type { ResolvedContribution } from './runtime'
@@ -71,8 +71,9 @@ export function QuickCommandPanel({ commands, release, anchorBottom }: QuickComm
       {open ? (
         <section className="quick-command-panel" aria-label="快捷命令">
           <header>
-            <button type="button" aria-label="收起快捷命令" title="收起" onClick={() => { setOpen(false); setReleasePicker(false) }}><ChevronLeft size={15} /></button>
-            <span><Terminal size={15} />快捷命令</span>
+            <button type="button" className="quick-panel-header-title" aria-label="快捷命令面板，点击收起" onClick={() => { setOpen(false); setReleasePicker(false) }}>
+              <Terminal size={15} />快捷命令
+            </button>
           </header>
           <div className="quick-command-list">
             {releaseVisible && release && (
@@ -139,7 +140,7 @@ export function QuickCommandPanel({ commands, release, anchorBottom }: QuickComm
         </section>
       ) : (
         <button type="button" className="quick-command-trigger" aria-label="打开快捷命令" title="快捷命令" onClick={() => setOpen(true)}>
-          <ChevronUp size={13} />{releaseRunning ? <LoaderCircle className="spin" size={17} /> : <Terminal size={17} />}
+          {releaseRunning ? <LoaderCircle className="spin" size={17} /> : <Terminal size={17} />}
         </button>
       )}
     </div>

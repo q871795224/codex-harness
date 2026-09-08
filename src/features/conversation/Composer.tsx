@@ -779,7 +779,7 @@ function attachmentFromPath(path: string): ComposerAttachment {
   return { path, name, kind: isSupportedImagePath(name) ? 'image' : 'file' }
 }
 
-function ContextRing({ usage, provider }: { usage: ThreadTokenUsage | null; provider: 'codex' | 'claude' }) {
+export function ContextRing({ usage, provider }: { usage: ThreadTokenUsage | null; provider: 'codex' | 'claude' }) {
   const windowSize = usage?.modelContextWindow ?? null
   const used = usage?.contextTokens ?? usage?.last.totalTokens ?? null
   const percent = windowSize && used !== null ? Math.min(100, Math.max(0, (used / windowSize) * 100)) : 0
@@ -787,7 +787,15 @@ function ContextRing({ usage, provider }: { usage: ThreadTokenUsage | null; prov
   const dashOffset = circumference * (1 - percent / 100)
   const tone = percent >= 90 ? 'danger' : percent >= 75 ? 'warning' : ''
   const label = windowSize && used !== null ? `上下文已使用 ${formatTokens(used)} / ${formatTokens(windowSize)} tokens（${Math.round(percent)}%）` : `等待${provider === 'claude' ? ' Claude' : ' App Server'} 提供上下文窗口用量`
-  return <span className={`context-ring ${tone}`} title={label} aria-label={label}><svg viewBox="0 0 24 24" aria-hidden><circle className="context-ring-track" cx="12" cy="12" r="9" /><circle className="context-ring-progress" cx="12" cy="12" r="9" strokeDasharray={circumference} strokeDashoffset={dashOffset} /></svg></span>
+  return (
+    <span className={`context-ring ${tone}`} aria-label={label}>
+      <svg viewBox="0 0 24 24" aria-hidden>
+        <circle className="context-ring-track" cx="12" cy="12" r="9" />
+        <circle className="context-ring-progress" cx="12" cy="12" r="9" strokeDasharray={circumference} strokeDashoffset={dashOffset} />
+      </svg>
+      <span className="context-ring-tooltip" role="tooltip">{label}</span>
+    </span>
+  )
 }
 
 function formatTokens(value: number): string {
