@@ -64,6 +64,15 @@
 - **正确做法**：如果空白会话在首轮发送前切换了 cwd，用最终 cwd 重建 thread，保留用户选择的模型、推理强度、审批和 sandbox 设置，再删除旧的空 thread。
 - **适用范围**：新会话创建、工作区选择器、首轮发送和会话恢复。
 
+## 重建草稿的会话可能漏掉自动命名
+
+- **问题**：空白会话在首轮发送前切换了 cwd，发送时经 `recreateDraftThreadForSelectedCwd` 重建为新 thread，但自动命名（`maybeGenerateThreadTitle`）偶发跳过，诊断记录 `generation.skipped / thread_not_found`。
+- **机制**：重建把新 thread 同步写入 `threadsRef`，随后 `startTurn` 让出微任务；此窗口内并发的 `refreshThreads` 若返回重建前的旧 `thread/list` 快照，会用旧目录覆盖 `threadsRef`，把刚重建的 thread 挤掉。等命名在 `startTurn` resolve 后读 `threadsRef` 时已找不到目标，于是放弃命名。
+- **已知修复与边界**：PR #50（`pendingCatalogThreadIdsRef`，v0.8.5）让 `refreshThreads` 在 thread/list 确认前保留首个提交的会话，实测 0.8.5 下该场景命名成功。但这是时序竞态，非稳定复现；#50 保护的是 `threads` state，命名路径读的 `threadsRef` 是否在所有时序下都被覆盖，尚未用能稳定失败的回归测试证实。
+- **排查线索**：诊断日志按 `area=thread-title` + `reason=thread_not_found` 过滤；用 `thread.draft-recreated` 事件确认是否走了 cwd 重建路径；对照 `harness.jsonl` 与 `harness.previous.jsonl` 的轮换边界。
+- **未决的后续修复**：调查分支 `fix/thread-title-draft-recreated-race`（已推远端）含一个 checkpoint commit，加了「updater 以 `threadsRef.current` 为基底合并」的防御性读法和对应测试，但该测试在未修复代码上也能通过，**不是有效回归测试，此修复未验证，不要直接合入**。若 0.8.5 仍复现，从该分支继续，先写出能稳定失败的回归测试。
+- **适用范围**：会话自动命名、首轮发送、cwd 重建和会话目录竞态排查。
+
 ## Claude Provider daemon 不随文件更新自动重启
 
 - **问题**：`~/.codex-harness/claude-provider/daemon.mjs` 被新版覆盖后，正在运行的 daemon 进程仍执行旧代码，新方法（如 `provider/models`）会报"未知 Claude Provider 方法"。
