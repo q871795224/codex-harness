@@ -65,6 +65,7 @@ pub struct AppServerManager {
     analytics: CodexAnalytics,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
+    analytics_requests: tokio::sync::Semaphore,
 }
 
 impl AppServerManager {
@@ -75,7 +76,76 @@ impl AppServerManager {
             analytics,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
+            analytics_requests: tokio::sync::Semaphore::new(4),
         }
+    }
+
+    async fn analytics_request(&self, method: &str, params: Value) -> Result<Value, String> {
+        let _permit = self
+            .analytics_requests
+            .acquire()
+            .await
+            .map_err(|_| "分析查询已关闭")?;
+        // Analytics never starts a daemon or a model turn. Use the core's existing connection.
+        let connection = self
+            .connection
+            .lock()
+            .await
+            .as_ref()
+            .filter(|c| c.alive.load(Ordering::Relaxed))
+            .cloned()
+            .ok_or("Codex 尚未连接")?;
+        self.send_request_with_timeout(&connection, method.into(), params, Duration::from_secs(6))
+            .await
+    }
+    pub async fn analytics_thread_info(
+        &self,
+        id: &str,
+    ) -> Result<crate::codex_analytics::ThreadInfo, String> {
+        let response = self
+            .analytics_request("thread/read", json!({"threadId":id,"includeTurns":false}))
+            .await?;
+        let thread = response.get("thread").ok_or("会话信息缺失")?;
+        let title = thread
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                thread
+                    .get("preview")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.trim().is_empty())
+            })
+            .map(|s| s.chars().take(160).collect());
+        Ok(crate::codex_analytics::ThreadInfo {
+            id: id.into(),
+            title,
+            cwd: thread
+                .get("cwd")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .into(),
+            created_at: thread
+                .get("createdAt")
+                .and_then(Value::as_i64)
+                .unwrap_or_default()
+                * 1000,
+        })
+    }
+    pub async fn analytics_thread_usage(
+        &self,
+        id: &str,
+    ) -> Result<Option<crate::codex_analytics::ThreadUsage>, String> {
+        let response = self
+            .analytics_request("account/usage/read", json!({"threadId":id}))
+            .await?;
+        response
+            .get("threadUsage")
+            .filter(|v| !v.is_null())
+            .map(|v| {
+                serde_json::from_value(v.clone()).map_err(|_| "官方估算额度格式不可用".to_string())
+            })
+            .transpose()
     }
 
     pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
@@ -391,6 +461,16 @@ impl AppServerManager {
         method: String,
         params: Value,
     ) -> Result<Value, String> {
+        self.send_request_with_timeout(connection, method, params, Duration::from_secs(90))
+            .await
+    }
+    async fn send_request_with_timeout(
+        &self,
+        connection: &Connection,
+        method: String,
+        params: Value,
+        wait: Duration,
+    ) -> Result<Value, String> {
         let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = oneshot::channel();
         connection.pending.lock().await.insert(id, sender);
@@ -399,7 +479,7 @@ impl AppServerManager {
             connection.pending.lock().await.remove(&id);
             return Err(error);
         }
-        match timeout(Duration::from_secs(90), receiver).await {
+        match timeout(wait, receiver).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err("Codex App Server 在返回结果前断开连接。".to_string()),
             Err(_) => {

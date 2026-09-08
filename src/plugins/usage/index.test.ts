@@ -49,7 +49,7 @@ describe('usage plugin', () => {
     await host.syncInstances([usageDefaultInstance])
     const tabs = host.resolvedTabs({ threadId: 'thread-1', threadCwd: '/repo', workspaceRoot: '/repo' })
     expect(tabs).toHaveLength(1)
-    expect(tabs[0].contribution.label).toBe('用量分析')
+    expect(tabs[0].contribution.label).toBe('用量')
     await host.dispose()
   })
 })

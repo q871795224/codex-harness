@@ -35,7 +35,7 @@ export const usagePlugin: HarnessPlugin = {
     ctx.effect(() => globalThis.clearInterval(refreshTimer))
     ctx.slots.conversationTabs.register({
       id: 'usage',
-      label: '用量分析',
+      label: '用量',
       order: 15,
       icon: BarChart3,
       hideComposer: true,

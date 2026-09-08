@@ -80,6 +80,9 @@ export default function App() {
     'harness.codexAnalytics': {
       configure: runtime.codexAnalyticsConfigure,
       snapshot: runtime.codexAnalyticsSnapshot,
+      costs: runtime.codexAnalyticsCosts,
+      refreshMetadata: runtime.codexAnalyticsRefreshMetadata,
+      threadUsage: runtime.codexAnalyticsThreadUsage,
     } satisfies CodexAnalyticsService,
     'harness.quickCommands': {
       run: runtime.runQuickCommand,

@@ -10,14 +10,16 @@ use std::{
     sync::{
         atomic::{AtomicU64, AtomicU8, Ordering},
         mpsc::{self, SyncSender},
-        Arc,
+        Arc, Mutex,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 mod counter;
+mod metadata;
 mod query;
 use counter::*;
+pub use metadata::{matching_costs, AnalyticsCosts, ModelCost, ThreadInfo, ThreadUsage};
 pub use query::{AnalyticsQuery, AnalyticsSnapshot};
 const LOCAL_ESTIMATOR_VERSION: &str = "tiktoken-rs/0.12.0:o200k_base";
 const OFFICIAL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -55,6 +57,8 @@ struct OfficialCountResult {
 #[derive(Clone)]
 pub struct CodexAnalytics {
     database_path: PathBuf,
+    metadata: Arc<Mutex<HashMap<String, (i64, Option<String>)>>>,
+    pub metadata_refresh: Arc<tokio::sync::Mutex<()>>,
     events: Option<SyncSender<AnalyticsEvent>>,
     dropped_events: Arc<AtomicU64>,
     write_errors: Arc<AtomicU64>,
@@ -221,6 +225,8 @@ impl CodexAnalytics {
     pub fn disabled(database_path: PathBuf) -> Self {
         Self {
             database_path,
+            metadata: Arc::new(Mutex::new(HashMap::new())),
+            metadata_refresh: Arc::new(tokio::sync::Mutex::new(())),
             events: None,
             dropped_events: Arc::new(AtomicU64::new(0)),
             write_errors: Arc::new(AtomicU64::new(1)),
@@ -509,6 +515,7 @@ fn initialize_schema(db: &Connection) -> rusqlite::Result<()> {
     CREATE TABLE IF NOT EXISTS analysis_meta (id INTEGER PRIMARY KEY, started_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS analysis_turns (turn_id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,started_at INTEGER NOT NULL,model TEXT,effort TEXT,source TEXT NOT NULL,project TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'inProgress',uncertain INTEGER NOT NULL DEFAULT 0,rerouted INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS analysis_turns_thread ON analysis_turns(thread_id,started_at);
+    CREATE TABLE IF NOT EXISTS analysis_workspaces (thread_id TEXT PRIMARY KEY,cwd TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS analysis_children (thread_id TEXT PRIMARY KEY,parent_turn_id TEXT NOT NULL,model TEXT);
     CREATE TABLE IF NOT EXISTS analysis_usage (thread_id TEXT NOT NULL,turn_id TEXT NOT NULL,signature TEXT NOT NULL,at INTEGER NOT NULL,total_tokens INTEGER NOT NULL,input_tokens INTEGER NOT NULL,cached_input_tokens INTEGER NOT NULL,cache_write_input_tokens INTEGER NOT NULL,output_tokens INTEGER NOT NULL,reasoning_output_tokens INTEGER NOT NULL,cumulative INTEGER NOT NULL,PRIMARY KEY(thread_id,turn_id,signature));
     CREATE INDEX IF NOT EXISTS analysis_usage_time ON analysis_usage(at);
@@ -591,6 +598,9 @@ impl Writer {
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 db.execute("INSERT OR IGNORE INTO analysis_turns(turn_id,thread_id,started_at,model,effort,source,project) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![turn_id,p.thread_id,p.at,p.settings.model,p.settings.effort,p.source,project])?;
+                if let Some(cwd) = p.settings.cwd.as_deref().filter(|s| !s.is_empty()) {
+                    db.execute("INSERT INTO analysis_workspaces(thread_id,cwd) VALUES(?1,?2) ON CONFLICT(thread_id) DO UPDATE SET cwd=excluded.cwd", params![p.thread_id,cwd])?;
+                }
                 for (index, input) in p.inputs.into_iter().enumerate() {
                     let text = if let Some(path) = input.path {
                         self.catalog.insert(normalize(&path), input.name.clone());
