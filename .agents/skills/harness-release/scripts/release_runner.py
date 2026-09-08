@@ -21,6 +21,11 @@ PHASES = (
     ("publish", "publishing"),
 )
 
+ASSET_DIGEST_PENDING_MESSAGE = (
+    "GitHub 仍在生成发布文件的校验摘要，暂时无法完成回读确认。"
+    "发布产物已上传成功，稍后可打开 GitHub Release 页面查看。"
+)
+
 
 def now_ms() -> int:
     return int(time.time() * 1000)
@@ -47,7 +52,7 @@ def run(*args: str, cwd: Path) -> None:
     command = shlex.join(args)
     log_event("command.started", command=command, cwd=str(cwd))
     try:
-        result = subprocess.run(args, cwd=cwd, check=False)
+        result = subprocess.run(args, cwd=cwd, check=False, capture_output=True, text=True)
     except OSError as error:
         log_event(
             "command.finished",
@@ -58,6 +63,10 @@ def run(*args: str, cwd: Path) -> None:
             error=str(error),
         )
         raise
+    if result.stdout:
+        print(result.stdout, end="", flush=True)
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr, flush=True)
     duration_ms = round((time.monotonic() - started) * 1000)
     log_event(
         "command.finished",
@@ -68,7 +77,9 @@ def run(*args: str, cwd: Path) -> None:
         returnCode=result.returncode,
     )
     if result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, args)
+        raise subprocess.CalledProcessError(
+            result.returncode, args, output=result.stdout, stderr=result.stderr
+        )
 
 
 def finish_phase(state: dict[str, object]) -> None:
@@ -149,6 +160,7 @@ def main() -> int:
         "updatedAt": now_ms(),
         "completedAt": None,
         "dismissed": False,
+        "warning": False,
         "baseSha": args.base_sha,
         "phaseStartedAt": now_ms(),
         "phaseDurationMs": None,
@@ -189,16 +201,36 @@ def main() -> int:
         return 0
     except Exception as error:
         finish_phase(state)
+        stderr = error.stderr if isinstance(error, subprocess.CalledProcessError) else ""
+        if ASSET_DIGEST_PENDING_MESSAGE in (stderr or ""):
+            state.update(
+                {
+                    "status": "succeeded",
+                    "phase": "completed",
+                    "warning": True,
+                    "error": ASSET_DIGEST_PENDING_MESSAGE,
+                    "completedAt": now_ms(),
+                }
+            )
+            write_state(state_path, state)
+            log_event(
+                "release.finished",
+                outcome="succeeded",
+                version=args.version,
+                warning=True,
+            )
+            return 0
+        message = str(error)
         state.update(
             {
                 "status": "failed",
-                "error": str(error),
+                "error": message,
                 "completedAt": now_ms(),
             }
         )
         write_state(state_path, state)
-        log_event("release.finished", error=str(error), outcome="failed", version=args.version)
-        print(f"release runner failed: {error}", file=sys.stderr, flush=True)
+        log_event("release.finished", error=message, outcome="failed", version=args.version)
+        print(f"release runner failed: {message}", file=sys.stderr, flush=True)
         return 1
 
 

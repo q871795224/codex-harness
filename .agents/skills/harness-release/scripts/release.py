@@ -35,8 +35,13 @@ VERSION_FILES = (
     Path("src-tauri/Cargo.lock"),
     Path("src-tauri/tauri.conf.json"),
 )
-REMOTE_ASSET_VERIFY_RETRIES = 3
+REMOTE_ASSET_VERIFY_RETRIES = 6
 REMOTE_ASSET_VERIFY_INITIAL_WAIT_SECONDS = 1
+
+ASSET_DIGEST_PENDING_MESSAGE = (
+    "GitHub 仍在生成发布文件的校验摘要，暂时无法完成回读确认。"
+    "发布产物已上传成功，稍后可打开 GitHub Release 页面查看。"
+)
 
 
 class ReleaseError(RuntimeError):
@@ -509,6 +514,8 @@ def verify_remote_asset(tag: str, asset_name: str, checksum: str) -> dict[str, o
                 flush=True,
             )
             time.sleep(delay)
+    if asset and not asset.get("digest"):
+        raise ReleaseError(ASSET_DIGEST_PENDING_MESSAGE)
     raise ReleaseError(f"remote release asset verification failed: {asset}")
 
 

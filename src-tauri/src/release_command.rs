@@ -25,6 +25,8 @@ pub struct ReleaseStatus {
     pub status: String,
     pub phase: String,
     pub error: Option<String>,
+    #[serde(default)]
+    pub warning: bool,
     pub pid: u32,
     pub started_at: u64,
     pub updated_at: u64,
@@ -54,6 +56,7 @@ pub struct ReleaseStatus {
 pub struct ReleaseCommandInfo {
     pub supported: bool,
     pub current_version: Option<String>,
+    pub installed_version: Option<String>,
     pub versions: Vec<String>,
     pub origin_main_sha: Option<String>,
     pub status: Option<ReleaseStatus>,
@@ -64,6 +67,7 @@ pub fn info(path: &str, refresh: bool) -> Result<ReleaseCommandInfo, String> {
         return Ok(ReleaseCommandInfo {
             supported: false,
             current_version: None,
+            installed_version: None,
             versions: Vec::new(),
             origin_main_sha: None,
             status: None,
@@ -82,10 +86,12 @@ pub fn info(path: &str, refresh: bool) -> Result<ReleaseCommandInfo, String> {
     }
     let current_version = origin_main_version(&workspace.checkout_root)?;
     let origin_main_sha = origin_main_sha(&workspace.checkout_root)?;
-    let versions = next_versions(&current_version)?;
+    let installed_version = installed_app_version();
+    let versions = next_versions(&release_base_version(&current_version))?;
     Ok(ReleaseCommandInfo {
         supported: true,
         current_version: Some(current_version),
+        installed_version,
         versions,
         origin_main_sha: Some(origin_main_sha),
         status,
@@ -116,7 +122,7 @@ pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<Releas
         }
     }
     let release_base_sha = base_sha.unwrap_or(current_sha.as_str());
-    if !next_versions(&current_version)?
+    if !next_versions(&release_base_version(&current_version))?
         .iter()
         .any(|item| item == version)
     {
@@ -141,6 +147,7 @@ pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<Releas
         status: "running".to_string(),
         phase: "starting".to_string(),
         error: None,
+        warning: false,
         pid: 0,
         started_at: now_ms(),
         updated_at: now_ms(),
@@ -280,6 +287,39 @@ fn origin_main_sha(cwd: &str) -> Result<String, String> {
     git(cwd, ["rev-parse", "origin/main"])
 }
 
+fn installed_app_version() -> Option<String> {
+    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    let plist = home
+        .join("Applications/Codex Harness.app/Contents/Info.plist");
+    if !plist.is_file() {
+        return None;
+    }
+    let output = Command::new("defaults")
+        .arg("read")
+        .arg(&plist)
+        .arg("CFBundleShortVersionString")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Version::parse(&version).ok().map(|_| version)
+}
+
+fn release_base_version(current_version: &str) -> String {
+    installed_app_version()
+        .filter(|installed| installed_version_is_older(installed, current_version))
+        .unwrap_or_else(|| current_version.to_string())
+}
+
+fn installed_version_is_older(installed: &str, current: &str) -> bool {
+    match (Version::parse(installed), Version::parse(current)) {
+        (Ok(installed), Ok(current)) => installed < current,
+        _ => false,
+    }
+}
+
 fn next_versions(current: &str) -> Result<Vec<String>, String> {
     let version = Version::parse(current).map_err(|error| format!("当前版本无效: {error}"))?;
     if !version.pre.is_empty() || !version.build.is_empty() {
@@ -407,5 +447,13 @@ mod tests {
     #[test]
     fn offers_patch_and_minor_versions_as_numbers() {
         assert_eq!(next_versions("0.7.6").unwrap(), ["0.7.7", "0.8.0"]);
+    }
+
+    #[test]
+    fn installed_version_comparison_detects_older_builds() {
+        assert!(installed_version_is_older("0.8.6", "0.8.7"));
+        assert!(!installed_version_is_older("0.8.7", "0.8.7"));
+        assert!(!installed_version_is_older("0.8.8", "0.8.7"));
+        assert!(!installed_version_is_older("invalid", "0.8.7"));
     }
 }

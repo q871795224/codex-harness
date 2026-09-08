@@ -5,6 +5,7 @@ import type { ReleaseCommandInfo, ReleaseRunStatus, WorkspaceReleaseController }
 const EMPTY_INFO: ReleaseCommandInfo = {
   supported: false,
   currentVersion: null,
+  installedVersion: null,
   versions: [],
   originMainSha: null,
   status: null,
@@ -163,4 +164,8 @@ export function useWorkspaceRelease(workspaceRoot: string | null): WorkspaceRele
 
 export function releaseFailureVisible(status: ReleaseRunStatus | null): boolean {
   return status?.status === 'failed' && !status.dismissed
+}
+
+export function releaseWarningVisible(status: ReleaseRunStatus | null): boolean {
+  return status?.status === 'succeeded' && status.warning === true && !status.dismissed
 }

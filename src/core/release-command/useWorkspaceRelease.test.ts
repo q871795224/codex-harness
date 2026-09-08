@@ -56,6 +56,7 @@ function info(originMainSha: string): ReleaseCommandInfo {
   return {
     supported: true,
     currentVersion: '0.7.6',
+    installedVersion: '0.7.6',
     versions: ['0.7.7', '0.8.0'],
     originMainSha,
     status: null,
@@ -70,6 +71,7 @@ function status(): ReleaseRunStatus {
     status: 'running',
     phase: 'starting',
     error: null,
+    warning: false,
     pid: 1,
     startedAt: 1,
     updatedAt: 1,
