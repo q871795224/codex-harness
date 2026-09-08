@@ -19,6 +19,127 @@ SPEC.loader.exec_module(release)
 
 
 class ReleaseScriptTest(unittest.TestCase):
+    def test_same_version_prepare_and_submit_resume_without_version_commit_or_pr(self):
+        calls = []
+        responses = {
+            ("git", "rev-parse", "base-sha^{commit}"): "base-sha",
+            ("git", "rev-parse", "HEAD"): "base-sha",
+            ("git", "rev-parse", "origin/main"): "base-sha",
+            ("git", "show", "base-sha:package.json"): '{"version":"0.8.9"}',
+            ("gh", "api", "repos/{owner}/{repo}/commits/base-sha/check-runs?per_page=100"):
+                '{"check_runs":[{"id":1,"name":"test-and-build","conclusion":"success"}]}',
+        }
+        with (
+            patch.object(release, "require_clean_worktree"),
+            patch.object(release, "require_synced_versions"),
+            patch.object(release, "run", side_effect=lambda *args, **kwargs: calls.append(args) or responses.get(args, "")),
+            patch.object(release, "try_run", return_value=release.subprocess.CompletedProcess([], 1)),
+            patch.object(release, "update_version_files") as update,
+        ):
+            release.command_prepare("0.8.9", "base-sha")
+            release.command_submit("0.8.9")
+        update.assert_not_called()
+        self.assertIn(("git", "switch", "--detach", "base-sha"), calls)
+        self.assertFalse(any(args[:2] in [("git", "commit"), ("git", "push"), ("gh", "pr")] for args in calls))
+
+    def test_prepare_rejects_older_version(self):
+        with (
+            patch.object(release, "require_clean_worktree"),
+            patch.object(release, "run", return_value="base-sha"),
+            patch.object(release, "origin_main_version", return_value="0.8.9"),
+            self.assertRaisesRegex(release.ReleaseError, "must not be older"),
+        ):
+            release.command_prepare("0.8.8", "base-sha")
+
+    def test_same_version_submit_rejects_changed_main_and_unsuccessful_ci(self):
+        for main, checks in [
+            ("other-sha", []),
+            ("base-sha", []),
+            ("base-sha", [{"id":1,"name":"test-and-build","conclusion":"failure"}]),
+            ("base-sha", [{"id":1,"name":"test-and-build","conclusion":None}]),
+        ]:
+            with (
+                self.subTest(main=main, checks=checks),
+                patch.object(release, "require_synced_versions"),
+                patch.object(release, "require_matching_release_tag"),
+                patch.object(release, "run", side_effect=lambda *args, **kwargs: {
+                    ("git", "rev-parse", "HEAD"): "base-sha",
+                    ("git", "rev-parse", "origin/main"): main,
+                    ("gh", "api", "repos/{owner}/{repo}/commits/base-sha/check-runs?per_page=100"):
+                        json.dumps({"check_runs": checks}),
+                }.get(args, "")),
+                self.assertRaises(release.ReleaseError),
+            ):
+                release.command_submit("0.8.9")
+
+    def test_existing_tags_must_match_the_release_commit(self):
+        for local, remote, allowed in [
+            (None, "", True),
+            ("head", "object refs/tags/v0.8.9\nhead refs/tags/v0.8.9^{}", True),
+            ("old", "", False),
+            (None, "object refs/tags/v0.8.9\nold refs/tags/v0.8.9^{}", False),
+            (None, "head refs/tags/v0.8.9", False),
+        ]:
+            with (
+                self.subTest(local=local, remote=remote),
+                patch.object(release, "try_run", return_value=release.subprocess.CompletedProcess([], 0 if local else 1)),
+                patch.object(release, "run", side_effect=lambda *args, **kwargs: remote if args[1] == "ls-remote" else local),
+            ):
+                if allowed:
+                    release.require_matching_release_tag("0.8.9", "head")
+                else:
+                    with self.assertRaises(release.ReleaseError):
+                        release.require_matching_release_tag("0.8.9", "head")
+
+    def test_restore_installs_only_verified_existing_asset(self):
+        details = {"url":"https://example.com/release", "assets":[{"name":"Codex-Harness-v0.8.9-macos-universal.zip"}]}
+        for failure in [None, "mismatched digest", release.ASSET_DIGEST_PENDING_MESSAGE]:
+            calls = []
+            with (
+                self.subTest(failure=failure),
+                patch.object(release, "run", side_effect=lambda *args, **kwargs: calls.append(args)),
+                patch.object(release, "sha256", return_value="checksum"),
+                patch.object(release, "verify_remote_asset", side_effect=release.ReleaseError(failure) if failure else None, return_value=details),
+                patch.object(release, "verify_app") as verify,
+                patch.object(release, "install_app", return_value=(Path("/installed"), None)) as install,
+            ):
+                if failure:
+                    with self.assertRaises(release.ReleaseError) as error:
+                        release.restore_published_app("0.8.9", "head", details)
+                    self.assertNotEqual(str(error.exception), release.ASSET_DIGEST_PENDING_MESSAGE)
+                    verify.assert_not_called()
+                    install.assert_not_called()
+                else:
+                    release.restore_published_app("0.8.9", "head", details)
+                    verify.assert_called_once()
+                    install.assert_called_once()
+                self.assertEqual(calls[0][:3], ("gh", "release", "download"))
+
+    def test_restore_rejects_missing_asset_without_installing(self):
+        with patch.object(release, "install_app") as install, self.assertRaisesRegex(release.ReleaseError, "missing"):
+            release.restore_published_app("0.8.9", "head", {"assets": []})
+        install.assert_not_called()
+
+    def test_publish_reuses_existing_release_without_rebuilding(self):
+        details = {"url":"https://example.com/release", "assets":[]}
+        with (
+            patch.object(release.sys, "platform", "darwin"),
+            patch.object(release, "configure_release_environment"),
+            patch.object(release, "require_clean_worktree"),
+            patch.object(release, "require_synced_versions"),
+            patch.object(release, "require_matching_release_tag", return_value=True),
+            patch.object(release, "run", side_effect=lambda *args, **kwargs: {
+                ("gh", "api", "--paginate", "--slurp", "repos/{owner}/{repo}/releases"):
+                    '[[{"tag_name":"v0.8.9","draft":false}]]',
+                ("gh", "release", "view", "v0.8.9", "--json", "url,tagName,assets"): json.dumps(details),
+            }.get(args, "head")),
+            patch.object(release, "restore_published_app") as restore,
+            patch.object(release, "build_universal_app") as build,
+        ):
+            release.command_publish("0.8.9")
+        restore.assert_called_once_with("0.8.9", "head", details)
+        build.assert_not_called()
+
     def test_command_logging_includes_duration(self):
         completed = release.subprocess.CompletedProcess(
             args=("echo", "ok"), returncode=0, stdout="ok\n", stderr=""
