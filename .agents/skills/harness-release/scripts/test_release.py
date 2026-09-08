@@ -19,6 +19,47 @@ SPEC.loader.exec_module(release)
 
 
 class ReleaseScriptTest(unittest.TestCase):
+    def test_main_ci_waits_for_check_creation_and_completion(self):
+        snapshots = [[], [{"id":1,"name":"test-and-build","conclusion":None}],
+                     [{"id":1,"name":"test-and-build","conclusion":"success"}]]
+        with (
+            patch.object(release, "run", side_effect=[json.dumps({"check_runs": checks}) for checks in snapshots]) as run,
+            patch.object(release.time, "sleep") as sleep,
+        ):
+            release.wait_for_main_checks("head")
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertTrue(all("/commits/head/" in call.args[2] for call in run.call_args_list))
+
+    def test_main_ci_uses_latest_rerun_and_rejects_terminal_failures(self):
+        for conclusion in ["success", "failure", "cancelled", "timed_out", "skipped"]:
+            checks = [{"id":2,"name":"test-and-build","conclusion":conclusion},
+                      {"id":1,"name":"test-and-build","conclusion":"success"}]
+            with (
+                self.subTest(conclusion=conclusion),
+                patch.object(release, "run", return_value=json.dumps({"check_runs": checks})),
+                patch.object(release.time, "sleep") as sleep,
+            ):
+                if conclusion == "success":
+                    release.wait_for_main_checks("head")
+                else:
+                    with self.assertRaisesRegex(release.ReleaseError, conclusion):
+                        release.wait_for_main_checks("head")
+                sleep.assert_not_called()
+
+    def test_main_ci_pending_or_missing_checks_time_out(self):
+        for checks in [[], [{"id":1,"name":"test-and-build","conclusion":None}]]:
+            with (
+                self.subTest(checks=checks),
+                patch.object(release, "MAIN_CHECK_ATTEMPTS", 3),
+                patch.object(release, "run", return_value=json.dumps({"check_runs": checks})) as run,
+                patch.object(release.time, "sleep") as sleep,
+                self.assertRaisesRegex(release.ReleaseError, "timed out"),
+            ):
+                release.wait_for_main_checks("head")
+            self.assertEqual(run.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+
     def test_same_version_prepare_and_submit_resume_without_version_commit_or_pr(self):
         calls = []
         responses = {
@@ -60,6 +101,8 @@ class ReleaseScriptTest(unittest.TestCase):
         ]:
             with (
                 self.subTest(main=main, checks=checks),
+                patch.object(release, "MAIN_CHECK_ATTEMPTS", 2),
+                patch.object(release.time, "sleep"),
                 patch.object(release, "require_synced_versions"),
                 patch.object(release, "require_matching_release_tag"),
                 patch.object(release, "run", side_effect=lambda *args, **kwargs: {
