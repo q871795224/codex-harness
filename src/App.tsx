@@ -44,6 +44,7 @@ import { ProjectDocApprovalCards } from './features/conversation/ProjectDocAppro
 import { useProjectBinding } from './features/project-doc/useProjectBinding'
 import { ArchiveNoticeBar } from './features/project-doc/ArchiveNoticeBar'
 import { PROJECT_DOC_TAB_KEY } from './plugins/project-doc'
+import { archiveStore } from './plugins/project-doc/archiveStore'
 
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 // 项目文档服务是无状态桥接封装，模块级单例即可（绑定走 appState，读写直连 Rust store）。
@@ -628,6 +629,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
               pinned={harness.navigation.pinnedThreadIds.includes(harness.currentThread.id)}
               workspaceChanging={Boolean(harness.busy.threadWorkspace)}
               canChangeWorkspace={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
+              projectName={projectBinding.project?.name ?? null}
+              onOpenProject={() => {
+                const projectId = projectBinding.binding?.projectId
+                if (!projectId) return
+                archiveStore.requestSelect(projectId)
+                setTab(PROJECT_DOC_TAB_KEY)
+              }}
               onRename={(name) => void harness.renameThread(harness.currentThread!.id, name)}
               onArchive={() => void harness.archiveThread(harness.currentThread!.id)}
               onUnarchive={() => void harness.unarchiveThread(harness.currentThread!.id)}
@@ -962,6 +970,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
           actionShortcuts={harness.keyboard.actionShortcuts}
           selectedWorkspaceRoot={(harness.selectedThreadId ? harness.threadRoots[harness.selectedThreadId] : null) ?? harness.selectedWorkspaceRoot}
           codex={codex}
+          claudeModels={harness.claudeModels}
           threadTitleGeneration={harness.threadTitleGeneration}
           recapGeneration={harness.recapGeneration}
           conversationStats={harness.conversationStats}

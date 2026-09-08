@@ -18,6 +18,7 @@ import {
   GitBranch,
   GitFork,
   Image,
+  NotebookPen,
   Pencil,
   Pin,
   PinOff,
@@ -44,6 +45,10 @@ interface ConversationHeaderProps {
   pinned: boolean
   workspaceChanging: boolean
   canChangeWorkspace: boolean
+  /** 当前会话绑定的项目名；null 表示未绑定。 */
+  projectName?: string | null
+  /** 已绑定时点 chip 触发（跳项目 tab 并选中该项目）。 */
+  onOpenProject?: () => void
   onRename: (name: string) => void
   onArchive: () => void
   onUnarchive: () => void
@@ -53,7 +58,7 @@ interface ConversationHeaderProps {
   headerActions?: ReactNode
 }
 
-export function ConversationHeader({ thread, workspace, gitContextResolved, archived, pinned, workspaceChanging, canChangeWorkspace, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
+export function ConversationHeader({ thread, workspace, gitContextResolved, archived, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -112,6 +117,17 @@ export function ConversationHeader({ thread, workspace, gitContextResolved, arch
           >
             {workspaceChanging ? '正在切换…' : thread.cwd}
           </button>
+          {projectName !== undefined && (
+            <button
+              type="button"
+              className="thread-project"
+              title={projectName ? '打开项目文档' : '未绑定项目'}
+              disabled={!projectName}
+              onClick={() => { if (projectName) onOpenProject?.() }}
+            >
+              <NotebookPen size={12} />{projectName ?? '-'}
+            </button>
+          )}
           {headerActions && <span className="thread-header-actions">{headerActions}</span>}
         </div>
       </div>
