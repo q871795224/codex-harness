@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import type { ComposerDraft } from './Composer'
 import { ComposerDraftWriter, restoreComposerDrafts, storedComposerDraft } from './composerDraftStorage'
 
@@ -9,6 +9,14 @@ const draft = (text = '保留这段内容'): ComposerDraft => ({
 })
 
 describe('composer draft persistence', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('restores valid versioned drafts and ignores malformed records', () => {
     expect(restoreComposerDrafts([
       { conversationId: 'thread-1', draft: storedComposerDraft(draft()), updatedAt: 1 },
@@ -40,7 +48,7 @@ describe('composer draft persistence', () => {
         .mockResolvedValue(undefined),
       deleteComposerDraft: vi.fn().mockResolvedValue(undefined),
     }
-    const writer = new ComposerDraftWriter(storage)
+    const writer = new ComposerDraftWriter(storage, () => {}, 0) // 无防抖
     writer.update('thread-1', draft('first'))
     await vi.waitFor(() => expect(storage.upsertComposerDraft).toHaveBeenCalledTimes(1))
     writer.update('thread-1', draft('latest'))
@@ -48,5 +56,38 @@ describe('composer draft persistence', () => {
     await writer.flush()
 
     expect(storage.upsertComposerDraft).toHaveBeenLastCalledWith('thread-1', storedComposerDraft(draft('latest')))
+  })
+
+  it('debounces writes and persists after timeout', async () => {
+    const storage = {
+      listComposerDrafts: vi.fn().mockResolvedValue([]),
+      upsertComposerDraft: vi.fn().mockResolvedValue(undefined),
+      deleteComposerDraft: vi.fn().mockResolvedValue(undefined),
+    }
+    const writer = new ComposerDraftWriter(storage, () => {}, 1000)
+    writer.update('thread-1', draft('first'))
+
+    // 防抖期间不应写入
+    expect(storage.upsertComposerDraft).not.toHaveBeenCalled()
+
+    // 快进 1 秒
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(storage.upsertComposerDraft).toHaveBeenCalledWith('thread-1', storedComposerDraft(draft('first')))
+  })
+
+  it('flush clears pending debounce and writes immediately', async () => {
+    const storage = {
+      listComposerDrafts: vi.fn().mockResolvedValue([]),
+      upsertComposerDraft: vi.fn().mockResolvedValue(undefined),
+      deleteComposerDraft: vi.fn().mockResolvedValue(undefined),
+    }
+    const writer = new ComposerDraftWriter(storage, () => {}, 1000)
+    writer.update('thread-1', draft('immediate'))
+    await writer.flush()
+
+    expect(storage.upsertComposerDraft).toHaveBeenCalledWith('thread-1', storedComposerDraft(draft('immediate')))
+    // flush 后不应再有定时器触发
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(storage.upsertComposerDraft).toHaveBeenCalledTimes(1)
   })
 })

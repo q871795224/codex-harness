@@ -225,25 +225,6 @@ function HarnessShell({ harness, agentRuns, codex }: {
     }
     queuedComposerDraftsRef.current = composerDrafts
   }, [composerDrafts, composerDraftsLoaded])
-  useEffect(() => {
-    let disposed = false
-    let unlisten: (() => void) | undefined
-    void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-      const window = getCurrentWindow()
-      return window.onCloseRequested(async (event) => {
-        event.preventDefault()
-        await composerDraftWriterRef.current?.flush()
-        await window.destroy()
-      })
-    }).then((dispose) => {
-      if (disposed) dispose()
-      else unlisten = dispose
-    })
-    return () => {
-      disposed = true
-      unlisten?.()
-    }
-  }, [])
   const handover = useHandover({
     startTurnInThread: harness.startTurnInThread,
     onTurnCompleted: harness.onTurnCompleted,
