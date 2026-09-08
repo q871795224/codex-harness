@@ -38,6 +38,8 @@ VERSION_FILES = (
 )
 REMOTE_ASSET_VERIFY_RETRIES = 6
 REMOTE_ASSET_VERIFY_INITIAL_WAIT_SECONDS = 1
+MAIN_CHECK_ATTEMPTS = 73
+MAIN_CHECK_WAIT_SECONDS = 10
 
 ASSET_DIGEST_PENDING_MESSAGE = (
     "GitHub 仍在生成发布文件的校验摘要，暂时无法完成回读确认。"
@@ -333,6 +335,24 @@ def wait_for_required_checks(pr_url: str) -> None:
     )
 
 
+def wait_for_main_checks(head: str) -> None:
+    for attempt in range(MAIN_CHECK_ATTEMPTS):
+        checks = json.loads(run(
+            "gh", "api", f"repos/{{owner}}/{{repo}}/commits/{head}/check-runs?per_page=100",
+            capture=True,
+        ))
+        required = [item for item in checks["check_runs"] if item["name"] == "test-and-build"]
+        latest = max(required, key=lambda item: item["id"]) if required else None
+        if latest and latest["conclusion"] == "success":
+            return
+        if latest and latest["conclusion"] is not None:
+            raise ReleaseError(f"origin/main {head} test-and-build failed: {latest['conclusion']}")
+        if attempt + 1 < MAIN_CHECK_ATTEMPTS:
+            print(f"waiting for origin/main {head} test-and-build; retrying in {MAIN_CHECK_WAIT_SECONDS}s", flush=True)
+            time.sleep(MAIN_CHECK_WAIT_SECONDS)
+    raise ReleaseError(f"timed out waiting for origin/main {head} test-and-build")
+
+
 def command_submit(version: str) -> None:
     version = normalized_version(version)
     require_synced_versions(version)
@@ -344,13 +364,7 @@ def command_submit(version: str) -> None:
         if head != run("git", "rev-parse", "origin/main", capture=True):
             raise ReleaseError("same-version release must resume from origin/main")
         require_matching_release_tag(version, head)
-        checks = json.loads(run(
-            "gh", "api", f"repos/{{owner}}/{{repo}}/commits/{head}/check-runs?per_page=100",
-            capture=True,
-        ))
-        required = [item for item in checks["check_runs"] if item["name"] == "test-and-build"]
-        if not required or max(required, key=lambda item: item["id"])["conclusion"] != "success":
-            raise ReleaseError("origin/main test-and-build must succeed before resuming release")
+        wait_for_main_checks(head)
         print(json.dumps({"phase": "submitted", "version": version, "resumed": True, "mergeCommit": head}))
         return
     expected = {str(path) for path in VERSION_FILES}

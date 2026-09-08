@@ -27,6 +27,8 @@ Agent 只在排查发布失败、执行人工恢复或维护发布实现时使�
 
 目标版本等于 main 时走同版本恢复：`prepare` 保留 main 的版本文件并切到该精确 commit，`check` 仍执行 Rust 门禁，`submit` 确认 main 未移动且该 commit 最新的 `test-and-build` 已成功，不创建重复的版本提交或 PR。已有 release 分支不影响这条路径。目标版本低于 main 仍拒绝。
 
+main 的 CI 尚未创建、排队或运行时，`submit` 每 10 秒查询该精确 commit，最多等待约 12 分钟；只接受最新一次检查成功，实际失败或取消立即报错，超时单独说明，不把 pending 当成失败。
+
 同版本恢复只允许已有 tag 指向本次 main commit，不能移动 tag 或用旧版本承载新 commit。GitHub Release 已存在时下载原始 zip，验证摘要、bundle 版本、签名和架构后安装，不重新构建或覆盖远端产物；摘要尚未生成时恢复失败并等待重试，不报告安装成功。缺失产物、draft 或 tag 冲突保留现场并报错。
 
 版本修改完成后执行：
