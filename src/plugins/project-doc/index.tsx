@@ -324,15 +324,23 @@ function ProjectDocSettings({ instance, models, saveConfig }: PluginSettingsProp
   )
 }
 
-function ProjectTabHost({ service }: { service: ProjectDocService }) {
+export function ProjectTabHost({ service }: { service: ProjectDocService }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const archiveState = useSyncExternalStore(archiveStore.subscribe, archiveStore.getState)
   const openRequest = archiveState.openRequest
+  const selectRequest = archiveState.selectRequest
 
   // 点归档通知：自动选中对应项目，由 ProjectDetail 依据 archiveRequest 进 archive 确认视图。
   useEffect(() => {
     if (openRequest) setSelectedProjectId(openRequest.projectId)
   }, [openRequest])
+
+  // 会话头部项目 chip：只选中项目，不进 archive 视图。
+  useEffect(() => {
+    if (!selectRequest) return
+    setSelectedProjectId(selectRequest.projectId)
+    archiveStore.clearSelect()
+  }, [selectRequest])
 
   const archiveRequest = openRequest
     ? {

@@ -19,6 +19,8 @@ export interface ArchiveState {
   notices: Record<string, ArchiveNotice>
   /** 待打开的归档确认请求（点通知后由项目 Tab 消费；确认/放弃后清空）。 */
   openRequest: { projectId: string; draft: ArchiveDraft } | null
+  /** 待选中的项目（会话头部项目 chip 触发；项目 Tab 消费后清空）。不进 archive 视图。 */
+  selectRequest: { projectId: string } | null
 }
 
 type Listener = () => void
@@ -35,10 +37,14 @@ export interface ArchiveStore {
   requestOpen(projectId: string, draft: ArchiveDraft): void
   /** 项目 Tab 消费完确认请求（保存/放弃）后清空。 */
   clearOpen(): void
+  /** 会话头部项目 chip：只选中项目，不进 archive 视图。 */
+  requestSelect(projectId: string): void
+  /** 项目 Tab 消费完选中请求后清空。 */
+  clearSelect(): void
 }
 
 export function createArchiveStore(): ArchiveStore {
-  let state: ArchiveState = { notices: {}, openRequest: null }
+  let state: ArchiveState = { notices: {}, openRequest: null, selectRequest: null }
   const listeners = new Set<Listener>()
   const notify = () => {
     for (const listener of [...listeners]) listener()
@@ -70,6 +76,15 @@ export function createArchiveStore(): ArchiveStore {
     clearOpen: () => {
       if (!state.openRequest) return
       state = { ...state, openRequest: null }
+      notify()
+    },
+    requestSelect: (projectId) => {
+      state = { ...state, selectRequest: { projectId } }
+      notify()
+    },
+    clearSelect: () => {
+      if (!state.selectRequest) return
+      state = { ...state, selectRequest: null }
       notify()
     },
   }

@@ -4,6 +4,7 @@ import { runtime } from '../../core/runtime/bridge'
 import { approvalRequestFromEvent, reconcileClaudeApprovalSnapshot } from '../../core/claude/approvalState'
 import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeProviderSnapshot, ClaudeRuntimeStatus, ClaudeSessionRecord, ClaudeSessionSettings, ClaudeTransportEvent } from '../../core/claude/types'
 import { DEFAULT_CLAUDE_SESSION_SETTINGS } from '../../core/claude/types'
+import { initialClaudeSessionSettings } from './initialClaudeSessionSettings'
 import { reduceClaudeEvent } from '../../core/claude/eventReducer'
 import { hydrateClaudeHistory, mergeClaudeHistory } from '../../core/claude/history'
 import { reduceThreadDetailEvent } from '../conversation/conversationEventReducer'
@@ -616,8 +617,10 @@ export function useClaudeHarness() {
         return next
       })
       setDetails((current) => ({ ...current, [session.id]: emptyThreadDetail(sessionThread(session)) }))
+      // 新会话 settings：读全局默认模型（若有）覆盖 DEFAULT_CLAUDE_SESSION_SETTINGS.model。
+      const initial = await initialClaudeSessionSettings()
       setSessionSettings((current) => {
-        const next = { ...current, [session.id]: current[session.id] ?? DEFAULT_CLAUDE_SESSION_SETTINGS }
+        const next = { ...current, [session.id]: current[session.id] ?? initial }
         settingsRef.current = next
         return next
       })

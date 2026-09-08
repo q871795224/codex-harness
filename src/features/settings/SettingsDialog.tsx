@@ -12,11 +12,13 @@ import {
 } from '../handover/templates'
 import { appServer } from '../../core/runtime/appServerClient'
 import type { HarnessPlugin, PluginInstanceRecord, PluginInstanceStatus, PluginScope, PluginScopeKind } from '../../extensions/types'
+import type { ClaudeModel } from '../../core/claude/types'
 import type { useCodexCore } from '../codex/useCodexCore'
 import { mcpNeedsAttention, mcpStatusLabel } from '../codex/mcpStatus'
 import { fastServiceTier, fastServiceTierTooltip } from '../codex/serviceTier'
 import { conflictingAction, formatShortcut, harnessActionDefinitions, shortcutFromEvent } from '../actions/harnessActions'
 import { ConversationStats } from '../conversation/ConversationStats'
+import { ClaudeDefaultModelSettings } from './ClaudeDefaultModelSettings'
 import {
   conversationStatDefinition,
   type ConversationStatId,
@@ -32,6 +34,7 @@ interface SettingsDialogProps {
   actionShortcuts: HarnessActionShortcuts
   selectedWorkspaceRoot: string | null
   codex: ReturnType<typeof useCodexCore>
+  claudeModels?: ClaudeModel[]
   threadTitleGeneration: ThreadTitleGenerationSettings
   recapGeneration: RecapGenerationSettings
   conversationStats: ConversationStatsPreferences
@@ -68,7 +71,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -170,7 +173,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
           {page === 'appearance' && <AppearanceSettings theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
           {page === 'conversation-stats' && <ConversationStatsSettings preferences={conversationStats} data={conversationStatsData} onChange={onConversationStats} />}
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
-          {page === 'models' && <ModelsSettings codex={codex} />}
+          {page === 'models' && <ModelsSettings codex={codex} claudeModels={claudeModels} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'recap' && <RecapSettings codex={codex} settings={recapGeneration} onChange={onRecapGeneration} />}
           {page === 'handover' && <HandoverSettings />}
@@ -442,7 +445,7 @@ function SettingsVersions({
   )
 }
 
-function ModelsSettings({ codex }: { codex: ReturnType<typeof useCodexCore> }) {
+function ModelsSettings({ codex, claudeModels }: { codex: ReturnType<typeof useCodexCore>; claudeModels: ClaudeModel[] }) {
   const selectedModel = codex.models.find((model) => model.model === codex.defaults.model) ?? codex.models[0] ?? null
   const fastTier = fastServiceTier(selectedModel)
   const speedValue = fastTier?.id === codex.defaults.serviceTier ? fastTier.id : 'default'
@@ -450,7 +453,7 @@ function ModelsSettings({ codex }: { codex: ReturnType<typeof useCodexCore> }) {
   return (
     <div className="settings-section codex-settings">
       <section className="codex-setting-card">
-        <div className="settings-section-title"><BrainCircuit size={17} /><div><h3>默认模型</h3><p>用于新会话；单个会话可在输入框中覆盖。</p></div></div>
+        <div className="settings-section-title"><BrainCircuit size={17} /><div><h3>Codex 默认模型</h3><p>用于新会话；单个会话可在输入框中覆盖。</p></div></div>
         <div className="settings-row-list">
           <label className="settings-row"><span>模型</span><select value={codex.defaults.model} disabled={codex.loading || codex.models.length === 0} onChange={(event) => void codex.updateDefault('model', event.target.value)}>{codex.models.map((model) => <option key={model.id} value={model.model}>{model.displayName}</option>)}</select></label>
           <label className="settings-row"><span>推理强度</span><select value={codex.defaults.effort} disabled={codex.loading || !selectedModel} onChange={(event) => void codex.updateDefault('model_reasoning_effort', event.target.value)}>{(selectedModel?.supportedReasoningEfforts ?? []).map((option) => <option key={option.reasoningEffort} value={option.reasoningEffort}>{option.reasoningEffort}</option>)}</select></label>
@@ -458,6 +461,7 @@ function ModelsSettings({ codex }: { codex: ReturnType<typeof useCodexCore> }) {
           <label className="settings-row"><span>审批模式</span><select value={codex.defaults.approvalPolicy} disabled={codex.loading} onChange={(event) => void codex.updateDefault('approval_policy', event.target.value)}><option value="on-request">On request</option><option value="untrusted">Untrusted</option><option value="never">Never</option></select></label>
         </div>
       </section>
+      <ClaudeDefaultModelSettings models={claudeModels} />
       {codex.error && <div className="plugin-settings-error">{codex.error}</div>}
     </div>
   )
