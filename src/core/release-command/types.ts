@@ -14,6 +14,7 @@ export interface ReleaseRunStatus {
   status: 'running' | 'succeeded' | 'failed'
   phase: ReleaseRunPhase
   error: string | null
+  warning: boolean
   pid: number
   startedAt: number
   updatedAt: number
@@ -32,6 +33,7 @@ export interface ReleaseRunStatus {
 export interface ReleaseCommandInfo {
   supported: boolean
   currentVersion: string | null
+  installedVersion: string | null
   versions: string[]
   originMainSha: string | null
   status: ReleaseRunStatus | null

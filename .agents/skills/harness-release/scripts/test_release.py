@@ -105,17 +105,47 @@ class ReleaseScriptTest(unittest.TestCase):
             patch.object(
                 release,
                 "run",
-                side_effect=[missing_digest, missing_digest, missing_digest, matching_digest],
+                side_effect=[missing_digest] * 6 + [matching_digest],
             ) as run,
             patch.object(release.time, "sleep") as sleep,
         ):
             details = release.verify_remote_asset("v0.7.11", "bundle.zip", checksum)
 
         self.assertEqual(details["assets"][0]["digest"], f"sha256:{checksum}")
-        self.assertEqual(run.call_count, 4)
-        self.assertEqual([call.args for call in run.call_args_list], [command] * 4)
-        self.assertEqual([call.kwargs for call in run.call_args_list], [{"capture": True}] * 4)
-        self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2, 4])
+        self.assertEqual(run.call_count, 7)
+        self.assertEqual([call.args for call in run.call_args_list], [command] * 7)
+        self.assertEqual([call.kwargs for call in run.call_args_list], [{"capture": True}] * 7)
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list], [1, 2, 4, 8, 16, 32]
+        )
+
+    def test_remote_asset_digest_pending_raises_friendly_message(self):
+        checksum = "abc123"
+        missing_digest = json.dumps({"assets": [{"name": "bundle.zip"}]})
+
+        with (
+            patch.object(release, "run", return_value=missing_digest),
+            patch.object(release.time, "sleep"),
+        ):
+            with self.assertRaises(release.ReleaseError) as context:
+                release.verify_remote_asset("v0.7.11", "bundle.zip", checksum)
+
+        self.assertEqual(str(context.exception), release.ASSET_DIGEST_PENDING_MESSAGE)
+
+    def test_remote_asset_digest_mismatch_raises_details(self):
+        checksum = "abc123"
+        mismatched = json.dumps(
+            {"assets": [{"name": "bundle.zip", "digest": "sha256:other"}]}
+        )
+
+        with (
+            patch.object(release, "run", return_value=mismatched),
+            patch.object(release.time, "sleep"),
+        ):
+            with self.assertRaises(release.ReleaseError) as context:
+                release.verify_remote_asset("v0.7.11", "bundle.zip", checksum)
+
+        self.assertIn("remote release asset verification failed", str(context.exception))
 
     def test_check_installs_dependencies_before_cargo_test(self):
         calls = []

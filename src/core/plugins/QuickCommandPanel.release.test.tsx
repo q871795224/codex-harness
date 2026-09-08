@@ -47,6 +47,7 @@ function controller(overrides: Partial<WorkspaceReleaseController> = {}): Worksp
   return {
     supported: true,
     currentVersion: '0.7.6',
+    installedVersion: '0.7.6',
     versions: ['0.7.7', '0.8.0'],
     originMainSha: 'base-sha',
     status: null,
