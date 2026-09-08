@@ -60,6 +60,7 @@ export function createProjectDocService(): ProjectDocService {
     read: (projectId) => runtime.projectDocRead(projectId),
     versions: (projectId) => runtime.projectDocVersions(projectId),
     writeSection: (input) => runtime.projectDocWriteSection(input),
+    writeDocument: (input) => runtime.projectDocWriteDocument(input),
 
     threadProject: async (threadId) => {
       const bindings = await readThreadBindings()

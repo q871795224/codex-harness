@@ -14,6 +14,7 @@ import type {
   QuickActionContribution,
   QuickCommandContribution,
   ThreadHeaderActionContribution,
+  TurnActionContribution,
 } from '../../extensions/types'
 
 type Disposer = () => void | Promise<void>
@@ -151,6 +152,7 @@ export class PluginHost {
   private readonly threadHeaderActions = new ContributionRegistry<ThreadHeaderActionContribution>()
   private readonly newThreadPanels = new ContributionRegistry<NewThreadPanelContribution>()
   private readonly composerActions = new ContributionRegistry<ComposerActionContribution>()
+  private readonly turnActions = new ContributionRegistry<TurnActionContribution>()
   private readonly composerCompletions = new ContributionRegistry<ComposerCompletionContribution>()
   private readonly quickActions = new ContributionRegistry<QuickActionContribution>()
   private readonly quickCommands = new ContributionRegistry<QuickCommandContribution>()
@@ -188,6 +190,10 @@ export class PluginHost {
 
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[] {
     return this.filterProvider(resolveScopedContributions(this.composerActions.list(), context), context)
+  }
+
+  resolvedTurnActions(context: PluginViewContext): ResolvedContribution<TurnActionContribution>[] {
+    return this.filterProvider(resolveScopedContributions(this.turnActions.list(), context), context)
   }
 
   resolvedComposerCompletions(context: PluginViewContext): ResolvedContribution<ComposerCompletionContribution>[] {
@@ -314,6 +320,9 @@ export class PluginHost {
         },
         composerActions: {
           register: (contribution) => lifecycle.effect(this.composerActions.register({ ...metadata, contribution })),
+        },
+        turnActions: {
+          register: (contribution) => lifecycle.effect(this.turnActions.register({ ...metadata, contribution })),
         },
         composerCompletions: {
           register: (contribution) => lifecycle.effect(this.composerCompletions.register({ ...metadata, contribution })),

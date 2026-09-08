@@ -9,7 +9,7 @@ import type { ConversationService } from './core/conversations/types'
 import type { SystemNotificationService } from './core/notifications/types'
 import type { QuickCommandService } from './core/quick-commands/types'
 import type { HarnessFilesService, HarnessInstructionConfig } from './core/harness-files/types'
-import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, PluginThreadHeaderAction, usePluginHost } from './core/plugins/react'
+import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, PluginThreadHeaderAction, PluginTurnAction, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
 import { useWorkspaceRelease } from './core/release-command/useWorkspaceRelease'
@@ -319,6 +319,12 @@ function HarnessShell({ harness, agentRuns, codex }: {
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  const resolvedTurnActions = plugins.resolvedTurnActions({
+    provider: harness.selectedProvider,
+    threadId: harness.selectedThreadId,
+    threadCwd,
+    workspaceRoot: workspace?.root ?? null,
+  })
   const resolvedComposerCompletions = plugins.resolvedComposerCompletions({
     provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
@@ -514,6 +520,37 @@ function HarnessShell({ harness, agentRuns, codex }: {
     ? harness.currentDetail?.turns.find((turn) => turn.id === harness.activeTurnId) ?? null
     : null
   const canMutate = !harness.currentForeignActive && !codexUpdate.updating
+
+  // 把插件的 turnActions 渲染进每个 agent turn 的操作行右侧（如「归档到项目」）。
+  // items 截至该 turn（含），避免把该 turn 之后的内容也归档进去。
+  const allItems = harness.currentDetail?.items ?? []
+  const renderTurnActions = resolvedTurnActions.length === 0 ? undefined : (turnId: string) => {
+    let endIndex = allItems.length
+    for (let index = allItems.length - 1; index >= 0; index -= 1) {
+      if (allItems[index].turnId === turnId) { endIndex = index + 1; break }
+    }
+    const itemsUpToTurn = allItems.slice(0, endIndex)
+    return (
+      <>
+        {resolvedTurnActions.map((action) => (
+          <PluginTurnAction
+            key={`${action.pluginId}:${action.contribution.id}`}
+            action={action}
+            props={{
+              provider: harness.selectedProvider,
+              threadId: harness.selectedThreadId,
+              threadCwd,
+              workspaceRoot: workspace?.root ?? null,
+              items: itemsUpToTurn,
+              turnId,
+              checkoutRoot: harness.currentThread?.cwd ?? null,
+              disabled: !canMutate,
+            }}
+          />
+        ))}
+      </>
+    )
+  }
 
   return (
     <div
@@ -721,6 +758,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 onRawModeToggle={() => setRawMode((current) => !current)}
                 onContinueAfterFailure={codexConversation && canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
                 continueDisabled={Boolean(harness.busy.composer)}
+                renderTurnActions={renderTurnActions}
               />
             ) : selectedPluginTab ? (
               <PluginTabBoundary

@@ -188,9 +188,14 @@ interface ConversationViewProps {
   onRawModeToggle: () => void
   onContinueAfterFailure?: () => void
   continueDisabled?: boolean
+  /**
+   * 追加渲染在 agent 最终回答操作行（copy/raw/fork）右侧的扩展操作（右对齐）。
+   * 用于插件挂载「归档到项目」之类的 turn 级入口；返回 null 则不渲染。
+   */
+  renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false }: ConversationViewProps) {
+export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, renderTurnActions }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -323,6 +328,7 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
               forking={forkingTurnId === turn.turnId}
               rawOverrides={rawOverrides}
               onRawOverrideToggle={onRawOverrideToggle}
+              renderTurnActions={renderTurnActions}
             />
           ))}
           {rawMode && turns.filter((turn) => turn.status === 'failed').map((turn) => (
@@ -421,7 +427,7 @@ export function latestAgentMessageIndex(rows: Array<{ entry: ThreadItemEntry }>,
   return -1
 }
 
-function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking, rawOverrides, onRawOverrideToggle }: {
+function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking, rawOverrides, onRawOverrideToggle, renderTurnActions }: {
   turn: TranscriptTurn
   agentLabel: string
   working: boolean
@@ -434,6 +440,7 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
   forking: boolean
   rawOverrides?: ReadonlySet<string>
   onRawOverrideToggle?: (messageKey: string) => void
+  renderTurnActions?: (turnId: string) => ReactNode
 }) {
   const processRows = turn.processRows.filter(isRenderableProcessRow)
   const finalRawKey = turn.finalRows.length > 0 ? messageRawKey(turn.finalRows[0].entry) : null
@@ -494,6 +501,7 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
                   forking={forking}
                   rawActive={finalRawActive}
                   onToggleRaw={finalRawKey !== null && onRawOverrideToggle ? () => onRawOverrideToggle(finalRawKey) : undefined}
+                  trailingActions={renderTurnActions?.(turn.turnId) ?? undefined}
                 />
               )}
             </section>
@@ -661,16 +669,18 @@ const ThreadItemView = memo(function ThreadItemView({
   return <GenericActivityItem item={item} />
 })
 
-function MessageActions({ copyText, onFork, forking = false, rawActive = false, onToggleRaw }: {
+function MessageActions({ copyText, onFork, forking = false, rawActive = false, onToggleRaw, trailingActions }: {
   copyText?: string
   onFork?: () => void
   forking?: boolean
   rawActive?: boolean
   onToggleRaw?: () => void
+  /** 追加在 copy/raw/fork 之后、右对齐的扩展操作（如「归档到项目」）。 */
+  trailingActions?: ReactNode
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const canCopy = Boolean(copyText?.trim())
-  if (!canCopy && !onFork && !onToggleRaw) return null
+  if (!canCopy && !onFork && !onToggleRaw && !trailingActions) return null
 
   const copy = async () => {
     if (!copyText) return
@@ -700,6 +710,7 @@ function MessageActions({ copyText, onFork, forking = false, rawActive = false, 
           <GitFork size={13} />
         </button>
       )}
+      {trailingActions && <span className="message-actions-trailing">{trailingActions}</span>}
     </div>
   )
 }

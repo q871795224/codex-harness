@@ -29,6 +29,7 @@ function fakeService(outcome: ProjectDocWriteOutcome = { kind: 'applied', newSeq
     read: vi.fn(async () => snapshot()),
     versions: vi.fn(async () => []),
     writeSection: vi.fn(async () => outcome),
+    writeDocument: vi.fn(async () => outcome),
     threadProject: vi.fn(async () => null),
     bindThread: vi.fn(async () => undefined),
     unbindThread: vi.fn(async () => undefined),

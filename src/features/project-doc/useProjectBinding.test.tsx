@@ -25,6 +25,7 @@ function makeService(initial: Record<string, ThreadProjectBinding> = {}) {
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: 2, content: '', contentHash: 'h', consistent: true })),
     versions: vi.fn(async () => []),
     writeSection: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
+    writeDocument: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
     threadProject: vi.fn(async (threadId: string) => bindings[threadId]?.projectId ?? null),
     threadBinding: vi.fn(async (threadId: string) => bindings[threadId] ?? null),
     bindThread: vi.fn(async (threadId: string, projectId: string) => {
