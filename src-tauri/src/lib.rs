@@ -1052,6 +1052,91 @@ async fn codex_analytics_snapshot(
 }
 
 #[tauri::command]
+async fn codex_analytics_refresh_metadata(state: State<'_, AppState>) -> Result<u64, String> {
+    use futures_util::{stream, StreamExt};
+    let _refresh = state.codex_analytics.metadata_refresh.lock().await;
+    let analytics = state.codex_analytics.clone();
+    let ids = tauri::async_runtime::spawn_blocking(move || analytics.metadata_candidates())
+        .await
+        .map_err(|e| e.to_string())??;
+    let server = &state.app_server;
+    let values = stream::iter(ids)
+        .map(|id| async move {
+            let info = server.analytics_thread_info(&id).await.ok();
+            (id, info)
+        })
+        .buffer_unordered(4)
+        .collect::<Vec<_>>()
+        .await;
+    let analytics = state.codex_analytics.clone();
+    tauri::async_runtime::spawn_blocking(move || analytics.save_metadata(values))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn codex_analytics_thread_usage(
+    state: State<'_, AppState>,
+    thread_id: String,
+) -> Result<Option<codex_analytics::ThreadUsage>, String> {
+    state.app_server.analytics_thread_usage(&thread_id).await
+}
+
+#[tauri::command]
+async fn codex_analytics_costs(
+    state: State<'_, AppState>,
+    query: AnalyticsQuery,
+) -> Result<codex_analytics::AnalyticsCosts, String> {
+    use codex_analytics::{matching_costs, AnalyticsCosts, ModelCost};
+    use futures_util::{stream, StreamExt};
+    let since = query.since;
+    let until = query.until;
+    let analytics = state.codex_analytics.clone();
+    let candidates =
+        tauri::async_runtime::spawn_blocking(move || analytics.cost_candidates(&query))
+            .await
+            .map_err(|e| e.to_string())??;
+    if candidates.is_empty() {
+        return Ok(AnalyticsCosts::unavailable("所选时间范围暂无用量"));
+    }
+    let server = &state.app_server;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let results = stream::iter(candidates)
+        .map(|(id, expected)| async move {
+                let info = server.analytics_thread_info(&id).await.ok()?;
+                if info.created_at < since || until < now {
+                    return None;
+                }
+                let usage = server.analytics_thread_usage(&id).await.ok()??;
+                matching_costs(&expected, &info, usage, since, until, now)
+        })
+        .buffer_unordered(4)
+        .collect::<Vec<_>>()
+        .await;
+    let mut totals: std::collections::BTreeMap<Option<String>, f64> = Default::default();
+    for result in results {
+        let Some(rows) = result else {
+            return Ok(AnalyticsCosts::unavailable(
+                "官方累计估算暂不可用，或无法与所选日期及 Token 范围核对一致",
+            ));
+        };
+        for row in rows {
+            *totals.entry(row.model).or_default() += row.credits;
+        }
+    }
+    Ok(AnalyticsCosts {
+        models: totals
+            .into_iter()
+            .map(|(model, credits)| ModelCost { model, credits })
+            .collect(),
+        message: None,
+    })
+}
+
+#[tauri::command]
 fn codex_analytics_configure(
     state: State<'_, AppState>,
     mode: String,
@@ -1188,6 +1273,9 @@ pub fn run() {
             usage_refresh_snapshot,
             codex_analytics_snapshot,
             codex_analytics_configure,
+            codex_analytics_refresh_metadata,
+            codex_analytics_thread_usage,
+            codex_analytics_costs,
             run_quick_command,
             release_command_info,
             release_command_status,

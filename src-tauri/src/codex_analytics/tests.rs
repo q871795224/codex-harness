@@ -613,3 +613,181 @@ fn unchanged_cumulative_with_adjusted_breakdown_is_not_new_spend() {
     assert_eq!(f.count("SELECT SUM(total_tokens) FROM analysis_usage"), 12);
     assert_eq!(f.count("SELECT uncertain FROM analysis_turns"), 1);
 }
+
+#[test]
+fn workspaces_use_bound_paths_and_filter_every_aggregate() {
+    let mut f = Fixture::new();
+    for (thread, turn, cwd, model, amount) in [
+        ("one", "one-turn", "/a/same", "model-a", 20),
+        ("two", "two-turn", "/b/same", "model-b", 40),
+    ] {
+        f.event(AnalyticsEvent::Start(
+            PendingTurnObservation {
+                append: false,
+                input_group: "initial".into(),
+                thread_id: thread.into(),
+                at: 1000,
+                settings: Settings {
+                    cwd: Some(cwd.into()),
+                    model: Some(model.into()),
+                    ..Default::default()
+                },
+                source: "conversation".into(),
+                inputs: vec![Input {
+                    kind: "input",
+                    name: "用户输入".into(),
+                    path: None,
+                    text: Some("hello".into()),
+                }],
+            },
+            turn.into(),
+        ));
+        f.event(AnalyticsEvent::Observation(Observation {
+            thread_id: thread.into(),
+            turn_id: turn.into(),
+            at: 2000,
+            body: Body::Usage {
+                last: Tokens {
+                    total_tokens: amount,
+                    input_tokens: amount - 2,
+                    output_tokens: 2,
+                    ..Default::default()
+                },
+                total: Tokens {
+                    total_tokens: amount,
+                    input_tokens: amount - 2,
+                    output_tokens: 2,
+                    ..Default::default()
+                },
+            },
+        }));
+    }
+    let data = serde_json::to_value(f.snapshot(all())).unwrap();
+    assert_eq!(data["workspaces"].as_array().unwrap().len(), 2);
+    assert_eq!(data["daily"][0]["models"].as_array().unwrap().len(), 2);
+    assert!(data["models"][0]["inputContentTokens"].as_u64().unwrap() > 0);
+    let data = serde_json::to_value(f.snapshot(AnalyticsQuery {
+        workspace: Some("/a/same".into()),
+        ..all()
+    }))
+    .unwrap();
+    assert_eq!(data["summary"]["actual"]["totalTokens"], 20);
+    assert_eq!(data["summary"]["sessions"], 1);
+    assert_eq!(data["models"].as_array().unwrap().len(), 1);
+    assert_eq!(data["sessions"][0]["workspace"], "/a/same");
+    assert_eq!(data["daily"][0]["models"][0]["model"], "model-a");
+}
+
+#[test]
+fn hotspot_workspaces_preserve_selection_read_and_mcp_counts() {
+    let mut f = Fixture::new();
+    f.start(vec![Input {
+        kind: "skill",
+        name: "demo".into(),
+        path: None,
+        text: Some("instruction".into()),
+    }]);
+    f.db.execute(
+        "INSERT INTO analysis_workspaces VALUES('thread','/repo')",
+        [],
+    )
+    .unwrap();
+    f.observe(Body::Mcp {
+        id: "call".into(),
+        name: "server / tool".into(),
+        status: "failed".into(),
+        arguments: Some("{}".into()),
+        result: Some("{}".into()),
+    });
+    f.observe(Body::Mcp {
+        id: "call".into(),
+        name: "server / tool".into(),
+        status: "failed".into(),
+        arguments: Some("{}".into()),
+        result: Some("{}".into()),
+    });
+    let data = serde_json::to_value(f.snapshot(all())).unwrap();
+    let rows = data["hotspots"].as_array().unwrap();
+    let skill = rows.iter().find(|h| h["kind"] == "skill").unwrap();
+    assert_eq!(skill["workspaces"][0]["selected"], 1);
+    assert_eq!(skill["workspaces"][0]["reads"], 0);
+    let mcp = rows.iter().find(|h| h["kind"] == "mcp").unwrap();
+    assert_eq!(mcp["workspaces"][0]["calls"], 1);
+    assert_eq!(mcp["failed"], 1);
+}
+
+#[test]
+fn metadata_backfills_workspace_and_keeps_titles_out_of_sqlite() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("state.sqlite");
+    let db = open_connection(&path).unwrap();
+    initialize_schema(&db).unwrap();
+    db.execute("INSERT INTO analysis_turns(turn_id,thread_id,started_at,source,project) VALUES('t','archived',1000,'conversation','legacy-name')",[]).unwrap();
+    let collector = CodexAnalytics::disabled(path.clone());
+    assert_eq!(collector.metadata_candidates().unwrap(), vec!["archived"]);
+    collector
+        .save_metadata(vec![(
+            "archived".into(),
+            Some(ThreadInfo {
+                id: "archived".into(),
+                title: Some("ARCHIVED_TITLE_PRIVATE".into()),
+                cwd: "/workspace/actual".into(),
+                created_at: 1,
+            }),
+        )])
+        .unwrap();
+    assert!(collector.metadata_candidates().unwrap().is_empty());
+    let data = serde_json::to_value(query::snapshot(&db, &all(), &collector).unwrap()).unwrap();
+    assert_eq!(data["sessions"][0]["title"], "ARCHIVED_TITLE_PRIVATE");
+    assert_eq!(data["sessions"][0]["workspace"], "/workspace/actual");
+    collector
+        .save_metadata(vec![("archived".into(), None)])
+        .unwrap();
+    let data = serde_json::to_value(query::snapshot(&db, &all(), &collector).unwrap()).unwrap();
+    assert_eq!(data["sessions"][0]["title"], "ARCHIVED_TITLE_PRIVATE");
+    assert!(
+        !String::from_utf8_lossy(&std::fs::read(path).unwrap()).contains("ARCHIVED_TITLE_PRIVATE")
+    );
+}
+
+#[test]
+fn legacy_directory_labels_are_not_treated_as_workspace_paths() {
+    let f = Fixture::new();
+    f.db.execute("INSERT INTO analysis_turns(turn_id,thread_id,started_at,source,project) VALUES('t','thread',1000,'conversation','ambiguous-name')",[]).unwrap();
+    let data = serde_json::to_value(f.snapshot(all())).unwrap();
+    assert_eq!(data["sessions"][0]["workspace"], "");
+    assert_eq!(data["workspaces"][0]["workspace"], "");
+}
+
+#[test]
+fn official_estimate_preserves_nullable_dollars_and_model_breakdown() {
+    let usage:ThreadUsage=serde_json::from_value(json!({"estimatedUsageCreditsMicros":123,"estimatedUsageUsdMicros":null,"groups":[{"model":"model","totalTokens":120,"estimatedUsageCreditsMicros":123}]})).unwrap();
+    assert_eq!(usage.estimated_usage_usd_micros, None);
+    assert_eq!(usage.groups[0].total_tokens, Some(120));
+}
+
+#[test]
+fn cumulative_costs_require_entire_thread_and_matching_model_totals() {
+    let info = ThreadInfo {
+        id: "t".into(),
+        cwd: "/repo".into(),
+        title: None,
+        created_at: 1000,
+    };
+    let usage:ThreadUsage=serde_json::from_value(json!({"estimatedUsageCreditsMicros":3000000,"estimatedUsageUsdMicros":null,"groups":[{"model":"a","totalTokens":100,"estimatedUsageCreditsMicros":1000000},{"model":"a","totalTokens":200,"estimatedUsageCreditsMicros":2000000}]})).unwrap();
+    let expected = vec![(Some("a".into()), 300)];
+    let rows = matching_costs(&expected, &info, usage.clone(), 500, 3000, 2000).unwrap();
+    assert_eq!(rows[0].credits, 3.0);
+    assert!(matching_costs(&expected, &info, usage.clone(), 1500, 3000, 2000).is_none());
+    assert!(matching_costs(&expected, &info, usage.clone(), 500, 1500, 2000).is_none());
+    assert!(matching_costs(
+        &[(Some("a".into()), 100)],
+        &info,
+        usage.clone(),
+        500,
+        3000,
+        2000
+    )
+    .is_none());
+    assert!(matching_costs(&[(Some("b".into()), 300)], &info, usage, 500, 3000, 2000).is_none());
+}

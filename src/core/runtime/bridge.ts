@@ -29,7 +29,7 @@ import type { ApiSendInput, ApiSendResponse, ApiWorkbenchState } from '../api-wo
 import type { TerminalEvent, TerminalSessionInfo } from '../terminal/types'
 import type { WorkspaceAppId, WorkspaceDeliveryContext } from '../app-launcher/types'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
-import type { CodexAnalyticsCounterMode, CodexAnalyticsCounterStatus, CodexAnalyticsQuery, CodexAnalyticsSnapshot } from '../codex-analytics/types'
+import type { AnalyticsCosts, AnalyticsThreadUsage, CodexAnalyticsCounterMode, CodexAnalyticsCounterStatus, CodexAnalyticsQuery, CodexAnalyticsSnapshot } from '../codex-analytics/types'
 import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntimeStatus, ClaudeSessionHistory, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
 import type { ProjectDocSnapshot, ProjectDocWriteOutcome, ProjectMeta, ProjectVersion } from '../../features/project-doc/types'
 import type { ProjectDocProposal } from '../project-docs/types'
@@ -579,6 +579,15 @@ export const runtime = {
     return invoke<UsageSnapshot>('usage_refresh_snapshot', { since, until })
   },
 
+  codexAnalyticsCosts(query: CodexAnalyticsQuery): Promise<AnalyticsCosts> {
+    return invoke<AnalyticsCosts>('codex_analytics_costs', { query })
+  },
+  codexAnalyticsRefreshMetadata(): Promise<number> {
+    return invoke<number>('codex_analytics_refresh_metadata')
+  },
+  codexAnalyticsThreadUsage(threadId: string): Promise<AnalyticsThreadUsage | null> {
+    return invoke<AnalyticsThreadUsage | null>('codex_analytics_thread_usage', { threadId })
+  },
   codexAnalyticsSnapshot(query: CodexAnalyticsQuery): Promise<CodexAnalyticsSnapshot> {
     return invoke<CodexAnalyticsSnapshot>('codex_analytics_snapshot', { query })
   },
