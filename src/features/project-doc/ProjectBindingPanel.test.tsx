@@ -18,6 +18,7 @@ function makeService(): ProjectDocService {
     read: vi.fn(),
     versions: vi.fn(async () => []),
     writeSection: vi.fn(),
+    writeDocument: vi.fn(),
     threadProject: vi.fn(async () => null),
     threadBinding: vi.fn(async () => null),
     bindThread: vi.fn(),

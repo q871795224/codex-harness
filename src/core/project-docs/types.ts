@@ -42,6 +42,14 @@ export interface ProjectDocService {
     updatedBy: string
     summary?: string
   }): Promise<ProjectDocWriteOutcome>
+  /** 整文替换正文（项目 Tab「编辑全文」）；seq CAS 与 writeSection 相同，front matter 由 Rust 重建。 */
+  writeDocument(input: {
+    projectId: string
+    baseSeq?: number
+    content: string
+    updatedBy: string
+    summary?: string
+  }): Promise<ProjectDocWriteOutcome>
 
   /** 会话 ↔ 项目绑定（UI 态，存 appState；正文与版本在 Rust store）。 */
   threadProject(threadId: string): Promise<string | null>

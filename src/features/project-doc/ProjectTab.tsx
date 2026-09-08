@@ -34,7 +34,7 @@ export interface ProjectTabArchiveRequest {
   baseSeq: number
 }
 
-type DetailView = 'doc' | 'board' | 'edit' | 'history' | 'diff' | 'archive'
+type DetailView = 'doc' | 'board' | 'edit' | 'editFull' | 'history' | 'diff' | 'archive'
 
 export const PROJECT_STATUS_TEMPLATE = `### 项目目标
 填写要解决的问题和期望结果。
@@ -291,6 +291,9 @@ function ProjectDetail({ service, projectId, conflictRequest, archiveRequest, on
           <button type="button" className={view === 'edit' ? 'active' : ''} onClick={() => setView('edit')} title="编辑 Status 区（走 seq 校验）">
             <Pencil size={12} />编辑
           </button>
+          <button type="button" className={view === 'editFull' ? 'active' : ''} onClick={() => setView('editFull')} title="编辑整篇文档（走 seq 校验）">
+            <Pencil size={12} />编辑全文
+          </button>
           <button type="button" className={view === 'history' ? 'active' : ''} onClick={() => setView('history')} title="版本历史">
             <History size={12} />历史
           </button>
@@ -320,6 +323,19 @@ function ProjectDetail({ service, projectId, conflictRequest, archiveRequest, on
       )}
       {view === 'edit' && snapshot && (
         <ProjectEditPanel
+          service={service}
+          projectId={projectId}
+          snapshot={snapshot}
+          onSaved={() => {
+            void reload()
+            onChanged()
+            setView('doc')
+          }}
+          onCancel={() => setView('doc')}
+        />
+      )}
+      {view === 'editFull' && snapshot && (
+        <ProjectFullEditPanel
           service={service}
           projectId={projectId}
           snapshot={snapshot}
@@ -491,6 +507,71 @@ function ProjectEditPanel({ service, projectId, snapshot, onSaved, onCancel }: {
         value={content}
         onChange={(event) => setContent(event.target.value)}
         aria-label="编辑项目文档"
+      />
+      {error && <p className="project-tab-error">{error}</p>}
+      {conflict !== null && (
+        <p className="project-tab-warning">版本冲突：当前已是 v{conflict}。请放弃或基于最新版重新编辑。</p>
+      )}
+      <div className="project-edit-actions">
+        <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
+          {busy ? <LoaderCircle className="spin" size={12} /> : <Check size={12} />}保存
+        </button>
+        <button type="button" disabled={busy} onClick={onCancel}>
+          <X size={12} />取消
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 编辑整篇文档：textarea 装完整正文（含所有分区），保存走 writeDocument（整文替换 + seq CAS）。
+ * front matter 由 Rust 重建，不进编辑框。与 ProjectEditPanel（仅 Status 区）并存。
+ */
+function ProjectFullEditPanel({ service, projectId, snapshot, onSaved, onCancel }: {
+  service: ProjectDocService
+  projectId: string
+  snapshot: ProjectDocSnapshot
+  onSaved: () => void
+  onCancel: () => void
+}) {
+  const [content, setContent] = useState(() => snapshot.content)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [conflict, setConflict] = useState<number | null>(null)
+
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    setConflict(null)
+    try {
+      const outcome = await service.writeDocument({
+        projectId,
+        baseSeq: snapshot.currentSeq,
+        content,
+        updatedBy: 'user',
+        summary: '人编辑全文',
+      })
+      if (outcome.kind === 'applied') {
+        onSaved()
+      } else {
+        setConflict(outcome.currentSeq)
+      }
+    } catch (nextError) {
+      setError(messageOf(nextError))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="project-edit-panel">
+      <p className="project-edit-hint">编辑整篇文档（v{snapshot.currentSeq}），含所有分区。保存为整文替换，走 seq 校验；文件头（front matter）由 Harness 自动重建，无需填写。</p>
+      <textarea
+        value={content}
+        onChange={(event) => setContent(event.target.value)}
+        aria-label="编辑整篇项目文档"
+        className="project-edit-full-textarea"
       />
       {error && <p className="project-tab-error">{error}</p>}
       {conflict !== null && (

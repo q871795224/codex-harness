@@ -76,6 +76,23 @@ export interface ComposerActionContribution {
   render(props: ComposerActionProps): ReactNode
 }
 
+export interface TurnActionProps extends PluginViewContext {
+  /** 截至当前 turn（含）的会话消息条目，按时间正序。归档类动作应以此为准，不读该 turn 之后的内容。 */
+  items: ThreadItemEntry[]
+  /** 该操作所属 turn 的 id。 */
+  turnId: string
+  /** 当前会话的工作目录（起独立 run 时用）；无工作目录会话为 null。 */
+  checkoutRoot: string | null
+  disabled: boolean
+}
+
+export interface TurnActionContribution {
+  id: string
+  order?: number
+  /** 渲染在某个 agent turn 最终回答操作行（copy/raw/fork）右侧；返回 null 则不渲染。 */
+  render(props: TurnActionProps): ReactNode
+}
+
 export interface ComposerCompletionItem {
   id: string
   title: string
@@ -172,6 +189,9 @@ export interface PluginSlotAccess {
   }
   composerActions: {
     register(contribution: ComposerActionContribution): void
+  }
+  turnActions: {
+    register(contribution: TurnActionContribution): void
   }
   composerCompletions: {
     register(contribution: ComposerCompletionContribution): void

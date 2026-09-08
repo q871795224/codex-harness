@@ -16,6 +16,8 @@ import type {
   QuickCommandContribution,
   ThreadHeaderActionContribution,
   ThreadHeaderActionProps,
+  TurnActionContribution,
+  TurnActionProps,
 } from '../../extensions/types'
 import { mergeUsagePlugins } from './usageMigration'
 import { defaultPluginInstancesToSeed, removedDefaultPluginInstanceIds } from './defaults'
@@ -33,6 +35,7 @@ interface PluginHostContextValue {
   resolvedThreadHeaderActions(context: PluginViewContext): ResolvedContribution<ThreadHeaderActionContribution>[]
   resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[]
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[]
+  resolvedTurnActions(context: PluginViewContext): ResolvedContribution<TurnActionContribution>[]
   resolvedComposerCompletions(context: PluginViewContext): ResolvedContribution<ComposerCompletionContribution>[]
   resolvedQuickActions(context: PluginViewContext): ResolvedContribution<QuickActionContribution>[]
   resolvedQuickCommands(context: PluginViewContext): ResolvedContribution<QuickCommandContribution>[]
@@ -124,6 +127,7 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     resolvedThreadHeaderActions: (context) => host.resolvedThreadHeaderActions(context),
     resolvedNewThreadPanels: (context) => host.resolvedNewThreadPanels(context),
     resolvedComposerActions: (context) => host.resolvedComposerActions(context),
+    resolvedTurnActions: (context) => host.resolvedTurnActions(context),
     resolvedComposerCompletions: (context) => host.resolvedComposerCompletions(context),
     resolvedQuickActions: (context) => host.resolvedQuickActions(context),
     resolvedQuickCommands: (context) => host.resolvedQuickCommands(context),
@@ -216,6 +220,17 @@ export function PluginThreadHeaderAction({ action, props }: {
 }) {
   return (
     <PluginRenderBoundary pluginId={action.pluginId} instanceId={action.instanceId} label="会话标题操作">
+      {action.contribution.render(props)}
+    </PluginRenderBoundary>
+  )
+}
+
+export function PluginTurnAction({ action, props }: {
+  action: ResolvedContribution<TurnActionContribution>
+  props: TurnActionProps
+}) {
+  return (
+    <PluginRenderBoundary pluginId={action.pluginId} instanceId={action.instanceId} label="轮次操作">
       {action.contribution.render(props)}
     </PluginRenderBoundary>
   )

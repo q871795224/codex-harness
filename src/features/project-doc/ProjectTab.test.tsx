@@ -13,6 +13,7 @@ function service(content = ''): ProjectDocService {
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: 2, content, contentHash: 'h', consistent: true })),
     versions: vi.fn(async () => []), workspaces: vi.fn(async () => []), bindWorkspace: vi.fn(),
     writeSection: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
+    writeDocument: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
     threadProject: vi.fn(async () => null), bindThread: vi.fn(), unbindThread: vi.fn(),
     threadBinding: vi.fn(async () => null), lockThreadBinding: vi.fn(async () => undefined),
     subscribeBindings: vi.fn(() => () => undefined),
@@ -70,4 +71,34 @@ it('edits only Status without copying Log or document metadata into it', async (
   expect((screen.getByLabelText('编辑项目文档') as HTMLTextAreaElement).value).toBe('已有进展')
   fireEvent.click(screen.getByText('保存'))
   await waitFor(() => expect(svc.writeSection).toHaveBeenCalledWith(expect.objectContaining({ section: 'status', content: '已有进展', baseSeq: 2 })))
+})
+
+it('edits the full document including all sections via 编辑全文', async () => {
+  const full = '## Status\n已有进展\n## Log\n保留日志'
+  const svc = service(full)
+  mount(svc, 'demo')
+  await screen.findByText('示例项目')
+  fireEvent.click(screen.getByText('编辑全文'))
+  const textarea = screen.getByLabelText('编辑整篇项目文档') as HTMLTextAreaElement
+  // 整文（含所有分区），不带 front matter。
+  expect(textarea.value).toBe(full)
+  fireEvent.change(textarea, { target: { value: '## Status\n全新正文\n## Log\n新日志' } })
+  fireEvent.click(screen.getByText('保存'))
+  await waitFor(() => expect(svc.writeDocument).toHaveBeenCalledWith(expect.objectContaining({
+    projectId: 'demo',
+    content: '## Status\n全新正文\n## Log\n新日志',
+    baseSeq: 2,
+    updatedBy: 'user',
+  })))
+  expect(svc.writeSection).not.toHaveBeenCalled()
+})
+
+it('shows conflict when full-document write returns conflict', async () => {
+  const svc = service('## Status\nx')
+  ;(svc.writeDocument as ReturnType<typeof vi.fn>).mockResolvedValue({ kind: 'conflict', currentSeq: 9, baseSeq: 2 })
+  mount(svc, 'demo')
+  await screen.findByText('示例项目')
+  fireEvent.click(screen.getByText('编辑全文'))
+  fireEvent.click(screen.getByText('保存'))
+  await screen.findByText(/版本冲突：当前已是 v9/)
 })

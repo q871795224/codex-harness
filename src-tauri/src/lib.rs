@@ -646,6 +646,22 @@ fn project_doc_write_section(
 }
 
 #[tauri::command]
+fn project_doc_write_document(
+    state: State<'_, AppState>,
+    project_id: String,
+    base_seq: Option<i64>,
+    content: String,
+    updated_by: String,
+    summary: String,
+) -> Result<project_doc_store::WriteOutcome, String> {
+    let guard = project_docs(&state)?;
+    guard
+        .as_ref()
+        .unwrap()
+        .write_document(&project_id, base_seq, &content, &updated_by, &summary)
+}
+
+#[tauri::command]
 fn create_agent_worktree(cwd: String, run_id: String) -> Result<String, String> {
     let data_dir = store::harness_data_dir()?;
     git_workspace::create_agent_worktree(&cwd, &run_id, &data_dir)
@@ -990,6 +1006,7 @@ pub fn run() {
             project_doc_read,
             project_doc_versions,
             project_doc_write_section,
+            project_doc_write_document,
             create_agent_worktree,
             remove_agent_worktree,
             map_thread_workspaces,
