@@ -832,7 +832,11 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   provider={harness.selectedProvider}
                   initialDraft={composerDrafts[harness.currentThread.id]}
                   projectCard={projectCard}
-                  onProjectCardDismissed={() => void projectBinding.unbind()}
+                  onProjectCardDismissed={() => {
+                    void projectBinding.unbind().catch((error) => {
+                      harness.notify(`无法解除项目绑定：${String(error)}`, 'error')
+                    })
+                  }}
                   disabled={codexUpdate.updating || harness.currentForeignActive || Boolean(harness.busy.composer)}
                   working={harness.isCurrentWorking}
                   foreignActive={harness.currentForeignActive}
@@ -860,7 +864,12 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
                     await harness.sendMessage(input, mode)
                     // 第 1 轮发送成功：绑定 pending → locked，此后只读、不再注入项目卡。
-                    void projectBinding.lockOnSend()
+                    try {
+                      await projectBinding.lockOnSend()
+                    } catch (error) {
+                      // 消息已经发送，仍让 Composer 消耗草稿，避免用户重复发送。
+                      harness.notify(`消息已发送，但项目绑定锁定失败：${String(error)}`, 'error')
+                    }
                   }}
                   onCommand={(command) => {
                     if (command.name === 'raw') setRawMode((current) => !current)

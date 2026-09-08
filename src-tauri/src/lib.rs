@@ -666,16 +666,50 @@ fn project_doc_proposals_queue<'a>(
     Ok(guard)
 }
 
-/// 会话 → 项目绑定查询（解析前端存在 appState 的 projectDocThreadBindings）。
-/// 兼容两种历史格式：纯字符串 projectId（locked）/ { projectId, phase }。
+/// 绑定读写统一经过原生 store；HTTP 提议校验与前端使用同一份状态。
 fn thread_project_lookup(store: &HarnessStore, thread_id: &str) -> Option<String> {
-    let raw = store.get_app_state("projectDocThreadBindings").ok()??;
-    let parsed: Value = serde_json::from_str(&raw).ok()?;
-    let entry = parsed.get(thread_id)?;
-    if let Some(id) = entry.as_str() {
-        return Some(id.to_string());
-    }
-    entry.get("projectId")?.as_str().map(|s| s.to_string())
+    store
+        .project_thread_binding(thread_id)
+        .ok()
+        .flatten()
+        .map(|binding| binding.project_id)
+}
+
+#[tauri::command]
+fn project_doc_thread_binding(
+    state: State<'_, AppState>,
+    thread_id: String,
+) -> Result<Option<store::project_bindings::ThreadProjectBinding>, String> {
+    state.store.project_thread_binding(&thread_id)
+}
+
+#[tauri::command]
+fn project_doc_bind_thread(
+    state: State<'_, AppState>,
+    thread_id: String,
+    project_id: String,
+) -> Result<(), String> {
+    state.store.change_project_thread_binding(
+        &thread_id,
+        store::project_bindings::BindingChange::Bind(&project_id),
+    )
+}
+
+#[tauri::command]
+fn project_doc_lock_thread_binding(
+    state: State<'_, AppState>,
+    thread_id: String,
+) -> Result<(), String> {
+    state
+        .store
+        .change_project_thread_binding(&thread_id, store::project_bindings::BindingChange::Lock)
+}
+
+#[tauri::command]
+fn project_doc_unbind_thread(state: State<'_, AppState>, thread_id: String) -> Result<(), String> {
+    state
+        .store
+        .change_project_thread_binding(&thread_id, store::project_bindings::BindingChange::Unbind)
 }
 
 #[tauri::command]
@@ -1104,6 +1138,10 @@ pub fn run() {
             write_handover_template,
             write_handover_document,
             read_handover_document,
+            project_doc_thread_binding,
+            project_doc_bind_thread,
+            project_doc_lock_thread_binding,
+            project_doc_unbind_thread,
             project_doc_create,
             project_doc_list,
             project_doc_rename,

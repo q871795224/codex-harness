@@ -1,3 +1,4 @@
+import type { ThreadProjectBinding } from '../project-docs/types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -328,6 +329,22 @@ export const runtime = {
   },
 
   // 项目文档（活文档 / 共享白板）：seq 语义与落盘在 Rust `project_doc_store` 强制。
+  projectDocThreadBinding(threadId: string): Promise<ThreadProjectBinding | null> {
+    return invoke<ThreadProjectBinding | null>('project_doc_thread_binding', { threadId })
+  },
+
+  projectDocBindThread(threadId: string, projectId: string): Promise<void> {
+    return invoke<void>('project_doc_bind_thread', { threadId, projectId })
+  },
+
+  projectDocLockThreadBinding(threadId: string): Promise<void> {
+    return invoke<void>('project_doc_lock_thread_binding', { threadId })
+  },
+
+  projectDocUnbindThread(threadId: string): Promise<void> {
+    return invoke<void>('project_doc_unbind_thread', { threadId })
+  },
+
   projectDocCreate(projectId: string, name: string): Promise<ProjectMeta> {
     return invoke<ProjectMeta>('project_doc_create', { projectId, name })
   },
