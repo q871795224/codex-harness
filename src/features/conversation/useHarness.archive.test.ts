@@ -13,6 +13,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 vi.mock('../../core/runtime/bridge', () => ({
   diagnosticErrorCode: vi.fn(), recordWorkspaceContextDiagnostic: vi.fn(),
   runtime: {
+    recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
     listWorkspaces: vi.fn().mockResolvedValue([]),
     listThreadStates: vi.fn().mockResolvedValue([]),
     getAppState: vi.fn().mockResolvedValue(null),
@@ -26,6 +27,8 @@ vi.mock('../../core/runtime/bridge', () => ({
 vi.mock('../../core/runtime/appServerClient', () => ({
   appServer: {
     listThreads: vi.fn(), archiveThread: vi.fn().mockResolvedValue(undefined),
+    startTurn: vi.fn(), updateThreadSettings: vi.fn().mockResolvedValue(undefined),
+    updateThreadMetadata: vi.fn().mockResolvedValue(undefined),
     startThread: vi.fn(), deleteThread: vi.fn().mockResolvedValue(undefined),
     resumeThread: vi.fn(), listQueue: vi.fn().mockResolvedValue({ data: [] }),
   },
@@ -48,6 +51,8 @@ async function ready() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(appServer.listThreads).mockReset()
+  vi.mocked(appServer.startTurn).mockReset()
   vi.mocked(appServer.listThreads).mockImplementation(async (params) => page(params.archived ? 'archived' : 'active'))
 })
 afterEach(cleanup)
@@ -167,5 +172,100 @@ describe('archive view navigation', () => {
     await act(async () => { await result.current.setViewMode('archived') })
     await act(async () => { await result.current.refresh() })
     expect(appServer.listThreads).toHaveBeenLastCalledWith(expect.objectContaining({ archived: true, searchTerm: 'delivery' }))
+  })
+})
+
+
+describe('first-turn catalog refresh', () => {
+  async function draft() {
+    vi.mocked(runtime.listWorkspaces).mockResolvedValueOnce([{ root: '/repo', checkoutRoot: '/repo', name: 'repo', branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 }])
+    vi.mocked(appServer.startThread).mockImplementation(async (params) => ({
+      thread: { ...thread(params.cwd === '/other' ? 'replacement' : 'draft'), cwd: String(params.cwd) },
+      approvalPolicy: 'never', approvalsReviewer: 'user', model: 'test', reasoningEffort: null,
+      serviceTier: null, sandbox: { type: 'dangerFullAccess' }, runtimeWorkspaceRoots: [String(params.cwd)],
+      activePermissionProfile: null,
+    }))
+    const hook = await ready()
+    await act(async () => { await hook.result.current.createThread() })
+    return hook
+  }
+  const accepted = { turn: { id: 'turn-1', status: 'inProgress' as const, items: [], error: null, startedAt: 1, completedAt: null, durationMs: null } }
+  const input = [{ type: 'text' as const, text: 'usage analysis', text_elements: [] }]
+
+  it.each([false, true])('keeps the first turn visible through stale lists and then loads server data (changed cwd: %s)', async (changeCwd) => {
+    const { result } = await draft()
+    if (changeCwd) {
+      vi.mocked(runtime.mapThreadWorkspaces).mockResolvedValueOnce({
+        '/other': { root: '/other', checkoutRoot: '/other', name: 'other', branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 },
+      })
+      await act(async () => { await result.current.changeThreadWorkspace('draft', '/other') })
+    }
+    const id = changeCwd ? 'replacement' : 'draft'
+    const oldList = deferred<ReturnType<typeof page>>()
+    vi.mocked(appServer.listThreads).mockReturnValueOnce(oldList.promise)
+    let oldRefresh!: Promise<void>
+    act(() => { oldRefresh = result.current.refresh() })
+    const turn = deferred<typeof accepted>()
+    vi.mocked(appServer.startTurn).mockReturnValueOnce(turn.promise)
+    let sending!: Promise<void>
+    await act(async () => { sending = result.current.sendMessage(input, 'queue') })
+    expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ threadId: id }))
+    // This request starts while turn/start is still pending and legitimately
+    // omits the new thread. Neither it nor the earlier request may hide it.
+    await act(async () => { await result.current.refresh() })
+    expect(result.current.currentThread?.id).toBe(id)
+    expect(result.current.threads.some((item) => item.id === id)).toBe(true)
+
+    const freshList = deferred<ReturnType<typeof page>>()
+    vi.mocked(appServer.listThreads).mockReturnValueOnce(freshList.promise)
+    const callsBeforeAcceptance = vi.mocked(appServer.listThreads).mock.calls.length
+    await act(async () => { turn.resolve(accepted); await sending })
+    expect(appServer.listThreads).toHaveBeenCalledTimes(callsBeforeAcceptance + 1)
+    expect(result.current.currentThread?.id).toBe(id)
+    const persisted = { ...thread(id), name: 'server title', cwd: changeCwd ? '/other' : '/repo' }
+    await act(async () => { freshList.resolve({ data: [persisted], nextCursor: null }) })
+    await act(async () => { oldList.resolve(page('active')); await oldRefresh })
+    expect(result.current.currentThread).toMatchObject(persisted)
+    expect(result.current.threads.map((item) => item.id)).toEqual([id])
+    if (changeCwd) expect(appServer.deleteThread).toHaveBeenCalledWith('draft')
+    expect(appServer.deleteThread).not.toHaveBeenCalledWith(id)
+
+    // Once the server has acknowledged it, normal catalog filtering takes over.
+    await act(async () => { await result.current.searchThreads('different title') })
+    expect(result.current.threads.map((item) => item.id)).toEqual(['active'])
+  })
+
+  it('does not report a sent message as failed when the follow-up list query fails', async () => {
+    const { result } = await draft()
+    vi.mocked(appServer.startTurn).mockResolvedValueOnce(accepted)
+    vi.mocked(appServer.listThreads).mockRejectedValueOnce(new Error('list offline'))
+    await act(async () => { await result.current.sendMessage(input, 'queue') })
+    expect(result.current.activeTurnId).toBe('turn-1')
+    expect(result.current.currentThread?.id).toBe('draft')
+    expect(result.current.toast?.message).toContain('list offline')
+    expect(result.current.toast?.message).not.toContain('无法发送消息')
+    await act(async () => { await result.current.refresh() })
+    expect(result.current.currentThread?.id).toBe('draft')
+    const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
+    await act(async () => {
+      listener({ method: 'thread/archived', params: { threadId: 'draft' } } as AppServerEvent)
+      await result.current.refresh()
+    })
+    expect(result.current.threads.map((item) => item.id)).toEqual(['active'])
+  })
+
+  it('keeps a failed first submission available for retry after a list refresh', async () => {
+    const { result } = await draft()
+    vi.mocked(appServer.startTurn).mockRejectedValueOnce(new Error('send offline'))
+    await act(async () => {
+      await expect(result.current.sendMessage(input, 'queue')).rejects.toThrow('send offline')
+    })
+    await act(async () => { await result.current.refresh() })
+    expect(result.current.currentThread?.id).toBe('draft')
+    vi.mocked(appServer.startTurn).mockResolvedValueOnce(accepted)
+    vi.mocked(appServer.listThreads).mockResolvedValueOnce(page('draft'))
+    await act(async () => { await result.current.sendMessage(input, 'queue') })
+    expect(result.current.currentThread?.id).toBe('draft')
+    expect(result.current.activeTurnId).toBe('turn-1')
   })
 })

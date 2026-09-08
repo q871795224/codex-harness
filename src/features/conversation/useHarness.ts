@@ -210,6 +210,7 @@ export function useHarness() {
   const continuingFailedThreadsRef = useRef(new Set<string>())
   const locallyStartingRef = useRef(new Set<string>())
   const unstartedDraftThreadIdsRef = useRef(new Set<string>())
+  const pendingCatalogThreadIdsRef = useRef(new Set<string>())
   const draftContentThreadIdsRef = useRef(new Set<string>())
   const draftInitialCwdsRef = useRef(new Map<string, string>())
   const activeTurnIdsRef = useRef<Record<string, string>>({})
@@ -610,12 +611,16 @@ export function useHarness() {
       },
     })
     setThreads((current) => {
-      // Empty local drafts have no persisted rollout and are absent from thread/list.
-      // Keep them in the active catalog, including after an archive-view round trip.
+      if (requestId !== threadListRequestRef.current || mode !== viewModeRef.current) return current
+      // Keep local drafts and first submissions until thread/list acknowledges them.
+      // turn/start acceptance alone does not make an earlier list snapshot current.
+      for (const thread of response.data) pendingCatalogThreadIdsRef.current.delete(thread.id)
       const drafts = new Map<string, Thread>()
       if (mode === 'active') {
         for (const candidate of [...Object.values(detailsRef.current).map((detail) => detail.thread), ...current]) {
-          if (unstartedDraftThreadIdsRef.current.has(candidate.id)) drafts.set(candidate.id, candidate)
+          if (unstartedDraftThreadIdsRef.current.has(candidate.id) || pendingCatalogThreadIdsRef.current.has(candidate.id)) {
+            drafts.set(candidate.id, candidate)
+          }
         }
       }
       for (const thread of response.data) drafts.delete(thread.id)
@@ -1484,6 +1489,12 @@ export function useHarness() {
     inputs?: UserInput[],
     trigger?: CodexTurnTrigger,
   ) => {
+    const firstSubmission = unstartedDraftThreadIdsRef.current.has(threadId) || pendingCatalogThreadIdsRef.current.has(threadId)
+    if (firstSubmission) {
+      // Invalidate queries issued before submission, even if no newer query exists yet.
+      ++threadListRequestRef.current
+      pendingCatalogThreadIdsRef.current.add(threadId)
+    }
     unstartedDraftThreadIdsRef.current.delete(threadId)
     draftContentThreadIdsRef.current.delete(threadId)
     draftInitialCwdsRef.current.delete(threadId)
@@ -1535,12 +1546,18 @@ export function useHarness() {
         },
       })
       if (!completedTurnIdsRef.current.delete(response.turn.id)) setActiveTurn(threadId, response.turn.id, true)
+      if (firstSubmission) {
+        // A refresh failure must not turn an accepted message into a send failure.
+        void refreshThreads().catch((error) => {
+          notify(`消息已发送，但无法刷新会话列表：${messageOf(error)}`, 'error')
+        })
+      }
       return response.turn.id
     } finally {
       locallyStartingRef.current.delete(threadId)
       setThreadStarting(threadId, false)
     }
-  }, [setActiveTurn, setThreadStarting])
+  }, [notify, refreshThreads, setActiveTurn, setThreadStarting])
 
   const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue') => {
     const threadId = selectedThreadIdRef.current
@@ -1729,6 +1746,8 @@ export function useHarness() {
     try {
       const archivedThread = threadsRef.current.find((thread) => thread.id === threadId)
       await appServer.archiveThread(threadId)
+      ++threadListRequestRef.current
+      pendingCatalogThreadIdsRef.current.delete(threadId)
       setThreads((current) => current.filter((thread) => thread.id !== threadId))
       if (selectedThreadIdRef.current === threadId) {
         if (archivedThread?.cwd) rememberNextThreadCwd(archivedThread.cwd)
@@ -2112,6 +2131,7 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       if (threadId) {
         ++threadListRequestRef.current
+        pendingCatalogThreadIdsRef.current.delete(threadId)
         unstartedDraftThreadIdsRef.current.delete(threadId)
         draftContentThreadIdsRef.current.delete(threadId)
         draftInitialCwdsRef.current.delete(threadId)
