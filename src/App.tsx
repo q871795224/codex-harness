@@ -40,7 +40,6 @@ import type { TerminalService } from './core/terminal/types'
 import type { AppLauncherService } from './core/app-launcher/types'
 import { createProjectDocService } from './core/project-docs/service'
 import { ProjectDocApprovalCards } from './features/conversation/ProjectDocApprovalCards'
-import { ProjectDocLogAutoWriter } from './features/conversation/ProjectDocLogAutoWriter'
 import { useProjectBinding } from './features/project-doc/useProjectBinding'
 import { ArchiveNoticeBar } from './features/project-doc/ArchiveNoticeBar'
 import { PROJECT_DOC_TAB_KEY } from './plugins/project-doc'
@@ -292,13 +291,17 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const projectCard = useMemo(() => {
     const binding = projectBinding.binding
     if (!binding || binding.phase !== 'pending' || !projectBinding.project || projectCardContent === null) return null
+    // 正文开头注入机器可读标记：skill 命令据此拿到 project_id / thread_id（详见 .agents/skills/project-doc）。
+    const marker = harness.selectedThreadId
+      ? `<!-- project-doc: project_id=${binding.projectId} thread_id=${harness.selectedThreadId} -->\n\n`
+      : ''
     return {
       projectId: binding.projectId,
       name: projectBinding.project.name,
       seq: projectBinding.project.currentSeq,
-      content: projectCardContent,
+      content: `${marker}${projectCardContent}`,
     }
-  }, [projectBinding.binding, projectBinding.project, projectCardContent])
+  }, [projectBinding.binding, projectBinding.project, projectCardContent, harness.selectedThreadId])
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
@@ -782,22 +785,12 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 )}
                 {harness.selectedThreadId && boundProjectId && (
                   <ProjectDocApprovalCards
-                    items={harness.currentDetail?.items ?? []}
                     projectDoc={projectDocs}
                     projectId={boundProjectId}
-                    updatedBy={harness.selectedThreadId}
                     onOpenProject={(request) => {
                       setPendingProjectConflict(request?.conflict ?? null)
                       setTab(PROJECT_DOC_TAB_KEY)
                     }}
-                  />
-                )}
-                {harness.selectedThreadId && boundProjectId && (
-                  <ProjectDocLogAutoWriter
-                    items={harness.currentDetail?.items ?? []}
-                    projectDoc={projectDocs}
-                    projectId={boundProjectId}
-                    updatedBy={harness.selectedThreadId}
                   />
                 )}
                 <QueueDock

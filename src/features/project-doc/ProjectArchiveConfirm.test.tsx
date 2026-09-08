@@ -29,6 +29,10 @@ function service(overrides: Partial<ProjectDocService> = {}, content = CURRENT_D
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: seq, content, contentHash: 'h', consistent: true })),
     versions: vi.fn(async () => []), workspaces: vi.fn(async () => []), bindWorkspace: vi.fn(),
     writeSection: vi.fn(async () => ({ kind: 'applied' as const, newSeq: seq + 1, contentHash: 'h' })),
+    listProposals: vi.fn(async () => []),
+    approveProposal: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
+    rejectProposal: vi.fn(async () => undefined),
+    ensureServer: vi.fn(async () => 0),
     threadProject: vi.fn(async () => null), bindThread: vi.fn(), unbindThread: vi.fn(),
     threadBinding: vi.fn(async () => null), lockThreadBinding: vi.fn(async () => undefined),
     subscribeBindings: vi.fn(() => () => undefined),
@@ -101,6 +105,10 @@ it('warns on seq drift (doc updated after draft produced)', async () => {
 it('shows conflict when writeSection returns conflict', async () => {
   const svc = service({
     writeSection: vi.fn(async () => ({ kind: 'conflict' as const, currentSeq: 7, baseSeq: 2 })),
+    listProposals: vi.fn(async () => []),
+    approveProposal: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
+    rejectProposal: vi.fn(async () => undefined),
+    ensureServer: vi.fn(async () => 0),
   })
   mountArchive(svc)
   fireEvent.click(await screen.findByRole('button', { name: /保存到项目文档/ }))

@@ -11,6 +11,8 @@ mod git_workspace;
 mod handover_store;
 mod harness_files;
 mod local_connector;
+mod project_doc_proposals;
+mod project_doc_server;
 mod project_doc_store;
 mod quick_command;
 mod release_command;
@@ -46,8 +48,11 @@ struct AppState {
     local_connector: LocalConnector,
     codex_radar: CodexRadarClient,
     codex_analytics: CodexAnalytics,
-    store: HarnessStore,
+    store: Arc<HarnessStore>,
     project_docs: Mutex<Option<project_doc_store::ProjectDocStore>>,
+    project_doc_proposals: Mutex<Option<project_doc_proposals::ProposalQueue>>,
+    project_doc_server_port: Mutex<Option<u16>>,
+    project_doc_server_start: tokio::sync::Mutex<()>,
     terminal: Arc<terminal::TerminalManager>,
     api_workbench: api_workbench::ApiWorkbenchStore,
     codex_update: tokio::sync::Mutex<()>,
@@ -645,6 +650,106 @@ fn project_doc_write_section(
     )
 }
 
+/// 惰性开启提议队列（与项目文档库同一 project_docs.sqlite 文件）。
+fn project_doc_proposals_queue<'a>(
+    state: &'a State<'a, AppState>,
+) -> Result<std::sync::MutexGuard<'a, Option<project_doc_proposals::ProposalQueue>>, String> {
+    let mut guard = state
+        .project_doc_proposals
+        .lock()
+        .map_err(|_| "提议队列锁不可用".to_string())?;
+    if guard.is_none() {
+        let db = store::harness_data_dir()?.join("projects").join("project_docs.sqlite");
+        let connection = rusqlite::Connection::open(db).map_err(|e| format!("无法打开提议队列库: {e}"))?;
+        *guard = Some(project_doc_proposals::ProposalQueue::open_at(connection)?);
+    }
+    Ok(guard)
+}
+
+/// 会话 → 项目绑定查询（解析前端存在 appState 的 projectDocThreadBindings）。
+/// 兼容两种历史格式：纯字符串 projectId（locked）/ { projectId, phase }。
+fn thread_project_lookup(store: &HarnessStore, thread_id: &str) -> Option<String> {
+    let raw = store.get_app_state("projectDocThreadBindings").ok()??;
+    let parsed: Value = serde_json::from_str(&raw).ok()?;
+    let entry = parsed.get(thread_id)?;
+    if let Some(id) = entry.as_str() {
+        return Some(id.to_string());
+    }
+    entry.get("projectId")?.as_str().map(|s| s.to_string())
+}
+
+#[tauri::command]
+fn project_doc_list_proposals(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> Result<Vec<project_doc_proposals::DocProposal>, String> {
+    let guard = project_doc_proposals_queue(&state)?;
+    guard.as_ref().unwrap().list_pending(&project_id)
+}
+
+/// 确认一条受控区提议：读出来 → write_section（CAS 在 store 兜底）→ 成功后从队列移除。
+#[tauri::command]
+fn project_doc_approve_proposal(
+    state: State<'_, AppState>,
+    proposal_id: String,
+) -> Result<project_doc_store::WriteOutcome, String> {
+    let proposal = {
+        let guard = project_doc_proposals_queue(&state)?;
+        guard.as_ref().unwrap().get(&proposal_id)?
+            .ok_or_else(|| "提议不存在或已被处理".to_string())?
+    };
+    let outcome = {
+        let guard = project_docs(&state)?;
+        guard.as_ref().unwrap().write_section(
+            &proposal.project_id,
+            &proposal.section,
+            Some(proposal.base_seq),
+            &proposal.content,
+            &proposal.thread_id,
+            "Agent 提议（经审批落盘）",
+        )?
+    };
+    // 只有落盘成功才从队列移除；冲突保留在队列里，前端据此展示冲突卡并走差异/重写流程。
+    if matches!(outcome, project_doc_store::WriteOutcome::Applied { .. }) {
+        let guard = project_doc_proposals_queue(&state)?;
+        guard.as_ref().unwrap().remove(&proposal_id)?;
+    }
+    Ok(outcome)
+}
+
+#[tauri::command]
+fn project_doc_reject_proposal(
+    state: State<'_, AppState>,
+    proposal_id: String,
+) -> Result<(), String> {
+    let guard = project_doc_proposals_queue(&state)?;
+    guard.as_ref().unwrap().remove(&proposal_id)
+}
+
+/// 启动项目文档本地回传服务（幂等：已启动则直接返回端口）。
+#[tauri::command]
+async fn project_doc_server_ensure(state: State<'_, AppState>) -> Result<u16, String> {
+    // 用 tokio Mutex 把「检查端口 + 启动 + 记录端口」做成临界区，防止并发 ensure 双重起服务。
+    let _guard = state.project_doc_server_start.lock().await;
+    if let Some(port) = *state.project_doc_server_port.lock().map_err(|_| "服务状态锁不可用")? {
+        return Ok(port);
+    }
+    let store = project_doc_store::ProjectDocStore::open()?;
+    let db = store::harness_data_dir()?.join("projects").join("project_docs.sqlite");
+    let connection = rusqlite::Connection::open(db).map_err(|e| format!("无法打开提议队列库: {e}"))?;
+    let proposals = project_doc_proposals::ProposalQueue::open_at(connection)?;
+
+    // 绑定查询闭包：从 appState 读 projectDocThreadBindings。
+    let app_state = state.store.clone();
+    let lookup: project_doc_server::ThreadProjectLookup = std::sync::Arc::new(move |thread_id: &str| {
+        thread_project_lookup(&app_state, thread_id)
+    });
+
+    let port = project_doc_server::serve(store, proposals, lookup).await?;
+    *state.project_doc_server_port.lock().map_err(|_| "服务状态锁不可用")? = Some(port);
+    Ok(port)
+}
+
 #[tauri::command]
 fn create_agent_worktree(cwd: String, run_id: String) -> Result<String, String> {
     let data_dir = store::harness_data_dir()?;
@@ -947,8 +1052,11 @@ pub fn run() {
                 local_connector: LocalConnector::new(),
                 codex_radar: CodexRadarClient::new(),
                 codex_analytics: analytics,
-                store,
+                store: Arc::new(store),
                 project_docs: Mutex::new(None),
+                project_doc_proposals: Mutex::new(None),
+                project_doc_server_port: Mutex::new(None),
+                project_doc_server_start: tokio::sync::Mutex::new(()),
                 terminal,
                 api_workbench,
                 codex_update: tokio::sync::Mutex::new(()),
@@ -990,6 +1098,10 @@ pub fn run() {
             project_doc_read,
             project_doc_versions,
             project_doc_write_section,
+            project_doc_list_proposals,
+            project_doc_approve_proposal,
+            project_doc_reject_proposal,
+            project_doc_server_ensure,
             create_agent_worktree,
             remove_agent_worktree,
             map_thread_workspaces,

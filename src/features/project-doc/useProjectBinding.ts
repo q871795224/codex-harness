@@ -38,6 +38,8 @@ export function useProjectBinding(service: ProjectDocService, threadId: string |
       if (next) {
         const meta = await service.get(next.projectId).catch(() => null)
         setProject(meta)
+        // 已绑定（含 app 重启后恢复的 locked 绑定）就确保回传服务在跑。
+        await service.ensureServer().catch(() => undefined)
       } else {
         setProject(null)
       }
@@ -57,6 +59,8 @@ export function useProjectBinding(service: ProjectDocService, threadId: string |
     if (!threadId) return
     await service.bindThread(threadId, projectId)
     if (workspaceRoot) await service.bindWorkspace(projectId, workspaceRoot).catch(() => undefined)
+    // 绑定即确保本地回传服务在跑（Agent 才能用 project-doc 命令回传写意图）。
+    await service.ensureServer().catch(() => undefined)
     await reload()
   }, [service, threadId, workspaceRoot, reload])
 

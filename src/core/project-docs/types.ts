@@ -24,6 +24,17 @@ export interface ThreadProjectBinding {
   phase: ThreadProjectBindingPhase
 }
 
+/** 一条待审批的受控区写入提议（Agent 经本地 HTTP 回传，入队时 base_seq 已由 Harness 填好）。 */
+export interface ProjectDocProposal {
+  id: string
+  projectId: string
+  threadId: string
+  section: string
+  content: string
+  baseSeq: number
+  createdAt: number
+}
+
 export interface ProjectDocService {
   create(projectId: string, name: string): Promise<ProjectMeta>
   list(): Promise<ProjectMeta[]>
@@ -42,6 +53,15 @@ export interface ProjectDocService {
     updatedBy: string
     summary?: string
   }): Promise<ProjectDocWriteOutcome>
+
+  /** 待审批提议队列（受控区写入）。 */
+  listProposals(projectId: string): Promise<ProjectDocProposal[]>
+  /** 确认一条提议：服务端按队列里的 base_seq 走 seq CAS 落盘并从队列移除。 */
+  approveProposal(proposalId: string): Promise<ProjectDocWriteOutcome>
+  /** 拒绝并移除一条提议。 */
+  rejectProposal(proposalId: string): Promise<void>
+  /** 确保本地回传服务已启动，返回端口（供 skill 命令写入的 project-doc-server.json 已就绪）。 */
+  ensureServer(): Promise<number>
 
   /** 会话 ↔ 项目绑定（UI 态，存 appState；正文与版本在 Rust store）。 */
   threadProject(threadId: string): Promise<string | null>

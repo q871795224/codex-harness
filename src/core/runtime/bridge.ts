@@ -31,6 +31,7 @@ import type { CodexUpdateStage, CodexUpdateStatus } from '../codex-update/types'
 import type { CodexAnalyticsCounterMode, CodexAnalyticsCounterStatus, CodexAnalyticsQuery, CodexAnalyticsSnapshot } from '../codex-analytics/types'
 import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntimeStatus, ClaudeSessionHistory, ClaudeSessionInput, ClaudeSessionRecord, ClaudeTransportEvent, ClaudeTurnStartInput } from '../claude/types'
 import type { ProjectDocSnapshot, ProjectDocWriteOutcome, ProjectMeta, ProjectVersion } from '../../features/project-doc/types'
+import type { ProjectDocProposal } from '../project-docs/types'
 import type { SectionKey } from '../../features/project-doc/document'
 
 interface PluginInstanceDto {
@@ -379,6 +380,22 @@ export const runtime = {
       updatedBy: input.updatedBy,
       summary: input.summary ?? '',
     })
+  },
+
+  projectDocListProposals(projectId: string): Promise<ProjectDocProposal[]> {
+    return invoke<ProjectDocProposal[]>('project_doc_list_proposals', { projectId })
+  },
+
+  projectDocApproveProposal(proposalId: string): Promise<ProjectDocWriteOutcome> {
+    return invoke<ProjectDocWriteOutcome>('project_doc_approve_proposal', { proposalId })
+  },
+
+  projectDocRejectProposal(proposalId: string): Promise<void> {
+    return invoke<void>('project_doc_reject_proposal', { proposalId })
+  },
+
+  projectDocEnsureServer(): Promise<number> {
+    return invoke<number>('project_doc_server_ensure')
   },
 
   async listenTerminalEvents(handler: (event: TerminalEvent) => void): Promise<() => void> {

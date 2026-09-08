@@ -228,7 +228,7 @@ impl ProjectDocStore {
         Self::open_at(root)
     }
 
-    fn open_at(root: PathBuf) -> Result<Self, String> {
+    pub(crate) fn open_at(root: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&root)
             .map_err(|e| format!("无法创建数据目录 {}: {e}", root.display()))?;
         let connection =
