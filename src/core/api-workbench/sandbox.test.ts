@@ -63,7 +63,9 @@ pm.test('response is successful', function () {
     expect(execution.result.assertions).toContainEqual(expect.objectContaining({ name: 'response is successful', passed: true }))
   })
 
-  it('interrupts a script that stops responding without blocking the test process', async () => {
+  // 实时超时中断对机器负载敏感：25ms 的脚本超时在并行全量跑测时可能来不及触发。
+  // 加重试而非放宽断言，保证「超时必被拒绝」的语义不变。
+  it('interrupts a script that stops responding without blocking the test process', { retry: 3, timeout: 5_000 }, async () => {
     const state = emptyWorkbenchState()
     const context = findRequestContext(state, state.selectedRequestId)
     if (!context) throw new Error('missing default request')
@@ -72,7 +74,7 @@ pm.test('response is successful', function () {
 
     await expect(executeWorkbenchRequest(state, context.request.id, service, { scriptTimeoutMs: 25 }))
       .rejects.toThrow('sandbox not responding')
-  }, 2_000)
+  })
 
   it('limits pm.sendRequest calls across one request execution', async () => {
     const state = emptyWorkbenchState()

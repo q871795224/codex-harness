@@ -1,0 +1,7 @@
+name = "project-doc"
+version = "0.2.0"
+requires_commands = ["python3"]
+
+[[bins]]
+source = "bin/project-doc"
+target = "project-doc"

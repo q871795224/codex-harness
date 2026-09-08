@@ -61,6 +61,10 @@ export function createProjectDocService(): ProjectDocService {
     versions: (projectId) => runtime.projectDocVersions(projectId),
     writeSection: (input) => runtime.projectDocWriteSection(input),
     writeDocument: (input) => runtime.projectDocWriteDocument(input),
+    listProposals: (projectId) => runtime.projectDocListProposals(projectId),
+    approveProposal: (proposalId) => runtime.projectDocApproveProposal(proposalId),
+    rejectProposal: (proposalId) => runtime.projectDocRejectProposal(proposalId),
+    ensureServer: () => runtime.projectDocEnsureServer(),
 
     threadProject: async (threadId) => {
       const bindings = await readThreadBindings()
