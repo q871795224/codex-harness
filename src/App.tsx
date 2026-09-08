@@ -21,7 +21,8 @@ import { DelegationReturnCard } from './features/conversation/DelegationReturnCa
 import { insertComposerPrompt } from './features/conversation/composerInput'
 import { ComposerDraftWriter, restoreComposerDrafts } from './features/conversation/composerDraftStorage'
 import { useHandover } from './features/handover/useHandover'
-import { ConversationStats } from './features/conversation/ConversationStats'
+import { ConversationStats, turnStartedAtMilliseconds } from './features/conversation/ConversationStats'
+import { RetainedTab } from './features/conversation/RetainedTab'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
 import { WorkspaceReleaseFailureCard } from './features/conversation/WorkspaceReleaseFailureCard'
@@ -756,27 +757,30 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 onRawOverrideToggle={toggleRawOverride}
                 working={harness.isCurrentWorking}
                 workingTurnId={currentActiveTurn?.id ?? null}
-                workingStartedAt={currentActiveTurn?.startedAt ?? null}
+                workingStartedAt={turnStartedAtMilliseconds(harness.selectedProvider, currentActiveTurn?.startedAt ?? null)}
                 recap={codexConversation ? harness.currentRecap : null}
                 onRawModeToggle={() => setRawMode((current) => !current)}
                 onContinueAfterFailure={codexConversation && canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
                 continueDisabled={Boolean(harness.busy.composer)}
                 renderTurnActions={renderTurnActions}
               />
-            ) : selectedPluginTab ? (
-              <PluginTabBoundary
-                tab={selectedPluginTab}
-                props={{
-                  provider: harness.selectedProvider,
-                  threadId: harness.selectedThreadId,
-                  threadCwd,
-                  workspaceRoot: workspace?.root ?? null,
-                  items: harness.currentDetail?.items ?? [],
-                  workspaces: harness.workspaces,
-                  threads: harness.threads,
-                }}
-              />
             ) : null}
+            {pluginTabs.map((entry) => (
+              <RetainedTab key={`${entry.instanceId}:${entry.contribution.id}`} active={selectedPluginTab === entry}>
+                <PluginTabBoundary
+                  tab={entry}
+                  props={{
+                    provider: harness.selectedProvider,
+                    threadId: harness.selectedThreadId,
+                    threadCwd,
+                    workspaceRoot: workspace?.root ?? null,
+                    items: harness.currentDetail?.items ?? [],
+                    workspaces: harness.workspaces,
+                    threads: harness.threads,
+                  }}
+                />
+              </RetainedTab>
+            ))}
 
             {harness.viewMode === 'active' && composerCollapsible && composerCollapsed && (
               <div className="composer-collapsed-handle">

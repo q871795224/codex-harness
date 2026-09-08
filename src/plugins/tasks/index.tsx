@@ -99,7 +99,7 @@ export function todoScopePatch(scope: TodoScope, context: PluginViewContext): Pi
   return { scope, workspaceRoot: null, threadId: null }
 }
 
-function TasksTab({ storage, context }: { storage: PluginStorage; context: ConversationTabProps }) {
+export function TasksTab({ storage, context }: { storage: PluginStorage; context: ConversationTabProps }) {
   const [items, setItems] = useState<TodoItem[]>([])
   const [content, setContent] = useState('')
   const [dueAt, setDueAt] = useState('')
@@ -266,13 +266,18 @@ function TasksTab({ storage, context }: { storage: PluginStorage; context: Conve
                 >
                   {copiedTodoId === item.id ? <Check size={13} /> : <Copy size={13} />}
                 </button>
-                <input
-                  className="task-time"
-                  type="datetime-local"
-                  value={toDateTimeInput(item.dueAt)}
-                  onChange={(event) => update(item.id, { dueAt: event.target.value ? new Date(event.target.value).getTime() : null })}
-                  aria-label="编辑计划时间"
-                />
+                <div className="task-dates">
+                  <span className="task-created">创建：{todoCreatedTime(item.createdAt)}</span>
+                  <label className="task-planned">计划：{item.dueAt === null && <span>未设置</span>}
+                    <input
+                      className="task-time"
+                      type="datetime-local"
+                      value={toDateTimeInput(item.dueAt)}
+                      onChange={(event) => update(item.id, { dueAt: event.target.value ? new Date(event.target.value).getTime() : null })}
+                      aria-label="编辑计划时间"
+                    />
+                  </label>
+                </div>
                 <select
                   className={`task-scope ${item.scope}`}
                   value={item.scope}
@@ -364,6 +369,13 @@ export function normalizeTodoStorage(raw: unknown): { items: TodoItem[]; legacyN
     return item
   })
   return { items, legacyNote, changed }
+}
+
+export function todoCreatedTime(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '未知'
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '未知'
+  return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 }
 
 function toDateTimeInput(value: number | null): string {

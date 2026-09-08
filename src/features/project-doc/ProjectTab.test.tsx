@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ProjectDocService } from '../../core/project-docs/types'
 import { ProjectTab, PROJECT_STATUS_TEMPLATE } from './ProjectTab'
+import { RetainedTab } from '../conversation/RetainedTab'
 
 afterEach(cleanup)
 const meta = { projectId: 'demo', name: '示例项目', currentSeq: 2, createdAt: 1, updatedAt: 1 }
@@ -26,6 +27,21 @@ function service(content = ''): ProjectDocService {
 function mount(svc: ProjectDocService, selectedProjectId: string | null = null) {
   render(<ProjectTab service={svc} selectedProjectId={selectedProjectId} conflictRequest={null} onSelectProject={vi.fn()} onConflictHandled={vi.fn()} />)
 }
+
+it('retains the project editor and unsaved content across tab switches', async () => {
+  const svc = service('## Status\n已有进展')
+  const view = (active: boolean) => <RetainedTab active={active}><ProjectTab service={svc} selectedProjectId="demo" conflictRequest={null} onSelectProject={vi.fn()} onConflictHandled={vi.fn()} /></RetainedTab>
+  const { rerender } = render(view(true))
+  await screen.findByText('示例项目')
+  fireEvent.click(screen.getByText('编辑'))
+  const editor = screen.getByLabelText('编辑项目文档') as HTMLTextAreaElement
+  fireEvent.change(editor, { target: { value: '未保存的编辑内容' } })
+  rerender(view(false))
+  rerender(view(true))
+  expect(screen.getByLabelText('编辑项目文档')).toBe(editor)
+  expect(editor.value).toBe('未保存的编辑内容')
+  expect(svc.writeSection).not.toHaveBeenCalled()
+})
 
 it('does not create on IME confirmation or WebKit 229, and prevents duplicate creation', async () => {
   const svc = service()

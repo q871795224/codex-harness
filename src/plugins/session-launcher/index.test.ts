@@ -52,7 +52,7 @@ describe('session launcher model selection', () => {
       ['agi', 'gpt-6-astra', 'medium'],
       ['simple', 'gpt-5.6-luna', 'max'],
     ])
-    expect(defaultRadarRow(rows)?.model).toBe('gpt-5.6-sol')
+    expect(defaultRadarRow(rows)).toBe(rows[2])
     expect(rows[1]).toMatchObject({ iq: 106.96, price: 2.029284, minutes: 9.35 })
     expect(rows[2]).toMatchObject({ iq: 110.46, price: 2.297875, minutes: 8.87 })
     expect(selectedRadarRow(rows, { model: 'gpt-6-astra', effort: 'medium' })).toBe(rows[2])
@@ -79,5 +79,17 @@ describe('session launcher model selection', () => {
     const rows = [row('gpt-5.6-sol', 'high'), row('gpt-5.6-terra', 'max', true)]
     expect(selectedRadarRow(rows, { model: 'custom', effort: 'high' })).toBeNull()
     expect(defaultRadarRow(rows)?.model).toBe('gpt-5.6-terra')
+  })
+
+  it('compares only reference and AGI, choosing a cheaper runner-up within two IQ', () => {
+    const highest = { ...row('astra', 'medium'), group: 'agi' as const, iq: 110, price: 3 }
+    const second = { ...row('sol', 'high'), iq: 108, price: 1 }
+    const excluded = { ...row('hard', 'high'), group: 'hard' as const, iq: 150, price: 0.1 }
+    expect(defaultRadarRow([excluded, highest, second])).toBe(second)
+    expect(defaultRadarRow([highest, { ...second, iq: 107.99 }])).toBe(highest)
+    expect(defaultRadarRow([highest, { ...second, price: 3 }])).toBe(highest)
+    expect(defaultRadarRow([highest, { ...second, price: null }])).toBe(highest)
+    expect(defaultRadarRow([highest, second, { ...second, model: 'third', iq: 107, price: 0.01 }])).toBe(second)
+    expect(defaultRadarRow([{ ...highest, iq: null }, second])).toBe(second)
   })
 })
