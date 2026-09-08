@@ -22,6 +22,8 @@ export function useClaudeHarness() {
   const [status, setStatus] = useState<ClaudeRuntimeStatus | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [sessions, setSessions] = useState<ClaudeSessionRecord[]>([])
+  const archivedViewRef = useRef(false)
+  const sessionListRequestRef = useRef(0)
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
   const [activeTurnIds, setActiveTurnIds] = useState<Record<string, string>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
@@ -86,8 +88,15 @@ export function useClaudeHarness() {
     return () => { disposed = true }
   }, [notify, sessions[0]?.cwd, status?.available])
 
-  const refresh = useCallback(async (archived = false) => {
+  const refresh = useCallback(async (archived = archivedViewRef.current) => {
+    const requestId = ++sessionListRequestRef.current
+    if (archived !== archivedViewRef.current) {
+      archivedViewRef.current = archived
+      sessionsRef.current = []
+      setSessions([])
+    }
     const next = await runtime.listClaudeSessions(archived)
+    if (requestId !== sessionListRequestRef.current) return next
     sessionsRef.current = next
     setSessions(next)
     return next
@@ -543,12 +552,10 @@ export function useClaudeHarness() {
         unlistenTransport = disposeTransport
         const [nextStatus, nextSessions] = await Promise.all([
           runtime.claudeRuntimeStatus(),
-          runtime.listClaudeSessions(false),
+          refresh(),
         ])
         if (disposed) return
-        sessionsRef.current = nextSessions
         setStatus(nextStatus)
-        setSessions(nextSessions)
         setDetails((current) => {
           const next = { ...current }
           for (const session of nextSessions) {
@@ -570,11 +577,12 @@ export function useClaudeHarness() {
     })()
     return () => {
       disposed = true
+      ++sessionListRequestRef.current
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer)
       unlistenEvents?.()
       unlistenTransport?.()
     }
-  }, [applyProviderSnapshot, handleEvent])
+  }, [applyProviderSnapshot, handleEvent, refresh])
 
   const threads = useMemo(
     () => sessions.map((session) => sessionThread(session, Boolean(activeTurnIds[session.id]))),

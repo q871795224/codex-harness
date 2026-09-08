@@ -195,7 +195,10 @@ export function useHarness() {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(null)
   const [nextThreadCwd, setNextThreadCwd] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<ViewMode>('active')
+  const [viewMode, setViewModeState] = useState<ViewMode>('active')
+  const viewModeRef = useRef<ViewMode>('active')
+  const threadListRequestRef = useRef(0)
+  const threadSearchRef = useRef('')
   const [toast, setToast] = useState<HookToast | null>(null)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [forkingTurnId, setForkingTurnId] = useState<string | null>(null)
@@ -232,6 +235,15 @@ export function useHarness() {
   const recapInFlightThreadRef = useRef<string | null>(null)
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
   const transportRecoveryTimerRef = useRef<number | null>(null)
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    if (viewModeRef.current === mode) return
+    viewModeRef.current = mode
+    ++threadListRequestRef.current
+    threadsRef.current = []
+    setThreads([])
+    setViewModeState(mode)
+  }, [])
 
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
   useEffect(() => { threadsRef.current = threads }, [threads])
@@ -575,8 +587,11 @@ export function useHarness() {
     }
   }, [])
 
-  const refreshThreads = useCallback(async (mode: ViewMode = viewMode, searchTerm = '') => {
+  const refreshThreads = useCallback(async (mode: ViewMode = viewModeRef.current, searchTerm = threadSearchRef.current) => {
+    const requestId = ++threadListRequestRef.current
     const response = await listThreadPage(appServer, mode, searchTerm)
+    // A previous view/search must never replace the current catalog.
+    if (requestId !== threadListRequestRef.current || mode !== viewModeRef.current) return response.data
     const selectedId = selectedThreadIdRef.current
     const selectedThread = selectedId ? response.data.find((thread) => thread.id === selectedId) : undefined
     recordWorkspaceContextDiagnostic({
@@ -594,6 +609,7 @@ export function useHarness() {
         selectedThreadCwd: selectedThread?.cwd ?? null,
       },
     })
+    threadsRef.current = response.data
     setThreads(response.data)
     setThreadRoots((current) => {
       const next = { ...current }
@@ -607,7 +623,7 @@ export function useHarness() {
     })
     void mapThreadRoots(response.data)
     return response.data
-  }, [mapThreadRoots, viewMode])
+  }, [mapThreadRoots])
 
   const loadQueue = useCallback(async (threadId: string) => {
     try {
@@ -664,10 +680,10 @@ export function useHarness() {
         foreignActive: activeTurnId !== null && !owned,
       },
     }))
-    upsertThread(response.thread)
+    updateThread(threadId, (current) => ({ ...current, ...response.thread }))
     void mapThreadRoots([response.thread])
     if (loadQueueAfter) await loadQueue(threadId)
-  }, [commitTurnOwnership, loadQueue, mapThreadRoots, upsertThread])
+  }, [commitTurnOwnership, loadQueue, mapThreadRoots, updateThread])
 
   const selectThread = useCallback(async (threadId: string, selectionSource: ThreadSelectionSource = 'unknown') => {
     const previousThreadId = selectedThreadIdRef.current
@@ -809,15 +825,20 @@ export function useHarness() {
   }, [recoverActiveThreadSubscriptions])
 
   const openThread = useCallback(async (threadId: string) => {
+    setViewMode('active')
     const activeThreads = await refreshThreads('active')
     if (activeThreads.some((thread) => thread.id === threadId)) {
       setViewMode('active')
     } else {
+      setViewMode('archived')
       const archivedThreads = await refreshThreads('archived')
-      setViewMode(archivedThreads.some((thread) => thread.id === threadId) ? 'archived' : 'active')
+      if (!archivedThreads.some((thread) => thread.id === threadId)) {
+        setViewMode('active')
+        await refreshThreads('active')
+      }
     }
     await selectThread(threadId, 'open-thread')
-  }, [refreshThreads, selectThread])
+  }, [refreshThreads, selectThread, setViewMode])
 
   const forkThreadAtTurn = useCallback(async (turnId: string) => {
     const sourceThreadId = selectedThreadIdRef.current
@@ -1854,8 +1875,8 @@ export function useHarness() {
     if (method === 'thread/started') {
       const thread = params.thread as Thread | undefined
       if (thread && !thread.ephemeral) {
-        upsertThread(thread)
-        void mapThreadRoots([thread])
+        // Started/resumed notifications do not carry archive membership.
+        void refreshThreads().catch((error) => notify(`无法刷新会话：${messageOf(error)}`, 'error'))
       }
       return
     }
@@ -2077,13 +2098,14 @@ export function useHarness() {
     if (method === 'thread/archived' || method === 'thread/deleted' || method === 'thread/unarchived') {
       const threadId = eventThreadId(params)
       if (threadId) {
+        ++threadListRequestRef.current
         unstartedDraftThreadIdsRef.current.delete(threadId)
         draftContentThreadIdsRef.current.delete(threadId)
         draftInitialCwdsRef.current.delete(threadId)
         setThreads((current) => current.filter((thread) => thread.id !== threadId))
       }
     }
-  }, [commitTurnOwnership, handleRecapGeneratorEvent, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, notify, persistBadge, queueDetailDelta, setActiveTurn, setThreadStarting, startTurn, updateDetail, updateThread, upsertThread])
+  }, [commitTurnOwnership, handleRecapGeneratorEvent, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, notify, persistBadge, queueDetailDelta, refreshThreads, setActiveTurn, setThreadStarting, startTurn, updateDetail, updateThread])
 
   useEffect(() => {
     let disposed = false
@@ -2130,6 +2152,7 @@ export function useHarness() {
     )
     return () => {
       disposed = true
+      ++threadListRequestRef.current
       if (transportRecoveryTimerRef.current !== null) {
         window.clearTimeout(transportRecoveryTimerRef.current)
         transportRecoveryTimerRef.current = null
@@ -2254,8 +2277,9 @@ export function useHarness() {
       }
     },
     searchThreads: async (term: string) => {
+      threadSearchRef.current = term
       try {
-        await refreshThreads(viewMode, term)
+        await refreshThreads(viewModeRef.current, term)
       } catch (error) {
         notify(`无法搜索会话：${messageOf(error)}`, 'error')
       }
