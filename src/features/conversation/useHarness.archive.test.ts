@@ -26,6 +26,7 @@ vi.mock('../../core/runtime/bridge', () => ({
 vi.mock('../../core/runtime/appServerClient', () => ({
   appServer: {
     listThreads: vi.fn(), archiveThread: vi.fn().mockResolvedValue(undefined),
+    startThread: vi.fn(), deleteThread: vi.fn().mockResolvedValue(undefined),
     resumeThread: vi.fn(), listQueue: vi.fn().mockResolvedValue({ data: [] }),
   },
 }))
@@ -52,6 +53,41 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('archive view navigation', () => {
+  it.each([true, false])('keeps a new local draft when thread/started arrives before start response: %s', async (notificationFirst) => {
+    vi.mocked(runtime.listWorkspaces).mockResolvedValueOnce([{ root: '/repo', checkoutRoot: '/repo', name: 'repo', branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 }])
+    vi.mocked(appServer.startThread).mockResolvedValue({
+      thread: thread('draft'), approvalPolicy: 'never', approvalsReviewer: 'user',
+      model: 'test', reasoningEffort: null, serviceTier: null,
+      sandbox: { type: 'dangerFullAccess' }, runtimeWorkspaceRoots: ['/repo'], activePermissionProfile: null,
+    })
+    const { result } = await ready()
+    const pending = deferred<ReturnType<typeof page>>()
+    vi.mocked(appServer.listThreads).mockReturnValueOnce(pending.promise)
+    const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
+    await act(async () => {
+      if (notificationFirst) listener({ method: 'thread/started', params: { thread: thread('draft') } } as AppServerEvent)
+      await result.current.createThread()
+      if (!notificationFirst) listener({ method: 'thread/started', params: { thread: thread('draft') } } as AppServerEvent)
+    })
+    await act(async () => { pending.resolve(page('active')) })
+    expect(result.current.selectedThreadId).toBe('draft')
+    expect(result.current.currentThread?.id).toBe('draft')
+    expect(result.current.threads.map((item) => item.id)).toEqual(['draft', 'active'])
+    expect(result.current.details.draft.thread.id).toBe('draft')
+    expect(appServer.resumeThread).not.toHaveBeenCalled()
+    await act(async () => { await result.current.setViewMode('archived') })
+    expect(result.current.threads.map((item) => item.id)).toEqual(['archived'])
+    await act(async () => { await result.current.setViewMode('active') })
+    expect(result.current.threads.map((item) => item.id)).toEqual(['draft', 'active'])
+    vi.mocked(appServer.listThreads).mockResolvedValueOnce({ data: [thread('draft'), thread('active')], nextCursor: null })
+    await act(async () => { await result.current.searchThreads('') })
+    expect(result.current.threads.filter((item) => item.id === 'draft')).toHaveLength(1)
+    await act(async () => {
+      listener({ method: 'thread/deleted', params: { threadId: 'draft' } } as AppServerEvent)
+      await result.current.searchThreads('')
+    })
+    expect(result.current.threads.map((item) => item.id)).toEqual(['active'])
+  })
   it('switches both ways without restarting bootstrap or subscriptions', async () => {
     const { result } = await ready()
     await act(async () => { await result.current.setViewMode('archived') })

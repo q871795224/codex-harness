@@ -28,12 +28,12 @@ describe('visibleTodos', () => {
       .toEqual(['global', 'workspace-a', 'thread-a'])
   })
 
-  it('sorts incomplete and scheduled items first', () => {
+  it('sorts incomplete items by creation time, ignoring legacy schedules', () => {
     const later = { ...todo('later', 'global'), dueAt: 20 }
     const done = { ...todo('done', 'global'), completed: true, dueAt: 1 }
     const sooner = { ...todo('sooner', 'global'), dueAt: 10 }
     expect(visibleTodos([later, done, sooner], { workspaceRoot: null, threadId: null, threadCwd: null }).map((item) => item.id))
-      .toEqual(['sooner', 'later', 'done'])
+      .toEqual(['later', 'sooner', 'done'])
   })
 
   it('shows global and every workspace item in the all-workspaces view', () => {
