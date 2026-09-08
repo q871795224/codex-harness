@@ -380,7 +380,6 @@ export function useUnifiedHarness() {
     currentForeignActive: selectedProvider === 'claude' ? false : codex.currentForeignActive,
     isCurrentWorking: Boolean(activeTurnId || (selectedThreadId && codex.startingThreadIds[selectedThreadId])),
     busy: selectedProvider === 'claude' ? { ...codex.busy, ...claude.busy } : codex.busy,
-    toast: claude.toast ?? codex.toast,
     queues: selectedProvider === 'claude' ? claude.queues : codex.queues,
     pendingSteers: selectedProvider === 'claude' && selectedThreadId ? { ...codex.pendingSteers, [selectedThreadId]: [] } : codex.pendingSteers,
     selectThread,

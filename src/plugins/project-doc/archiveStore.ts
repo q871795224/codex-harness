@@ -4,7 +4,7 @@ import type { ArchiveDraft } from './config'
  * 归档流程的进程内状态（模块级单例）。
  *
  * project-doc 插件的归档按钮触发 run；本 store 跟踪"进行中 / 待确认 / 失败"。
- * App 订阅它渲染右上角通知条；点通知后把"待打开的项目 + 草稿"写进 openRequest，
+ * 归档过程另行通过核心通知服务提醒；点通知后把"待打开的项目 + 草稿"写进 openRequest，
  * 项目 Tab 订阅它自动选中该项目并进入 archive 确认视图。
  * 待确认草稿持久化在插件 storage（ArchiveDraft），本 store 只放轻量状态 + 内存索引。
  */

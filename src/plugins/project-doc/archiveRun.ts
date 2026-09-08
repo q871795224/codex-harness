@@ -1,3 +1,4 @@
+import { errorDetails, type NotificationService } from '../../core/notifications/store'
 import type { AgentRunService } from '../../core/agent-runs/types'
 import type { ProjectDocService } from '../../core/project-docs/types'
 import type { ThreadItemEntry } from '../../core/domain/codex'
@@ -19,6 +20,7 @@ export interface ArchiveRunDeps {
   agentRuns: AgentRunService
   projectDocs: ProjectDocService
   store: ArchiveStore
+  notifications?: NotificationService
   /** 持久化待确认草稿（插件 storage.set）。 */
   persistDraft: (draft: ArchiveDraft) => Promise<void>
 }
@@ -40,6 +42,8 @@ export interface ArchiveRunInput {
 export async function startArchiveRun(deps: ArchiveRunDeps, input: ArchiveRunInput): Promise<void> {
   const { store, projectDocs } = deps
   store.setRunning(input.projectId, input.threadId)
+  const notification = { source: '项目归档', threadId: input.threadId, workspaceRoot: input.workspaceRoot, actions: [{ kind: 'project' as const, target: input.projectId, label: '打开项目' }] }
+  const notificationId = deps.notifications?.publish({ ...notification, level: 'info', title: '正在整理项目归档', state: 'running' })
   try {
     const snapshot = await projectDocs.read(input.projectId)
     const currentStatus = sectionBody(snapshot.content, 'Status') ?? ''
@@ -85,8 +89,10 @@ export async function startArchiveRun(deps: ArchiveRunDeps, input: ArchiveRunInp
     }
     await deps.persistDraft(draft)
     store.setPending(input.projectId, input.threadId, draft)
+    deps.notifications?.publish({ ...notification, id: notificationId, level: 'info', title: '归档已就绪，等待确认', message: '打开项目查看归档内容，确认后写入项目文档。', state: 'pending' })
   } catch (error) {
     store.setFailed(input.projectId, input.threadId, messageOf(error))
+    deps.notifications?.publish({ ...notification, id: notificationId, level: 'error', title: '项目归档未完成', message: '请查看详情后重新发起归档。', details: errorDetails(error), state: 'done' })
   }
 }
 

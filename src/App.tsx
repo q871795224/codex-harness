@@ -1,5 +1,9 @@
+import { notifications } from './core/notifications/service'
+import type { NotificationAction } from './core/notifications/store'
+import { NotificationCenter, NotificationViewport } from './features/notifications/Notifications'
+import { useReleaseNotifications } from './features/notifications/useReleaseNotifications'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
@@ -25,7 +29,6 @@ import { ConversationStats, turnStartedAtMilliseconds } from './features/convers
 import { RetainedTab } from './features/conversation/RetainedTab'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
-import { WorkspaceReleaseFailureCard } from './features/conversation/WorkspaceReleaseFailureCard'
 import { useUnifiedHarness } from './features/conversation/useUnifiedHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { useCodexUpdate } from './features/codex/useCodexUpdate'
@@ -42,7 +45,6 @@ import type { AppLauncherService } from './core/app-launcher/types'
 import { createProjectDocService } from './core/project-docs/service'
 import { ProjectDocApprovalCards } from './features/conversation/ProjectDocApprovalCards'
 import { useProjectBinding } from './features/project-doc/useProjectBinding'
-import { ArchiveNoticeBar } from './features/project-doc/ArchiveNoticeBar'
 import { PROJECT_DOC_TAB_KEY } from './plugins/project-doc'
 import { archiveStore } from './plugins/project-doc/archiveStore'
 
@@ -53,6 +55,7 @@ const SettingsDialog = lazy(() => import('./features/settings/SettingsDialog').t
 const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDialog').then((module) => ({ default: module.PluginSettingsDialog })))
 
 export default function App() {
+  useEffect(() => { void notifications.initialize() }, [])
   const harness = useUnifiedHarness()
   const codex = useCodexCore()
   const selectAgentRunThread = useCallback(
@@ -64,6 +67,7 @@ export default function App() {
   harnessInstructionConfig.current = resolveHarnessInstructionConfig(codex.config)
   const services = useMemo(() => ({
     'harness.agentRuns': agentRuns,
+    'harness.notifications': notifications,
     'harness.projectDocs': projectDocs,
     'harness.localConnectors': {
       health: runtime.localConnectorHealth,
@@ -179,6 +183,11 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const codexUpdate = useCodexUpdate(harness.selectedProvider === 'codex' ? harness.selectedThreadId : null, codex.reload)
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   const [tab, setTab] = useState('chat')
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [selectedNotificationId, setSelectedNotificationId] = useState<string | undefined>()
+  const notificationState = useSyncExternalStore(notifications.subscribe, notifications.snapshot)
+  const unreadNotifications = notificationState.records.filter((record) => !record.read).length
+  const openNotifications = (id?: string) => { setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
   const [focusedTab, setFocusedTab] = useState<string | null>(null)
   const [tabOrder, setTabOrder] = useState<string[]>([])
   const tabOrderRef = useRef<string[]>([])
@@ -202,7 +211,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const queuedComposerDraftsRef = useRef<Record<string, ComposerDraft>>({})
   if (!composerDraftWriterRef.current) {
     composerDraftWriterRef.current = new ComposerDraftWriter(runtime, (error) => {
-      harness.notify(`无法保存输入草稿：${error instanceof Error ? error.message : String(error)}`, 'error')
+      harness.notify(`无法保存输入草稿`, 'error', error)
     })
   }
   useEffect(() => {
@@ -214,7 +223,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         setComposerDrafts(restored)
       }
     }).catch((error) => {
-      if (!disposed) harness.notify(`无法恢复输入草稿：${error instanceof Error ? error.message : String(error)}`, 'error')
+      if (!disposed) harness.notify(`无法恢复输入草稿`, 'error', error)
     }).finally(() => {
       if (!disposed) setComposerDraftsLoaded(true)
     })
@@ -302,6 +311,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
     [harness.selectedThreadId, harness.threadRoots, harness.workspaces],
   )
   const workspaceRelease = useWorkspaceRelease(workspace?.root ?? null)
+  useReleaseNotifications(workspaceRelease.status)
   const threadCwd = harness.currentThread?.cwd ?? null
   const resolvedThreadHeaderActions = plugins.resolvedThreadHeaderActions({
     provider: harness.selectedProvider,
@@ -448,16 +458,16 @@ function HarnessShell({ harness, agentRuns, codex }: {
     const threadIndex = threadIndexForAction(actionId)
     if (threadIndex !== null) {
       const threadId = visibleThreadIds[threadIndex]
-      if (threadId) void harness.selectThread(threadId, 'keyboard-shortcut')
+      if (threadId) { setNotificationsOpen(false); void harness.selectThread(threadId, 'keyboard-shortcut') }
       return
     }
-    if (actionId === 'thread.new') void harness.createThread(harness.newThreadProvider)
+    if (actionId === 'thread.new') { setNotificationsOpen(false); void harness.createThread(harness.newThreadProvider) }
     else if (actionId === 'sidebar.toggle') harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)
-    else if (actionId === 'composer.focus') setComposerFocusRequest((current) => current + 1)
-    else if (actionId === 'tab.focus.toggle' && tabFocusable) {
+    else if (actionId === 'composer.focus') { setNotificationsOpen(false); setComposerFocusRequest((current) => current + 1) }
+    else if (actionId === 'tab.focus.toggle' && tabFocusable && !notificationsOpen) {
       setFocusedTab((current) => current === tab ? null : tab)
     }
-  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.newThreadProvider, harness.selectThread, harness.setSidebarCollapsed, tab, tabFocusable, visibleThreadIds])
+  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.newThreadProvider, harness.selectThread, harness.setSidebarCollapsed, tab, tabFocusable, visibleThreadIds, notificationsOpen])
 
   useEffect(() => {
     if (settingsOpen || pluginsOpen) return undefined
@@ -519,6 +529,22 @@ function HarnessShell({ harness, agentRuns, codex }: {
         <button type="button" onClick={() => window.location.reload()}><RotateCw size={15} />重新连接</button>
       </div>
     )
+  }
+
+  const handleNotificationAction = async (action: NotificationAction) => {
+    if (action.kind === 'release-log') {
+      await runtime.openReleaseLog(action.target, action.runId)
+    } else if (action.kind === 'thread') {
+      await harness.selectThread(action.target, 'notification')
+      setTab('chat')
+      setNotificationsOpen(false)
+    } else {
+      const notice = archiveStore.getState().notices[action.target]
+      if (notice?.kind === 'pending') archiveStore.requestOpen(action.target, notice.draft)
+      else archiveStore.requestSelect(action.target)
+      setTab(PROJECT_DOC_TAB_KEY)
+      setNotificationsOpen(false)
+    }
   }
 
   const currentQueue = harness.selectedThreadId ? harness.queues[harness.selectedThreadId] ?? [] : []
@@ -594,10 +620,10 @@ function HarnessShell({ harness, agentRuns, codex }: {
         sidebarListSplitRatio={harness.navigation.sidebarListSplitRatio}
         creatingThread={Boolean(harness.busy.createThread)}
         archivingOldThreads={Boolean(harness.busy.archiveOldThreads)}
-        onSelectThread={(threadId) => void harness.selectThread(threadId, 'sidebar')}
+        onSelectThread={(threadId) => { setNotificationsOpen(false); void harness.selectThread(threadId, 'sidebar') }}
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
         onArchiveOldThreads={() => void harness.archiveOldThreads()}
-        onNewThread={(provider) => void harness.createThread(provider)}
+        onNewThread={(provider) => { setNotificationsOpen(false); void harness.createThread(provider) }}
         newThreadProvider={harness.newThreadProvider}
         onToggleNewThreadProvider={harness.toggleNewThreadProvider}
         claudeStatus={harness.claudeStatus}
@@ -612,6 +638,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onToggleWorkspacePinned={harness.toggleWorkspacePinned}
         onSidebarWidth={harness.setSidebarWidth}
         onSidebarListSplitRatio={harness.setSidebarListSplitRatio}
+        onOpenNotifications={() => openNotifications()}
+        notificationsOpen={notificationsOpen}
+        unreadNotifications={unreadNotifications}
         onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
         onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
         onVisibleThreadOrder={setVisibleThreadIds}
@@ -622,6 +651,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onToggle={() => harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)}
       />
       <main className="main-pane">
+        {notificationsOpen && <NotificationCenter store={notifications} currentThreadId={harness.selectedThreadId} selectedId={selectedNotificationId} onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
+        <div className="notification-conversation" hidden={notificationsOpen}>
         {harness.currentThread ? (
           <Fragment key={harness.currentThread.id}>
             <ConversationHeader
@@ -699,9 +730,13 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   )
                 })}
               </div>
+              <div className="notification-tab-tools">
+              <button type="button" className="notification-bell" aria-label="打开通知中心" title="通知中心" onClick={() => openNotifications()}><Bell size={16} />{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>
               <span className={`connection-state ${codexConversation ? '' : 'claude'}`}><span />{codexConversation ? '本机 App Server' : 'Claude · Agent SDK'}</span>
+              </div>
             </div>
 
+            <div className="notification-anchor"><NotificationViewport store={notifications} onOpen={openNotifications} /></div>
             {tab === 'chat' ? (
               <ConversationView
                 provider={harness.selectedProvider}
@@ -809,7 +844,6 @@ function HarnessShell({ harness, agentRuns, codex }: {
 
             {composerVisible && (
               <div className="input-column" ref={inputColumnRef}>
-                <WorkspaceReleaseFailureCard release={workspaceRelease} />
                 {harness.selectedThreadId && (
                   <DelegationReturnCard
                     runs={pendingReturnRuns}
@@ -845,7 +879,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   projectCard={projectCard}
                   onProjectCardDismissed={() => {
                     void projectBinding.unbind().catch((error) => {
-                      harness.notify(`无法解除项目绑定：${String(error)}`, 'error')
+                      harness.notify(`无法解除项目绑定`, 'error', error)
                     })
                   }}
                   disabled={codexUpdate.updating || harness.currentForeignActive || Boolean(harness.busy.composer)}
@@ -879,7 +913,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                       await projectBinding.lockOnSend()
                     } catch (error) {
                       // 消息已经发送，仍让 Composer 消耗草稿，避免用户重复发送。
-                      harness.notify(`消息已发送，但项目绑定锁定失败：${String(error)}`, 'error')
+                      harness.notify('消息已发送，但项目绑定尚未锁定。', 'warning', error)
                     }
                   }}
                   onCommand={(command) => {
@@ -945,10 +979,12 @@ function HarnessShell({ harness, agentRuns, codex }: {
             )}
           </Fragment>
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread(harness.newThreadProvider)} onWorkspace={() => void harness.chooseWorkspace()} />}
+        {!harness.currentThread && <NotificationViewport store={notifications} onOpen={openNotifications} />}
+        </div>
       </main>
       {quickPanelsVisible && harness.currentThread && (
-        <>
-          <QuickCommandPanel commands={quickCommands} release={workspaceRelease} anchorBottom={quickPanelBottom} />
+        <div className="notification-quick-panels" hidden={notificationsOpen}>
+          <QuickCommandPanel workspaceRoot={workspace?.root} threadId={harness.selectedThreadId} commands={quickCommands} release={workspaceRelease} anchorBottom={quickPanelBottom} />
           <QuickActionPanel
             actions={quickActions}
             agentRuns={agentRuns}
@@ -962,7 +998,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
               disabled: harness.currentForeignActive,
             }}
           />
-        </>
+        </div>
       )}
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
@@ -1017,8 +1053,6 @@ function HarnessShell({ harness, agentRuns, codex }: {
           }}
         /></Suspense>
       )}
-      {harness.toast && <div className={`toast ${harness.toast.kind}`}>{harness.toast.message}</div>}
-      <ArchiveNoticeBar onOpenArchiveTab={() => setTab(PROJECT_DOC_TAB_KEY)} />
     </div>
   )
 }

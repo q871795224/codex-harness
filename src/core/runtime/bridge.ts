@@ -616,8 +616,8 @@ export const runtime = {
     return invoke<ReleaseRunStatus | null>('dismiss_release_failure', { workspaceRoot })
   },
 
-  openReleaseLog(workspaceRoot: string): Promise<void> {
-    return invoke<void>('open_release_log', { workspaceRoot })
+  openReleaseLog(workspaceRoot: string, runId?: string): Promise<void> {
+    return invoke<void>('open_release_log', { workspaceRoot, runId })
   },
 
   requestSystemNotificationPermission(): Promise<boolean> {
