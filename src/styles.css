@@ -325,6 +325,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .message-actions button.copied { color: #4e8563; }
 .message-actions button.failed { color: #b05252; }
 .message-actions button.active { color: #5267bd; background: #eef0fb; }
+.message-actions-trailing { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding-left: 8px; }
 .message-actions button[data-tip]:hover::after, .message-actions button[data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; z-index: 5; bottom: calc(100% + 5px); left: 50%; padding: 3px 7px; border: 1px solid #d9dee5; border-radius: 5px; background: #fff; box-shadow: 0 6px 18px rgba(24, 30, 42, .14); color: #4a525e; font-size: 10px; font-weight: 500; line-height: 1.3; pointer-events: none; transform: translateX(-50%); white-space: nowrap; }
 .assistant-turn { min-width: 0; }
 .process-group { margin: 0 0 18px; overflow: hidden; border: 1px solid #e4e7ec; border-radius: 9px; background: #f8f9fa; }
@@ -628,6 +629,14 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 /* 归档按钮（composer 行） */
 .project-archive-action { display: inline-flex; align-items: center; gap: 6px; }
 .project-archive-error { color: #b3261e; font-size: 12px; max-width: 240px; }
+
+/* turn 级归档按钮（agent 最终回答操作行右侧） */
+.turn-archive-button { display: inline-flex; align-items: center; gap: 5px; width: auto; height: 22px; padding: 0 8px; border: 1px solid var(--project-border, #d9dee5); border-radius: 6px; background: transparent; color: #9298a2; font-size: 11px; cursor: pointer; }
+.turn-archive-button:hover:not(:disabled) { background: #f0f2f6; color: #5267bd; }
+.turn-archive-button:disabled { cursor: wait; opacity: .6; }
+
+/* 编辑全文 textarea（更高，容纳整篇文档） */
+.project-edit-full-textarea { min-height: 340px; }
 
 /* 归档通知条（右上角，持久，可堆叠） */
 .archive-notice-bar { position: fixed; z-index: 30; top: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; max-width: min(380px, calc(100vw - 32px)); }
@@ -1306,6 +1315,8 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .message-actions button.failed { color: #dc9797; }
 .app-shell[data-theme='dark'] .message-actions button.active { color: #aab8ef; background: #2a2f3b; }
 .app-shell[data-theme='dark'] .message-actions button[data-tip]::after { border-color: #3a3f48; background: #25292f; color: #c9ced6; }
+.app-shell[data-theme='dark'] .turn-archive-button { border-color: #3a3f48; color: #a6adb8; }
+.app-shell[data-theme='dark'] .turn-archive-button:hover:not(:disabled) { background: #303640; color: #aab8ef; }
 .app-shell[data-theme='dark'] .process-group { border-color: #353941; background: #202329; }
 .app-shell[data-theme='dark'] .process-group.running { border-color: #353941; background: #202329; }
 .app-shell[data-theme='dark'] .process-group.failed { border-color: #654141; background: #2d2224; }

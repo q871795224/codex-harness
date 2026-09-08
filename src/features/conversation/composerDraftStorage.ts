@@ -31,19 +31,44 @@ export function composerDraftHasContent(draft: ComposerDraft): boolean {
 export class ComposerDraftWriter {
   private readonly pending = new Map<string, ComposerDraft>()
   private draining: Promise<void> | null = null
+  private drainTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private readonly storage: ComposerDraftStorage,
     private readonly onError: (error: unknown) => void = () => undefined,
+    private readonly debounceMs: number = 1000,
   ) {}
 
   update(conversationId: string, draft: ComposerDraft): void {
     this.pending.set(conversationId, draft)
-    this.draining ??= this.drain()
+    this.scheduleDrain()
   }
 
   async flush(): Promise<void> {
+    this.clearDrainTimer()
+    this.drainPending()
     while (this.draining) await this.draining
+  }
+
+  private scheduleDrain(): void {
+    this.clearDrainTimer()
+    this.drainTimer = setTimeout(() => {
+      this.drainTimer = null
+      this.drainPending()
+    }, this.debounceMs)
+  }
+
+  private clearDrainTimer(): void {
+    if (this.drainTimer) {
+      clearTimeout(this.drainTimer)
+      this.drainTimer = null
+    }
+  }
+
+  private drainPending(): void {
+    if (this.draining) return
+    if (this.pending.size === 0) return
+    this.draining = this.drain()
   }
 
   private async drain(): Promise<void> {
@@ -65,7 +90,7 @@ export class ComposerDraftWriter {
       }
     } finally {
       this.draining = null
-      if (this.pending.size > 0) this.draining = this.drain()
+      if (this.pending.size > 0) this.scheduleDrain()
     }
   }
 }

@@ -751,6 +751,22 @@ async fn project_doc_server_ensure(state: State<'_, AppState>) -> Result<u16, St
 }
 
 #[tauri::command]
+fn project_doc_write_document(
+    state: State<'_, AppState>,
+    project_id: String,
+    base_seq: Option<i64>,
+    content: String,
+    updated_by: String,
+    summary: String,
+) -> Result<project_doc_store::WriteOutcome, String> {
+    let guard = project_docs(&state)?;
+    guard
+        .as_ref()
+        .unwrap()
+        .write_document(&project_id, base_seq, &content, &updated_by, &summary)
+}
+
+#[tauri::command]
 fn create_agent_worktree(cwd: String, run_id: String) -> Result<String, String> {
     let data_dir = store::harness_data_dir()?;
     git_workspace::create_agent_worktree(&cwd, &run_id, &data_dir)
@@ -1098,6 +1114,7 @@ pub fn run() {
             project_doc_read,
             project_doc_versions,
             project_doc_write_section,
+            project_doc_write_document,
             project_doc_list_proposals,
             project_doc_approve_proposal,
             project_doc_reject_proposal,

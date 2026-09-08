@@ -29,6 +29,7 @@ function service(overrides: Partial<ProjectDocService> = {}, content = CURRENT_D
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: seq, content, contentHash: 'h', consistent: true })),
     versions: vi.fn(async () => []), workspaces: vi.fn(async () => []), bindWorkspace: vi.fn(),
     writeSection: vi.fn(async () => ({ kind: 'applied' as const, newSeq: seq + 1, contentHash: 'h' })),
+    writeDocument: vi.fn(async () => ({ kind: 'applied' as const, newSeq: seq + 1, contentHash: 'h' })),
     listProposals: vi.fn(async () => []),
     approveProposal: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
     rejectProposal: vi.fn(async () => undefined),

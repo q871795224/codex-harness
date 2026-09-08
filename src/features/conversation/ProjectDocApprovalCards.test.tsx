@@ -34,6 +34,7 @@ function fakeService(options: {
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq, content: '', contentHash: 'h', consistent: true })),
     versions: vi.fn(async () => []),
     writeSection: vi.fn(),
+    writeDocument: vi.fn(),
     listProposals: vi.fn(async () => proposals),
     approveProposal: vi.fn(async () => approveOutcome),
     rejectProposal: vi.fn(async () => undefined),

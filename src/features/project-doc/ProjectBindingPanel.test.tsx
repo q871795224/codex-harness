@@ -18,6 +18,7 @@ function makeService(): ProjectDocService {
     read: vi.fn(),
     versions: vi.fn(async () => []),
     writeSection: vi.fn(),
+    writeDocument: vi.fn(),
     listProposals: vi.fn(async () => []),
     approveProposal: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
     rejectProposal: vi.fn(async () => undefined),

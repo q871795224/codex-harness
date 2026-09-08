@@ -539,42 +539,90 @@ impl ProjectDocStore {
             section,
             content,
         )?;
-        let new_seq = current_seq + 1;
-        let now = now_ms();
-        // 落盘 = front matter（Harness 簿记）+ 正文；hash 对落盘全文算，覆盖 front matter 的漂移防护。
-        let next_file = format!(
-            "{}\n{}",
-            render_front_matter(id, new_seq, updated_by, now),
-            next_body
-        );
-        let hash = content_hash(&next_file);
-
-        let dir = self.project_dir(id);
-        fs::create_dir_all(dir.join(HISTORY_DIR))
-            .map_err(|e| format!("无法创建快照目录: {e}"))?;
-        fs::write(dir.join(CURRENT_FILE), &next_file).map_err(|e| format!("无法写入项目文档: {e}"))?;
-        fs::write(dir.join(HISTORY_DIR).join(format!("{new_seq}.md")), &next_file)
-            .map_err(|e| format!("无法写入版本快照: {e}"))?;
-
-        connection
-            .execute(
-                "INSERT INTO project_versions (project_id, seq, updated_by, updated_at, summary, content_hash)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![id, new_seq, updated_by, now, summary, hash],
-            )
-            .map_err(|e| format!("无法记录版本: {e}"))?;
-        connection
-            .execute(
-                "UPDATE projects SET current_seq = ?2, updated_at = ?3 WHERE project_id = ?1",
-                params![id, new_seq, now],
-            )
-            .map_err(|e| format!("无法推进项目版本: {e}"))?;
-
-        Ok(WriteOutcome::Applied {
-            new_seq,
-            content_hash: hash,
-        })
+        persist_body(&connection, &self.project_dir(id), id, current_seq, &next_body, updated_by, summary)
     }
+
+    /**
+     * 整文替换正文（项目 Tab「编辑全文」）。seq CAS 与落盘在同一临界区：
+     * base_seq 必须等于 current_seq，否则 Conflict。整文是人全权编辑，允许清空。
+     * front matter 由 Harness 重新生成，不采用入参里夹带的 front matter（防簿记被改）。
+     */
+    pub fn write_document(
+        &self,
+        project_id: &str,
+        base_seq: Option<i64>,
+        full_content: &str,
+        updated_by: &str,
+        summary: &str,
+    ) -> Result<WriteOutcome, String> {
+        let id = validate_project_id(project_id)?;
+        let connection = self.lock()?;
+        let current_seq: i64 = connection
+            .query_row(
+                "SELECT current_seq FROM projects WHERE project_id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("项目不存在: {e}"))?;
+
+        if base_seq != Some(current_seq) {
+            return Ok(WriteOutcome::Conflict {
+                current_seq,
+                base_seq,
+            });
+        }
+
+        // 整文写入采用纯正文：剥离入参可能夹带的 front matter，由 Harness 重新生成。
+        let next_body = strip_front_matter(full_content).trim().to_string();
+        persist_body(&connection, &self.project_dir(id), id, current_seq, &next_body, updated_by, summary)
+    }
+}
+
+/// 共用持久化：seq+1、重写 current.md、存 history/<seq>.md 快照、记一条 project_versions。
+/// 调用方必须持有连接锁且已完成 seq 校验（CAS）；落盘与版本推进在同一临界区。
+fn persist_body(
+    connection: &Connection,
+    dir: &std::path::Path,
+    id: &str,
+    current_seq: i64,
+    next_body: &str,
+    updated_by: &str,
+    summary: &str,
+) -> Result<WriteOutcome, String> {
+    let new_seq = current_seq + 1;
+    let now = now_ms();
+    // 落盘 = front matter（Harness 簿记）+ 正文；hash 对落盘全文算，覆盖 front matter 的漂移防护。
+    let next_file = format!(
+        "{}\n{}",
+        render_front_matter(id, new_seq, updated_by, now),
+        next_body
+    );
+    let hash = content_hash(&next_file);
+
+    fs::create_dir_all(dir.join(HISTORY_DIR))
+        .map_err(|e| format!("无法创建快照目录: {e}"))?;
+    fs::write(dir.join(CURRENT_FILE), &next_file).map_err(|e| format!("无法写入项目文档: {e}"))?;
+    fs::write(dir.join(HISTORY_DIR).join(format!("{new_seq}.md")), &next_file)
+        .map_err(|e| format!("无法写入版本快照: {e}"))?;
+
+    connection
+        .execute(
+            "INSERT INTO project_versions (project_id, seq, updated_by, updated_at, summary, content_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, new_seq, updated_by, now, summary, hash],
+        )
+        .map_err(|e| format!("无法记录版本: {e}"))?;
+    connection
+        .execute(
+            "UPDATE projects SET current_seq = ?2, updated_at = ?3 WHERE project_id = ?1",
+            params![id, new_seq, now],
+        )
+        .map_err(|e| format!("无法推进项目版本: {e}"))?;
+
+    Ok(WriteOutcome::Applied {
+        new_seq,
+        content_hash: hash,
+    })
 }
 
 #[cfg(test)]
@@ -694,5 +742,80 @@ mod tests {
         let (start, end) = find_section(strip_front_matter(full), "Status").expect("finds status");
         let body = strip_front_matter(full);
         assert_eq!(&body[start..end], "\nbody\n");
+    }
+
+    #[test]
+    fn write_document_replaces_full_body_with_cas() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ProjectDocStore::open_at(dir.path().to_path_buf()).unwrap();
+        store.create_project("demo", "Demo").unwrap();
+        store
+            .write_section("demo", "status", Some(0), "old status", "user", "init")
+            .unwrap();
+
+        // 整文替换：覆盖所有分区，front matter 由 Harness 重建。
+        let full = "# 我的项目\n\n## Status\n\nnew status\n\n## Log\n\nmanual entry\n";
+        let outcome = store
+            .write_document("demo", Some(1), full, "user", "edit full")
+            .unwrap();
+        let new_seq = match outcome {
+            WriteOutcome::Applied { new_seq, .. } => new_seq,
+            other => panic!("expected applied, got {other:?}"),
+        };
+        assert_eq!(new_seq, 2);
+        let snapshot = store.read_doc("demo").unwrap();
+        assert_eq!(snapshot.current_seq, 2);
+        assert!(snapshot.content.contains("new status"), "got: {}", snapshot.content);
+        assert!(snapshot.content.contains("manual entry"), "got: {}", snapshot.content);
+        assert!(!snapshot.content.contains("old status"), "got: {}", snapshot.content);
+        // 版本快照落盘。
+        assert!(store.project_dir("demo").join(HISTORY_DIR).join("2.md").exists());
+        assert_eq!(store.list_versions("demo").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn write_document_conflict_on_stale_base_seq() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ProjectDocStore::open_at(dir.path().to_path_buf()).unwrap();
+        store.create_project("demo", "Demo").unwrap();
+        store
+            .write_section("demo", "status", Some(0), "s", "user", "init")
+            .unwrap();
+
+        // base_seq 过期 → Conflict，不推进 seq、不改正文。
+        let outcome = store
+            .write_document("demo", Some(0), "hijack", "user", "stale")
+            .unwrap();
+        match outcome {
+            WriteOutcome::Conflict { current_seq, base_seq } => {
+                assert_eq!(current_seq, 1);
+                assert_eq!(base_seq, Some(0));
+            }
+            other => panic!("expected conflict, got {other:?}"),
+        }
+        assert_eq!(store.read_doc("demo").unwrap().current_seq, 1);
+        assert!(!store.read_doc("demo").unwrap().content.contains("hijack"));
+    }
+
+    #[test]
+    fn write_document_strips_client_front_matter() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ProjectDocStore::open_at(dir.path().to_path_buf()).unwrap();
+        store.create_project("demo", "Demo").unwrap();
+
+        // 入参夹带伪造 front matter：服务端剥掉，用自己的簿记重建。
+        let forged = "---\ndoc_id: demo\nseq: 999\nupdated_by: attacker\n---\n\n## Status\n\nreal body\n";
+        store
+            .write_document("demo", Some(0), forged, "user", "edit")
+            .unwrap();
+        let snapshot = store.read_doc("demo").unwrap();
+        assert_eq!(snapshot.current_seq, 1);
+        assert!(snapshot.content.contains("real body"));
+        assert!(!snapshot.content.contains("999"), "forged seq stripped: {}", snapshot.content);
+        // 落盘文件的 front matter 是 Harness 生成的（updated_by=user, seq=1）。
+        let file = std::fs::read_to_string(store.project_dir("demo").join(CURRENT_FILE)).unwrap();
+        assert!(file.contains("seq: 1"), "got: {file}");
+        assert!(file.contains("updated_by: user"), "got: {file}");
+        assert!(!file.contains("attacker"), "got: {file}");
     }
 }

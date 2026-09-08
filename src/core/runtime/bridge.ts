@@ -382,6 +382,22 @@ export const runtime = {
     })
   },
 
+  projectDocWriteDocument(input: {
+    projectId: string
+    baseSeq?: number
+    content: string
+    updatedBy: string
+    summary?: string
+  }): Promise<ProjectDocWriteOutcome> {
+    return invoke<ProjectDocWriteOutcome>('project_doc_write_document', {
+      projectId: input.projectId,
+      baseSeq: input.baseSeq ?? null,
+      content: input.content,
+      updatedBy: input.updatedBy,
+      summary: input.summary ?? '',
+    })
+  },
+
   projectDocListProposals(projectId: string): Promise<ProjectDocProposal[]> {
     return invoke<ProjectDocProposal[]>('project_doc_list_proposals', { projectId })
   },

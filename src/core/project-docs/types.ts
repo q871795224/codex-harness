@@ -53,6 +53,14 @@ export interface ProjectDocService {
     updatedBy: string
     summary?: string
   }): Promise<ProjectDocWriteOutcome>
+  /** 整文替换正文（项目 Tab「编辑全文」）；seq CAS 与 writeSection 相同，front matter 由 Rust 重建。 */
+  writeDocument(input: {
+    projectId: string
+    baseSeq?: number
+    content: string
+    updatedBy: string
+    summary?: string
+  }): Promise<ProjectDocWriteOutcome>
 
   /** 待审批提议队列（受控区写入）。 */
   listProposals(projectId: string): Promise<ProjectDocProposal[]>

@@ -7,6 +7,7 @@ import type {
   HarnessPlugin,
   PluginInstanceRecord,
   PluginSettingsProps,
+  TurnActionProps,
 } from '../../extensions/types'
 import { ProjectTab } from '../../features/project-doc/ProjectTab'
 import { ProjectBindingPanel } from '../../features/project-doc/ProjectBindingPanel'
@@ -84,7 +85,57 @@ export const projectDocPlugin: HarnessPlugin = {
         />
       ),
     })
+
+    // turn 级归档入口：渲染在某个 agent 最终回答的操作行右侧（copy/raw/fork 同行、右对齐）。
+    ctx.slots.turnActions.register({
+      id: 'archive-turn-to-project',
+      order: 10,
+      render: (props) => (
+        <ArchiveTurnButton
+          props={props}
+          service={service}
+          agentRuns={ctx.services.get<AgentRunService>('harness.agentRuns')}
+          instanceId={ctx.instanceId}
+          config={readProjectDocConfig(ctx.config)}
+          persistDraft={(draft) => ctx.storage.set(ARCHIVE_DRAFT_STORAGE_KEY, draft)}
+        />
+      ),
+    })
   },
+}
+
+interface ArchiveDeps {
+  service: ProjectDocService
+  agentRuns: AgentRunService
+  instanceId: string
+  config: ReturnType<typeof readProjectDocConfig>
+  persistDraft: (draft: ArchiveDraft) => Promise<void>
+}
+
+/** 归档触发共用逻辑：校验绑定 → 起匿名 run 提炼 Status。返回错误消息（null = 成功启动）。 */
+async function runArchive(deps: ArchiveDeps, input: {
+  threadId: string | null
+  checkoutRoot: string | null
+  provider?: 'codex' | 'claude'
+  items: ComposerActionProps['items']
+}): Promise<string | null> {
+  if (!input.threadId) return '需要在会话中使用。'
+  if (!input.checkoutRoot) return '请先打开一个具有工作目录的会话。'
+  const projectId = await deps.service.threadProject(input.threadId)
+  if (!projectId) return '当前会话未绑定项目。先在上方绑定项目。'
+  await startArchiveRun(
+    { agentRuns: deps.agentRuns, projectDocs: deps.service, store: archiveStore, persistDraft: deps.persistDraft },
+    {
+      instanceId: deps.instanceId,
+      threadId: input.threadId,
+      projectId,
+      provider: input.provider ?? 'codex',
+      workspaceRoot: input.checkoutRoot,
+      items: input.items,
+      config: deps.config,
+    },
+  )
+  return null
 }
 
 function ArchiveButton({ props, service, agentRuns, instanceId, config, persistDraft }: {
@@ -97,27 +148,18 @@ function ArchiveButton({ props, service, agentRuns, instanceId, config, persistD
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const deps: ArchiveDeps = { service, agentRuns, instanceId, config, persistDraft }
 
   const archive = async () => {
     setError(null)
-    if (!props.threadId) { setError('需要在会话中使用。'); return }
-    if (!props.checkoutRoot) { setError('请先打开一个具有工作目录的会话。'); return }
-    const projectId = await service.threadProject(props.threadId)
-    if (!projectId) { setError('当前会话未绑定项目。先在上方绑定项目。'); return }
     setBusy(true)
     try {
-      await startArchiveRun(
-        { agentRuns, projectDocs: service, store: archiveStore, persistDraft },
-        {
-          instanceId,
-          threadId: props.threadId,
-          projectId,
-          provider: props.provider ?? 'codex',
-          workspaceRoot: props.checkoutRoot,
-          items: props.items,
-          config,
-        },
-      )
+      setError(await runArchive(deps, {
+        threadId: props.threadId,
+        checkoutRoot: props.checkoutRoot,
+        provider: props.provider,
+        items: props.items,
+      }))
     } catch (nextError) {
       setError(messageOf(nextError))
     } finally {
@@ -136,6 +178,70 @@ function ArchiveButton({ props, service, agentRuns, instanceId, config, persistD
         aria-label="归档到项目"
       >
         {busy ? <LoaderCircle className="spin" size={15} /> : <Archive size={15} />}
+      </button>
+      {error && <span className="project-archive-error" role="alert">{error}</span>}
+    </span>
+  )
+}
+
+/**
+ * turn 右下角的归档按钮（与 copy/raw/fork 同行、右对齐）。
+ * 仅当会话绑定了项目时渲染；点击把最近进展提炼进项目 Status（与 composer 按钮同一条 run 链路）。
+ */
+function ArchiveTurnButton({ props, service, agentRuns, instanceId, config, persistDraft }: {
+  props: TurnActionProps
+  service: ProjectDocService
+  agentRuns: AgentRunService
+  instanceId: string
+  config: ReturnType<typeof readProjectDocConfig>
+  persistDraft: (draft: ArchiveDraft) => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [bound, setBound] = useState(false)
+  const deps: ArchiveDeps = { service, agentRuns, instanceId, config, persistDraft }
+
+  // 仅在绑定了项目的会话渲染；绑定是异步读，未确认前先不渲染。
+  useEffect(() => {
+    if (!props.threadId) { setBound(false); return }
+    let disposed = false
+    void service.threadProject(props.threadId)
+      .then((projectId) => { if (!disposed) setBound(Boolean(projectId)) })
+      .catch(() => { if (!disposed) setBound(false) })
+    return () => { disposed = true }
+  }, [service, props.threadId])
+
+  if (!bound) return null
+
+  const archive = async () => {
+    setError(null)
+    setBusy(true)
+    try {
+      setError(await runArchive(deps, {
+        threadId: props.threadId,
+        checkoutRoot: props.checkoutRoot,
+        provider: props.provider,
+        items: props.items,
+      }))
+    } catch (nextError) {
+      setError(messageOf(nextError))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <span className="project-archive-action">
+      <button
+        type="button"
+        className="turn-archive-button"
+        disabled={props.disabled || busy}
+        onClick={() => void archive()}
+        title="把最近会话进展提炼进项目文档 Status"
+        aria-label="归档到项目"
+      >
+        {busy ? <LoaderCircle className="spin" size={13} /> : <Archive size={13} />}
+        <span>归档到项目</span>
       </button>
       {error && <span className="project-archive-error" role="alert">{error}</span>}
     </span>
