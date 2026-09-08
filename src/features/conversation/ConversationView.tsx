@@ -343,7 +343,7 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
           {working && (rawMode ? workingMessageIndex < 0 : !activeTurnHasContent) && (
             <article className="message agent-message working-message">
               <div className="message-label"><Bot size={15} />{agentLabel}</div>
-              <WorkingStatus startedAt={workingStartedAt} />
+              <WorkingStatus key={workingTurnId} startedAt={workingStartedAt} />
             </article>
           )}
           {recap && (
@@ -493,7 +493,7 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
                   onOpenThread={onOpenThread}
                 />
               ))}
-              {working && <WorkingStatus startedAt={workingStartedAt} />}
+              {working && <WorkingStatus key={turn.turnId} startedAt={workingStartedAt} />}
               {!working && turn.status !== 'inProgress' && (
                 <MessageActions
                   copyText={copyableTranscriptText(turn.finalRows)}
@@ -574,7 +574,7 @@ function ProcessGroup({ rows, agentLabel, status, hasFinalAnswer, working, worki
               onOpenThread={onOpenThread}
             />
           ))}
-          {working && <WorkingStatus startedAt={workingStartedAt} />}
+          {working && <WorkingStatus key={rows[0]?.entry.turnId} startedAt={workingStartedAt} />}
         </div>
       )}
     </section>
@@ -649,7 +649,7 @@ const ThreadItemView = memo(function ThreadItemView({
       <article className="message agent-message">
         {showAgentLabel && <div className="message-label"><Bot size={15} />{agentLabel}</div>}
         <MessageBody text={agentText ?? item.text ?? ''} raw={effectiveRaw} cwd={cwd} />
-        {workingStartedAt !== undefined && <WorkingStatus startedAt={workingStartedAt} />}
+        {workingStartedAt !== undefined && <WorkingStatus key={entry.turnId} startedAt={workingStartedAt} />}
       </article>
     )
   }

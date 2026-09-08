@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, copyableTranscriptText, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
-import { formatWorkingElapsed, workingElapsedMilliseconds } from './ConversationStats'
+import { formatWorkingElapsed, workingElapsedMilliseconds, turnStartedAtMilliseconds } from './ConversationStats'
 import { parseThreadTitleGenerationSettings } from './useHarness'
 import { draftThreadStartRequest, isFirstUserTurn, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, shouldRecreateDraftThread, threadTitlePrompt, threadTurnContext } from './threadLifecycle'
 
@@ -90,6 +90,15 @@ describe('message copying', () => {
 })
 
 describe('working status', () => {
+  it('normalizes Codex seconds without scaling Claude milliseconds', () => {
+    const now = 1_788_850_000_000
+    for (const [provider, start] of [['codex', (now - 65_000) / 1000], ['claude', now - 65_000]] as const) {
+      expect(formatWorkingElapsed(workingElapsedMilliseconds(now, turnStartedAtMilliseconds(provider, start), now))).toBe('1:05')
+    }
+    for (const value of [null, 0, -1, NaN, Infinity]) expect(turnStartedAtMilliseconds('codex', value)).toBeNull()
+    expect(workingElapsedMilliseconds(now, NaN, now - 1000)).toBe(1000)
+    expect(workingElapsedMilliseconds(now, now + 1000, now)).toBe(0)
+  })
   it('formats elapsed time as a stable minute clock', () => {
     expect(formatWorkingElapsed(0)).toBe('0:00')
     expect(formatWorkingElapsed(65_900)).toBe('1:05')

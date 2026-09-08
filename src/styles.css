@@ -1734,3 +1734,18 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
   .api-workbench-grid { grid-template-columns: 215px minmax(390px, 1fr) 205px; }
   .api-workbench-grid.environment-mode { grid-template-columns: 215px minmax(420px, 1fr); }
 }
+
+.retained-tab { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+.retained-tab[hidden] { display: none; }
+.task-dates { min-width: 0; padding: 6px 0; color: #8b929c; font-size: calc(9px + var(--h-plugin-font-offset)); }
+.task-created { display: block; white-space: nowrap; }
+.task-planned { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.task-planned .task-time { height: 24px; }
+.composer-text-editor { position: relative; }
+.composer-text-highlight { display: none; position: absolute; inset: 0; overflow: hidden; pointer-events: none; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; color: #1f232b; font-size: calc(15px + var(--h-conversation-font-offset)); line-height: 24px; }
+.has-project-card .composer-text-highlight { display: block; }
+.app-shell .has-project-card textarea { position: relative; color: transparent !important; caret-color: #1f232b; }
+.composer-project-label { color: #b45309; }
+.app-shell[data-theme='dark'] .composer-text-highlight { color: #e1e5eb; }
+.app-shell[data-theme='dark'] .has-project-card textarea { caret-color: #e1e5eb; }
+.app-shell[data-theme='dark'] .composer-project-label { color: #fb923c; }
