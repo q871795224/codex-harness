@@ -62,6 +62,36 @@ pnpm tauri:build:dev
 
 如果 GUI 进程找不到 Codex CLI，可显式设置 `CODEX_HARNESS_CODEX_PATH` 为 `codex` 可执行文件路径。
 
+## Linux / WSL2（实验性）
+
+Windows 使用场景优先采用 WSL2 + Ubuntu + WSLg：Harness、Linux 版 Codex CLI 和项目文件都放在 WSL 内，窗口由 WSLg 显示在 Windows 桌面。无需安装完整 Linux 桌面。WSLg 要求 Windows 11 或 Windows 10 build 19044+，且发行版必须使用 WSL2，见 [Microsoft GUI 应用说明](https://learn.microsoft.com/en-us/windows/wsl/tutorials/gui-apps)。
+
+在 PowerShell 中用 `wsl --version`、`wsl -l -v` 检查版本；旧版 WSL 可用 `wsl --update` 更新，保存 WSL 内工作后执行 `wsl --shutdown` 并重新打开发行版。
+
+首个打包目标是 Ubuntu 的 `.deb`。当前已提供构建配置与 Linux CI，尚未完成 WSLg 实机验收；CI 通过只能证明编译、测试与打包成功。系统通知和 Claude 登录自启暂不支持 Linux，GoLand 启动仍依赖 macOS 路径。macOS 发布快捷命令不适用于 Linux。
+
+在 Ubuntu 内安装构建依赖，并准备 Rust stable、Node.js 22 和 pnpm 8：
+
+```bash
+sudo apt update
+sudo apt install -y build-essential pkg-config curl wget file libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf fonts-dejavu-core fonts-noto-cjk
+```
+
+在 WSL 内安装并登录 Linux 版 Codex CLI，先确认 `codex --version` 和 `codex login status` 正常，再在仓库目录构建：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm tauri:build:linux
+```
+
+此命令必须在 Linux/WSL 内执行，按当前主机架构构建；不从 macOS 交叉编译。Tauri 自动合并 [Linux 配置](src-tauri/tauri.linux.conf.json)，使用现有 PNG 图标。产物在 `src-tauri/target/release/bundle/deb/`，用 `sudo apt install ./实际文件名.deb` 安装后运行 `codex-harness`，不需要 Vite、Rust 或 pnpm。仍需单独安装 Codex CLI；使用 Claude Provider 还需要 Node.js。
+
+[Linux CI](.github/workflows/linux.yml) 在 Ubuntu 22.04 x86_64 上编译、运行 Rust 测试并保存 `.deb` artifact。选择较旧构建基线可降低 glibc 兼容风险，见 [Tauri Debian 打包说明](https://v2.tauri.app/distribute/debian/)。默认 macOS 构建命令保持不变。
+
+建议先把项目放在 WSL 的 `~/projects/` 下验收。WSL 中的 `~/.codex` 和 `~/.codex-harness` 默认与 Windows/macOS 独立。Codex 凭据存储由 `cli_auth_credentials_store` 决定；文件模式使用 `auth.json`，不是 `config.toml`，见 [Codex 身份验证说明](https://developers.openai.com/codex/auth/)。
+
+首次运行需要检查：窗口与中文显示、Codex 连接与发送/恢复会话、终端、附件选择、剪贴板和外部链接。若出现 WebKit 白屏，可先尝试单次启动 `WEBKIT_DISABLE_DMABUF_RENDERER=1 codex-harness` 排查，不默认全局关闭渲染能力。
+
 ## 分层
 
 `src-tauri/src/app_server.rs` 是唯一接触 Unix socket WebSocket 和 JSON-RPC 的 native bridge；React 只通过 Tauri IPC 和 `src/core/runtime/appServerClient.ts` 的类型化方法调用它。功能代码按 `src/features` 分组，插件契约位于 `src/extensions/types.ts`，内核与 React host 位于 `src/core/plugins/`，随 App 发布的内置插件位于 `src/plugins/`。当前不加载任何外部插件。
