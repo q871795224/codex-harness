@@ -229,11 +229,18 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .status-dot.working { display: block; width: 12px; height: 12px; overflow: visible; fill: none; stroke: #8499ef; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 20 9; animation: spin .8s linear infinite; transform-box: fill-box; transform-origin: center; will-change: transform; }
 
 .sidebar-footer { display: grid; gap: 2px; padding: 9px 11px 12px; border-top: 1px solid #e8e9ec; }
-.archive-toggle, .settings-toggle { display: flex; align-items: center; gap: 7px; width: 100%; height: 32px; padding: 0 7px; border: 0; border-radius: 7px; background: transparent; color: #555c67; text-align: left; cursor: pointer; font-size: 13px; }
-.archive-toggle:hover, .archive-toggle.active, .settings-toggle:hover { background: #eceef1; color: #22262e; }
+.archive-toggle, .settings-toggle, .notification-nav { display: flex; align-items: center; gap: 7px; width: 100%; height: 32px; padding: 0 7px; border: 0; border-radius: 7px; background: transparent; color: #555c67; text-align: left; cursor: pointer; font-size: 13px; }
+.archive-toggle:hover, .archive-toggle.active, .settings-toggle:hover, .notification-nav:hover, .notification-nav.active { background: #eceef1; color: #22262e; }
+.notification-nav b { margin-left: auto; border-radius: 12px; padding: 1px 6px; background: #287a51; color: #fff; font-size: 10px; }
 .archive-split { display: flex; min-width: 0; }
 .archive-split .archive-toggle { flex: 1; width: auto; border-radius: 7px 0 0 7px; }
 .archive-split .archive-toggle.solo { border-radius: 7px; }
+.notification-split { display: flex; min-width: 0; }
+.notification-split .notification-nav { flex: 1; width: auto; border-radius: 7px 0 0 7px; }
+.notification-split .notification-nav.solo { border-radius: 7px; }
+.notification-clear-button { display: grid; flex: 0 0 32px; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-left: 1px solid #e1e4e9; border-radius: 0 7px 7px 0; background: transparent; color: #69717d; cursor: pointer; }
+.notification-clear-button:hover:not(:disabled) { background: #eceef1; color: #303740; }
+.notification-clear-button:disabled { cursor: default; opacity: .55; }
 .archive-old-button { display: grid; flex: 0 0 32px; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-left: 1px solid #e1e4e9; border-radius: 0 7px 7px 0; background: transparent; color: #69717d; cursor: pointer; }
 .archive-old-button:hover:not(:disabled) { background: #eceef1; color: #303740; }
 .archive-old-button:disabled { cursor: wait; opacity: .65; }
@@ -1011,7 +1018,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 /* Each app area has an independent type scale. */
 .app-shell .brand-name { font-size: calc(16px + var(--h-navigation-font-offset)); }
 .app-shell .new-chat-button { font-size: calc(14px + var(--h-navigation-font-offset)); }
-.app-shell .sidebar-search input, .app-shell .sidebar-section-heading, .app-shell .workspace-empty, .app-shell .workspace-row, .app-shell .thread-row-title, .app-shell .archive-toggle, .app-shell .settings-toggle, .app-shell .thread-row time { font-size: calc(13px + var(--h-navigation-font-offset)); }
+.app-shell .sidebar-search input, .app-shell .sidebar-section-heading, .app-shell .workspace-empty, .app-shell .workspace-row, .app-shell .thread-row-title, .app-shell .archive-toggle, .app-shell .settings-toggle, .app-shell .notification-nav, .app-shell .thread-row time { font-size: calc(13px + var(--h-navigation-font-offset)); }
 
 .app-shell .thread-context, .app-shell .header-action { font-size: calc(10px + var(--h-conversation-font-offset)); }
 .app-shell .thread-tabs button { font-size: calc(13px + var(--h-conversation-font-offset)); }
@@ -1213,6 +1220,9 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .shortcut-setting-row > button.recording,
 .app-shell[data-theme='dark'] .settings-open-logs:hover,
 .app-shell[data-theme='dark'] .settings-versions-refresh:hover:not(:disabled) { border-color: #59647f; background: #2a2e36; }
+.app-shell[data-theme='dark'] .new-chat-button,
+.app-shell[data-theme='dark'] .new-chat-provider { color: #e6e8ed; }
+.app-shell[data-theme='dark'] .new-chat-provider:hover { color: #e6e8ed; }
 .app-shell[data-theme='dark'] .sidebar-search input,
 .app-shell[data-theme='dark'] .thread-title-editor,
 .app-shell[data-theme='dark'] .settings-row select,
@@ -1254,6 +1264,9 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .archive-toggle:hover,
 .app-shell[data-theme='dark'] .archive-toggle.active,
 .app-shell[data-theme='dark'] .settings-toggle:hover,
+.app-shell[data-theme='dark'] .notification-nav:hover,
+.app-shell[data-theme='dark'] .notification-nav.active,
+.app-shell[data-theme='dark'] .notification-clear-button:hover:not(:disabled),
 .app-shell[data-theme='dark'] .archive-old-button:hover:not(:disabled),
 .app-shell[data-theme='dark'] .plugins-toggle:hover,
 .app-shell[data-theme='dark'] .settings-surface-switch:hover,
@@ -1263,6 +1276,8 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .workspace-row,
 .app-shell[data-theme='dark'] .archive-toggle,
 .app-shell[data-theme='dark'] .settings-toggle,
+.app-shell[data-theme='dark'] .notification-nav,
+.app-shell[data-theme='dark'] .notification-clear-button,
 .app-shell[data-theme='dark'] .archive-old-button,
 .app-shell[data-theme='dark'] .plugins-toggle,
 .app-shell[data-theme='dark'] .thread-tabs button,

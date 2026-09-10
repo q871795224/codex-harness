@@ -659,6 +659,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onSidebarWidth={harness.setSidebarWidth}
         onSidebarListSplitRatio={harness.setSidebarListSplitRatio}
         onOpenNotifications={() => openNotifications()}
+        onMarkAllNotificationsRead={() => notifications.markRead()}
         notificationsOpen={notificationsOpen}
         unreadNotifications={unreadNotifications}
         onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
