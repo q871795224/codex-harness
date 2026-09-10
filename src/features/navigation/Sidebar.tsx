@@ -13,6 +13,7 @@ import {
   ArchiveRestore,
   Bell,
   Blocks,
+  CheckCheck,
   ChevronDown,
   ChevronRight,
   ChevronsDown,
@@ -86,6 +87,7 @@ interface SidebarProps {
   onSidebarWidth: (width: number) => void
   onSidebarListSplitRatio: (ratio: number) => void
   onOpenNotifications?: () => void
+  onMarkAllNotificationsRead?: () => void
   notificationsOpen?: boolean
   unreadNotifications?: number
   onOpenSettings: () => void
@@ -131,6 +133,7 @@ export function Sidebar({
   onSidebarWidth,
   onSidebarListSplitRatio,
   onOpenNotifications,
+  onMarkAllNotificationsRead,
   notificationsOpen,
   unreadNotifications = 0,
   onOpenSettings,
@@ -641,7 +644,29 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-footer">
-        {onOpenNotifications && <button type="button" className={`notification-nav${notificationsOpen ? ' active' : ''}`} onClick={onOpenNotifications}><Bell size={16} />通知中心{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>}
+        {onOpenNotifications && (
+          <div className="notification-split">
+            <button
+              type="button"
+              className={`notification-nav${onMarkAllNotificationsRead ? '' : ' solo'}${notificationsOpen ? ' active' : ''}`}
+              onClick={onOpenNotifications}
+            >
+              <Bell size={16} />通知中心{unreadNotifications > 0 && <b>{unreadNotifications}</b>}
+            </button>
+            {onMarkAllNotificationsRead && (
+              <button
+                type="button"
+                className="notification-clear-button"
+                title="全部标为已读"
+                aria-label="全部标为已读"
+                onClick={onMarkAllNotificationsRead}
+                disabled={unreadNotifications === 0}
+              >
+                <CheckCheck size={15} />
+              </button>
+            )}
+          </div>
+        )}
         <div className="archive-split">
           <button
             type="button"

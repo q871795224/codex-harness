@@ -14,10 +14,8 @@
 .notification-toast button { padding: 0; border: 0; background: none; color: inherit; cursor: pointer; }
 .notification-copy > button { justify-self: start; margin-top: 3px; text-decoration: underline; text-underline-offset: 3px; font-size: 11px; }
 .notification-close { flex-shrink: 0; width: 22px; height: 22px; display: grid; place-items: center; }
-.notification-nav { display: flex; gap: 8px; align-items: center; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: none; cursor: pointer; font-size: 12px; }
-.notification-nav.active, .notification-nav:hover { background: #7c879915; }
-.notification-nav b, .notification-bell b { margin-left: auto; border-radius: 12px; padding: 1px 6px; background: #287a51; color: white; font-size: 10px; }
 .notification-bell { display: flex; align-items: center; gap: 4px; border: 0; background: none; cursor: pointer; }
+.notification-bell b { margin-left: auto; border-radius: 12px; padding: 1px 6px; background: #287a51; color: #fff; font-size: 10px; }
 .notification-center { flex: 1; min-height: 0; display: flex; flex-direction: column; color: #36404d; background: #fafbfc; }
 .notification-page-header { display: flex; justify-content: space-between; padding: 17px 24px; border-bottom: 1px solid #e5e8ed; }
 .notification-page-header button, .notification-detail-actions button, .notification-more, .notification-storage-error button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid #dfe4ea; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font-size: 12px; }
@@ -60,6 +58,7 @@
 @media (max-width: 700px) { .notification-row-toggle { flex-wrap: wrap; }.notification-row time { padding-left: 28px; width: 100%; }.notification-page-body { padding: 22px 16px; }.notification-details { padding-left: 17px; } }
 
 .notification-tab-tools { display: flex; height: 40px; align-items: center; gap: 12px; margin-left: 16px; }
+.notification-tab-tools .connection-state { margin-bottom: 0; }
 .notification-bell { min-width: 28px; min-height: 28px; }
 
 .notification-quick-panels { display: contents; }
