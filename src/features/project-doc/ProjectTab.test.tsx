@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ProjectDocService } from '../../core/project-docs/types'
-import { ProjectTab, PROJECT_STATUS_TEMPLATE } from './ProjectTab'
+import { ProjectTab } from './ProjectTab'
 import { RetainedTab } from '../conversation/RetainedTab'
 
 afterEach(cleanup)
@@ -34,11 +34,11 @@ it('retains the project editor and unsaved content across tab switches', async (
   const { rerender } = render(view(true))
   await screen.findByText('示例项目')
   fireEvent.click(screen.getByText('编辑'))
-  const editor = screen.getByLabelText('编辑项目文档') as HTMLTextAreaElement
+  const editor = screen.getByLabelText('编辑整篇项目文档') as HTMLTextAreaElement
   fireEvent.change(editor, { target: { value: '未保存的编辑内容' } })
   rerender(view(false))
   rerender(view(true))
-  expect(screen.getByLabelText('编辑项目文档')).toBe(editor)
+  expect(screen.getByLabelText('编辑整篇项目文档')).toBe(editor)
   expect(editor.value).toBe('未保存的编辑内容')
   expect(svc.writeSection).not.toHaveBeenCalled()
 })
@@ -76,32 +76,16 @@ it('shows columns and supports rename and confirmed archive', async () => {
   await waitFor(() => expect(svc.archive).toHaveBeenCalledWith('demo'))
 })
 
-it('starts empty status with a template', async () => {
-  mount(service(), 'demo')
-  await screen.findByText('示例项目')
-  fireEvent.click(screen.getByText('编辑'))
-  expect((screen.getByLabelText('编辑项目文档') as HTMLTextAreaElement).value).toBe(PROJECT_STATUS_TEMPLATE)
-})
-
-it('edits only Status without copying Log or document metadata into it', async () => {
-  const svc = service('---\nseq: 2\n---\n## Status\n已有进展\n## Log\n保留日志')
-  mount(svc, 'demo')
-  await screen.findByText('示例项目')
-  fireEvent.click(screen.getByText('编辑'))
-  expect((screen.getByLabelText('编辑项目文档') as HTMLTextAreaElement).value).toBe('已有进展')
-  fireEvent.click(screen.getByText('保存'))
-  await waitFor(() => expect(svc.writeSection).toHaveBeenCalledWith(expect.objectContaining({ section: 'status', content: '已有进展', baseSeq: 2 })))
-})
-
-it('edits the full document including all sections via 编辑全文', async () => {
+it('edits the full document including all sections via 编辑', async () => {
   const full = '## Status\n已有进展\n## Log\n保留日志'
   const svc = service(full)
   mount(svc, 'demo')
   await screen.findByText('示例项目')
-  fireEvent.click(screen.getByText('编辑全文'))
+  fireEvent.click(screen.getByText('编辑'))
   const textarea = screen.getByLabelText('编辑整篇项目文档') as HTMLTextAreaElement
   // 整文（含所有分区），不带 front matter。
   expect(textarea.value).toBe(full)
+  expect(screen.getAllByRole('button', { name: /^编辑$/ })).toHaveLength(1)
   fireEvent.change(textarea, { target: { value: '## Status\n全新正文\n## Log\n新日志' } })
   fireEvent.click(screen.getByText('保存'))
   await waitFor(() => expect(svc.writeDocument).toHaveBeenCalledWith(expect.objectContaining({
@@ -118,7 +102,7 @@ it('shows conflict when full-document write returns conflict', async () => {
   ;(svc.writeDocument as ReturnType<typeof vi.fn>).mockResolvedValue({ kind: 'conflict', currentSeq: 9, baseSeq: 2 })
   mount(svc, 'demo')
   await screen.findByText('示例项目')
-  fireEvent.click(screen.getByText('编辑全文'))
+  fireEvent.click(screen.getByText('编辑'))
   fireEvent.click(screen.getByText('保存'))
   await screen.findByText(/版本冲突：当前已是 v9/)
 })
