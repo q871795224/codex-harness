@@ -61,6 +61,7 @@ export const projectDocPlugin: HarnessPlugin = {
 
     ctx.slots.newThreadPanels.register({
       id: 'project-binding',
+      placement: 'header',
       order: 30,
       render: ({ threadId, workspaceRoot }) => (
         <ProjectBindingPanel

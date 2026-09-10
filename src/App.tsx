@@ -555,6 +555,26 @@ function HarnessShell({ harness, agentRuns, codex }: {
     : null
   const canMutate = !harness.currentForeignActive && !codexUpdate.updating
 
+  const renderNewThreadPanel = (panel: (typeof newThreadPanels)[number]) => (
+    <PluginNewThreadPanel
+      key={`${panel.pluginId}:${panel.contribution.id}`}
+      panel={panel}
+      props={{
+        provider: harness.selectedProvider,
+        threadId: harness.selectedThreadId,
+        threadCwd,
+        workspaceRoot: workspace?.root ?? null,
+        isNewThread: Boolean(harness.currentDetail && harness.currentDetail.turns.length === 0 && harness.currentDetail.items.length === 0),
+        models: codex.models,
+        settings: codex.settingsForThread(harness.selectedThreadId),
+        disabled: codex.loading || !harness.selectedThreadId || !canMutate,
+        onSettingsChange: (patch) => harness.selectedThreadId
+          ? codex.updateThreadSettings(harness.selectedThreadId, patch)
+          : undefined,
+      }}
+    />
+  )
+
   // 把插件的 turnActions 渲染进每个 agent turn 的操作行右侧（如「归档到项目」）。
   // items 截至该 turn（含），避免把该 turn 之后的内容也归档进去。
   const allItems = harness.currentDetail?.items ?? []
@@ -769,6 +789,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 agentApprovalCounts={codexConversation ? Object.fromEntries(Object.entries(harness.approvals).map(([threadId, requests]) => [threadId, requests.length])) : {}}
                 activeTurnIds={codexConversation ? harness.activeTurnIds : {}}
                 onInterruptAgent={codexConversation ? (threadId) => void harness.interruptAgentThread(threadId) : undefined}
+                newThreadHeader={newThreadPanels.filter((panel) => panel.contribution.placement === 'header').map(renderNewThreadPanel)}
                 newThreadPanels={codexConversation && codexUpdate.loading ? null : codexConversation && codexUpdate.visible && codexUpdate.status ? (
                   <CodexUpdatePanel
                     status={codexUpdate.status}
@@ -779,25 +800,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     onDefer={codexUpdate.defer}
                     onSkip={() => void codexUpdate.skip()}
                   />
-                ) : newThreadPanels.map((panel) => (
-                  <PluginNewThreadPanel
-                    key={`${panel.pluginId}:${panel.contribution.id}`}
-                    panel={panel}
-                    props={{
-                      provider: harness.selectedProvider,
-                      threadId: harness.selectedThreadId,
-                      threadCwd,
-                      workspaceRoot: workspace?.root ?? null,
-                      isNewThread: Boolean(harness.currentDetail && harness.currentDetail.turns.length === 0 && harness.currentDetail.items.length === 0),
-                      models: codex.models,
-                      settings: codex.settingsForThread(harness.selectedThreadId),
-                      disabled: codex.loading || !harness.selectedThreadId || !canMutate,
-                      onSettingsChange: (patch) => harness.selectedThreadId
-                        ? codex.updateThreadSettings(harness.selectedThreadId, patch)
-                        : undefined,
-                    }}
-                  />
-                ))}
+                ) : newThreadPanels.filter((panel) => panel.contribution.placement !== 'header').map(renderNewThreadPanel)}
                 rawMode={rawMode}
                 rawOverrides={rawOverrides}
                 onRawOverrideToggle={toggleRawOverride}

@@ -195,6 +195,7 @@ interface ConversationViewProps {
   agentApprovalCounts?: Record<string, number>
   activeTurnIds?: Record<string, string>
   onInterruptAgent?: (threadId: string) => void
+  newThreadHeader?: ReactNode
   newThreadPanels?: ReactNode
   recap?: { text: string; createdAt: number } | null
   rawMode: boolean
@@ -211,7 +212,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, renderTurnActions }: ConversationViewProps) {
+export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, renderTurnActions }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -289,28 +290,31 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
           )}
           {items.length === 0 && (
             <div className="fresh-thread-wrap">
-              <div className="fresh-thread">
-                <div className="fresh-thread-mark"><Bot size={18} /></div>
-                <p>
-                  在
-                  <span className="fresh-workspace-select">
-                    <select
-                      value={workspace?.root ?? ''}
-                      aria-label="切换新会话工作区"
-                      disabled={workspaceChanging}
-                      onChange={(event) => {
-                        if (isChooseWorkspaceSelection(event.target.value)) onChooseWorkspace()
-                        else onWorkspaceChange(event.target.value)
-                      }}
-                    >
-                      {!workspace && <option value="">当前工作区</option>}
-                      {workspaces.map((candidate) => <option key={candidate.root} value={candidate.root}>{candidate.name}</option>)}
-                      <option value={CHOOSE_WORKSPACE_VALUE}>… 选择其他目录</option>
-                    </select>
-                    <ChevronDown size={14} aria-hidden />
-                  </span>
-                  开启一段新的 {provider === 'claude' ? 'Claude' : 'Codex'} 会话吧。
-                </p>
+              <div className="fresh-thread-row">
+                <div className="fresh-thread">
+                  <div className="fresh-thread-mark"><Bot size={18} /></div>
+                  <p>
+                    在
+                    <span className="fresh-workspace-select">
+                      <select
+                        value={workspace?.root ?? ''}
+                        aria-label="切换新会话工作区"
+                        disabled={workspaceChanging}
+                        onChange={(event) => {
+                          if (isChooseWorkspaceSelection(event.target.value)) onChooseWorkspace()
+                          else onWorkspaceChange(event.target.value)
+                        }}
+                      >
+                        {!workspace && <option value="">当前工作区</option>}
+                        {workspaces.map((candidate) => <option key={candidate.root} value={candidate.root}>{candidate.name}</option>)}
+                        <option value={CHOOSE_WORKSPACE_VALUE}>… 选择其他目录</option>
+                      </select>
+                      <ChevronDown size={14} aria-hidden />
+                    </span>
+                    开启一段新的 {provider === 'claude' ? 'Claude' : 'Codex'} 会话吧。
+                  </p>
+                </div>
+                {newThreadHeader && <div className="fresh-thread-header">{newThreadHeader}</div>}
               </div>
               {newThreadPanels}
             </div>
