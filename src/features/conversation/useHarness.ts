@@ -279,9 +279,9 @@ export function useHarness() {
     })
   }, [])
 
-  const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string }) => {
+  const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string; silent?: boolean }) => {
     notifications.publish({
-      source: '会话', level: kind, title: message,
+      source: '会话', level: kind, title: message, silent: context?.silent,
       details: error === undefined ? undefined : errorDetails(error),
       threadId: context?.threadId,
       workspaceRoot: context?.workspaceRoot ?? (context?.threadId ? threadsRef.current.find((thread) => thread.id === context.threadId)?.cwd : undefined),
@@ -1750,7 +1750,7 @@ export function useHarness() {
         selectedThreadIdRef.current = null
         setSelectedThreadId(null)
       }
-      notify('已归档会话', 'info', undefined, { threadId })
+      notify('已归档会话', 'info', undefined, { threadId, silent: true })
     } catch (error) {
       notify('无法归档会话', 'error', error, { threadId })
     }
@@ -1764,7 +1764,7 @@ export function useHarness() {
       const cutoff = Date.now() / 1_000 - 3 * 24 * 60 * 60
       const result = await archiveThreadsBefore(appServer, cutoff, navigation.pinnedThreadIds)
       if (result.candidateCount === 0) {
-        notify('没有超过 3 天的会话需要归档')
+        notify('没有超过 3 天的会话需要归档', 'info', undefined, { silent: true })
         return
       }
 
@@ -1784,7 +1784,7 @@ export function useHarness() {
           : `未能归档 ${result.failedCount} 个 3 天前的会话`
         notify(message, archivedIds.size > 0 ? 'warning' : 'error')
       } else {
-        notify(`已归档 ${archivedIds.size} 个 3 天前的会话`)
+        notify(`已归档 ${archivedIds.size} 个 3 天前的会话`, 'info', undefined, { silent: true })
       }
     } catch (error) {
       notify(`无法归档旧会话`, 'error', error)

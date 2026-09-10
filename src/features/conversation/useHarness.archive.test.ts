@@ -59,6 +59,17 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('archive view navigation', () => {
+  it('keeps successful archive notifications silent but reports archive failures', async () => {
+    const publish = vi.spyOn(notifications, 'publish')
+    const { result } = await ready()
+    await act(async () => { await result.current.archiveThread('active') })
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已归档会话', silent: true, threadId: 'active' }))
+    vi.mocked(appServer.archiveThread).mockRejectedValueOnce(new Error('offline'))
+    await act(async () => { await result.current.archiveThread('other') })
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '无法归档会话', level: 'error', silent: undefined }))
+    publish.mockRestore()
+  })
+
   it.each([true, false])('keeps a new local draft when thread/started arrives before start response: %s', async (notificationFirst) => {
     vi.mocked(runtime.listWorkspaces).mockResolvedValueOnce([{ root: '/repo', checkoutRoot: '/repo', name: 'repo', branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 }])
     vi.mocked(appServer.startThread).mockResolvedValue({

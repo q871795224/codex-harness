@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ProjectDocService } from '../../core/project-docs/types'
 import { ProjectBindingPanel } from './ProjectBindingPanel'
@@ -13,7 +13,7 @@ function makeService(): ProjectDocService {
     get: vi.fn(),
     rename: vi.fn(),
     archive: vi.fn(),
-    bindWorkspace: vi.fn(),
+    bindWorkspace: vi.fn(async () => undefined),
     workspaces: vi.fn(async () => []),
     read: vi.fn(),
     versions: vi.fn(async () => []),
@@ -33,7 +33,7 @@ function makeService(): ProjectDocService {
 }
 
 describe('ProjectBindingPanel 单行布局', () => {
-  it('未绑定时不渲染描述文案和 hint，下拉框 placeholder 为「绑定项目（可选）…」', async () => {
+  it('未绑定时不渲染描述文案和 hint，下拉框 placeholder 为「绑定项目」', async () => {
     const service = makeService()
     render(<ProjectBindingPanel service={service} threadId="t1" workspaceRoot={null} onOpenProject={() => undefined} />)
 
@@ -49,6 +49,16 @@ describe('ProjectBindingPanel 单行布局', () => {
     // 下拉框 placeholder
     const select = await screen.findByLabelText('绑定项目')
     const placeholder = select.querySelector('option[value=""]')
-    expect(placeholder?.textContent).toBe('绑定项目（可选）…')
+    expect(placeholder?.textContent).toBe('绑定项目')
   })
+  it('keeps binding and clearing available from the inline selector', async () => {
+    const service = makeService()
+    render(<ProjectBindingPanel service={service} threadId="t1" workspaceRoot="/repo" onOpenProject={() => undefined} />)
+    fireEvent.change(await screen.findByLabelText('绑定项目'), { target: { value: 'p1' } })
+    await waitFor(() => expect(service.bindThread).toHaveBeenCalledWith('t1', 'p1'))
+    await waitFor(() => expect(service.bindWorkspace).toHaveBeenCalledWith('p1', '/repo'))
+    fireEvent.change(await screen.findByLabelText('绑定项目'), { target: { value: '' } })
+    await waitFor(() => expect(service.unbindThread).toHaveBeenCalledWith('t1'))
+  })
+
 })

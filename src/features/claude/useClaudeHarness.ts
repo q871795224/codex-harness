@@ -59,9 +59,9 @@ export function useClaudeHarness() {
     }).catch(() => undefined)
   }, [])
 
-  const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string }) => {
+  const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string; silent?: boolean }) => {
     notifications.publish({
-      source: 'Claude', level: kind, title: message,
+      source: 'Claude', level: kind, title: message, silent: context?.silent,
       details: error === undefined ? undefined : errorDetails(error),
       threadId: context?.threadId,
       workspaceRoot: context?.workspaceRoot,
@@ -741,7 +741,7 @@ export function useClaudeHarness() {
       queuesRef.current = nextQueues
       setQueues(nextQueues)
     }
-    notify(archived ? '已归档 Claude 会话' : '已恢复 Claude 会话')
+    notify(archived ? '已归档 Claude 会话' : '已恢复 Claude 会话', 'info', undefined, { threadId: sessionId, silent: archived })
   }, [notify])
 
   return {

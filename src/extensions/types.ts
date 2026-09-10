@@ -150,6 +150,8 @@ export interface NewThreadPanelProps extends PluginViewContext {
 }
 
 export interface NewThreadPanelContribution {
+  /** Compact controls alongside the new-thread greeting; defaults to the panel area. */
+  placement?: 'header' | 'panel'
   id: string
   order?: number
   render(props: NewThreadPanelProps): ReactNode

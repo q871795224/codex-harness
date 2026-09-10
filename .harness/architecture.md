@@ -13,7 +13,7 @@
 - 插件实例属于 `global`、`workspace` 或 `thread`。切换页面只改变 contribution 可见性，不能中断后台任务或连接。
 - 插件通过 `src/extensions/types.ts` 的 context、service、event 和 slot 契约接入能力；插件不得直接连接 App Server、读取 Harness 数据库或执行任意 shell。
 - Codex 原生设置、Skills、MCP、附件和会话状态由 Harness 核心管理；插件只消费明确暴露的 service。
-- 新会话空白区的增强 UI 使用 `newThreadPanels` slot；宿主把类型化的会话设置更新函数传给插件，插件不能自行连接 App Server。
+- 新会话空白区的增强 UI 使用 `newThreadPanels` slot，紧凑入口可声明 `placement: 'header'` 放到新会话提示行右侧，默认仍在下方面板区；宿主把类型化的会话设置更新函数传给插件，插件不能自行连接 App Server。
 - 输入框的符号触发补全（如 `$` Skill、`@` 文件之外的 `#`）使用 `composerCompletions` slot：插件声明单字符触发符并按 query 返回补全项，核心 Composer 负责面板、键盘导航和正文/折叠粘贴插入；插件不得自行渲染输入框弹窗。
 - 内置「用量分析」插件的外层页签名为「用量」，通过 `harness.codexAnalytics` 查询 Harness 执行期的 Codex 统计，通过 `harness.usage` 保留账号额度和本机历史汇总；两种范围独立展示，不相加。旧 `builtin.codex-analytics` 实例设置迁入 `builtin.usage` 后移除旧入口。
 - 精细统计的采集点在 `app_server.rs`，持久化、聚合在 `codex_analytics.rs` 及其子模块；插件不直接读取 SQLite、凭据或执行命令。Codex Business/Personal 历史由 Rust 通过 `ccusage` 采集，额度协议在 `app_server.rs` 封装，AIS 只访问固定 Compass 域名。
@@ -47,6 +47,7 @@
 
 - 核心通知服务位于 `src/core/notifications/`，插件通过 `harness.notifications` 发布结构化通知。正文使用可读说明，原始错误放 `details`；级别为绿色 `info`、黄色 `warning`、红色 `error`。
 - 浮层位于对话内容区右上角，最多显示三条；关闭或超时仅收起浮层。通知中心是独立页面，按最新时间排序，支持类型/当前会话筛选、已读和关联操作。
+- 通知可传 `silent: true` 保留历史并直接标记已读，不显示浮层；会话归档成功使用静默通知，失败仍正常提醒。
 - 历史通过现有 appState 接口写入 `state.sqlite` 的 `notifications.history`，永久保留，不做自动过期或脱敏。存储通知说明、原始错误和关联标识，不复制会话正文、归档草稿或完整日志。
 - 发布和项目归档按一次任务更新同一条通知；发布跨会话继续跟踪，历史日志按 run ID 打开。系统通知插件仍独立负责 macOS 回复完成提醒。
 

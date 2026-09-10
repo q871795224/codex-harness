@@ -28,6 +28,12 @@
 - 右侧工具（铃铛、连接状态等）放进 `.notification-tab-tools` 这个居中容器（`height:40px; align-items:center`），与左侧 `.thread-tabs`（撑满整行居中）对齐。
 - 容器内子元素**不要再加 `margin-bottom` 之类的一次性垂直微调**；`connection-state` 自带的下外边距在该容器内已被归零。需要垂直定位时调整容器的 `align-items`，而不是给单个子元素补 margin。
 
+## 新会话提示行（工作区 / 项目绑定）
+
+- 提示与紧凑插件入口使用 `fresh-thread-row` 的 flex 换行布局；插件通过 `newThreadPanels` 的 `placement: 'header'` 接入。
+- 工作区与项目选择器共用 `fresh-workspace-select`，原生 select 保留键盘操作；项目入口按当前名称占位并限制最大宽度，不能让未选中的长名称撑开布局。
+- 文字、图标、hover 背景和边框使用提示行的 `--fresh-control-*` 变量，深浅主题成对定义；项目操作按钮复用同一色板。
+
 ## 新增区域时
 
 如果要加一个上文没覆盖的新固定区域，先在本文件补一节约定（结构、共用组、主题要点），再写样式；不要让新区域成为下一个「各自实现」的特例。

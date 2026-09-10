@@ -23,6 +23,32 @@ describe('notification history', () => {
     expect(restored.snapshot().records.find((item) => item.id === ids[0])).toMatchObject({ read: true, details: 'RAW_ERROR\nline 2', createdAt: 1 })
   })
 
+  it('persists silent notifications as read without floating alerts across restart', async () => {
+    const disk = storage()
+    const store = createNotificationStore(disk)
+    await store.initialize()
+    const id = store.publish({ ...input, level: 'info', title: '已归档会话', silent: true })
+    expect(store.snapshot().floating).toEqual([])
+    expect(store.snapshot().records[0]).toMatchObject({ id, read: true, silent: true })
+    await store.flushed()
+    const restored = createNotificationStore(disk)
+    await restored.initialize()
+    expect(restored.snapshot().records[0]).toMatchObject({ id, read: true, silent: true })
+    expect(restored.snapshot().floating).toEqual([])
+  })
+
+  it('applies changes to silent delivery and still alerts on a later failure', async () => {
+    const store = createNotificationStore(storage())
+    await store.initialize()
+    store.publish({ ...input, id: 'archive' })
+    store.publish({ ...input, id: 'archive', silent: true })
+    expect(store.snapshot().records[0].read).toBe(true)
+    expect(store.snapshot().floating).toEqual([])
+    store.publish({ ...input, id: 'archive', silent: false })
+    expect(store.snapshot().records[0].read).toBe(false)
+    expect(store.snapshot().floating).toHaveLength(1)
+  })
+
   it('merges notifications arriving during startup with saved history', async () => {
     const old: AppNotification = { ...input, id: 'old', createdAt: 1, updatedAt: 1, read: true }
     let resolve!: (value: string) => void

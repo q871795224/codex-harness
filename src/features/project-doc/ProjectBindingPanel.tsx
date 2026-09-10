@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { LoaderCircle, Lock, NotebookPen } from 'lucide-react'
+import { ChevronDown, LoaderCircle, Lock, NotebookPen } from 'lucide-react'
 import type { ProjectDocService } from '../../core/project-docs/types'
 import { useProjectBinding } from './useProjectBinding'
 
 /**
- * 新会话面板里的项目绑定入口（newThreadPanels slot）。
+ * 新会话提示行右侧的项目绑定入口（newThreadPanels header placement）。
  *
  * 方案乙（见 .harness/project-doc-plugin-plan.md）：
  * - 第 0 轮：选择项目 → pending 意图，输入框出现项目背景折叠卡；改选/取消都允许。
@@ -80,24 +80,30 @@ function BindingSelect({ service, currentProjectId, onBind, onUnbind, onOpenProj
   }, [service])
 
   if (projects === null) return <LoaderCircle className="spin" size={13} />
-  if (projects.length === 0) return <small>先在项目 tab 创建项目</small>
+  if (projects.length === 0) return <small>先在项目页创建项目</small>
+
+  const selectedProject = projects.find((project) => project.projectId === currentProjectId)
 
   return (
     <>
-      <select
-        aria-label="绑定项目"
-        value={currentProjectId ?? ''}
-        onChange={(event) => {
-          const value = event.target.value
-          if (value) onBind(value)
-          else onUnbind()
-        }}
-      >
-        <option value="">绑定项目（可选）…</option>
-        {projects.map((project) => (
-          <option key={project.projectId} value={project.projectId}>{project.name}（v{project.currentSeq}）</option>
-        ))}
-      </select>
+      <span className="fresh-workspace-select project-binding-select">
+        <span className="project-binding-label" aria-hidden>{selectedProject ? `${selectedProject.name}（v${selectedProject.currentSeq}）` : '绑定项目'}</span>
+        <select
+          aria-label="绑定项目"
+          value={currentProjectId ?? ''}
+          onChange={(event) => {
+            const value = event.target.value
+            if (value) onBind(value)
+            else onUnbind()
+          }}
+        >
+          <option value="">绑定项目</option>
+          {projects.map((project) => (
+            <option key={project.projectId} value={project.projectId}>{project.name}（v{project.currentSeq}）</option>
+          ))}
+        </select>
+        <ChevronDown size={14} aria-hidden />
+      </span>
       {hasProject && currentProjectId && (
         <button type="button" onClick={() => onOpenProject(currentProjectId)} title="打开项目文档">查看</button>
       )}

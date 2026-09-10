@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { notifications } from '../../core/notifications/service'
 import { runtime } from '../../core/runtime/bridge'
 import type { ClaudeSessionRecord } from '../../core/claude/types'
 import { useClaudeHarness } from './useClaudeHarness'
@@ -11,6 +12,7 @@ vi.mock('../../core/runtime/bridge', () => ({ runtime: {
   listenClaudeTransport: vi.fn().mockResolvedValue(() => {}),
   claudeRuntimeStatus: vi.fn().mockResolvedValue({ available: false }),
   listClaudeSessions: vi.fn(),
+  setClaudeSessionArchived: vi.fn().mockResolvedValue(undefined),
 } }))
 const session = (archived: boolean): ClaudeSessionRecord => ({
   id: archived ? 'claude:archived' : 'claude:active', archived,
@@ -58,4 +60,15 @@ it('clears the previous Claude view even when loading the next view fails', asyn
   vi.mocked(runtime.listClaudeSessions).mockRejectedValueOnce(new Error('offline'))
   await act(async () => { await expect(result.current.refresh(true)).rejects.toThrow('offline') })
   expect(result.current.threads).toEqual([])
+})
+
+it('archives Claude sessions silently and leaves restore notifications unchanged', async () => {
+  const publish = vi.spyOn(notifications, 'publish')
+  const { result } = renderHook(() => useClaudeHarness())
+  await waitFor(() => expect(result.current.loaded).toBe(true))
+  await act(async () => { await result.current.archiveSession('claude:active') })
+  expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已归档 Claude 会话', silent: true }))
+  await act(async () => { await result.current.unarchiveSession('claude:active') })
+  expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已恢复 Claude 会话', silent: false }))
+  publish.mockRestore()
 })

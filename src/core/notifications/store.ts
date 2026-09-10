@@ -6,6 +6,8 @@ export interface NotificationAction {
   runId?: string
 }
 export interface NotificationInput {
+  /** Keep history without a floating alert or unread badge. Defaults to false. */
+  silent?: boolean
   id?: string
   level: NotificationLevel
   title: string
@@ -88,12 +90,12 @@ export function createNotificationStore(storage: Storage) {
       const previous = state.records.find((record) => record.id === id)
       const now = Date.now()
       if (previous && input.updatedAt !== undefined && input.updatedAt < previous.updatedAt) return id
-      const record: AppNotification = { ...input, id, createdAt: previous?.createdAt ?? input.createdAt ?? now, updatedAt: input.updatedAt ?? now, read: false }
+      const record: AppNotification = { ...input, id, createdAt: previous?.createdAt ?? input.createdAt ?? now, updatedAt: input.updatedAt ?? now, read: input.silent === true }
       if (previous && sameContent(previous, record)) return id
       state = {
         ...state,
         records: sortRecords([record, ...state.records.filter((item) => item.id !== id)]),
-        floating: [...state.floating.filter((item) => item.id !== id), { id, expiresAt: now + (input.level === 'info' ? 5000 : 10000) }],
+        floating: [...state.floating.filter((item) => item.id !== id), ...(input.silent ? [] : [{ id, expiresAt: now + (input.level === 'info' ? 5000 : 10000) }])],
       }
       emit()
       persist()
@@ -128,7 +130,7 @@ function sortRecords(records: AppNotification[]) {
   return records.sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt)
 }
 function sameContent(a: AppNotification, b: AppNotification) {
-  return a.id === b.id && a.level === b.level && a.source === b.source && a.title === b.title
+  return Boolean(a.silent) === Boolean(b.silent) && a.id === b.id && a.level === b.level && a.source === b.source && a.title === b.title
     && a.message === b.message && a.details === b.details && a.state === b.state
     && a.threadId === b.threadId && a.workspaceRoot === b.workspaceRoot
     && JSON.stringify(a.actions) === JSON.stringify(b.actions)
