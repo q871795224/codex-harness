@@ -424,7 +424,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .fresh-thread p { margin: 0; font-size: 14px; line-height: 1.4; }
 .fresh-thread strong { color: #303641; font-weight: 680; }
 .fresh-workspace-select { position: relative; display: inline-flex; align-items: center; margin: 0 4px; vertical-align: -1px; }
-.fresh-workspace-select select { max-width: 260px; height: 26px; padding: 0 23px; appearance: none; border: 1px solid transparent; border-radius: 6px; outline: 0; background: transparent; color: var(--fresh-control-text); cursor: pointer; font: inherit; font-weight: 720; text-align: center; text-overflow: ellipsis; }
+.fresh-workspace-select select { min-width: 0; max-width: 200px; height: 26px; padding: 0 23px; appearance: none; border: 1px solid transparent; border-radius: 6px; outline: 0; background: transparent; color: var(--fresh-control-text); cursor: pointer; font: inherit; font-weight: 720; text-align: center; text-overflow: ellipsis; }
 .fresh-workspace-select select:hover:not(:disabled), .fresh-workspace-select select:focus-visible { border-color: var(--fresh-control-border); background: var(--fresh-control-hover); }
 .fresh-workspace-select select:disabled { padding: 0 7px; color: #303641; cursor: default; opacity: 1; }
 .fresh-workspace-select svg { position: absolute; right: 6px; color: var(--fresh-control-icon); pointer-events: none; }
@@ -633,10 +633,10 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .project-binding-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; max-width: 100%; font-size: 14px; color: inherit; }
 .project-binding-icon { display: grid; place-items: center; color: var(--fresh-control-icon); }
 .project-binding-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.project-binding-actions { display: inline-flex; min-width: 0; max-width: 100%; gap: 6px; align-items: center; }
-.project-binding-actions button { padding: 3px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--fresh-control-text); font: inherit; cursor: pointer; }
+.project-binding-actions { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 100%; gap: 6px; align-items: center; }
+.project-binding-actions button { flex: 0 0 auto; padding: 3px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--fresh-control-text); font: inherit; cursor: pointer; }
 .project-binding-actions button:hover, .project-binding-actions button:focus-visible { border-color: var(--fresh-control-border); background: var(--fresh-control-hover); }
-.project-binding-select { min-width: 0; max-width: 220px; margin: 0; }
+.project-binding-select { flex: 0 1 auto; min-width: 0; max-width: 200px; margin: 0; }
 .project-binding-label { overflow: hidden; padding: 0 27px 0 6px; line-height: 26px; font-weight: 720; white-space: nowrap; text-overflow: ellipsis; visibility: hidden; }
 .project-binding-select select { position: absolute; inset: 0; width: 100%; min-width: 0; max-width: 100%; padding-left: 6px; text-align: left; }
 .project-binding-error { flex-basis: 100%; color: #b3261e; font-size: 12px; }
