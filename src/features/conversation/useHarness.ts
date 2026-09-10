@@ -859,6 +859,10 @@ export function useHarness() {
     setForkingTurnId(turnId)
     try {
       const response = await appServer.forkThread(sourceThreadId, turnId)
+      // Forked threads stay out of the state-DB catalog until their first
+      // turn, so the fork's own thread/started refresh would otherwise drop
+      // them from the list. Keep them locally until thread/list acknowledges.
+      pendingCatalogThreadIdsRef.current.add(response.thread.id)
       upsertThread(response.thread)
       await mapThreadRoots([response.thread])
       await selectThread(response.thread.id, 'fork')
