@@ -244,11 +244,11 @@ function ArchiveTurnButton({ props, service, agentRuns, instanceId, config, pers
         className="turn-archive-button"
         disabled={props.disabled || busy}
         onClick={() => void archive()}
-        title="把最近会话进展提炼进项目文档 Status"
+        title="归档到项目"
+        data-tip="归档到项目"
         aria-label="归档到项目"
       >
         {busy ? <LoaderCircle className="spin" size={13} /> : <Archive size={13} />}
-        <span>归档到项目</span>
       </button>
       {error && <span className="project-archive-error" role="alert">{error}</span>}
     </span>
