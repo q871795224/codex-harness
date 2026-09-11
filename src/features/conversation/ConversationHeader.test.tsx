@@ -50,12 +50,10 @@ function renderHeader(overrides: Partial<Parameters<typeof ConversationHeader>[0
   return render(<ConversationHeader {...props} />)
 }
 
-it('shows an inert "项目: -" chip when no project is bound', () => {
+it('hides the project chip when no project is bound', () => {
   renderHeader({ projectName: null, onOpenProject: vi.fn() })
-  const chip = screen.getByTitle('未绑定项目')
-  expect(chip.textContent).toContain('-')
-  // 未绑定不可点
-  expect((chip as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByTitle('未绑定项目')).toBeNull()
+  expect(screen.queryByTitle('打开项目文档')).toBeNull()
 })
 
 it('shows the bound project name and clicking it opens the project', () => {
