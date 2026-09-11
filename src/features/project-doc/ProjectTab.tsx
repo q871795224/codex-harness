@@ -144,7 +144,7 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, archiv
           <tbody>
           {projects.map((project) => (
             <tr key={project.projectId}>
-              <td><button type="button" className="project-name" onClick={() => onSelectProject(project.projectId)}>{project.name}</button></td>
+              <td onClick={() => onSelectProject(project.projectId)}><span className="project-name">{project.name}</span></td>
               <td>v{project.currentSeq}</td><td>{formatTime(project.updatedAt)}</td>
               <td><ProjectMetaActions service={service} project={project} onChanged={() => void refresh()} /></td>
             </tr>
