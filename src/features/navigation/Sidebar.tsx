@@ -48,6 +48,8 @@ import harnessIcon from '../../../icon/codex-harness.svg'
 import { resolveThreadBadge } from './threadBadge'
 import { visibleThreadOrder, visibleThreads } from './visibleThreads'
 import type { ClaudeRuntimeStatus } from '../../core/claude/types'
+import { NumberBadge } from '../../components/NumberBadge'
+import { useModifierKey } from '../../hooks/useModifierKey'
 
 interface SidebarProps {
   workspaces: Workspace[]
@@ -306,6 +308,15 @@ export function Sidebar({
 
   useEffect(() => onVisibleThreadOrder(visibleThreadIds), [onVisibleThreadOrder, visibleThreadIds])
 
+  const metaPressed = useModifierKey('Meta')
+  const threadNumberById = useMemo(() => {
+    const map = new Map<string, number>()
+    visibleThreadIds.slice(0, 9).forEach((id, index) => {
+      map.set(id, index + 1)
+    })
+    return map
+  }, [visibleThreadIds])
+
   const toggleAllWorkspaces = () => {
     const nextValue = !allWorkspacesExpanded
     setExpanded(Object.fromEntries(orderedWorkspaces.map((workspace) => [workspace.root, nextValue])))
@@ -428,6 +439,8 @@ export function Sidebar({
         ...current,
         [groupKey]: visibleThreads(items, current[groupKey], undefined, pinnedThreadIds).length + 5,
       }))}
+      showNumberHint={metaPressed}
+      threadNumberById={threadNumberById}
     />
   )
 
@@ -743,6 +756,8 @@ function ThreadList({
   suppressClick,
   onTogglePinned,
   onShowMore,
+  showNumberHint,
+  threadNumberById,
 }: {
   threads: Thread[]
   states: Record<string, ThreadUiState>
@@ -761,6 +776,8 @@ function ThreadList({
   suppressClick: () => boolean
   onTogglePinned: (threadId: string) => void
   onShowMore: () => void
+  showNumberHint: boolean
+  threadNumberById: Map<string, number>
 }) {
   if (threads.length === 0) return <p className="empty-thread-list">暂无会话</p>
   const shownThreads = visibleThreads(threads, visibleCount, undefined, pinnedThreadIds)
@@ -769,6 +786,7 @@ function ThreadList({
       {shownThreads.map((thread) => {
         const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null, workingThreadIds[thread.id] === true)
         const pinned = pinnedThreadIds.includes(thread.id)
+        const numberHint = threadNumberById.get(thread.id)
         return (
           <div className="thread-row-shell" key={thread.id}>
             <button
@@ -787,6 +805,7 @@ function ThreadList({
             >
               {pinned && <i className="pinned-marker" aria-hidden />}
               <StatusDot badge={badge} />
+              <NumberBadge number={numberHint ?? 0} visible={showNumberHint && numberHint !== undefined} />
               <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
               <time>{workingThreadIds[thread.id] || isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
             </button>

@@ -36,6 +36,8 @@ import { CodexUpdatePanel } from './features/codex/CodexUpdatePanel'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
 import { conversationTabSupportsFocus } from './features/conversation/tabFocus'
 import { actionForShortcut, tabIndexForAction, threadIndexForAction } from './features/actions/harnessActions'
+import { NumberBadge } from './components/NumberBadge'
+import { useModifierKey } from './hooks/useModifierKey'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 import type { UsageService } from './core/usage/types'
 import type { CodexAnalyticsService } from './core/codex-analytics/types'
@@ -390,6 +392,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
     ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
   )
+  const ctrlPressed = useModifierKey('Control')
   const latestTurn = harness.currentDetail?.turns.at(-1) ?? null
   const syncedThreadSettingsRef = useRef(new Map<string, string>())
 
@@ -741,7 +744,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
             />
             <div className="tab-bar">
               <div className="thread-tabs">
-                {orderedTabIds.map((tabId) => {
+                {orderedTabIds.map((tabId, tabIndex) => {
                   const entry = tabId === 'chat'
                     ? null
                     : pluginTabs.find((candidate) => pluginTabKey(candidate.pluginId, candidate.contribution.id) === tabId)
@@ -769,6 +772,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                       onPointerCancel={(event) => finishConversationTabDrag(event, false)}
                       title={`拖动调整“${label}”的位置`}
                     >
+                      <NumberBadge number={tabIndex + 1} visible={ctrlPressed && tabIndex < 9} />
                       <Icon size={15} />{label}
                     </button>
                   )
