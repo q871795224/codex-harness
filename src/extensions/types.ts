@@ -147,6 +147,8 @@ export interface NewThreadPanelProps extends PluginViewContext {
   settings: ThreadCodexSettings
   disabled: boolean
   onSettingsChange(patch: Partial<ThreadCodexSettings>): Promise<void> | void
+  /** 切换当前新会话的工作区（如绑定项目后自动选择项目首个已绑定工作区）。 */
+  onWorkspaceChange?(workspaceRoot: string): void
 }
 
 export interface NewThreadPanelContribution {

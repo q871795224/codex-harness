@@ -571,6 +571,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
         onSettingsChange: (patch) => harness.selectedThreadId
           ? codex.updateThreadSettings(harness.selectedThreadId, patch)
           : undefined,
+        onWorkspaceChange: (workspaceRoot) => harness.selectedThreadId
+          ? void harness.changeThreadWorkspace(harness.selectedThreadId, workspaceRoot)
+          : undefined,
       }}
     />
   )

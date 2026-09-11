@@ -2,6 +2,7 @@ import type { NotificationService } from '../../core/notifications/store'
 import { Archive, LoaderCircle, NotebookPen } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { AgentRunService } from '../../core/agent-runs/types'
+import type { Workspace } from '../../core/domain/codex'
 import type { ProjectDocService } from '../../core/project-docs/types'
 import type {
   ComposerActionProps,
@@ -56,19 +57,20 @@ export const projectDocPlugin: HarnessPlugin = {
       icon: NotebookPen,
       focusable: true,
       hideComposer: false,
-      render: () => <ProjectTabHost service={service} />,
+      render: ({ workspaces }) => <ProjectTabHost service={service} workspaces={workspaces} />,
     })
 
     ctx.slots.newThreadPanels.register({
       id: 'project-binding',
       placement: 'header',
       order: 30,
-      render: ({ threadId, workspaceRoot }) => (
+      render: ({ threadId, workspaceRoot, onWorkspaceChange }) => (
         <ProjectBindingPanel
           service={service}
           threadId={threadId}
           workspaceRoot={workspaceRoot}
           onOpenProject={() => undefined}
+          onAutoSelectWorkspace={onWorkspaceChange}
         />
       ),
     })
@@ -331,7 +333,7 @@ function ProjectDocSettings({ instance, models, saveConfig }: PluginSettingsProp
   )
 }
 
-export function ProjectTabHost({ service }: { service: ProjectDocService }) {
+export function ProjectTabHost({ service, workspaces }: { service: ProjectDocService; workspaces?: Workspace[] }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const archiveState = useSyncExternalStore(archiveStore.subscribe, archiveStore.getState)
   const openRequest = archiveState.openRequest
@@ -369,6 +371,7 @@ export function ProjectTabHost({ service }: { service: ProjectDocService }) {
         if (openRequest) archiveStore.dismiss(openRequest.projectId)
         archiveStore.clearOpen()
       }}
+      workspaces={workspaces}
     />
   )
 }

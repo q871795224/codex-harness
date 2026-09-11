@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import type { ProjectDocService } from '../../core/project-docs/types'
+import type { Workspace } from '../../core/domain/codex'
 import { parseProjectBoard } from './board'
 import type { ProjectDocSnapshot, ProjectMeta, ProjectVersion } from './types'
 import type { SectionKey } from './document'
@@ -80,7 +81,7 @@ function ProjectMetaActions({ service, project, onChanged, onArchived }: {
  * 项目文档 tab：项目列表 → 详情（文档渲染、当前 seq、版本历史、编辑、冲突 diff）。
  * 编辑与 Agent 写入走同一条 `writeSection` 通道（updatedBy = 'user'），seq 校验在 Rust 强制。
  */
-export function ProjectTab({ service, selectedProjectId, conflictRequest, archiveRequest, onSelectProject, onConflictHandled, onArchiveHandled }: {
+export function ProjectTab({ service, selectedProjectId, conflictRequest, archiveRequest, onSelectProject, onConflictHandled, onArchiveHandled, workspaces }: {
   service: ProjectDocService
   selectedProjectId: string | null
   conflictRequest: ProjectTabConflictRequest | null
@@ -88,6 +89,8 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, archiv
   onSelectProject: (projectId: string | null) => void
   onConflictHandled: () => void
   onArchiveHandled?: () => void
+  /** Harness 已知工作区列表，用于把绑定的工作区 root 映射为名称。 */
+  workspaces?: Workspace[]
 }) {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -140,11 +143,12 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, archiv
         <p className="project-tab-empty">还没有项目。创建一个，或在会话里绑定后让 Agent 提议写入。</p>
       ) : (
         <div className="project-table-scroll"><table className="project-table">
-          <thead><tr><th>项目名称</th><th>版本</th><th>更新时间</th><th>操作</th></tr></thead>
+          <thead><tr><th>项目名称</th><th>工作区</th><th>版本</th><th>更新时间</th><th>操作</th></tr></thead>
           <tbody>
           {projects.map((project) => (
             <tr key={project.projectId}>
               <td onClick={() => onSelectProject(project.projectId)}><span className="project-name">{project.name}</span></td>
+              <td><ProjectWorkspaceBadges service={service} projectId={project.projectId} workspaces={workspaces} /></td>
               <td>v{project.currentSeq}</td><td>{formatTime(project.updatedAt)}</td>
               <td><ProjectMetaActions service={service} project={project} onChanged={() => void refresh()} /></td>
             </tr>
@@ -156,11 +160,46 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, archiv
   )
 }
 
+/**
+ * 项目行的「工作区」单元格：拉取 projectId 已绑定的工作区 root 列表，
+ * 优先用 Harness 已知 Workspace.name 显示；不在列表内（如已被清理）则回退为 root 末段。
+ */
+function ProjectWorkspaceBadges({ service, projectId, workspaces }: {
+  service: ProjectDocService
+  projectId: string
+  workspaces?: Workspace[]
+}) {
+  const [roots, setRoots] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    let disposed = false
+    void service.workspaces(projectId)
+      .then((list) => { if (!disposed) setRoots(list) })
+      .catch(() => { if (!disposed) setRoots([]) })
+    return () => { disposed = true }
+  }, [service, projectId])
+
+  if (roots === null) return <span className="project-workspace-loading"><LoaderCircle className="spin" size={11} /></span>
+  if (roots.length === 0) return <span className="project-workspace-empty">—</span>
+  const labelFor = (root: string) => {
+    const known = workspaces?.find((candidate) => candidate.root === root)
+    if (known?.name) return known.name
+    const segments = root.split('/').filter(Boolean)
+    return segments.at(-1) ?? root
+  }
+  return (
+    <span className="project-workspaces">
+      {roots.map((root) => (
+        <span key={root} className="project-workspace-badge" title={root}>{labelFor(root)}</span>
+      ))}
+    </span>
+  )
+}
+
 function ProjectCreateRow({ service, onCreated }: {
   service: ProjectDocService
   onCreated: (project: ProjectMeta) => void
-}) {
-  const [name, setName] = useState('')
+}) {  const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const composing = useRef(false)
   const creating = useRef(false)
