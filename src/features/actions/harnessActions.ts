@@ -6,6 +6,10 @@ export const harnessActionDefinitions: Array<{ id: HarnessActionId; label: strin
     id: `thread.select.${index + 1}` as HarnessActionId,
     label: `切换到第 ${index + 1} 个会话`,
   })),
+  ...Array.from({ length: 9 }, (_, index) => ({
+    id: `tab.select.${index + 1}` as HarnessActionId,
+    label: `切换到第 ${index + 1} 个标签`,
+  })),
   { id: 'sidebar.toggle', label: '收起或展开侧边栏' },
   { id: 'composer.focus', label: '回到输入框' },
   { id: 'tab.focus.toggle', label: '切换当前 Tab 全屏' },
@@ -14,6 +18,7 @@ export const harnessActionDefinitions: Array<{ id: HarnessActionId; label: strin
 export const defaultHarnessActionShortcuts: HarnessActionShortcuts = Object.fromEntries([
   ['thread.new', 'Mod+T'],
   ...Array.from({ length: 9 }, (_, index) => [`thread.select.${index + 1}`, `Mod+${index + 1}`]),
+  ...Array.from({ length: 9 }, (_, index) => [`tab.select.${index + 1}`, `Ctrl+${index + 1}`]),
   ['sidebar.toggle', 'Mod+B'],
   ['composer.focus', 'Escape'],
   ['tab.focus.toggle', 'F11'],
@@ -69,6 +74,11 @@ export function formatShortcut(shortcut: string): string {
 
 export function threadIndexForAction(actionId: HarnessActionId): number | null {
   const match = actionId.match(/^thread\.select\.([1-9])$/)
+  return match ? Number(match[1]) - 1 : null
+}
+
+export function tabIndexForAction(actionId: HarnessActionId): number | null {
+  const match = actionId.match(/^tab\.select\.([1-9])$/)
   return match ? Number(match[1]) - 1 : null
 }
 

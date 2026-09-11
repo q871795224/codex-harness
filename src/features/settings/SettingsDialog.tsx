@@ -699,7 +699,7 @@ function KeyboardSettings({ sendShortcut, followUpMode, actionShortcuts, onSendS
       <section className="settings-section" aria-labelledby="action-shortcut-title">
         <div className="settings-section-title">
           <Keyboard size={17} />
-          <div><h3 id="action-shortcut-title">应用操作</h3><p>点击快捷键后直接按下新的组合键；数字会话按侧栏当前可见顺序切换。</p></div>
+          <div><h3 id="action-shortcut-title">应用操作</h3><p>点击快捷键后直接按下新的组合键；数字会话按侧栏当前可见顺序切换，数字标签按当前标签栏顺序切换。</p></div>
         </div>
         <div className="settings-row-list">
           {harnessActionDefinitions.map((action) => (
