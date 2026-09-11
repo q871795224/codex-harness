@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -205,18 +205,63 @@ interface ConversationViewProps {
   onContinueAfterFailure?: () => void
   continueDisabled?: boolean
   /**
+   * Esc 循环：递增此值让 conversation-scroll 容器获得焦点（vim 导航入口）。
+   */
+  conversationFocusRequest?: number
+  /**
    * 追加渲染在 agent 最终回答操作行（copy/raw/fork）右侧的扩展操作（右对齐）。
    * 用于插件挂载「归档到项目」之类的 turn 级入口；返回 null 则不渲染。
    */
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, renderTurnActions }: ConversationViewProps) {
+export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
   const handledScrollRequest = useRef(scrollToLatestRequest)
   const observedContentHeight = useRef(0)
+  const lastVimKey = useRef('')
+
+  useEffect(() => {
+    if (conversationFocusRequest > 0) scrollRef.current?.focus()
+  }, [conversationFocusRequest])
+
+  const handleVimKeyDown = (event: ReactKeyboardEvent) => {
+    if (event.target !== scrollRef.current) return
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const lineHeight = 24
+    switch (event.key) {
+      case 'j':
+        scroll.scrollTop += lineHeight
+        event.preventDefault()
+        lastVimKey.current = ''
+        return
+      case 'k':
+        scroll.scrollTop -= lineHeight
+        event.preventDefault()
+        lastVimKey.current = ''
+        return
+      case 'g':
+        if (lastVimKey.current === 'g') {
+          scroll.scrollTop = 0
+          event.preventDefault()
+          lastVimKey.current = ''
+          return
+        }
+        break
+      case 'G':
+        scroll.scrollTop = scroll.scrollHeight
+        event.preventDefault()
+        lastVimKey.current = ''
+        return
+      default:
+        lastVimKey.current = ''
+        return
+    }
+    lastVimKey.current = event.key
+  }
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
@@ -262,7 +307,7 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
   return (
     <section className="conversation-pane" aria-label="对话内容">
       {working && <div className="conversation-working-line" aria-hidden><span /></div>}
-      <div className="conversation-scroll" ref={scrollRef} onScroll={(event) => {
+      <div className="conversation-scroll" ref={scrollRef} tabIndex={0} onKeyDown={handleVimKeyDown} onScroll={(event) => {
         followingLatest.current = isNearConversationBottom(event.currentTarget)
         onScrollPosition(event.currentTarget.scrollTop)
       }}>

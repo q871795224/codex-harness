@@ -6,6 +6,7 @@ import {
   formatShortcut,
   normalizeHarnessActionShortcuts,
   shortcutFromEvent,
+  tabIndexForAction,
   threadIndexForAction,
 } from './harnessActions'
 
@@ -18,6 +19,10 @@ describe('Harness action shortcuts', () => {
     expect(actionForShortcut(key('t', { metaKey: true }), defaultHarnessActionShortcuts)).toBe('thread.new')
     expect(actionForShortcut(key('3', { metaKey: true }), defaultHarnessActionShortcuts)).toBe('thread.select.3')
     expect(threadIndexForAction('thread.select.3')).toBe(2)
+    expect(actionForShortcut(key('3', { ctrlKey: true }), defaultHarnessActionShortcuts)).toBe('tab.select.3')
+    expect(tabIndexForAction('tab.select.3')).toBe(2)
+    expect(tabIndexForAction('tab.select.9')).toBe(8)
+    expect(tabIndexForAction('thread.select.3')).toBeNull()
     expect(actionForShortcut(key('Escape'), defaultHarnessActionShortcuts)).toBe('composer.focus')
     expect(actionForShortcut(key('F11'), defaultHarnessActionShortcuts)).toBe('tab.focus.toggle')
   })
@@ -34,6 +39,7 @@ describe('Harness action shortcuts', () => {
     expect(shortcuts['thread.new']).toBe('Mod+N')
     expect(shortcuts['sidebar.toggle']).toBe('Mod+B')
     expect(shortcuts['tab.focus.toggle']).toBe('F11')
+    expect(shortcuts['tab.select.1']).toBe('Ctrl+1')
     expect(conflictingAction(shortcuts, 'thread.new', 'Mod+B')).toBe('sidebar.toggle')
     expect(formatShortcut('Mod+Shift+B')).toBe('⌘⇧B')
   })

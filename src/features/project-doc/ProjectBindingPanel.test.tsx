@@ -61,4 +61,37 @@ describe('ProjectBindingPanel 单行布局', () => {
     await waitFor(() => expect(service.unbindThread).toHaveBeenCalledWith('t1'))
   })
 
+  it('auto-selects the first bound workspace when binding a project with existing workspaces', async () => {
+    const service = makeService()
+    ;(service.workspaces as ReturnType<typeof vi.fn>).mockResolvedValue(['/repo/alpha', '/repo/beta'])
+    const onAutoSelect = vi.fn()
+    render(<ProjectBindingPanel service={service} threadId="t1" workspaceRoot="/repo" onOpenProject={() => undefined} onAutoSelectWorkspace={onAutoSelect} />)
+    fireEvent.change(await screen.findByLabelText('绑定项目'), { target: { value: 'p1' } })
+    await waitFor(() => expect(service.bindThread).toHaveBeenCalledWith('t1', 'p1'))
+    await waitFor(() => expect(onAutoSelect).toHaveBeenCalledWith('/repo/alpha'))
+  })
+
+  it('does not auto-select when the project has no bound workspaces or matches the current workspace', async () => {
+    const service = makeService()
+    ;(service.workspaces as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    const onAutoSelect = vi.fn()
+    render(<ProjectBindingPanel service={service} threadId="t1" workspaceRoot="/repo" onOpenProject={() => undefined} onAutoSelectWorkspace={onAutoSelect} />)
+    fireEvent.change(await screen.findByLabelText('绑定项目'), { target: { value: 'p1' } })
+    await waitFor(() => expect(service.bindThread).toHaveBeenCalledWith('t1', 'p1'))
+    // 等待 tick 后仍不应触发
+    await waitFor(() => expect(service.bindWorkspace).toHaveBeenCalledWith('p1', '/repo'))
+    expect(onAutoSelect).not.toHaveBeenCalled()
+  })
+
+  it('does not auto-select when suggested workspace equals the current one', async () => {
+    const service = makeService()
+    ;(service.workspaces as ReturnType<typeof vi.fn>).mockResolvedValue(['/repo'])
+    const onAutoSelect = vi.fn()
+    render(<ProjectBindingPanel service={service} threadId="t1" workspaceRoot="/repo" onOpenProject={() => undefined} onAutoSelectWorkspace={onAutoSelect} />)
+    fireEvent.change(await screen.findByLabelText('绑定项目'), { target: { value: 'p1' } })
+    await waitFor(() => expect(service.bindThread).toHaveBeenCalledWith('t1', 'p1'))
+    await waitFor(() => expect(service.bindWorkspace).toHaveBeenCalledWith('p1', '/repo'))
+    expect(onAutoSelect).not.toHaveBeenCalled()
+  })
+
 })

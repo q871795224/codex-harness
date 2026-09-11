@@ -35,7 +35,9 @@ import { useCodexUpdate } from './features/codex/useCodexUpdate'
 import { CodexUpdatePanel } from './features/codex/CodexUpdatePanel'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
 import { conversationTabSupportsFocus } from './features/conversation/tabFocus'
-import { actionForShortcut, threadIndexForAction } from './features/actions/harnessActions'
+import { actionForShortcut, tabIndexForAction, threadIndexForAction } from './features/actions/harnessActions'
+import { NumberBadge } from './components/NumberBadge'
+import { useModifierKey } from './hooks/useModifierKey'
 import { builtInPlugins, defaultPluginInstances } from './plugins'
 import type { UsageService } from './core/usage/types'
 import type { CodexAnalyticsService } from './core/codex-analytics/types'
@@ -300,6 +302,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
+  const [conversationFocusRequest, setConversationFocusRequest] = useState(0)
+  const [focusTarget, setFocusTarget] = useState<'composer' | 'conversation'>('composer')
   const [threadCreditUsages, setThreadCreditUsages] = useState<Record<string, ThreadCreditUsage>>({})
   const [quickActionBottom, setQuickActionBottom] = useState<number | undefined>(undefined)
   const [scrollToLatestRequest, setScrollToLatestRequest] = useState<{ threadId: string; sequence: number } | null>(null)
@@ -388,6 +392,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
     ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
   )
+  const ctrlPressed = useModifierKey('Control')
   const latestTurn = harness.currentDetail?.turns.at(-1) ?? null
   const syncedThreadSettingsRef = useRef(new Map<string, string>())
 
@@ -461,13 +466,31 @@ function HarnessShell({ harness, agentRuns, codex }: {
       if (threadId) { setNotificationsOpen(false); void harness.selectThread(threadId, 'keyboard-shortcut') }
       return
     }
+    const tabIndex = tabIndexForAction(actionId)
+    if (tabIndex !== null) {
+      const tabId = orderedTabIds[tabIndex]
+      if (tabId) {
+        setTab(tabId)
+        setFocusedTab(null)
+      }
+      return
+    }
     if (actionId === 'thread.new') { setNotificationsOpen(false); void harness.createThread(harness.newThreadProvider) }
     else if (actionId === 'sidebar.toggle') harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)
-    else if (actionId === 'composer.focus') { setNotificationsOpen(false); setComposerFocusRequest((current) => current + 1) }
+    else if (actionId === 'composer.focus') {
+      setNotificationsOpen(false)
+      if (focusTarget === 'composer') {
+        setConversationFocusRequest((current) => current + 1)
+        setFocusTarget('conversation')
+      } else {
+        setComposerFocusRequest((current) => current + 1)
+        setFocusTarget('composer')
+      }
+    }
     else if (actionId === 'tab.focus.toggle' && tabFocusable && !notificationsOpen) {
       setFocusedTab((current) => current === tab ? null : tab)
     }
-  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.newThreadProvider, harness.selectThread, harness.setSidebarCollapsed, tab, tabFocusable, visibleThreadIds, notificationsOpen])
+  }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.newThreadProvider, harness.selectThread, harness.setSidebarCollapsed, orderedTabIds, tab, tabFocusable, visibleThreadIds, notificationsOpen, focusTarget])
 
   useEffect(() => {
     if (settingsOpen || pluginsOpen) return undefined
@@ -570,6 +593,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
         disabled: codex.loading || !harness.selectedThreadId || !canMutate,
         onSettingsChange: (patch) => harness.selectedThreadId
           ? codex.updateThreadSettings(harness.selectedThreadId, patch)
+          : undefined,
+        onWorkspaceChange: (workspaceRoot) => harness.selectedThreadId
+          ? void harness.changeThreadWorkspace(harness.selectedThreadId, workspaceRoot)
           : undefined,
       }}
     />
@@ -718,7 +744,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
             />
             <div className="tab-bar">
               <div className="thread-tabs">
-                {orderedTabIds.map((tabId) => {
+                {orderedTabIds.map((tabId, tabIndex) => {
                   const entry = tabId === 'chat'
                     ? null
                     : pluginTabs.find((candidate) => pluginTabKey(candidate.pluginId, candidate.contribution.id) === tabId)
@@ -746,6 +772,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                       onPointerCancel={(event) => finishConversationTabDrag(event, false)}
                       title={`拖动调整“${label}”的位置`}
                     >
+                      <NumberBadge number={tabIndex + 1} visible={ctrlPressed && tabIndex < 9} />
                       <Icon size={15} />{label}
                     </button>
                   )
@@ -812,6 +839,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
                 onRawModeToggle={() => setRawMode((current) => !current)}
                 onContinueAfterFailure={codexConversation && canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
                 continueDisabled={Boolean(harness.busy.composer)}
+                conversationFocusRequest={conversationFocusRequest}
                 renderTurnActions={renderTurnActions}
               />
             ) : null}

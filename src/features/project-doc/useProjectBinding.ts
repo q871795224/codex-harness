@@ -55,13 +55,20 @@ export function useProjectBinding(service: ProjectDocService, threadId: string |
   // 订阅绑定变化：面板/App 任一方操作 bind/lock/unbind 后，其它 hook 实例同步刷新。
   useEffect(() => service.subscribeBindings(() => { void reload() }), [service, reload])
 
-  const bind = useCallback(async (projectId: string) => {
-    if (!threadId) return
+  /**
+   * 草稿态绑定。返回该项目首个已绑定工作区（不含当前会话 cwd），供调用方自动切换工作区；
+   * 项目此前未绑定任何工作区时返回 null（沿用当前 cwd，无需切换）。
+   */
+  const bind = useCallback(async (projectId: string): Promise<string | null> => {
+    if (!threadId) return null
+    // 先读项目已有绑定（bindWorkspace 之前），拿到「首个既有工作区」用于自动切换。
+    const existing = await service.workspaces(projectId).catch(() => [] as string[])
     await service.bindThread(threadId, projectId)
     if (workspaceRoot) await service.bindWorkspace(projectId, workspaceRoot).catch(() => undefined)
     // 绑定即确保本地回传服务在跑（Agent 才能用 project-doc 命令回传写意图）。
     await service.ensureServer().catch(() => undefined)
     await reload()
+    return existing[0] ?? null
   }, [service, threadId, workspaceRoot, reload])
 
   const unbind = useCallback(async () => {

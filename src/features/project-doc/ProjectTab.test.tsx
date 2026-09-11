@@ -60,11 +60,34 @@ it('does not create on IME confirmation or WebKit 229, and prevents duplicate cr
   expect(svc.create).toHaveBeenCalledWith(expect.stringMatching(/^[a-z0-9-]+$/), '中文项目')
 })
 
+it('shows bound workspace names in the 工作区 column, preferring known workspace names', async () => {
+  const svc = service()
+  ;(svc.workspaces as ReturnType<typeof vi.fn>).mockResolvedValue(['/repo/known', '/other/unknown-path'])
+  const workspaces = [
+    { root: '/repo/known', checkoutRoot: '/repo/known', name: 'known-ws', branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 },
+  ]
+  render(<ProjectTab service={svc} selectedProjectId={null} conflictRequest={null} onSelectProject={vi.fn()} onConflictHandled={vi.fn()} workspaces={workspaces} />)
+  await screen.findByText('示例项目')
+  await screen.findByText('known-ws')
+  // 未在 workspaces 列表内的 root 用末段路径兜底。
+  expect(screen.getByText('unknown-path')).toBeTruthy()
+  expect(screen.getByTitle('/repo/known')).toBeTruthy()
+})
+
+it('shows an empty marker when the project has no bound workspaces', async () => {
+  const svc = service()
+  mount(svc)
+  await screen.findByText('示例项目')
+  // 空绑定显示占位符
+  const cells = await screen.findAllByText('—')
+  expect(cells.some((el) => el.classList.contains('project-workspace-empty'))).toBe(true)
+})
+
 it('shows columns and supports rename and confirmed archive', async () => {
   const svc = service()
   mount(svc)
   await screen.findByText('示例项目')
-  expect(screen.getAllByRole('columnheader').map((el) => el.textContent)).toEqual(['项目名称', '版本', '更新时间', '操作'])
+  expect(screen.getAllByRole('columnheader').map((el) => el.textContent)).toEqual(['项目名称', '工作区', '版本', '更新时间', '操作'])
   fireEvent.click(screen.getByText('重命名'))
   fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '新名称' } })
   fireEvent.click(screen.getByText('保存名称'))

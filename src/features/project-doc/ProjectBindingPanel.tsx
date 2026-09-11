@@ -11,16 +11,23 @@ import { useProjectBinding } from './useProjectBinding'
  * - 第 1 轮发送后：绑定锁定（locked），此面板只读，不可改、不可解绑。
  * 折叠卡的显示/隐藏由 App 依据同一 service 的绑定状态驱动（subscribeBindings 同步）。
  */
-export function ProjectBindingPanel({ service, threadId, workspaceRoot, onOpenProject }: {
+export function ProjectBindingPanel({ service, threadId, workspaceRoot, onOpenProject, onAutoSelectWorkspace }: {
   service: ProjectDocService
   threadId: string | null
   workspaceRoot: string | null
   onOpenProject: (projectId: string) => void
+  /** 绑定后若项目已有工作区，回传首个工作区 root 供父级自动切换（用户仍可手动改）。 */
+  onAutoSelectWorkspace?: (workspaceRoot: string) => void
 }) {
   const binding = useProjectBinding(service, threadId, workspaceRoot)
 
   if (!threadId) return null
   const { project, locked, loading } = binding
+
+  const bindAndAutoSelect = async (projectId: string) => {
+    const suggested = await binding.bind(projectId)
+    if (suggested && suggested !== workspaceRoot) onAutoSelectWorkspace?.(suggested)
+  }
 
   return (
     <div className="project-binding-panel">
@@ -48,7 +55,7 @@ export function ProjectBindingPanel({ service, threadId, workspaceRoot, onOpenPr
               <BindingSelect
                 service={service}
                 currentProjectId={project?.projectId ?? null}
-                onBind={(projectId) => void binding.bind(projectId)}
+                onBind={(projectId) => void bindAndAutoSelect(projectId)}
                 onUnbind={() => void binding.unbind()}
                 onOpenProject={onOpenProject}
                 hasProject={Boolean(project)}
