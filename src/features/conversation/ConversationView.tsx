@@ -117,15 +117,14 @@ export function ConversationHeader({ thread, workspace, gitContextResolved, arch
           >
             {workspaceChanging ? '正在切换…' : thread.cwd}
           </button>
-          {projectName !== undefined && (
+          {projectName && (
             <button
               type="button"
               className="thread-project"
-              title={projectName ? '打开项目文档' : '未绑定项目'}
-              disabled={!projectName}
-              onClick={() => { if (projectName) onOpenProject?.() }}
+              title="打开项目文档"
+              onClick={() => onOpenProject?.()}
             >
-              <NotebookPen size={12} />{projectName ?? '-'}
+              <NotebookPen size={12} />{projectName}
             </button>
           )}
           {headerActions && <span className="thread-header-actions">{headerActions}</span>}

@@ -291,8 +291,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .thread-origin { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: #6373b5; cursor: pointer; font: inherit; }
 .thread-origin:hover { color: #4058ba; text-decoration: underline; text-underline-offset: 2px; }
 .thread-project { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; overflow: hidden; padding: 0; border: 0; background: transparent; color: #6373b5; cursor: pointer; font: inherit; text-overflow: ellipsis; white-space: nowrap; }
-.thread-project:hover:not(:disabled) { color: #4058ba; text-decoration: underline; text-underline-offset: 2px; }
-.thread-project:disabled { color: #9aa1ab; cursor: default; }
+.thread-project:hover { color: #4058ba; text-decoration: underline; text-underline-offset: 2px; }
 .thread-header-actions { display: inline-flex; align-items: center; gap: 4px; }
 .thread-context-action { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px; border: 1px solid #d9dde5; border-radius: 5px; background: #f8f9fb; color: #596270; cursor: pointer; font: inherit; font-weight: 650; transition: border-color .14s ease, background .14s ease, color .14s ease; }.thread-context-action:hover:not(:disabled) { border-color: #bdc8ec; background: #f1f4ff; color: #3f57b9; }.thread-context-action:disabled { cursor: default; opacity: .55; }.thread-context-action.failed { border-color: #e5c4c4; background: #fff7f7; color: #ad5c5c; }
 .header-action { display: flex; align-items: center; gap: 5px; height: 29px; margin-top: 1px; padding: 0 8px; border: 1px solid #e3e5e9; border-radius: 7px; background: #fff; color: #565d68; cursor: pointer; font-size: 12px; opacity: 0; pointer-events: none; transition: border-color .14s ease, color .14s ease, opacity .14s ease; }
