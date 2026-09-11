@@ -580,8 +580,8 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .project-doc-approval-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #d4dae6; border-radius: 7px; background: #fff; color: #33415a; font-size: 12px; cursor: pointer; }
 .project-doc-approval-actions button.primary { background: #4a5fc1; border-color: #4a5fc1; color: #fff; }
 .project-doc-approval-actions button:disabled { opacity: .55; cursor: default; }
-.app-shell { --project-surface: #fff; --project-text: #3e4550; --project-muted: #7c8490; --project-border: #dfe2e7; --project-selected: #eceef1; }
-.app-shell[data-theme='dark'] { --project-surface: #22252b; --project-text: #d1d5dd; --project-muted: #969da8; --project-border: #393e47; --project-selected: #343943; }
+.app-shell { --project-surface: rgba(255, 255, 255, .66); --project-text: #3e4550; --project-muted: #7c8490; --project-border: #dfe2e7; --project-selected: #eceef1; }
+.app-shell[data-theme='dark'] { --project-surface: rgba(25, 27, 32, .58); --project-text: #d1d5dd; --project-muted: #969da8; --project-border: #393e47; --project-selected: #343943; }
 .project-tab { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; overflow: auto; padding: 18px 20px; color: var(--project-text); }
 .project-tab input, .project-tab textarea { background: var(--project-surface); color: var(--project-text); }
 .project-tab button:disabled { opacity: .5; cursor: default; }
@@ -611,7 +611,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .project-create-row { display: flex; gap: 8px; align-items: center; }
 .project-create-row input { flex: 0 1 280px; padding: 7px 10px; border: 1px solid var(--project-border); border-radius: 8px; font-size: 13px; }
 .project-create-row button { display: inline-flex; align-items: center; gap: 4px; padding: 7px 12px; border: 1px solid var(--project-selected); border-radius: 8px; background: var(--project-selected); color: var(--project-text); font-size: 12.5px; cursor: pointer; }
-.project-doc-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 14px 16px; border: 1px solid var(--project-border); border-radius: 10px; background: var(--project-surface); }
+.project-doc-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 14px 16px; border: 1px solid var(--project-border); border-radius: 10px; }
 .project-edit-panel { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-height: 0; }
 .project-edit-hint { margin: 0; color: var(--project-muted); font-size: 12.5px; }
 .project-edit-panel textarea { flex: 1 1 auto; min-height: 0; padding: 10px 12px; border: 1px solid var(--project-border); border-radius: 8px; font-family: ui-monospace, monospace; font-size: 12.5px; resize: none; }
