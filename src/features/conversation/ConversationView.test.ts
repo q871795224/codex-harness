@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
-import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, copyableTranscriptText, isChooseWorkspaceSelection, isExternalWebUrl, isNearConversationBottom, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
+import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, copyableTranscriptText, isChooseWorkspaceSelection, isNearConversationBottom, isOpenableExternalUrl, latestAgentMessageIndex, parseLocalFileReference, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
 import { formatWorkingElapsed, workingElapsedMilliseconds, turnStartedAtMilliseconds } from './ConversationStats'
 import { parseThreadTitleGenerationSettings } from './useHarness'
 import { draftThreadStartRequest, isFirstUserTurn, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, shouldRecreateDraftThread, threadTitlePrompt, threadTurnContext } from './threadLifecycle'
@@ -42,11 +42,14 @@ describe('thread Git context', () => {
 })
 
 describe('markdown links', () => {
-  it('only delegates web URLs to the system browser', () => {
-    expect(isExternalWebUrl('https://openai.com/docs')).toBe(true)
-    expect(isExternalWebUrl('http://localhost:1420')).toBe(true)
-    expect(isExternalWebUrl('/workspace/readme.md')).toBe(false)
-    expect(isExternalWebUrl('javascript:alert(1)')).toBe(false)
+  it('only delegates OS-openable URLs to the system browser', () => {
+    expect(isOpenableExternalUrl('https://openai.com/docs')).toBe(true)
+    expect(isOpenableExternalUrl('http://localhost:1420')).toBe(true)
+    expect(isOpenableExternalUrl('mailto:team@example.com')).toBe(true)
+    expect(isOpenableExternalUrl('tel:+15551234567')).toBe(true)
+    expect(isOpenableExternalUrl('/workspace/readme.md')).toBe(false)
+    expect(isOpenableExternalUrl('javascript:alert(1)')).toBe(false)
+    expect(isOpenableExternalUrl('data:text/html,<b>x</b>')).toBe(false)
   })
 
   it('parses local file links with line and column locations', () => {
@@ -56,10 +59,18 @@ describe('markdown links', () => {
     expect(parseLocalFileReference('../shared/types.ts')).toEqual({ path: '../shared/types.ts' })
   })
 
-  it('does not treat web, command, or bare labels as local files', () => {
+  it('treats bare single-segment names as local file references', () => {
+    expect(parseLocalFileReference('README.md')).toEqual({ path: 'README.md' })
+    expect(parseLocalFileReference('README')).toEqual({ path: 'README' })
+    expect(parseLocalFileReference('bar')).toEqual({ path: 'bar' })
+  })
+
+  it('does not treat web URLs, command schemes, or punctuation-only labels as local files', () => {
     expect(parseLocalFileReference('https://example.com/file.go:42')).toBeNull()
     expect(parseLocalFileReference('javascript:alert(1)')).toBeNull()
-    expect(parseLocalFileReference('README')).toBeNull()
+    expect(parseLocalFileReference('.')).toBeNull()
+    expect(parseLocalFileReference('..')).toBeNull()
+    expect(parseLocalFileReference('#section')).toBeNull()
   })
 })
 
