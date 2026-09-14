@@ -1,10 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { ArrowLeft, Bell, Check, CheckCheck, CircleAlert, Copy, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, Bell, Check, CheckCheck, CircleAlert, Copy, LoaderCircle, TriangleAlert, X } from 'lucide-react'
 import type { AppNotification, NotificationAction, NotificationLevel, NotificationStore } from '../../core/notifications/store'
 import './notifications.css'
 
 const labels = { info: '通知', warning: '警告', error: '错误' }
-function LevelIcon({ level }: { level: NotificationLevel }) {
+function LevelIcon({ level, state }: { level: NotificationLevel; state: AppNotification['state'] }) {
+  if (state === 'running') return <LoaderCircle size={16} className="notification-spinner" aria-label="进行中" />
   const Icon = level === 'error' ? CircleAlert : level === 'warning' ? TriangleAlert : Check
   return <Icon size={16} aria-label={labels[level]} />
 }
@@ -12,8 +13,9 @@ function LevelIcon({ level }: { level: NotificationLevel }) {
 export function NotificationViewport({ store, onOpen }: { store: NotificationStore; onOpen: (id?: string) => void }) {
   const state = useSyncExternalStore(store.subscribe, store.snapshot)
   useEffect(() => {
-    if (!state.floating.length) return
-    const timeout = window.setTimeout(store.expire, Math.max(0, Math.min(...state.floating.map((item) => item.expiresAt)) - Date.now()))
+    const deadlines = state.floating.flatMap((item) => item.expiresAt === null ? [] : [item.expiresAt])
+    if (!deadlines.length) return
+    const timeout = window.setTimeout(store.expire, Math.max(0, Math.min(...deadlines) - Date.now()))
     return () => window.clearTimeout(timeout)
   }, [state.floating, store])
   const records = state.floating.slice(-3).reverse().flatMap(({ id }) => {
@@ -23,8 +25,8 @@ export function NotificationViewport({ store, onOpen }: { store: NotificationSto
   return (
     <div className="notification-viewport" aria-label="通知提醒">
       {records.map((record) => (
-        <article key={`${record.id}:${record.updatedAt}`} className={`notification-toast ${record.level}`} role={record.level === 'error' ? 'alert' : 'status'}>
-          <LevelIcon level={record.level} />
+        <article key={record.id} className={`notification-toast ${record.level}${record.state === 'running' ? ' running' : ''}`} role={record.level === 'error' ? 'alert' : 'status'}>
+          <LevelIcon level={record.level} state={record.state} />
           <div className="notification-copy">
             <small>{record.source}</small>
             <strong>{record.title}</strong>
@@ -91,10 +93,10 @@ function NotificationRow({ record, expanded, store, onAction }: {
   const [copyState, setCopyState] = useState('复制详情')
   useEffect(() => { if (expanded) setOpen(true) }, [expanded])
   return (
-    <article id={`notification-${record.id}`} className={`notification-row ${record.level}${record.read ? '' : ' unread'}`}>
+    <article id={`notification-${record.id}`} className={`notification-row ${record.level}${record.state === 'running' ? ' running' : ''}${record.read ? '' : ' unread'}`}>
       <button type="button" className="notification-row-toggle" aria-expanded={open} onClick={() => { setOpen(!open); store.markRead(record.id) }}>
-        <LevelIcon level={record.level} />
-        <div className="notification-copy"><span className="notification-meta">{record.source} · {labels[record.level]}{!record.read && <i aria-label="未读" />}</span><strong>{record.title}</strong>{record.message && <p>{record.message}</p>}</div>
+        <LevelIcon level={record.level} state={record.state} />
+        <div className="notification-copy"><span className="notification-meta">{record.source} · {record.state === 'running' ? '进行中' : labels[record.level]}{!record.read && <i aria-label="未读" />}</span><strong>{record.title}</strong>{record.message && <p>{record.message}</p>}</div>
         <time dateTime={new Date(record.updatedAt).toISOString()}>{new Date(record.updatedAt).toLocaleString()}</time>
       </button>
       {open && <div className="notification-details">

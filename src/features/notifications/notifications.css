@@ -63,3 +63,9 @@
 
 .notification-quick-panels { display: contents; }
 .notification-quick-panels[hidden] { display: none; }
+
+.notification-toast.running, .notification-row.running { --notice-color: #2563b5; --notice-bg: #eef5ff; --notice-border: #ccdef5; }
+.app-shell[data-theme='dark'] .notification-toast.running, .app-shell[data-theme='dark'] .notification-row.running { --notice-color: #8bbcff; --notice-bg: #253348; --notice-border: #3b5578; }
+.notification-spinner { animation: notification-spin 1s linear infinite; }
+@keyframes notification-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .notification-spinner { animation: none; } }
