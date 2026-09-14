@@ -33,7 +33,7 @@ import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
 import { displayCommand } from './commandDisplay'
 import { groupTranscriptTurns, summarizeProcessRows, type TranscriptItem, type TranscriptTurn } from './transcript'
-import { runtime } from '../../core/runtime/bridge'
+import { diagnosticErrorCode, runtime } from '../../core/runtime/bridge'
 import { WorkingStatus } from './ConversationStats'
 import { collectNativeAgentActivities, type NativeAgentActivity } from './agentActivity'
 
@@ -861,19 +861,30 @@ async function writeClipboard(text: string): Promise<void> {
   if (!copied) throw new Error('clipboard unavailable')
 }
 
-function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWithoutRef<'a'> & { cwd: string }) {
+function recordLinkOpenDiagnostic(kind: 'external' | 'local', href: string, error: unknown): void {
+  void runtime.recordClientDiagnostic({
+    level: 'error',
+    area: 'frontend',
+    event: 'markdown-link.open-failed',
+    context: { kind, href },
+    errorCode: diagnosticErrorCode(error),
+    reason: error instanceof Error ? error.message : String(error),
+  }).catch(() => undefined)
+}
+
+export function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWithoutRef<'a'> & { cwd: string }) {
   const local = href ? parseLocalFileReference(href) : null
   if (local) return (
     <button
       type="button"
       className="local-link"
       title={`在 GoLand 中打开 ${local.path}${local.line ? `:${local.line}` : ''}`}
-      onClick={() => void runtime.openWorkspacePath('goland', cwd, local.path, local.line).catch(() => undefined)}
+      onClick={() => void runtime.openWorkspacePath('goland', cwd, local.path, local.line).catch((error) => recordLinkOpenDiagnostic('local', href ?? local.path, error))}
     >
       {children}
     </button>
   )
-  if (!href || !isExternalWebUrl(href)) return <span className="local-link-label" title={href}>{children || href}</span>
+  if (!href || !isOpenableExternalUrl(href)) return <span className="local-link-label" title={href}>{children || href}</span>
   const showDestination = markdownLinkLabel(children) !== href
   return (
     <a
@@ -882,7 +893,7 @@ function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWithoutRe
       rel="noreferrer"
       onClick={(event) => {
         event.preventDefault()
-        void runtime.openExternalUrl(href).catch(() => undefined)
+        void runtime.openExternalUrl(href).catch((error) => recordLinkOpenDiagnostic('external', href, error))
       }}
     >
       {children}{showDestination && <span className="link-destination"> ({href})</span>}
@@ -918,6 +929,9 @@ export function parseLocalFileReference(value: string): LocalFileReference | nul
   if (decoded.startsWith('/') || decoded.startsWith('./') || decoded.startsWith('../') || /^[\w@.-]+\//.test(decoded)) {
     return { path: decoded }
   }
+  if (/^(?=.*\w)[\w@.-]+$/.test(decoded)) {
+    return { path: decoded }
+  }
   return null
 }
 
@@ -932,10 +946,11 @@ function markdownLinkLabel(children: ComponentPropsWithoutRef<'a'>['children']):
   return ''
 }
 
-export function isExternalWebUrl(value: string): boolean {
+const OPENABLE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:'])
+
+export function isOpenableExternalUrl(value: string): boolean {
   try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:'
+    return OPENABLE_EXTERNAL_PROTOCOLS.has(new URL(value).protocol)
   } catch {
     return false
   }
