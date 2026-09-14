@@ -32,7 +32,7 @@ export interface NotificationService {
 }
 interface Snapshot {
   records: AppNotification[]
-  floating: { id: string; expiresAt: number }[]
+  floating: { id: string; expiresAt: number | null }[]
   loaded: boolean
   storageError: string | null
 }
@@ -90,12 +90,12 @@ export function createNotificationStore(storage: Storage) {
       const previous = state.records.find((record) => record.id === id)
       const now = Date.now()
       if (previous && input.updatedAt !== undefined && input.updatedAt < previous.updatedAt) return id
-      const record: AppNotification = { ...input, id, createdAt: previous?.createdAt ?? input.createdAt ?? now, updatedAt: input.updatedAt ?? now, read: input.silent === true }
+      const record: AppNotification = { ...input, id, createdAt: previous?.createdAt ?? input.createdAt ?? now, updatedAt: input.updatedAt ?? now, read: input.silent === true || input.state === 'running' }
       if (previous && sameContent(previous, record)) return id
       state = {
         ...state,
         records: sortRecords([record, ...state.records.filter((item) => item.id !== id)]),
-        floating: [...state.floating.filter((item) => item.id !== id), ...(input.silent ? [] : [{ id, expiresAt: now + (input.level === 'info' ? 5000 : 10000) }])],
+        floating: [...state.floating.filter((item) => item.id !== id), ...(input.silent ? [] : [{ id, expiresAt: input.state === 'running' ? null : now + (input.level === 'info' ? 5000 : 10000) }])],
       }
       emit()
       persist()
@@ -106,7 +106,7 @@ export function createNotificationStore(storage: Storage) {
       emit()
     },
     expire: () => {
-      const floating = state.floating.filter((item) => item.expiresAt > Date.now())
+      const floating = state.floating.filter((item) => item.expiresAt === null || item.expiresAt > Date.now())
       if (floating.length === state.floating.length) return
       state = { ...state, floating }
       emit()
