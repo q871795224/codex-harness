@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import {
   Check,
   ChevronLeft,
@@ -16,6 +14,7 @@ import {
 } from 'lucide-react'
 import type { ProjectDocService } from '../../core/project-docs/types'
 import type { Workspace } from '../../core/domain/codex'
+import { Markdown } from '../markdown/Markdown'
 import { parseProjectBoard } from './board'
 import type { ProjectDocSnapshot, ProjectMeta, ProjectVersion } from './types'
 import type { SectionKey } from './document'
@@ -330,7 +329,7 @@ function ProjectDetail({ service, projectId, conflictRequest, archiveRequest, on
       {view === 'doc' && (
         snapshot
           ? <div className="project-doc-body markdown-body">{snapshot.content.trim()
-              ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{snapshot.content}</ReactMarkdown>
+              ? <Markdown text={snapshot.content} />
               : <p className="project-tab-empty">项目文档尚未填写。点击「编辑」，基于模板补充目标与验收标准。</p>}
             </div>
           : <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
@@ -548,7 +547,7 @@ function ProjectBoardView({ content }: { content: string }) {
       {board.hasStatus && (
         <section className="project-board-section">
           <h3><KanbanSquare size={14} />Status · 按 run</h3>
-          {board.shared && <div className="project-board-shared markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{board.shared}</ReactMarkdown></div>}
+          {board.shared && <div className="project-board-shared markdown-body"><Markdown text={board.shared} /></div>}
           {board.runs.length === 0 ? (
             <p className="project-tab-empty">Status 区还没有 `### run-xxx` 子区。</p>
           ) : (
@@ -559,7 +558,7 @@ function ProjectBoardView({ content }: { content: string }) {
                     <code>{run.runId}</code>
                     {run.title && <strong>{run.title}</strong>}
                   </header>
-                  {run.body && <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{run.body}</ReactMarkdown></div>}
+                  {run.body && <div className="markdown-body"><Markdown text={run.body} /></div>}
                 </article>
               ))}
             </div>
@@ -574,7 +573,7 @@ function ProjectBoardView({ content }: { content: string }) {
           ) : (
             <ol className="project-board-log">
               {board.logEntries.map((entry, index) => (
-                <li key={index}><div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{entry}</ReactMarkdown></div></li>
+                <li key={index}><div className="markdown-body"><Markdown text={entry} /></div></li>
               ))}
             </ol>
           )}
