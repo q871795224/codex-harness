@@ -19,7 +19,9 @@ import {
   reconcileCollapsedPastes,
   reasoningEffortTone,
   replaceComposerTrigger,
+  shouldAttachSuggestion,
   shouldCollapsePaste,
+  suggestionReplacement,
   type CollapsedPaste,
 } from './composerInput'
 import { findProjectCard, projectCardLabel } from '../project-doc/projectCard'
@@ -457,12 +459,12 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
         setAttachmentBusy(false)
       }
     }
-    const replacement = suggestion.kind === 'skill' ? `$${suggestion.name}` : suggestion.kind === 'command' ? suggestion.replacement ?? `/${suggestion.name}` : ''
+    const replacement = suggestionReplacement(suggestion)
     const next = replaceComposerTrigger(text, trigger, replacement)
     updatePastesFromUserEdit(reconcileCollapsedPastes(text, next.text, collapsedPastes))
     setText(next.text)
     setCursor(next.cursor)
-    setAttachments((current) => suggestion.kind === 'command' || suggestion.kind === 'plugin' || current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
+    setAttachments((current) => !shouldAttachSuggestion(suggestion.kind) || current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
       ? current
       : [...current, { kind: suggestion.kind, name: suggestion.name, path: suggestion.path! }])
     setFileMatches([])

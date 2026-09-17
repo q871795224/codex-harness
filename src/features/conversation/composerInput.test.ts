@@ -16,7 +16,9 @@ import {
   reconcileCollapsedPastes,
   reasoningEffortTone,
   replaceComposerTrigger,
+  shouldAttachSuggestion,
   shouldCollapsePaste,
+  suggestionReplacement,
 } from './composerInput'
 
 describe('image attachments', () => {
@@ -35,17 +37,49 @@ describe('image attachments', () => {
     expect(isSupportedImagePath('/tmp/image.png.txt')).toBe(false)
   })
 
-  it('sends local images before text and structured references like the CLI', () => {
+  it('sends local images first and inlines file paths into the text like the CLI', () => {
     expect(composerInputs(' inspect ', [
       { kind: 'file', name: 'README.md', path: '/repo/README.md' },
       { kind: 'image', name: 'shot.png', path: '/tmp/shot.png' },
       { kind: 'skill', name: 'tdd', path: '/skills/tdd/SKILL.md' },
     ])).toEqual([
       { type: 'localImage', path: '/tmp/shot.png' },
-      { type: 'text', text: 'inspect', text_elements: [] },
-      { type: 'mention', name: 'README.md', path: '/repo/README.md' },
+      { type: 'text', text: 'inspect\n/repo/README.md', text_elements: [] },
       { type: 'skill', name: 'tdd', path: '/skills/tdd/SKILL.md' },
     ])
+  })
+
+  it('sends file attachment paths as text even without a message body', () => {
+    expect(composerInputs('   ', [
+      { kind: 'file', name: 'a.sql', path: '/repo/a.sql' },
+      { kind: 'file', name: 'b.sql', path: '/repo/dir/b.sql' },
+    ])).toEqual([
+      { type: 'text', text: '/repo/a.sql\n/repo/dir/b.sql', text_elements: [] },
+    ])
+  })
+})
+
+describe('suggestionReplacement', () => {
+  it('inserts the relative path for file suggestions like the Codex CLI', () => {
+    expect(suggestionReplacement({ kind: 'file', name: 'repair.py', path: '/repo/temp/repair.py', detail: 'temp/repair.py' })).toBe('temp/repair.py')
+    expect(suggestionReplacement({ kind: 'file', name: 'repair.py', path: '/repo/temp/repair.py' })).toBe('/repo/temp/repair.py')
+  })
+
+  it('keeps existing sigils for skill and command suggestions and none for images', () => {
+    expect(suggestionReplacement({ kind: 'skill', name: 'tdd' })).toBe('$tdd')
+    expect(suggestionReplacement({ kind: 'command', name: 'model' })).toBe('/model')
+    expect(suggestionReplacement({ kind: 'command', name: 'Fast', replacement: '/reasoning high' })).toBe('/reasoning high')
+    expect(suggestionReplacement({ kind: 'image', name: 'shot.png' })).toBe('')
+  })
+})
+
+describe('shouldAttachSuggestion', () => {
+  it('only keeps images and skills as attachments; file paths are inlined as text', () => {
+    expect(shouldAttachSuggestion('image')).toBe(true)
+    expect(shouldAttachSuggestion('skill')).toBe(true)
+    expect(shouldAttachSuggestion('file')).toBe(false)
+    expect(shouldAttachSuggestion('command')).toBe(false)
+    expect(shouldAttachSuggestion('plugin')).toBe(false)
   })
 })
 
