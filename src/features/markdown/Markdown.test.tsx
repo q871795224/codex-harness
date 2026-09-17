@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const runtime = vi.hoisted(() => ({
   openExternalUrl: vi.fn(),
@@ -59,4 +59,86 @@ it('renders plain anchors when no cwd is provided', () => {
   render(<Markdown text={'[docs](https://example.com/docs)'} />)
   const link = screen.getByRole('link', { name: 'docs' })
   expect(link.getAttribute('href')).toBe('https://example.com/docs')
+})
+
+describe('CJK autolink repair', () => {
+  it('keeps full-width parenthesis text out of an autolink wrapped in failed bold markers', () => {
+    const { container } = render(
+      <Markdown text={'PR：**https://github.com/q871795224/codex-harness/pull/76**（base `main`，MERGEABLE）'} />,
+    )
+    const link = screen.getByRole('link')
+    expect(link.getAttribute('href')).toBe('https://github.com/q871795224/codex-harness/pull/76')
+    expect(link.textContent).toBe('https://github.com/q871795224/codex-harness/pull/76')
+    expect(link.parentElement?.tagName).toBe('STRONG')
+    expect(container.textContent).toBe('PR：https://github.com/q871795224/codex-harness/pull/76（base main，MERGEABLE）')
+  })
+
+  it('splits trailing CJK annotation off bare autolinks', () => {
+    const { container } = render(<Markdown text={'见 https://github.com/a/b（中文说明）谢谢'} />)
+    const link = screen.getByRole('link')
+    expect(link.getAttribute('href')).toBe('https://github.com/a/b')
+    expect(container.textContent).toBe('见 https://github.com/a/b（中文说明）谢谢')
+  })
+
+  it('repairs www autolinks while keeping the synthesized protocol', () => {
+    const { container } = render(<Markdown text={'见 www.example.com/a（b）即可'} />)
+    const link = screen.getByRole('link')
+    expect(link.getAttribute('href')).toBe('http://www.example.com/a')
+    expect(container.textContent).toBe('见 www.example.com/a（b）即可')
+  })
+
+  it('restores strikethrough and underline-style bold wrappers around repaired autolinks', () => {
+    const { container: strike } = render(<Markdown text={'看 ~~https://x.com/a~~（b）'} />)
+    const strikeLink = strike.querySelector('del a')
+    expect(strikeLink?.getAttribute('href')).toBe('https://x.com/a')
+    expect(strike.textContent).toBe('看 https://x.com/a（b）')
+
+    const { container: bold } = render(<Markdown text={'看 __https://x.com/a__（b）'} />)
+    const boldLink = bold.querySelector('strong a')
+    expect(boldLink?.getAttribute('href')).toBe('https://x.com/a')
+    expect(bold.textContent).toBe('看 https://x.com/a（b）')
+  })
+
+  it('restores single-asterisk emphasis around repaired autolinks', () => {
+    const { container } = render(<Markdown text={'看 *https://x.com/a*（b）'} />)
+    const link = container.querySelector('em a')
+    expect(link?.getAttribute('href')).toBe('https://x.com/a')
+    expect(container.textContent).toBe('看 https://x.com/a（b）')
+  })
+
+  it('keeps unpaired markers literal while still cleaning the URL', () => {
+    const { container } = render(<Markdown text={'看 **https://x.com/a（b）'} />)
+    expect(screen.getByRole('link').getAttribute('href')).toBe('https://x.com/a')
+    expect(container.querySelector('strong')).toBeNull()
+    expect(container.textContent).toBe('看 **https://x.com/a（b）')
+  })
+
+  it('splits full-width sentence punctuation off autolinks', () => {
+    const { container } = render(<Markdown text={'链接是 https://x.com/a。下一句'} />)
+    expect(screen.getByRole('link').getAttribute('href')).toBe('https://x.com/a')
+    expect(container.textContent).toBe('链接是 https://x.com/a。下一句')
+  })
+
+  it('leaves angle-bracket autolinks untouched', () => {
+    render(<Markdown text={'见 <https://x.com/a（b）> 即可'} />)
+    const href = screen.getByRole('link').getAttribute('href') ?? ''
+    expect(decodeURI(href)).toBe('https://x.com/a（b）')
+  })
+
+  it('leaves explicit links with CJK destinations untouched', () => {
+    render(<Markdown text={'见 [文字](https://x.com/a（b）) 即可'} />)
+    const href = screen.getByRole('link', { name: '文字' }).getAttribute('href') ?? ''
+    expect(decodeURI(href)).toBe('https://x.com/a（b）')
+  })
+
+  it('leaves legitimate CJK URL paths untouched', () => {
+    render(<Markdown text={'见 https://zh.wikipedia.org/wiki/测试 即可'} />)
+    const href = screen.getByRole('link').getAttribute('href') ?? ''
+    expect(decodeURI(href)).toBe('https://zh.wikipedia.org/wiki/测试')
+  })
+
+  it('leaves underscores and tildes inside URL paths untouched', () => {
+    render(<Markdown text={'见 https://x.com/a_b/c~d 即可'} />)
+    expect(screen.getByRole('link').getAttribute('href')).toBe('https://x.com/a_b/c~d')
+  })
 })

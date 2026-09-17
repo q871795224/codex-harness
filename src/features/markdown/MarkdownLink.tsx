@@ -25,7 +25,7 @@ export function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWi
     </button>
   )
   if (!href || !isOpenableExternalUrl(href)) return <span className="local-link-label" title={href}>{children || href}</span>
-  const showDestination = markdownLinkLabel(children) !== href
+  const showDestination = markdownLinkLabel(children) !== decodeHrefForCompare(href)
   return (
     <a
       href={href}
@@ -84,6 +84,16 @@ function markdownLinkLabel(children: ComponentPropsWithoutRef<'a'>['children']):
   if (typeof children === 'string' || typeof children === 'number') return String(children)
   if (Array.isArray(children)) return children.map(markdownLinkLabel).join('')
   return ''
+}
+
+// hast 会把 href 里的非 ASCII 字符 percent-encode（如全角括号、中文路径），
+// 与显示文本比较前先解码，避免 autolink 被误判为「label ≠ 目标」而多显示一段目的地提示。
+function decodeHrefForCompare(href: string): string {
+  try {
+    return decodeURI(href)
+  } catch {
+    return href
+  }
 }
 
 const OPENABLE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:'])

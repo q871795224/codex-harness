@@ -79,6 +79,20 @@ it('renders blocked schemes as inert text', () => {
   expect(screen.getByText('x')).toBeTruthy()
 })
 
+describe('destination hint', () => {
+  it('does not show the destination hint when the href is just the percent-encoded label', () => {
+    const { container } = render(
+      <MarkdownLink href="https://x.com/%E6%B5%8B%E8%AF%95" cwd="/repo">{'https://x.com/测试'}</MarkdownLink>,
+    )
+    expect(container.querySelector('.link-destination')).toBeNull()
+  })
+
+  it('keeps showing the destination hint when the label differs from the href', () => {
+    const { container } = render(<MarkdownLink href="https://x.com/docs" cwd="/repo">文档</MarkdownLink>)
+    expect(container.querySelector('.link-destination')?.textContent).toBe(' (https://x.com/docs)')
+  })
+})
+
 describe('markdown links', () => {
   it('only delegates OS-openable URLs to the system browser', () => {
     expect(isOpenableExternalUrl('https://openai.com/docs')).toBe(true)

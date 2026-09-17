@@ -4,13 +4,14 @@ import remarkGfm from 'remark-gfm'
 import { MarkdownCodeBlock } from './MarkdownCodeBlock'
 import { MarkdownLink } from './MarkdownLink'
 import { MermaidBlock } from './MermaidBlock'
+import { remarkRepairCjkAutolink } from './remarkRepairCjkAutolink'
 
 export function Markdown({ text, cwd }: { text: string; cwd?: string }) {
   const components: Components = {
     pre: MarkdownPre,
     ...(cwd === undefined ? {} : { a: (props: ComponentPropsWithoutRef<'a'>) => <MarkdownLink {...props} cwd={cwd} /> }),
   }
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{text}</ReactMarkdown>
+  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkRepairCjkAutolink]} components={components}>{text}</ReactMarkdown>
 }
 
 function MarkdownPre({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {

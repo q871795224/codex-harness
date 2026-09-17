@@ -8,6 +8,12 @@
 - **正确做法**：提交前同时检查 composition 生命周期、原生 `isComposing` 和 WebKit 的 `keyCode === 229`；异步创建还需防止重复提交。回归测试覆盖候选词确认和正常 Enter 提交。
 - **适用范围**：创建、重命名和其他 Enter 提交输入框。
 
+## 全角标点会被 GFM autolink 吞进 URL
+
+- **问题**：LLM 输出 `**https://…**（说明` 或 `https://…（说明）` 时，闭合 `**` 因后接全角括号不满足 CommonMark 定界符规则而失效，remark-gfm 的 autolink-literal 会把 `**（…` 一并吞进链接 URL。已与 GitHub 官方渲染（api.github.com/markdown）对照确认行为一致，不是 Harness 的实现错误。
+- **正确做法**：消息和文档渲染统一走 `src/features/markdown/Markdown.tsx`；其 `remarkRepairCjkAutolink` 插件在 remark-gfm 之后把全角标点起的内容拆回普通文本、修剪 URL 尾部残留的 `* _ ~` 标记，并恢复前后配对的 strong/emphasis/delete 包裹。尖括号 autolink（`<…>`）和显式链接（`[文字](url)`）不修复，含中文路径的合法 URL 不动。新增 markdown 渲染入口必须复用 `Markdown` 组件，不要绕过。
+- **适用范围**：会话消息、项目文档等所有 `Markdown` 组件覆盖的渲染路径。
+
 ## `@` 文件和 `$skill` 是结构化输入
 
 - **问题**：不能把 UI 上的替换文本当成最终发给模型的完整内容。
