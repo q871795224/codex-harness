@@ -66,12 +66,36 @@ export function composerInputs(text: string, attachments: ComposerInputAttachmen
   const images: UserInput[] = attachments
     .filter((attachment) => attachment.kind === 'image')
     .map((attachment) => ({ type: 'localImage', path: attachment.path }))
-  const references: UserInput[] = attachments
-    .filter((attachment) => attachment.kind !== 'image')
-    .map((attachment) => attachment.kind === 'skill'
-      ? { type: 'skill', name: attachment.name, path: attachment.path }
-      : { type: 'mention', name: attachment.name, path: attachment.path })
-  return [...images, ...(body ? [composerTextInput(body, selectedSkillNames)] : []), ...references]
+  const skills: UserInput[] = attachments
+    .filter((attachment) => attachment.kind === 'skill')
+    .map((attachment) => ({ type: 'skill', name: attachment.name, path: attachment.path }))
+  // 普通文件对齐 Codex CLI：路径直接随文本发出，由 agent 自行读取文件内容；
+  // 不再发送结构化 mention（App Server 不会把它放进模型上下文）。
+  const bodyWithFilePaths = attachments
+    .filter((attachment) => attachment.kind === 'file')
+    .reduce((acc, attachment) => (acc ? `${acc}\n${attachment.path}` : attachment.path), body)
+  return [...images, ...(bodyWithFilePaths ? [composerTextInput(bodyWithFilePaths, selectedSkillNames)] : []), ...skills]
+}
+
+interface ComposerSuggestionLike {
+  kind: 'image' | 'file' | 'skill' | 'command' | 'plugin'
+  name: string
+  path?: string
+  detail?: string
+  replacement?: string
+}
+
+/** 选中建议项后写回输入框的文本；文件对齐 Codex CLI，插入建议列表里展示的相对路径。 */
+export function suggestionReplacement(suggestion: ComposerSuggestionLike): string {
+  if (suggestion.kind === 'skill') return `$${suggestion.name}`
+  if (suggestion.kind === 'command') return suggestion.replacement ?? `/${suggestion.name}`
+  if (suggestion.kind === 'file') return suggestion.detail ?? suggestion.path ?? suggestion.name
+  return ''
+}
+
+/** 只有图片和 Skill 仍作为附件保留；文件已随文本内联，命令和插件不产生附件。 */
+export function shouldAttachSuggestion(kind: ComposerSuggestionLike['kind']): kind is 'image' | 'skill' {
+  return kind === 'image' || kind === 'skill'
 }
 
 export type ReasoningEffortTone = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'

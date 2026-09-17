@@ -28,7 +28,7 @@ Harness 与 CLI 的核对要区分两个层次：
 本次对照已确认一个 CLI 细节：交互式选中 `$demo-skill` 后，CLI 的 `turn/start.input` 会同时包含文本项
 `$demo-skill ...`、文本项里的 `text_elements` 占位信息，以及独立的 `{ type: "skill", name, path }` 项；其中
 `text_elements[].byteRange` 是 UTF-8 字节范围，不是 JavaScript 字符下标。位置参数里直接写 `@README.md`
-则仍然只是普通文本，不能代替在交互 Composer 中实际选中文件建议项。对当前 CLI 0.151.0 的交互式文件选择也捕获到：选中后 `turn/start.input` 是不带 `@` 的路径文本，未带结构化 `mention`；这与 Harness 按项目契约发送结构化 `mention` 不同，属于需要产品决策的协议差异，不能直接当成实现错误改掉。
+则仍然只是普通文本，不能代替在交互 Composer 中实际选中文件建议项。对当前 CLI 0.151.0 的交互式文件选择也捕获到：选中后 `turn/start.input` 是不带 `@` 的路径文本，未带结构化 `mention`。2026-09-16 已确认按 CLI 行为对齐：Harness 选中文件后把路径写回输入框文本随消息发出（App Server 不会把结构化 `mention` 放进模型上下文，此前 @ 文件后模型收不到路径即由此产生）；文件选择器/旧草稿残留的文件附件也在 `composerInputs` 兜底内联为路径文本。
 
 ## Token 埋点
 
