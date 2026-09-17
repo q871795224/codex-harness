@@ -393,6 +393,28 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .markdown-code-block > button.copied { border-color: #b9ddc6; color: #39815a; }
 .markdown-code-block > button.failed { border-color: #e2bebe; color: #a55252; }
 .markdown-body pre code { padding: 0; background: none; color: inherit; }
+.mermaid-block { margin: 0 0 9px; border: 1px solid #dde1e8; border-radius: 8px; background: #f7f8fa; }
+.mermaid-block-toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 7px; border-bottom: 1px solid #e4e8ee; }
+.mermaid-view-toggle { display: inline-flex; gap: 0; margin-right: auto; border: 1px solid #d9dee7; border-radius: 6px; overflow: hidden; }
+.mermaid-view-toggle > button { height: 23px; padding: 0 9px; border: 0; background: rgba(255, 255, 255, .88); color: #737b87; cursor: pointer; font-size: 10px; }
+.mermaid-view-toggle > button + button { border-left: 1px solid #d9dee7; }
+.mermaid-view-toggle > button.selected { background: #e8edf5; color: #3f4f6f; font-weight: 600; }
+.mermaid-block-toolbar > button { display: flex; align-items: center; gap: 4px; height: 23px; padding: 0 7px; border: 1px solid #d9dee7; border-radius: 6px; background: rgba(255, 255, 255, .88); color: #737b87; cursor: pointer; font-size: 10px; }
+.mermaid-block-toolbar > button:hover:not(:disabled) { border-color: #bfc7d5; color: #3f4f6f; }
+.mermaid-block-toolbar > button:disabled { cursor: default; opacity: .45; }
+.mermaid-block-toolbar > button.copied { border-color: #b9ddc6; color: #39815a; }
+.mermaid-block-toolbar > button.failed { border-color: #e2bebe; color: #a55252; }
+.mermaid-block-diagram { overflow: auto; padding: 12px 14px; }
+.mermaid-block-diagram svg { display: block; margin: 0 auto; max-width: 100% !important; height: auto; }
+.mermaid-block-code { margin: 0; overflow: auto; padding: 12px 14px; color: #303640; line-height: 1.55; }
+.mermaid-block-error { margin: 0; padding: 6px 14px; border-bottom: 1px solid #e4e8ee; color: #a55252; font-size: 12px; }
+.mermaid-block-loading { margin: 0; padding: 14px; color: #737b87; font-size: 12px; }
+.mermaid-modal-backdrop { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(27, 31, 40, .2); backdrop-filter: blur(4px); }
+.mermaid-modal { position: relative; display: flex; width: min(1080px, 100%); max-height: 100%; overflow: hidden; border: 1px solid #dde1e8; border-radius: 12px; background: #fff; box-shadow: 0 18px 48px rgba(15, 23, 42, .18); }
+.mermaid-modal-body { overflow: auto; padding: 28px; }
+.mermaid-modal-body svg { display: block; margin: 0 auto; max-width: none !important; height: auto; }
+.mermaid-modal-close { position: absolute; z-index: 1; top: 8px; right: 8px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #d9dee7; border-radius: 6px; background: rgba(255, 255, 255, .92); color: #737b87; cursor: pointer; }
+.mermaid-modal-close:hover { border-color: #bfc7d5; color: #3f4f6f; }
 .markdown-body blockquote { margin: 10px 0; padding-left: 12px; border-left: 2px solid #74a98c; color: #397654; }
 .markdown-body hr { height: 1px; margin: 18px 0; border: 0; background: #e1e3e7; }
 .markdown-body table { display: block; width: max-content; max-width: 100%; margin: 10px 0 13px; overflow-x: auto; border-collapse: collapse; font-size: .91em; }
@@ -1350,6 +1372,23 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .markdown-code-block > button:hover { border-color: #596273; color: #e0e3e8; }
 .app-shell[data-theme='dark'] .markdown-code-block > button.copied { border-color: #416955; color: #8fd0aa; }
 .app-shell[data-theme='dark'] .markdown-code-block > button.failed { border-color: #6b4448; color: #e19a9f; }
+.app-shell[data-theme='dark'] .mermaid-block { border-color: #353941; background: #202227; }
+.app-shell[data-theme='dark'] .mermaid-block-toolbar { border-color: #353941; }
+.app-shell[data-theme='dark'] .mermaid-view-toggle { border-color: #414751; }
+.app-shell[data-theme='dark'] .mermaid-view-toggle > button { background: rgba(31, 34, 39, .88); color: #aab1bc; }
+.app-shell[data-theme='dark'] .mermaid-view-toggle > button + button { border-color: #414751; }
+.app-shell[data-theme='dark'] .mermaid-view-toggle > button.selected { background: #313950; color: #aab8ee; }
+.app-shell[data-theme='dark'] .mermaid-block-toolbar > button { border-color: #414751; background: rgba(31, 34, 39, .88); color: #aab1bc; }
+.app-shell[data-theme='dark'] .mermaid-block-toolbar > button:hover:not(:disabled) { border-color: #596273; color: #e0e3e8; }
+.app-shell[data-theme='dark'] .mermaid-block-toolbar > button.copied { border-color: #416955; color: #8fd0aa; }
+.app-shell[data-theme='dark'] .mermaid-block-toolbar > button.failed { border-color: #6b4448; color: #e19a9f; }
+.app-shell[data-theme='dark'] .mermaid-block-code { color: #d9dee7; }
+.app-shell[data-theme='dark'] .mermaid-block-error { border-color: #353941; color: #e19a9f; }
+.app-shell[data-theme='dark'] .mermaid-block-loading { color: #aab1bc; }
+.app-shell[data-theme='dark'] .mermaid-modal-backdrop { background: rgba(5, 7, 10, .58); }
+.app-shell[data-theme='dark'] .mermaid-modal { border-color: #353941; background: #202227; box-shadow: 0 18px 48px rgba(0, 0, 0, .5); }
+.app-shell[data-theme='dark'] .mermaid-modal-close { border-color: #414751; background: rgba(31, 34, 39, .92); color: #aab1bc; }
+.app-shell[data-theme='dark'] .mermaid-modal-close:hover { border-color: #596273; color: #e0e3e8; }
 .app-shell[data-theme='dark'] .markdown-body blockquote { border-color: #527c65; color: #83c49d; }
 .app-shell[data-theme='dark'] .markdown-body hr { background: #353941; }
 .app-shell[data-theme='dark'] .markdown-body th,

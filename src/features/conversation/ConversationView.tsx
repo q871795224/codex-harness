@@ -1,6 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   Archive,
   ArchiveRestore,
@@ -33,7 +31,9 @@ import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
 import { displayCommand } from './commandDisplay'
 import { groupTranscriptTurns, summarizeProcessRows, type TranscriptItem, type TranscriptTurn } from './transcript'
-import { diagnosticErrorCode, runtime } from '../../core/runtime/bridge'
+import { runtime } from '../../core/runtime/bridge'
+import { writeClipboard } from '../markdown/clipboard'
+import { Markdown } from '../markdown/Markdown'
 import { WorkingStatus } from './ConversationStats'
 import { collectNativeAgentActivities, type NativeAgentActivity } from './agentActivity'
 
@@ -812,148 +812,9 @@ function MessageBody({ text, raw, cwd }: { text: string; raw: boolean; cwd: stri
   if (raw) return <pre className="raw-response">{text}</pre>
   return (
     <div className="markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: (props) => <MarkdownLink {...props} cwd={cwd} />, pre: MarkdownCodeBlock }}>{text}</ReactMarkdown>
+      <Markdown text={text} cwd={cwd} />
     </div>
   )
-}
-
-function MarkdownCodeBlock({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
-  const preRef = useRef<HTMLPreElement>(null)
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
-
-  const copy = async () => {
-    const text = preRef.current?.textContent ?? ''
-    if (!text) return
-    try {
-      await writeClipboard(text.replace(/\n$/, ''))
-      setCopyState('copied')
-      window.setTimeout(() => setCopyState('idle'), 1_500)
-    } catch {
-      setCopyState('failed')
-      window.setTimeout(() => setCopyState('idle'), 1_500)
-    }
-  }
-
-  return (
-    <div className="markdown-code-block">
-      <pre ref={preRef} {...props}>{children}</pre>
-      <button type="button" className={copyState} onClick={() => void copy()} aria-label="复制代码" title={copyState === 'failed' ? '复制失败' : '复制代码'}>
-        {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
-        {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '失败' : '复制'}
-      </button>
-    </div>
-  )
-}
-
-async function writeClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
-  }
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  document.body.appendChild(textarea)
-  textarea.select()
-  const copied = document.execCommand('copy')
-  textarea.remove()
-  if (!copied) throw new Error('clipboard unavailable')
-}
-
-function recordLinkOpenDiagnostic(kind: 'external' | 'local', href: string, error: unknown): void {
-  void runtime.recordClientDiagnostic({
-    level: 'error',
-    area: 'frontend',
-    event: 'markdown-link.open-failed',
-    context: { kind, href },
-    errorCode: diagnosticErrorCode(error),
-    reason: error instanceof Error ? error.message : String(error),
-  }).catch(() => undefined)
-}
-
-export function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWithoutRef<'a'> & { cwd: string }) {
-  const local = href ? parseLocalFileReference(href) : null
-  if (local) return (
-    <button
-      type="button"
-      className="local-link"
-      title={`在 GoLand 中打开 ${local.path}${local.line ? `:${local.line}` : ''}`}
-      onClick={() => void runtime.openWorkspacePath('goland', cwd, local.path, local.line).catch((error) => recordLinkOpenDiagnostic('local', href ?? local.path, error))}
-    >
-      {children}
-    </button>
-  )
-  if (!href || !isOpenableExternalUrl(href)) return <span className="local-link-label" title={href}>{children || href}</span>
-  const showDestination = markdownLinkLabel(children) !== href
-  return (
-    <a
-      href={href}
-      {...props}
-      rel="noreferrer"
-      onClick={(event) => {
-        event.preventDefault()
-        void runtime.openExternalUrl(href).catch((error) => recordLinkOpenDiagnostic('external', href, error))
-      }}
-    >
-      {children}{showDestination && <span className="link-destination"> ({href})</span>}
-    </a>
-  )
-}
-
-export interface LocalFileReference {
-  path: string
-  line?: number
-}
-
-export function parseLocalFileReference(value: string): LocalFileReference | null {
-  let decoded: string
-  try {
-    decoded = decodeURI(value)
-  } catch {
-    return null
-  }
-  if (decoded.startsWith('file://')) {
-    try {
-      const url = new URL(decoded)
-      decoded = decodeURIComponent(url.pathname) + url.hash
-    } catch {
-      return null
-    }
-  }
-  if (/^[a-z][a-z0-9+.-]*:/i.test(decoded)) return null
-  const hashLine = decoded.match(/^(.*)#L(\d+)$/)
-  if (hashLine) return { path: hashLine[1], line: positiveLine(hashLine[2]) }
-  const suffixLine = decoded.match(/^(.*?):(\d+)(?::\d+)?$/)
-  if (suffixLine) return { path: suffixLine[1], line: positiveLine(suffixLine[2]) }
-  if (decoded.startsWith('/') || decoded.startsWith('./') || decoded.startsWith('../') || /^[\w@.-]+\//.test(decoded)) {
-    return { path: decoded }
-  }
-  if (/^(?=.*\w)[\w@.-]+$/.test(decoded)) {
-    return { path: decoded }
-  }
-  return null
-}
-
-function positiveLine(value: string): number | undefined {
-  const line = Number(value)
-  return Number.isSafeInteger(line) && line > 0 ? line : undefined
-}
-
-function markdownLinkLabel(children: ComponentPropsWithoutRef<'a'>['children']): string {
-  if (typeof children === 'string' || typeof children === 'number') return String(children)
-  if (Array.isArray(children)) return children.map(markdownLinkLabel).join('')
-  return ''
-}
-
-const OPENABLE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:'])
-
-export function isOpenableExternalUrl(value: string): boolean {
-  try {
-    return OPENABLE_EXTERNAL_PROTOCOLS.has(new URL(value).protocol)
-  } catch {
-    return false
-  }
 }
 
 function CommandItem({ item }: { item: ThreadItemEntry['item'] }) {
