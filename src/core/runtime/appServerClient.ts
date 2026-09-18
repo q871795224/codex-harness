@@ -41,6 +41,10 @@ export interface ForkThreadResponse extends ThreadSettingsResponse {
   thread: Thread
 }
 
+export interface ReadThreadResponse {
+  thread: Thread
+}
+
 export interface FuzzyFileSearchResult {
   root: string
   path: string
@@ -60,6 +64,7 @@ export const appServer = {
   updateThreadSettings: (params: JsonObject) => runtime.request<void>('thread/settings/update', params),
   updateThreadMetadata: (params: JsonObject) => runtime.request<void>('thread/metadata/update', params),
   listTurns: (params: JsonObject) => runtime.request<{ data: Turn[]; nextCursor: string | null }>('thread/turns/list', params),
+  readThread: (params: JsonObject) => runtime.request<ReadThreadResponse>('thread/read', params),
   startTurn: (params: JsonObject) => runtime.request<{ turn: Turn }>('turn/start', params),
   steerTurn: (params: { threadId: string; expectedTurnId: string; clientUserMessageId: string; input: UserInput[] }) => runtime.request<void>('turn/steer', params),
   interruptTurn: (threadId: string, turnId: string) => runtime.request<void>('turn/interrupt', { threadId, turnId }),

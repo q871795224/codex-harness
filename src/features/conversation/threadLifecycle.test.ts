@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Thread, Turn, Workspace } from '../../core/domain/codex'
 import type { ResumeThreadResponse, StartThreadResponse } from '../../core/runtime/appServerClient'
 import {
+  archivedThreadDetail,
   draftThreadStartRequest,
+  isArchivedThreadError,
   resumedThreadDetail,
   resumeThreadWithRetry,
   resumeThreadRequest,
@@ -137,6 +139,33 @@ describe('thread lifecycle hydration', () => {
     expect(started.items).toEqual([])
     expect(started.runtimeWorkspaceRoots).toEqual(['/repo'])
     expect(started.model).toBe('gpt-test')
+  })
+
+  it('builds a read-only detail for an archived thread from a turns page', () => {
+    const detail = archivedThreadDetail(thread({ id: 'archived-1' }), {
+      data: [turn('turn-new', 'completed', 'new'), turn('turn-old', 'completed', 'old')],
+      nextCursor: 'older-page',
+    })
+
+    expect(detail.thread.id).toBe('archived-1')
+    expect(detail.turns.map((item) => item.id)).toEqual(['turn-old', 'turn-new'])
+    expect(detail.items.map((entry) => [entry.turnId, entry.item.id])).toEqual([
+      ['turn-old', 'item-turn-old'],
+      ['turn-new', 'item-turn-new'],
+    ])
+    expect(detail.nextTurnsCursor).toBe('older-page')
+    expect(detail.activeTurnId).toBeNull()
+    expect(detail.foreignActive).toBe(false)
+    expect(detail.runtimeWorkspaceRoots).toEqual(['/repo'])
+    expect(detail.sandbox).toBeNull()
+    expect(detail.activePermissionProfile).toBeNull()
+  })
+
+  it('recognizes the App Server archived-thread error without matching other failures', () => {
+    expect(isArchivedThreadError(new Error('session abc is archived. Run `codex unarchive abc` to unarchive it first.'))).toBe(true)
+    expect(isArchivedThreadError('session abc is archived.')).toBe(true)
+    expect(isArchivedThreadError(new Error('thread not found'))).toBe(false)
+    expect(isArchivedThreadError(new Error('Codex App Server 连接已关闭。'))).toBe(false)
   })
 
   it('normalizes an omitted service tier from an older App Server', () => {

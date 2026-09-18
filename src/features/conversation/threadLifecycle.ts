@@ -5,6 +5,7 @@ import type {
   Thread,
   ThreadCodexSettings,
   ThreadDetail,
+  Turn,
   UserInput,
   Workspace,
 } from '../../core/domain/codex'
@@ -81,6 +82,31 @@ export function resumedThreadDetail(response: ResumeThreadResponse): ThreadDetai
     activePermissionProfile: response.activePermissionProfile,
     model: response.model,
     threadSettings: runtimeThreadSettings(response),
+  }
+}
+
+export function isArchivedThreadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /\bis archived\b/i.test(message)
+}
+
+export function archivedThreadDetail(
+  thread: Thread,
+  turnsPage: { data: Turn[]; nextCursor: string | null },
+): ThreadDetail {
+  const turns = [...turnsPage.data].reverse()
+  return {
+    thread,
+    turns,
+    items: turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item }))),
+    nextTurnsCursor: turnsPage.nextCursor,
+    activeTurnId: null,
+    foreignActive: false,
+    runtimeWorkspaceRoots: [thread.cwd],
+    sandbox: null,
+    activePermissionProfile: null,
+    model: null,
+    threadSettings: null,
   }
 }
 

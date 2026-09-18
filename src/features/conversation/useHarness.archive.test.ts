@@ -2,7 +2,7 @@ import { notifications } from '../../core/notifications/service'
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AppServerEvent, Thread } from '../../core/domain/codex'
+import type { AppServerEvent, Thread, Turn } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import { appServer } from '../../core/runtime/appServerClient'
 import { useHarness } from './useHarness'
@@ -32,12 +32,22 @@ vi.mock('../../core/runtime/appServerClient', () => ({
     updateThreadMetadata: vi.fn().mockResolvedValue(undefined),
     startThread: vi.fn(), deleteThread: vi.fn().mockResolvedValue(undefined),
     resumeThread: vi.fn(), listQueue: vi.fn().mockResolvedValue({ data: [] }),
+    readThread: vi.fn(), listTurns: vi.fn(), unarchiveThread: vi.fn().mockResolvedValue(undefined),
   },
 }))
 
 const thread = (id: string): Thread => ({
   id, cwd: '/repo', name: id, preview: '', ephemeral: false,
   createdAt: 1, updatedAt: 1, recencyAt: 1, status: { type: 'idle' }, canAcceptDirectInput: true,
+})
+const turn = (id: string): Turn => ({
+  id, status: 'completed', items: [{ id: `item-${id}`, type: 'agentMessage', text: id }],
+  error: null, startedAt: 1, completedAt: 2, durationMs: 1,
+})
+const resumeResponse = (id: string) => ({
+  thread: thread(id), approvalPolicy: 'never' as const, approvalsReviewer: 'user' as const,
+  model: 'test', reasoningEffort: null, serviceTier: null,
+  sandbox: { type: 'dangerFullAccess' as const }, runtimeWorkspaceRoots: [], activePermissionProfile: null,
 })
 const page = (id: string) => ({ data: [thread(id)], nextCursor: null })
 function deferred<T>() {
@@ -161,21 +171,86 @@ describe('archive view navigation', () => {
   it('does not reinsert an archived conversation when its history loads after returning', async () => {
     const { result } = await ready()
     await act(async () => { await result.current.setViewMode('archived') })
-    const pending = deferred<Awaited<ReturnType<typeof appServer.resumeThread>>>()
-    vi.mocked(appServer.resumeThread).mockReturnValue(pending.promise)
+    const pending = deferred<Awaited<ReturnType<typeof appServer.readThread>>>()
+    vi.mocked(appServer.readThread).mockReturnValue(pending.promise)
+    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [], nextCursor: null })
     let selecting!: Promise<void>
     act(() => { selecting = result.current.selectThread('archived') })
     await act(async () => { await result.current.setViewMode('active') })
     await act(async () => {
-      pending.resolve({
-        thread: thread('archived'), approvalPolicy: 'never', approvalsReviewer: 'user',
-        model: 'test', reasoningEffort: null, serviceTier: null,
-        sandbox: { type: 'dangerFullAccess' }, runtimeWorkspaceRoots: [], activePermissionProfile: null,
-      })
+      pending.resolve({ thread: thread('archived') })
       await selecting
     })
     expect(result.current.details.archived.thread.id).toBe('archived')
     expect(result.current.threads.map((item) => item.id)).toEqual(['active'])
+  })
+
+  it('loads an archived conversation read-only without resuming it', async () => {
+    const { result } = await ready()
+    await act(async () => { await result.current.setViewMode('archived') })
+    vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('archived') })
+    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [turn('turn-new'), turn('turn-old')], nextCursor: 'older-page' })
+    await act(async () => { await result.current.selectThread('archived') })
+    expect(appServer.resumeThread).not.toHaveBeenCalled()
+    expect(appServer.readThread).toHaveBeenCalledWith({ threadId: 'archived', includeTurns: false })
+    expect(appServer.listTurns).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'archived', limit: 5, sortDirection: 'desc' }))
+    const detail = result.current.details.archived
+    expect(detail.turns.map((item) => item.id)).toEqual(['turn-old', 'turn-new'])
+    expect(detail.items.map((entry) => entry.item.id)).toEqual(['item-turn-old', 'item-turn-new'])
+    expect(detail.nextTurnsCursor).toBe('older-page')
+    expect(detail.activeTurnId).toBeNull()
+    expect(detail.foreignActive).toBe(false)
+  })
+
+  it('falls back to read-only loading when resume reports the thread is archived', async () => {
+    const { result } = await ready()
+    vi.mocked(appServer.resumeThread).mockRejectedValueOnce(new Error('session active is archived. Run `codex unarchive active` to unarchive it first.'))
+    vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('active') })
+    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [turn('turn-1')], nextCursor: null })
+    const publish = vi.spyOn(notifications, 'publish')
+    await act(async () => { await result.current.selectThread('active') })
+    expect(appServer.readThread).toHaveBeenCalledWith({ threadId: 'active', includeTurns: false })
+    expect(result.current.details.active.thread.id).toBe('active')
+    expect(result.current.details.active.turns.map((item) => item.id)).toEqual(['turn-1'])
+    expect(publish).not.toHaveBeenCalledWith(expect.objectContaining({ title: '无法恢复会话' }))
+    publish.mockRestore()
+  })
+
+  it('reopens the conversation in the active view after unarchiving', async () => {
+    const { result } = await ready()
+    await act(async () => { await result.current.setViewMode('archived') })
+    vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('archived') })
+    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [], nextCursor: null })
+    await act(async () => { await result.current.selectThread('archived') })
+    vi.mocked(appServer.listThreads).mockImplementation(async (params) => params.archived ? { data: [], nextCursor: null } : page('archived'))
+    vi.mocked(appServer.resumeThread).mockResolvedValue(resumeResponse('archived'))
+    const publish = vi.spyOn(notifications, 'publish')
+    await act(async () => { await result.current.unarchiveThread('archived') })
+    expect(appServer.unarchiveThread).toHaveBeenCalledWith('archived')
+    expect(result.current.viewMode).toBe('active')
+    expect(appServer.resumeThread).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'archived' }))
+    expect(result.current.currentThread?.id).toBe('archived')
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ title: '已恢复会话' }))
+    publish.mockRestore()
+  })
+
+  it('keeps the restored conversation when a late thread/unarchived event arrives in the active view', async () => {
+    const { result } = await ready()
+    await act(async () => { await result.current.setViewMode('archived') })
+    vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('archived') })
+    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [], nextCursor: null })
+    await act(async () => { await result.current.selectThread('archived') })
+    vi.mocked(appServer.listThreads).mockImplementation(async (params) => params.archived ? { data: [], nextCursor: null } : page('archived'))
+    vi.mocked(appServer.resumeThread).mockResolvedValue(resumeResponse('archived'))
+    await act(async () => { await result.current.unarchiveThread('archived') })
+    expect(result.current.viewMode).toBe('active')
+    expect(result.current.threads.map((item) => item.id)).toEqual(['archived'])
+    const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
+    await act(async () => {
+      listener({ method: 'thread/unarchived', params: { threadId: 'archived' } } as AppServerEvent)
+    })
+    expect(result.current.threads.map((item) => item.id)).toEqual(['archived'])
+    expect(result.current.currentThread?.id).toBe('archived')
   })
 
   it('preserves the search filter when switching views and refreshing', async () => {

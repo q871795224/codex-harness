@@ -106,7 +106,9 @@ import {
 } from './recapGenerator'
 import { groupTranscriptTurns } from './transcript'
 import {
+  archivedThreadDetail,
   draftThreadStartRequest,
+  isArchivedThreadError,
   isFirstUserTurn,
   activeThreadIdsForRecovery,
   resolveDefaultWorkspaceCwd,
@@ -698,6 +700,18 @@ export function useHarness() {
     if (loadQueueAfter) await loadQueue(threadId)
   }, [commitTurnOwnership, loadQueue, mapThreadRoots, updateThread])
 
+  // Archived threads cannot be resumed; load them read-only through
+  // `thread/read` + `thread/turns/list` so their history stays viewable.
+  const loadArchivedThread = useCallback(async (threadId: string) => {
+    const [read, turnsPage] = await Promise.all([
+      appServer.readThread({ threadId, includeTurns: false }),
+      appServer.listTurns({ threadId, limit: 5, sortDirection: 'desc', itemsView: 'full' }),
+    ])
+    setDetails((current) => ({ ...current, [threadId]: archivedThreadDetail(read.thread, turnsPage) }))
+    updateThread(threadId, (current) => ({ ...current, ...read.thread }))
+    void mapThreadRoots([read.thread])
+  }, [mapThreadRoots, updateThread])
+
   const selectThread = useCallback(async (threadId: string, selectionSource: ThreadSelectionSource = 'unknown') => {
     const previousThreadId = selectedThreadIdRef.current
     const listedThread = threadsRef.current.find((thread) => thread.id === threadId)
@@ -724,28 +738,39 @@ export function useHarness() {
     markThreadRead(threadId)
     setBusy((current) => ({ ...current, [`load:${threadId}`]: true }))
     try {
-      const response = await resumeThreadWithRetry(() => appServer.resumeThread(resumeThreadRequest(threadId, listedThread?.cwd)))
-      const localThreadAtResponse = threadsRef.current.find((thread) => thread.id === threadId)
-      const localDetailAtResponse = detailsRef.current[threadId]
-      recordWorkspaceContextDiagnostic({
-        level: 'info',
-        event: 'thread.selection.resumed',
-        threadId,
-        method: 'thread/resume',
-        context: {
-          source: selectionSource,
-          selectedThreadIdAtResponse: selectedThreadIdRef.current,
-          selectedThreadMatches: selectedThreadIdRef.current === threadId,
-          requestedCwd: listedThread?.cwd ?? null,
-          localThreadCwdAtResponse: localThreadAtResponse?.cwd ?? null,
-          localDetailCwdAtResponse: localDetailAtResponse?.thread.cwd ?? null,
-          responseCwd: response.thread.cwd,
-          responseRuntimeWorkspaceRoots: response.runtimeWorkspaceRoots,
-          responseApplied: true,
-        },
-      })
-      await applyResumedThread(threadId, response)
-      if (selectedThreadIdRef.current === threadId) rememberNextThreadCwd(response.thread.cwd)
+      // Archived threads cannot be resumed; read them without changing archive state.
+      if (viewModeRef.current === 'archived') {
+        await loadArchivedThread(threadId)
+        return
+      }
+      try {
+        const response = await resumeThreadWithRetry(() => appServer.resumeThread(resumeThreadRequest(threadId, listedThread?.cwd)))
+        const localThreadAtResponse = threadsRef.current.find((thread) => thread.id === threadId)
+        const localDetailAtResponse = detailsRef.current[threadId]
+        recordWorkspaceContextDiagnostic({
+          level: 'info',
+          event: 'thread.selection.resumed',
+          threadId,
+          method: 'thread/resume',
+          context: {
+            source: selectionSource,
+            selectedThreadIdAtResponse: selectedThreadIdRef.current,
+            selectedThreadMatches: selectedThreadIdRef.current === threadId,
+            requestedCwd: listedThread?.cwd ?? null,
+            localThreadCwdAtResponse: localThreadAtResponse?.cwd ?? null,
+            localDetailCwdAtResponse: localDetailAtResponse?.thread.cwd ?? null,
+            responseCwd: response.thread.cwd,
+            responseRuntimeWorkspaceRoots: response.runtimeWorkspaceRoots,
+            responseApplied: true,
+          },
+        })
+        await applyResumedThread(threadId, response)
+        if (selectedThreadIdRef.current === threadId) rememberNextThreadCwd(response.thread.cwd)
+      } catch (error) {
+        // A stale catalog can point at a thread another client archived.
+        if (!isArchivedThreadError(error)) throw error
+        await loadArchivedThread(threadId)
+      }
     } catch (error) {
       recordWorkspaceContextDiagnostic({
         level: 'error',
@@ -770,7 +795,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, [`load:${threadId}`]: false }))
     }
-  }, [applyResumedThread, discardEmptyDraftThread, markThreadRead, notify, rememberNextThreadCwd])
+  }, [applyResumedThread, discardEmptyDraftThread, loadArchivedThread, markThreadRead, notify, rememberNextThreadCwd])
 
   const recoverActiveThreadSubscriptions = useCallback(async () => {
     const selectedId = selectedThreadIdRef.current
@@ -1800,13 +1825,15 @@ export function useHarness() {
   const unarchiveThread = useCallback(async (threadId: string) => {
     try {
       await appServer.unarchiveThread(threadId)
-      setThreads((current) => current.filter((thread) => thread.id !== threadId))
-      if (selectedThreadIdRef.current === threadId) setSelectedThreadId(null)
       notify('已恢复会话', 'info', undefined, { threadId })
     } catch (error) {
       notify('无法恢复会话', 'error', error, { threadId })
+      return
     }
-  }, [notify])
+    // Land the user on the restored conversation: switch back to the active
+    // view and open it (resume works again once unarchived).
+    await openThread(threadId)
+  }, [notify, openThread])
 
   const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
     try {
@@ -2130,12 +2157,22 @@ export function useHarness() {
     if (method === 'thread/archived' || method === 'thread/deleted' || method === 'thread/unarchived') {
       const threadId = eventThreadId(params)
       if (threadId) {
-        ++threadListRequestRef.current
         pendingCatalogThreadIdsRef.current.delete(threadId)
         unstartedDraftThreadIdsRef.current.delete(threadId)
         draftContentThreadIdsRef.current.delete(threadId)
         draftInitialCwdsRef.current.delete(threadId)
-        setThreads((current) => current.filter((thread) => thread.id !== threadId))
+        // Only an event that moves the thread out of the current view may
+        // invalidate in-flight lists and drop the entry. A late
+        // thread/unarchived in the active view (e.g. after our own restore)
+        // must not remove the just-restored conversation.
+        const leavesCurrentView =
+          method === 'thread/deleted'
+          || (method === 'thread/archived' && viewModeRef.current === 'active')
+          || (method === 'thread/unarchived' && viewModeRef.current === 'archived')
+        if (leavesCurrentView) {
+          ++threadListRequestRef.current
+          setThreads((current) => current.filter((thread) => thread.id !== threadId))
+        }
       }
     }
   }, [commitTurnOwnership, handleRecapGeneratorEvent, handleTitleGeneratorEvent, loadQueue, mapThreadRoots, notify, persistBadge, queueDetailDelta, refreshThreads, setActiveTurn, setThreadStarting, startTurn, updateDetail, updateThread])
