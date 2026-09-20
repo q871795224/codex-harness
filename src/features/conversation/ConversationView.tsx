@@ -804,7 +804,7 @@ function MessageBody({ text, raw, cwd }: { text: string; raw: boolean; cwd: stri
   if (raw) return <pre className="raw-response">{text}</pre>
   return (
     <div className="markdown-body">
-      <Markdown text={text} cwd={cwd} />
+      <Markdown text={text} cwd={cwd} collapsibleJson />
     </div>
   )
 }
