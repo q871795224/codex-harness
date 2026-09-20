@@ -68,6 +68,16 @@ function response(): ResumeThreadResponse {
 }
 
 describe('thread lifecycle hydration', () => {
+  it('uses the effective resume cwd without changing the persisted response metadata', () => {
+    const resumed = { ...response(), cwd: '/selected', runtimeWorkspaceRoots: ['/selected', '/extra'] }
+    const detail = resumedThreadDetail(resumed)
+
+    expect(detail.thread.cwd).toBe('/selected')
+    expect(detail.runtimeWorkspaceRoots).toEqual(['/selected', '/extra'])
+    expect(resumed.thread.cwd).toBe('/repo')
+    expect(resumedThreadDetail(response()).thread.cwd).toBe('/repo')
+  })
+
   it('collects every active thread except the selected one for recovery', () => {
     const detail = resumedThreadDetail({ ...response(), thread: thread({ id: 'detail-thread' }) })
     const active = thread({ id: 'listed-active', status: { type: 'active', activeFlags: [] } })

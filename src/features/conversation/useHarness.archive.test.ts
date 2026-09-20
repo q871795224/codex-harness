@@ -280,6 +280,34 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
   const accepted = { turn: { id: 'turn-1', status: 'inProgress' as const, items: [], error: null, startedAt: 1, completedAt: null, durationMs: null } }
   const input = [{ type: 'text' as const, text: 'usage analysis', text_elements: [] }]
 
+  it('keeps the selected workspace after switching away and back before the first submission', async () => {
+    const { result } = await draft()
+    act(() => { result.current.setThreadDraftContent('draft', true) })
+    vi.mocked(runtime.mapThreadWorkspaces).mockResolvedValueOnce({
+      '/other': { root: '/other', checkoutRoot: '/other', name: 'other', branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 },
+    })
+    await act(async () => { await result.current.changeThreadWorkspace('draft', '/other') })
+    vi.mocked(appServer.resumeThread).mockResolvedValueOnce(resumeResponse('active'))
+    await act(async () => { await result.current.selectThread('active') })
+    // App Server returns the selected runtime cwd alongside the old creation cwd.
+    vi.mocked(appServer.resumeThread).mockResolvedValueOnce({
+      ...resumeResponse('draft'), cwd: '/other', runtimeWorkspaceRoots: ['/other'],
+    })
+    await act(async () => { await result.current.selectThread('draft') })
+    expect(appServer.resumeThread).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/other' }))
+    expect(result.current.currentThread?.cwd).toBe('/other')
+    expect(result.current.details.draft.thread.cwd).toBe('/other')
+    expect(runtime.mapThreadWorkspaces).toHaveBeenLastCalledWith(['/other'])
+
+    vi.mocked(appServer.startTurn).mockResolvedValueOnce(accepted)
+    await act(async () => { await result.current.sendMessage(input, 'queue') })
+    expect(appServer.startThread).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/other' }))
+    expect(appServer.deleteThread).toHaveBeenCalledWith('draft')
+    expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: 'replacement', cwd: '/other', runtimeWorkspaceRoots: ['/other'], input,
+    }))
+  })
+
   it('keeps display metadata out of start, queue and steer RPC inputs and associates each client id', async () => {
     const save = vi.spyOn(messageReferences, 'saveMessageReferences').mockResolvedValue(undefined)
     try {

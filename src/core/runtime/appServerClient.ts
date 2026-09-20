@@ -25,6 +25,8 @@ export interface ThreadSettingsResponse {
 }
 
 export interface ResumeThreadResponse extends ThreadSettingsResponse {
+  /** Effective runtime cwd; older servers may only provide thread.cwd. */
+  cwd?: string
   thread: Thread
   initialTurnsPage?: { data: Turn[]; nextCursor: string | null } | null
   runtimeWorkspaceRoots: string[]
