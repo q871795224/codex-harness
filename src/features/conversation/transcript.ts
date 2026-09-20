@@ -1,4 +1,5 @@
-import type { ThreadItemEntry, Turn } from '../../core/domain/codex'
+import { skillReads } from './skillActivity'
+import type { CodexSkill, ThreadItemEntry, Turn } from '../../core/domain/codex'
 
 export interface TranscriptItem {
   entry: ThreadItemEntry
@@ -91,13 +92,15 @@ export function groupTranscriptTurns(
   return turns
 }
 
-export function summarizeProcessRows(rows: TranscriptItem[]): string {
+export function summarizeProcessRows(rows: TranscriptItem[], catalog: readonly CodexSkill[] = []): string {
+  const skills = [...new Set(rows.flatMap((row) => skillReads(row.entry.item, catalog).map((read) => read.name)))]
   const commandCount = rows.filter((row) => row.entry.item.type === 'commandExecution').length
   const fileCount = rows.reduce((count, row) => row.entry.item.type === 'fileChange' && Array.isArray(row.entry.item.changes)
     ? count + row.entry.item.changes.length
     : count, 0)
   return [
     `${rows.length} 项`,
+    skills.length > 0 ? `技能读取：${skills.join('、')}` : null,
     fileCount > 0 ? `修改 ${fileCount} 个文件` : null,
     commandCount > 0 ? `运行 ${commandCount} 条命令` : null,
   ].filter(Boolean).join(' · ')

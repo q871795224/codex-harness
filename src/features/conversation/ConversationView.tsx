@@ -1,7 +1,9 @@
+import { skillReads, skillReadStatus } from './skillActivity'
+import { SkillCatalogContext, useSkillCatalog } from './SkillCatalog'
 import { ToolCallDetails } from './ItemDetails'
 import { inspectItem } from './itemInspection'
 import { UserMessageContent } from './UserMessageContent'
-import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { memo, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   Archive,
   ArchiveRestore,
@@ -217,6 +219,7 @@ interface ConversationViewProps {
 }
 
 export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
+  const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
   const followingLatest = useRef(initialScrollTop === null)
@@ -306,6 +309,7 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
   const agentActivities = collectNativeAgentActivities(items, agentApprovalCounts)
 
   return (
+    <SkillCatalogContext.Provider value={skillCatalog}>
     <section className="conversation-pane" aria-label="对话内容">
       {working && <div className="conversation-working-line" aria-hidden><span /></div>}
       <div className="conversation-scroll" ref={scrollRef} tabIndex={0} onKeyDown={handleVimKeyDown} onScroll={(event) => {
@@ -429,6 +433,7 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
         <ArrowDownToLine size={17} />
       </button>
     </section>
+    </SkillCatalogContext.Provider>
   )
 }
 
@@ -608,6 +613,7 @@ function ProcessGroup({ rows, agentLabel, status, hasFinalAnswer, working, worki
   cwd: string
   onOpenThread?: (threadId: string) => void
 }) {
+  const skillCatalog = useContext(SkillCatalogContext)
   const keepOpen = working || !hasFinalAnswer || status === 'failed' || status === 'interrupted'
   const [open, setOpen] = useState(keepOpen)
 
@@ -622,7 +628,7 @@ function ProcessGroup({ rows, agentLabel, status, hasFinalAnswer, working, worki
       <button type="button" className="process-group-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span className="process-group-title">{working ? `${agentLabel} 正在执行` : status === 'failed' ? '执行失败' : status === 'interrupted' ? '执行已中断' : '执行过程'}</span>
-        <span className="process-group-summary">{summarizeProcessRows(rows)}</span>
+        <span className="process-group-summary">{summarizeProcessRows(rows, skillCatalog)}</span>
         {state !== 'completed' && <small>{state === 'running' ? '运行中' : state === 'failed' ? '失败' : '已中断'}</small>}
       </button>
       {open && (
@@ -812,15 +818,18 @@ function MessageBody({ text, raw, cwd }: { text: string; raw: boolean; cwd: stri
 }
 
 function CommandItem({ item }: { item: ThreadItemEntry['item'] }) {
+  const skillCatalog = useContext(SkillCatalogContext)
+  const reads = skillReads(item, skillCatalog)
+  const skillLabel = reads.map((read) => read.name).join('、')
   const [open, setOpen] = useState(false)
   const rawCommand = String(item.command ?? '命令')
   const command = displayCommand(rawCommand)
   return (
     <article className={`tool-card command-card ${item.status === 'failed' ? 'failed' : ''}`}>
       <button type="button" className="tool-card-head" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        <Terminal size={15} />
-        <code title={rawCommand}>{truncate(command, 110)}</code>
-        <span>{item.status === 'inProgress' ? '运行中' : item.exitCode === 0 ? '完成' : item.status ?? ''}</span>
+        {reads.length > 0 ? <Sparkles size={15} /> : <Terminal size={15} />}
+        <code title={reads.length > 0 ? reads.map((read) => read.path).join('\n') : rawCommand}>{reads.length > 0 ? `读取技能：${skillLabel}` : truncate(command, 110)}</code>
+        <span>{reads.length > 0 ? skillReadStatus(item) : item.status === 'inProgress' ? '运行中' : item.exitCode === 0 ? '完成' : item.status ?? ''}</span>
         {item.durationMs !== undefined && <small>{formatDuration(item.durationMs)}</small>}
         {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
       </button>
