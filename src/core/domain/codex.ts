@@ -200,7 +200,7 @@ export function normalizeSendShortcut(value: unknown): SendShortcut {
 }
 
 export function normalizeFollowUpMode(value: unknown): FollowUpMode {
-  return value === 'interject' ? 'interject' : 'queue'
+  return value === 'queue' ? 'queue' : 'interject'
 }
 
 export type ThreadStatus =

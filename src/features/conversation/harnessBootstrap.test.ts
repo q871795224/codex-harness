@@ -28,6 +28,16 @@ function storage(values: Record<string, string | null> = {}): HarnessBootstrapSt
 }
 
 describe('Harness bootstrap restoration', () => {
+  it.each([null, '{}', '{"followUpMode":"unknown"}'])('defaults follow-ups to interject for %s', async (raw) => {
+    const state = await loadHarnessBootstrap(storage({ [KEYBOARD_PREFERENCES_KEY]: raw }))
+    expect(state.keyboard.followUpMode).toBe('interject')
+  })
+
+  it('preserves an explicitly stored queue preference', async () => {
+    const state = await loadHarnessBootstrap(storage({ [KEYBOARD_PREFERENCES_KEY]: '{"followUpMode":"queue"}' }))
+    expect(state.keyboard.followUpMode).toBe('queue')
+  })
+
   it('loads local state and normalizes stored preferences', async () => {
     const client = storage({
       selectedThreadId: 'thread-1',
@@ -71,7 +81,7 @@ describe('Harness bootstrap restoration', () => {
 
     expect(state.navigation).toEqual(defaultNavigationPreferences)
     expect(state.appearance.theme).toBe('light')
-    expect(state.keyboard).toMatchObject({ sendShortcut: 'mod-enter', followUpMode: 'queue' })
+    expect(state.keyboard).toMatchObject({ sendShortcut: 'mod-enter', followUpMode: 'interject' })
     expect(state.threadTitleGeneration).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
   })
 })
