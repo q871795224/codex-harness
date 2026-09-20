@@ -935,11 +935,11 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     ? harness.updateClaudeSettings(harness.selectedThreadId, patch)
                     : undefined}
                   onFollowUpModeChange={harness.setFollowUpMode}
-                  onSend={async (input, mode) => {
+                  onSend={async (input, mode, references) => {
                     const threadId = harness.currentThread!.id
                     scrollRequestSequence.current += 1
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
-                    await harness.sendMessage(input, mode)
+                    await harness.sendMessage(input, mode, references)
                     // 第 1 轮发送成功：绑定 pending → locked，此后只读、不再注入项目卡。
                     try {
                       await projectBinding.lockOnSend()

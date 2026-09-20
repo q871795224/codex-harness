@@ -28,7 +28,7 @@
 - 普通对话经 `useHarness` 调用 `thread/start`、`turn/start`、`turn/steer` 等方法；Quick Agent 经 `harness.agentRuns` 创建独立 child thread。
 - App Server 当前协议的 `UserInput` 支持 `text`、`localImage`、`skill` 和 `mention`；`turn/start` 还支持可选的 `turnTrigger` 来源标识。协议字段必须以当前 CLI 生成的 schema 和实际运行版本为准。
 - Composer 通过 `+`、`@` 或剪贴板添加 PNG、JPEG、GIF、WebP 图片，发送前统一构造成 `localImage`。剪贴板图片由 Rust 原生层读取并转换成系统临时目录下的 PNG，前端草稿只保留路径，不保存 base64；临时文件不在发送后立即删除，以免破坏排队和重试。
-- Composer 选中 `$skill` 后，文本项保留可见 marker，并带 CLI 兼容的 `text_elements`；独立的 `skill` 项仍由 App Server 解析。普通文件只发结构化 `mention`，不要在前端展开文件内容。当前 CLI 0.151.0 的文件选择发送路径文本，和 Harness 的结构化 mention 是已知协议差异。
+- Composer 选中 `$skill` 后，文本项保留可见 marker，并带 CLI 兼容的 `text_elements`；独立的 `skill` 项仍由 App Server 解析。普通文件对齐 CLI，只发送路径文本，不发送 `mention` 或文件正文。图片使用 `localImage`，正文包含 CLI 兼容的 `[Image #N]` 与 UTF-8 字节范围 `text_elements`。
 - `thread/tokenUsage/updated` 提供 Codex 会话的累计和最近一次 usage，前端已用于会话统计。累计值不能直接当成单 turn 值相加。
 - Rust 原生层在 `~/.codex-harness/logs/harness-<version>-<timestampMs>-<pid>-<segment>.jsonl` 留存低基数的 App Server 请求和 usage 诊断；每段约 2 MiB，永久保留，不自动删除。每条记录带 `harnessVersion`，升级和进程重启写新文件，旧版 `harness.jsonl` / `harness.previous.jsonl` 原样保留。`turnTrigger` 区分来源；`rpc.rejected` 保存服务端数值错误码、请求标识及白名单原因分类，不保存任意错误正文或 data。
 - Codex 分析使用有界非阻塞队列和独立 SQLite 写线程。初始化、队列或写入失败一律 fail-open，不得阻塞 App Server 或阻止 Harness 启动；页面显示丢弃/写入错误计数。真实 Token 仅累加已登记 Harness 轮次的 `thread/tokenUsage/updated.tokenUsage.last`；累计值的签名永久保存用于重放去重，不参与相加，回退或缺口标记不完整。启动应答之前的通知和有明确父任务关系的子 Agent 通知使用有界暂存。
@@ -54,6 +54,7 @@
 ## 状态与 Provider
 
 - UI 状态、插件实例、插件 Run、输入区未发送草稿和用量快照保存在 `~/.codex-harness/state.sqlite`；草稿只保存文本、折叠粘贴和附件路径，成功发送后清除。已发送的会话正文、凭据和模型 response 不写入 Harness 状态库。
+- 选择器引用的草稿标签复用 `collapsedPastes.reference`；手打路径不自动识别。已发送引用的 UI 元数据通过 `message.references.v1:<clientUserMessageId>` 保存类型、UTF-16 正文区间和文件路径，以正文 SHA-256 校验，恢复时由 App Server `userMessage.clientId` 关联；不保存消息或粘贴正文。队列正文被编辑后旧区间失效。
 - 用量分析的新 `analysis_*` 表永久保存在 `state.sqlite`，不自动过期；旧 `codex_analytics_*` 表保留但不混入新口径。每日统计按事件时间与本机时区分桶；会话/轮次列表分页，汇总覆盖完整筛选范围。只保存 thread/turn ID、低基数标签、细分计数和官方数值 usage。Skill 文件路径和待分词正文只在后台计数期间短暂存在，Skill/MCP/Prompt/Response 正文均不落库。官方计数模式从进程环境读取 `OPENAI_API_KEY`，插件配置和数据库均不得保存密钥。
 - API Workbench 使用独立的 `~/.codex-harness/api-workbench.sqlite`；Secret 变量只保存在 macOS Keychain。
 - Claude Provider 由 `src-tauri/claude-adapter/daemon.mjs` 常驻进程承载，通过 `~/.codex-harness/claude-provider.sock` 通信。首次运行要把 daemon/SDK 安装到 `~/.codex-harness/claude-provider/`，注册 `com.local.codex-harness.claude-provider` LaunchAgent，并把 `available`、`managed`、`running` 分开显示。关闭 Harness 不停止 daemon 或 active turn；transport 断开时收口 active turn 并自动重连，只有 LaunchAgent 不可用时才按需启动。`adapter.mjs` 只能作为实验参考，不能作为生产入口。除非任务明确涉及 Claude，不要把 Claude 路径混入 Codex 改动。

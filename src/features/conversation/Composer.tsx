@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react'
 import { ChevronDown, FileText, Image, NotebookPen, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
-import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput } from '../../core/domain/codex'
+import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput, MessageReference } from '../../core/domain/codex'
 import type { ComposerCompletionItem } from '../../extensions/types'
 import { runtime } from '../../core/runtime/bridge'
 import { appServer, type FuzzyFileSearchResult } from '../../core/runtime/appServerClient'
@@ -10,6 +10,7 @@ import {
   activeComposerTrigger,
   clipboardHasImage,
   composerInputs,
+  composerSubmission,
   expandCollapsedPastes,
   hasSkillMarker,
   insertCollapsedPaste,
@@ -17,6 +18,7 @@ import {
   isSupportedImagePath,
   matchesSendShortcut,
   reconcileCollapsedPastes,
+  reconcilePasteEdit,
   reasoningEffortTone,
   replaceComposerTrigger,
   shouldAttachSuggestion,
@@ -63,7 +65,7 @@ interface ComposerProps {
   onSettingsChange: (patch: Partial<ThreadCodexSettings>) => Promise<void> | void
   onClaudeSettingsChange?: (patch: Partial<ClaudeSessionSettings>) => Promise<void> | void
   onFollowUpModeChange: (mode: FollowUpMode) => void
-  onSend: (input: UserInput[], mode: 'interject' | 'queue') => Promise<void> | void
+  onSend: (input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[]) => Promise<void> | void
   onCommand: (command: ComposerCommand) => Promise<void> | void
   onStop: () => Promise<void> | void
   onDraftChange?: (draft: ComposerDraft, hasContent: boolean) => void
@@ -144,6 +146,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
   const imageUnsupported = attachments.some((item) => item.kind === 'image') && selectedModel !== null && !selectedModel.inputModalities.includes('image')
   const expandedText = useMemo(() => expandCollapsedPastes(text, collapsedPastes), [collapsedPastes, text])
   const hasContent = Boolean(expandedText.trim() || attachments.length)
+  const visibleAttachments = attachments.filter((attachment) => !collapsedPastes.some((paste) => paste.reference?.kind === 'skill' && paste.reference.path === attachment.path))
   const providerChars = useMemo(() => completionProviders.map((item) => item.trigger).join(''), [completionProviders])
   const trigger = useMemo(() => activeComposerTrigger(text, cursor, providerChars), [cursor, providerChars, text])
   const triggerKind = trigger?.kind ?? null
@@ -244,6 +247,9 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     if (projectCard && findProjectCard(collapsedPastes) && !findProjectCard(nextPastes)) {
       onProjectCardDismissed?.()
     }
+    const removedSkills = collapsedPastes.filter((paste) => paste.reference?.kind === 'skill'
+      && !nextPastes.some((next) => next.reference?.kind === 'skill' && next.reference.path === paste.reference?.path))
+    if (removedSkills.length) setAttachments((current) => current.filter((item) => !removedSkills.some((paste) => paste.reference?.path === item.path)))
     setCollapsedPastes(nextPastes)
   }
 
@@ -363,9 +369,10 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
 
   useEffect(() => { setHighlightedSuggestion(0) }, [triggerKind, triggerQuery])
 
-  const inputs = useMemo<UserInput[]>(() => {
-    return composerInputs(expandedText, attachments, collapsedPastes.length > 0)
-  }, [attachments, collapsedPastes.length, expandedText])
+  const submission = useMemo(() => provider === 'codex'
+    ? composerSubmission(text, collapsedPastes, attachments)
+    : { input: composerInputs(expandedText, attachments, collapsedPastes.length > 0, false), references: [] },
+  [provider, text, attachments, collapsedPastes, expandedText])
 
   const submitDraft = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return
@@ -393,7 +400,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     }
     else {
       try {
-        await onSend(inputs, followUpMode)
+        await onSend(submission.input, followUpMode, submission.references)
       } catch {
         return
       }
@@ -460,8 +467,17 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
       }
     }
     const replacement = suggestionReplacement(suggestion)
-    const next = replaceComposerTrigger(text, trigger, replacement)
-    updatePastesFromUserEdit(reconcileCollapsedPastes(text, next.text, collapsedPastes))
+    const label = suggestion.kind === 'file' ? `[${suggestion.name}]` : replacement
+    const next = replaceComposerTrigger(text, trigger, label)
+    const nextPastes = reconcilePasteEdit(collapsedPastes, trigger.start, trigger.end, next.text.length - text.length)
+    if (suggestion.kind === 'file' || suggestion.kind === 'skill' || suggestion.kind === 'command') {
+      nextPastes.push({
+        start: trigger.start, end: trigger.start + label.length, label, content: replacement,
+        reference: { kind: suggestion.kind, path: suggestion.path, name: suggestion.name },
+      })
+      nextPastes.sort((a, b) => a.start - b.start)
+    }
+    updatePastesFromUserEdit(nextPastes)
     setText(next.text)
     setCursor(next.cursor)
     setAttachments((current) => !shouldAttachSuggestion(suggestion.kind) || current.some((item) => item.kind === suggestion.kind && item.path === suggestion.path)
@@ -546,9 +562,9 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     <div className="composer-zone">
       {foreignActive && <div className="foreign-active-note">此会话由其他 Codex 客户端运行，当前只读。</div>}
       <div className={`composer-card ${disabled ? 'disabled' : ''}`} data-composer-card>
-        {attachments.length > 0 && (
+        {visibleAttachments.length > 0 && (
           <div className="composer-attachments">
-            {attachments.map((attachment) => (
+            {visibleAttachments.map((attachment) => (
               <span key={attachment.path} title={attachment.path}>
                 {attachment.kind === 'image' ? <Image size={13} /> : attachment.kind === 'skill' ? <Sparkles size={13} /> : <FileText size={13} />}
                 <span>{attachment.name}</span>
@@ -557,7 +573,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
             ))}
           </div>
         )}
-        <div className={`composer-text-editor${findProjectCard(collapsedPastes) ? ' has-project-card' : ''}`}>
+        <div className={`composer-text-editor${collapsedPastes.length ? ' has-project-card' : ''}`}>
           <div className="composer-text-highlight" ref={highlightRef} aria-hidden="true">
             <ProjectCardHighlight text={text} pastes={collapsedPastes} />
           </div>
@@ -570,11 +586,12 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
           onChange={(event) => {
             const nextText = event.target.value
             setActionError(null)
-            updatePastesFromUserEdit(reconcileCollapsedPastes(text, nextText, collapsedPastes))
+            const nextPastes = reconcileCollapsedPastes(text, nextText, collapsedPastes)
+            updatePastesFromUserEdit(nextPastes)
             setText(nextText)
             setCursor(event.target.selectionStart)
             setSuggestionsDismissed(false)
-            setAttachments((current) => current.filter((item) => item.kind !== 'skill' || hasSkillMarker(nextText, item.name)))
+            setAttachments((current) => current.filter((item) => item.kind !== 'skill' || nextPastes.some((paste) => paste.reference?.path === item.path) || hasSkillMarker(nextText, item.name)))
           }}
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => setComposing(false)}
@@ -598,7 +615,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
             updatePastesFromUserEdit(next.pastes)
             setCursor(next.cursor)
             setSuggestionsDismissed(false)
-            setAttachments((current) => current.filter((item) => item.kind !== 'skill' || hasSkillMarker(next.text, item.name)))
+            setAttachments((current) => current.filter((item) => item.kind !== 'skill' || next.pastes.some((paste) => paste.reference?.path === item.path) || hasSkillMarker(next.text, item.name)))
             requestAnimationFrame(() => {
               ref.current?.focus()
               ref.current?.setSelectionRange(next.cursor, next.cursor)
@@ -607,6 +624,23 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
           onClick={(event) => setCursor(event.currentTarget.selectionStart)}
           onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
           onKeyDown={(event) => {
+            if ((event.key === 'Backspace' || event.key === 'Delete') && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+              const { selectionStart: start, selectionEnd: end } = event.currentTarget
+              const touched = collapsedPastes.filter((paste) => paste.reference).filter((paste) => start === end
+                ? event.key === 'Backspace' ? start > paste.start && start <= paste.end : start >= paste.start && start < paste.end
+                : start < paste.end && end > paste.start)
+              if (touched.length) {
+                event.preventDefault()
+                const from = Math.min(start, ...touched.map((paste) => paste.start))
+                const to = Math.max(end, ...touched.map((paste) => paste.end))
+                const nextText = text.slice(0, from) + text.slice(to)
+                updatePastesFromUserEdit(reconcilePasteEdit(collapsedPastes, from, to, from - to))
+                setText(nextText)
+                setCursor(from)
+                requestAnimationFrame(() => ref.current?.setSelectionRange(from, from))
+                return
+              }
+            }
             if (suggestionsOpen && suggestions.length > 0 && !event.nativeEvent.isComposing && event.keyCode !== 229) {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault()
@@ -777,9 +811,15 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
 }
 
 export function ProjectCardHighlight({ text, pastes }: { text: string; pastes: CollapsedPaste[] }) {
-  const card = findProjectCard(pastes)
-  if (!card) return <>{text}{'\n'}</>
-  return <>{text.slice(0, card.start)}<span className="composer-project-label">{text.slice(card.start, card.end)}</span>{text.slice(card.end)}{'\n'}</>
+  let cursor = 0
+  const parts: ReactNode[] = []
+  for (const paste of [...pastes].sort((a, b) => a.start - b.start)) {
+    if (paste.start < cursor || text.slice(paste.start, paste.end) !== paste.label) continue
+    parts.push(text.slice(cursor, paste.start))
+    parts.push(<span key={paste.start} className={paste.origin?.kind === 'project-doc' ? 'composer-project-label' : 'composer-reference-label'}>{paste.label}</span>)
+    cursor = paste.end
+  }
+  return <>{parts}{text.slice(cursor)}{'\n'}</>
 }
 
 function commandSuggestions(query: string, models: CodexModel[], selectedModel: CodexModel | null, claudeModels: ClaudeModel[], selectedClaudeModel: ClaudeModel | null, provider: 'codex' | 'claude'): ComposerSuggestion[] {

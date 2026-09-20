@@ -1,3 +1,4 @@
+import { UserMessageContent } from './UserMessageContent'
 import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   Archive,
@@ -12,10 +13,8 @@ import {
   Command,
   Copy,
   FileCode2,
-  FileText,
   GitBranch,
   GitFork,
-  Image,
   NotebookPen,
   Pencil,
   Pin,
@@ -695,14 +694,7 @@ const ThreadItemView = memo(function ThreadItemView({
       <article className="message user-message">
         <div className="message-label"><UserRound size={14} />你</div>
         <div className="user-bubble">
-          {text && (effectiveRaw
-            ? <pre className="raw-response">{text}</pre>
-            : <div>{text}</div>)}
-          {attachments.length > 0 && <div className="user-attachments">{attachments.map((attachment, index) => {
-            const path = attachment.type === 'image' ? attachment.url : attachment.path
-            const name = attachment.type === 'mention' ? attachment.name : path.split(/[\\/]/).pop() || path
-            return <span key={`${path}:${index}`} title={path}>{attachment.type === 'mention' ? <FileText size={13} /> : <Image size={13} />}{name}</span>
-          })}</div>}
+          <UserMessageContent item={item} text={text} cwd={cwd ?? null} raw={effectiveRaw} />
         </div>
         {text && <MessageActions copyText={text} rawActive={rawActive} onToggleRaw={rawToggle} />}
       </article>

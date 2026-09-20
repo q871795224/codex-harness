@@ -1,3 +1,5 @@
+import type { MessageReference } from '../../core/domain/codex'
+import { restartedMessageReferences, saveMessageReferences } from './messageReferences'
 import { notifications } from '../../core/notifications/service'
 import { errorDetails, type NotificationLevel } from '../../core/notifications/store'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -1523,6 +1525,7 @@ export function useHarness() {
     text: string | null,
     inputs?: UserInput[],
     trigger?: CodexTurnTrigger,
+    references: MessageReference[] = [],
   ) => {
     const firstSubmission = unstartedDraftThreadIdsRef.current.has(threadId) || pendingCatalogThreadIdsRef.current.has(threadId)
     if (firstSubmission) {
@@ -1538,9 +1541,11 @@ export function useHarness() {
     try {
       const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
       const detail = detailsRef.current[threadId]
+      const clientId = newClientId()
+      await saveMessageReferences(clientId, inputs ?? [], references)
       const request = turnStartRequest(
         threadId,
-        newClientId(),
+        clientId,
         inputs ?? (text ? [textInput(text)] : []),
         thread,
         detail,
@@ -1594,7 +1599,7 @@ export function useHarness() {
     }
   }, [notify, refreshThreads, setActiveTurn, setThreadStarting])
 
-  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue') => {
+  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = []) => {
     const threadId = selectedThreadIdRef.current
     if (!threadId || input.length === 0) return
     const text = input
@@ -1615,7 +1620,7 @@ export function useHarness() {
     try {
       if (!activeTurnId) {
         const startedThreadId = await recreateDraftThreadForSelectedCwd(threadId)
-        await startTurn(startedThreadId, null, input)
+        await startTurn(startedThreadId, null, input, undefined, references)
         if (text.trim()) {
           updateThread(startedThreadId, (thread) => withInitialThreadPreview(thread, text))
           updateDetail(startedThreadId, (detail) => ({
@@ -1628,6 +1633,7 @@ export function useHarness() {
       }
 
       const clientUserMessageId = newClientId()
+      await saveMessageReferences(clientUserMessageId, input, references)
       const result = await submitActiveTurnInput(appServer, {
         threadId,
         activeTurnId,
@@ -2169,7 +2175,7 @@ export function useHarness() {
         if (restarts?.length) {
           delete pendingRestartRef.current[threadId]
           setPendingSteers((current) => ({ ...current, [threadId]: [] }))
-          void startTurn(threadId, null, restartInputs(restarts), 'conversation-restart').catch((error) => {
+          void restartedMessageReferences(restarts).then((references) => startTurn(threadId, null, restartInputs(restarts), 'conversation-restart', references)).catch((error) => {
             notify('插话未能在停止后继续发送', 'error', error, { threadId })
           })
         }

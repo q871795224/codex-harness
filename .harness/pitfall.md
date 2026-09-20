@@ -14,14 +14,13 @@
 - **正确做法**：消息和文档渲染统一走 `src/features/markdown/Markdown.tsx`；其 `remarkRepairCjkAutolink` 插件在 remark-gfm 之后把全角标点起的内容拆回普通文本、修剪 URL 尾部残留的 `* _ ~` 标记，并恢复前后配对的 strong/emphasis/delete 包裹。尖括号 autolink（`<…>`）和显式链接（`[文字](url)`）不修复，含中文路径的合法 URL 不动。新增 markdown 渲染入口必须复用 `Markdown` 组件，不要绕过。
 - **适用范围**：会话消息、项目文档等所有 `Markdown` 组件覆盖的渲染路径。
 
-## `@` 文件和 `$skill` 是结构化输入
+## 引用展示与 App Server 输入分开处理
 
-- **问题**：不能把 UI 上的替换文本当成最终发给模型的完整内容。
-- **原因**：Harness 会把普通文件转换成 App Server 的 `mention`，把 Skill 转换成 `skill` 输入；文件内容由 App Server/Codex 按协议解析。
-- **正确做法**：比较 App Server 边界的结构化 `input`，不要在前端自行展开文件或解析 `SKILL.md`。
-- **CLI 对照细节**：交互式选择 Skill 时，文本项还要带 `$skill` 对应的 `text_elements` 占位信息，`byteRange` 使用 UTF-8 字节偏移；仅把 `$skill` 文本和独立 `skill` 项发出去仍不完全等价。
-- **已知差异**：当前 CLI 0.151.0 的交互式文件选择会把选中的路径作为普通文本发送，Harness 则按项目约定发送结构化 `mention`。不要为了追 CLI 表面行为而在前端展开文件内容或擅自改变 Harness 契约；若要统一，需单独评估 token、能力和兼容性。
-- **适用范围**：Composer、输入重放、CLI 对照和 token 上下文排查。
+- 普通文件选择后发送路径文本，不发送结构化 `mention`；文件正文由 agent 自行读取，前端不展开文件内容。
+- 交互式选择 Skill 发送 `$skill` 文本、对应的 `text_elements` 和独立 `skill` 项；图片发送 `localImage` 及 `[Image #N]` 文本标记。`text_elements.byteRange` 使用 UTF-8 字节偏移，不是 JavaScript 字符下标。
+- 选择器引用的绿色标签依赖本地 UI 区间，不能通过扫描所有路径或 `$name` 重建，否则会把手打内容误认为选择器引用。消息 UI 区间使用 UTF-16，不能直接复用协议字节范围。
+- 比较客户端 JSON 只能确认 App Server 边界，不能据此断言最终模型上下文相同。
+- **适用范围**：Composer、历史消息、输入重放和 CLI 对照。
 
 ## `turn/steer` 不接受 model/effort 覆盖
 

@@ -337,8 +337,15 @@ export interface Turn {
   durationMs: number | null
 }
 
+export interface MessageReference {
+  kind: 'file' | 'image' | 'skill' | 'paste'
+  start: number
+  end: number
+  path?: string
+}
+
 export type UserInput =
-  | { type: 'text'; text: string; text_elements: unknown[] }
+  | { type: 'text'; text: string; text_elements: Array<{ byteRange: { start: number; end: number }; placeholder: string }> }
   | { type: 'image'; url: string }
   | { type: 'localImage'; path: string }
   | { type: 'skill'; name: string; path: string }

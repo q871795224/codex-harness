@@ -6,6 +6,7 @@ import type { AppServerEvent, Thread, Turn } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import { appServer } from '../../core/runtime/appServerClient'
 import { useHarness } from './useHarness'
+import * as messageReferences from './messageReferences'
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ listen: vi.fn().mockResolvedValue(() => {}) }),
@@ -28,7 +29,7 @@ vi.mock('../../core/runtime/bridge', () => ({
 vi.mock('../../core/runtime/appServerClient', () => ({
   appServer: {
     listThreads: vi.fn(), archiveThread: vi.fn().mockResolvedValue(undefined),
-    startTurn: vi.fn(), updateThreadSettings: vi.fn().mockResolvedValue(undefined),
+    startTurn: vi.fn(), addQueue: vi.fn().mockResolvedValue(undefined), steerTurn: vi.fn().mockResolvedValue(undefined), updateThreadSettings: vi.fn().mockResolvedValue(undefined),
     updateThreadMetadata: vi.fn().mockResolvedValue(undefined),
     startThread: vi.fn(), deleteThread: vi.fn().mockResolvedValue(undefined),
     resumeThread: vi.fn(), listQueue: vi.fn().mockResolvedValue({ data: [] }),
@@ -278,6 +279,29 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
   }
   const accepted = { turn: { id: 'turn-1', status: 'inProgress' as const, items: [], error: null, startedAt: 1, completedAt: null, durationMs: null } }
   const input = [{ type: 'text' as const, text: 'usage analysis', text_elements: [] }]
+
+  it('keeps display metadata out of start, queue and steer RPC inputs and associates each client id', async () => {
+    const save = vi.spyOn(messageReferences, 'saveMessageReferences').mockResolvedValue(undefined)
+    try {
+      const { result } = await draft()
+      const references = [{ kind: 'file' as const, start: 0, end: 4, path: '/repo/a.ts' }]
+      const selectedInput = [{ type: 'text' as const, text: 'a.ts', text_elements: [] }]
+      vi.mocked(appServer.startTurn).mockResolvedValueOnce(accepted)
+      await act(async () => { await result.current.sendMessage(selectedInput, 'queue', references) })
+      const start = vi.mocked(appServer.startTurn).mock.calls.at(-1)![0]
+      expect(save).toHaveBeenCalledWith(start.clientUserMessageId, selectedInput, references)
+      expect(start.input).toEqual(selectedInput)
+      expect(start).not.toHaveProperty('references')
+      for (const mode of ['queue', 'interject'] as const) {
+        await act(async () => { await result.current.sendMessage(selectedInput, mode, references) })
+        const rpc = mode === 'queue' ? appServer.addQueue : appServer.steerTurn
+        const params = vi.mocked(rpc).mock.calls.at(-1)![0]
+        expect(save).toHaveBeenLastCalledWith(params.clientUserMessageId, selectedInput, references)
+        expect(params.input).toEqual(selectedInput)
+        expect(params).not.toHaveProperty('references')
+      }
+    } finally { save.mockRestore() }
+  })
 
   it.each([false, true])('closes a known empty draft instead of archiving it (missing rollout: %s)', async (missing) => {
     const { result } = await draft()

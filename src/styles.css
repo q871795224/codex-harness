@@ -1792,3 +1792,22 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .composer-project-label { color: #fb923c; }
 
 .app-shell[data-theme='dark'] .fresh-thread-row { --fresh-control-text: #aab9f1; --fresh-control-icon: #8499ef; --fresh-control-border: #59647f; --fresh-control-hover: #2a2e36; }
+
+/* Selected references share a green treatment; manual text remains unstyled. */
+.composer-reference-label { color: #33745f; }
+.reference-chip { display: inline; padding: 1px 4px; border: 1px solid #cbe4d8; border-radius: 5px; background: #e7f5ef; color: #33745f; font: inherit; overflow-wrap: anywhere; cursor: pointer; }
+.reference-chip:hover { background: #d6ece2; }
+.reference-chip:focus-visible { outline: 2px solid #33745f; outline-offset: 2px; }
+.composer-attachments > span { border-color: #cbe4d8; background: #e7f5ef; color: #33745f; }
+.message-paste { display: inline; }
+.message-paste[open] { display: block; }
+.message-paste > summary { list-style: none; }
+.message-paste > summary::-webkit-details-marker { display: none; }
+.message-paste > div { margin-top: 6px; }
+.reference-open-error { display: block; color: #b25858; font-size: 12px; }
+.app-shell[data-theme='dark'] .composer-reference-label { color: #8bd4b2; }
+.app-shell[data-theme='dark'] .reference-chip,
+.app-shell[data-theme='dark'] .composer-attachments > span { border-color: #365b4d; background: #243e34; color: #8bd4b2; }
+.app-shell[data-theme='dark'] .reference-chip:hover { background: #2f5043; }
+.app-shell[data-theme='dark'] .reference-chip:focus-visible { outline-color: #8bd4b2; }
+.app-shell[data-theme='dark'] .reference-open-error { color: #f0a0a0; }
