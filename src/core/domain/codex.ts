@@ -31,6 +31,7 @@ export interface NavigationPreferences {
   workspaceSort: WorkspaceSort
   pinnedThreadIds: string[]
   pinnedWorkspaceRoots: string[]
+  hiddenWorkspaceRoots: string[]
   sidebarWidth: number
   sidebarCollapsed: boolean
   sidebarListSplitRatio: number

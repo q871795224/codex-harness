@@ -173,7 +173,7 @@ export function useHarness() {
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const [bootError, setBootError] = useState<string | null>(null)
   const [threads, setThreads] = useState<Thread[]>([])
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaceCatalog, setWorkspaces] = useState<Workspace[]>([])
   const [threadRoots, setThreadRoots] = useState<Record<string, string | null>>({})
   const [threadGitCwds, setThreadGitCwds] = useState<Record<string, string>>({})
   const [threadStates, setThreadStates] = useState<Record<string, ThreadUiState>>({})
@@ -181,6 +181,7 @@ export function useHarness() {
   const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
   const [threadPlans, setThreadPlans] = useState<Record<string, TurnPlanStep[]>>({})
   const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
+  const workspaces = useMemo(() => workspaceCatalog.filter((workspace) => !navigation.hiddenWorkspaceRoots.includes(workspace.root)), [workspaceCatalog, navigation.hiddenWorkspaceRoots])
   const [appearance, setAppearance] = useState<AppearancePreferences>(defaultAppearancePreferences)
   const [keyboard, setKeyboard] = useState<KeyboardPreferences>(defaultKeyboardPreferences)
   const [conversationStats, setConversationStatsState] = useState<ConversationStatsPreferences>(defaultConversationStatsPreferences)
@@ -194,7 +195,10 @@ export function useHarness() {
   const [startingThreadIds, setStartingThreadIds] = useState<Record<string, boolean>>({})
   const [ownedActiveThreads, setOwnedActiveThreads] = useState<Record<string, boolean>>({})
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
-  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(null)
+  const [workspaceSelection, setSelectedWorkspaceRoot] = useState<string | null>(null)
+  const selectedWorkspaceRoot = workspaceSelection && navigation.hiddenWorkspaceRoots.includes(workspaceSelection)
+    ? workspaces[0]?.root ?? null
+    : workspaceSelection
   const [nextThreadCwd, setNextThreadCwd] = useState<string | null>(null)
   const [viewMode, setViewModeState] = useState<ViewMode>('active')
   const viewModeRef = useRef<ViewMode>('active')
@@ -939,6 +943,7 @@ export function useHarness() {
       const workspace = await runtime.chooseWorkspace()
       if (!workspace) return null
       setWorkspaces((current) => [workspace, ...current.filter((item) => item.root !== workspace.root)])
+      updateNavigation((current) => ({ ...current, hiddenWorkspaceRoots: current.hiddenWorkspaceRoots.filter((root) => root !== workspace.root) }))
       setSelectedWorkspaceRoot(workspace.root)
       rememberNextThreadCwd(workspace.checkoutRoot)
       notify(`已添加 ${workspace.name}`)
@@ -948,7 +953,22 @@ export function useHarness() {
       notify('操作未完成，请查看详情后重试。', 'error', error)
       return null
     }
-  }, [notify, refreshThreads, rememberNextThreadCwd])
+  }, [notify, refreshThreads, rememberNextThreadCwd, updateNavigation])
+
+  const removeWorkspace = useCallback((root: string) => {
+    updateNavigation((current) => ({
+      ...current,
+      hiddenWorkspaceRoots: [...new Set([...current.hiddenWorkspaceRoots, root])],
+      pinnedWorkspaceRoots: current.pinnedWorkspaceRoots.filter((item) => item !== root),
+    }))
+    const fallback = workspaces.find((workspace) => workspace.root !== root) ?? null
+    setSelectedWorkspaceRoot((current) => current === root ? fallback?.root ?? null : current)
+    const nextCwd = nextThreadCwdRef.current
+    if (nextCwd === root || workspaceCatalog.some((workspace) => workspace.root === root && workspace.checkoutRoot === nextCwd)
+      || Object.entries(threadGitCwds).some(([id, cwd]) => cwd === nextCwd && threadRoots[id] === root)) {
+      rememberNextThreadCwd(fallback?.checkoutRoot ?? null)
+    }
+  }, [updateNavigation, workspaces, workspaceCatalog, threadGitCwds, threadRoots, rememberNextThreadCwd])
 
   const selectWorkspaceRoot = useCallback((workspaceRoot: string) => {
     setSelectedWorkspaceRoot(workspaceRoot)
@@ -2241,7 +2261,7 @@ export function useHarness() {
         recapGenerationRef.current = restored.recapGeneration
         setRecapGenerationState(restored.recapGeneration)
         setConversationStatsState(restored.conversationStats)
-        if (restored.workspaces.length > 0) setSelectedWorkspaceRoot(restored.workspaces[0].root)
+        setSelectedWorkspaceRoot(restored.workspaces.find((workspace) => !restored.navigation.hiddenWorkspaceRoots.includes(workspace.root))?.root ?? null)
         const loadedThreads = await refreshThreads('active')
         if (disposed) return
         setPhase('ready')
@@ -2346,6 +2366,7 @@ export function useHarness() {
     notify,
     loadOlderTurns,
     chooseWorkspace,
+    removeWorkspace,
     createThread,
     resetThread,
     setThreadDraftContent,
