@@ -12,6 +12,7 @@ mod handover_store;
 mod harness_files;
 mod jev;
 mod local_connector;
+mod markdown_image;
 mod project_doc_proposals;
 mod project_doc_server;
 mod project_doc_store;
@@ -138,6 +139,14 @@ async fn validate_composer_image(path: String) -> Result<clipboard_image::Compos
     tokio::task::spawn_blocking(move || clipboard_image::validate(&path))
         .await
         .map_err(|error| format!("校验图片任务失败：{error}"))?
+}
+
+#[tauri::command]
+async fn read_markdown_image(path: String, cwd: Option<String>) -> Result<tauri::ipc::Response, String> {
+    let bytes = tokio::task::spawn_blocking(move || markdown_image::read(&path, cwd.as_deref()))
+        .await
+        .map_err(|error| format!("读取图片任务失败：{error}"))??;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1320,6 +1329,7 @@ pub fn run() {
             api_workbench_read_import_file,
             paste_composer_image,
             validate_composer_image,
+            read_markdown_image,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错");
