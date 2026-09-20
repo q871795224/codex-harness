@@ -61,3 +61,13 @@ describe('conversation event reducer', () => {
     expect(withItem.items[0].item).toMatchObject({ aggregatedOutput: 'AB', status: 'completed' })
   })
 })
+
+it('retains first observed item times across completion and turn hydration', () => {
+  const item = { id: 'c', type: 'commandExecution', status: 'inProgress' }
+  let detail = emptyThreadDetail(thread())
+  detail = reduceThreadDetailEvent(detail, { type: 'itemUpserted', turnId: 'turn-1', item, phase: 'started', observedAt: 100 })
+  detail = reduceThreadDetailEvent(detail, { type: 'itemUpserted', turnId: 'turn-1', item, phase: 'started', observedAt: 200 })
+  detail = reduceThreadDetailEvent(detail, { type: 'itemUpserted', turnId: 'turn-1', item: { ...item, status: 'completed' }, phase: 'completed', observedAt: 500 })
+  detail = reduceThreadDetailEvent(detail, { type: 'turnCompleted', turn: turn({ status: 'completed', items: [{ ...item, status: 'completed' }] }) })
+  expect(detail.items[0].timing).toEqual({ startedAt: 100, completedAt: 500 })
+})

@@ -1,3 +1,5 @@
+import { ToolCallDetails } from './ItemDetails'
+import { inspectItem } from './itemInspection'
 import { UserMessageContent } from './UserMessageContent'
 import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
@@ -719,7 +721,7 @@ const ThreadItemView = memo(function ThreadItemView({
   }
   if (item.type === 'commandExecution') return <CommandItem item={item} />
   if (item.type === 'fileChange') return <FileChangeItem item={item} cwd={cwd} />
-  if (item.type === 'mcpToolCall') return <McpItem item={item} />
+  if (['mcpToolCall', 'dynamicToolCall', 'functionCallOutput'].includes(item.type)) return <McpItem item={item} />
   if (item.type === 'collabAgentToolCall') return <CollabAgentItem item={item} onOpenThread={onOpenThread} />
   if (['reasoning', 'rawResponse', 'internal'].includes(item.type)) return null
   return <GenericActivityItem item={item} />
@@ -813,10 +815,9 @@ function CommandItem({ item }: { item: ThreadItemEntry['item'] }) {
   const [open, setOpen] = useState(false)
   const rawCommand = String(item.command ?? '命令')
   const command = displayCommand(rawCommand)
-  const output = typeof item.aggregatedOutput === 'string' ? item.aggregatedOutput : ''
   return (
     <article className={`tool-card command-card ${item.status === 'failed' ? 'failed' : ''}`}>
-      <button type="button" className="tool-card-head" onClick={() => setOpen((value) => !value)}>
+      <button type="button" className="tool-card-head" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
         <Terminal size={15} />
         <code title={rawCommand}>{truncate(command, 110)}</code>
         <span>{item.status === 'inProgress' ? '运行中' : item.exitCode === 0 ? '完成' : item.status ?? ''}</span>
@@ -825,8 +826,7 @@ function CommandItem({ item }: { item: ThreadItemEntry['item'] }) {
       </button>
       {open && (
         <div className="tool-card-body">
-          {item.cwd && <p className="tool-cwd">{String(item.cwd)}</p>}
-          {output ? <pre>{output}</pre> : <p className="tool-empty">暂无可展示的输出</p>}
+          <ToolCallDetails item={item} />
         </div>
       )}
     </article>
@@ -838,7 +838,7 @@ function FileChangeItem({ item, cwd }: { item: ThreadItemEntry['item']; cwd: str
   const changes = Array.isArray(item.changes) ? item.changes : []
   return (
     <article className="tool-card file-card">
-      <button type="button" className="tool-card-head" onClick={() => setOpen((value) => !value)}>
+      <button type="button" className="tool-card-head" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
         <FileCode2 size={15} />
         <span>{changes.length ? `修改了 ${changes.length} 个文件` : '文件修改'}</span>
         <span>{item.status === 'inProgress' ? '应用中' : item.status ?? ''}</span>
@@ -846,6 +846,7 @@ function FileChangeItem({ item, cwd }: { item: ThreadItemEntry['item']; cwd: str
       </button>
       {open && (
         <div className="tool-card-body file-list">
+          <ToolCallDetails item={item} />
           {changes.length ? changes.map((change, index) => {
             const path = String(change.path ?? '')
             return path ? (
@@ -863,7 +864,6 @@ function FileChangeItem({ item, cwd }: { item: ThreadItemEntry['item']; cwd: str
 function CollabAgentItem({ item, onOpenThread }: { item: ThreadItemEntry['item']; onOpenThread?: (threadId: string) => void }) {
   const receiverIds = Array.isArray(item.receiverThreadIds) ? item.receiverThreadIds : []
   const states = item.agentsStates ?? {}
-  const prompt = typeof item.prompt === 'string' ? item.prompt.trim() : ''
   return (
     <article className={`tool-card agent-activity-card ${item.status === 'failed' ? 'failed' : ''}`}>
       <div className="tool-card-head static-head">
@@ -871,9 +871,8 @@ function CollabAgentItem({ item, onOpenThread }: { item: ThreadItemEntry['item']
         <span>{collabToolLabel(item.tool)}</span>
         <span>{activityStatusLabel(item.status)}</span>
       </div>
-      {(prompt || receiverIds.length > 0) && (
-        <div className="tool-card-body agent-activity-body">
-          {prompt && <p>{truncate(prompt, 180)}</p>}
+      <div className="tool-card-body agent-activity-body">
+          <details><summary>调用详情</summary><ToolCallDetails item={item} /></details>
           {receiverIds.map((threadId) => {
             const state = states[threadId]
             return (
@@ -884,8 +883,7 @@ function CollabAgentItem({ item, onOpenThread }: { item: ThreadItemEntry['item']
               </button>
             )
           })}
-        </div>
-      )}
+      </div>
     </article>
   )
 }
@@ -906,13 +904,16 @@ export function activityStatusLabel(status: unknown): string {
 }
 
 function McpItem({ item }: { item: ThreadItemEntry['item'] }) {
+  const [open, setOpen] = useState(false)
   return (
-    <article className="tool-card mcp-card">
-      <div className="tool-card-head static-head">
+    <article className={`tool-card mcp-card ${item.status === 'failed' ? 'failed' : ''}`}>
+      <button type="button" className="tool-card-head" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
         <Command size={15} />
-        <span>{String(item.server ?? 'MCP')} / {String(item.tool ?? '工具')}</span>
-        <span>{item.status ?? ''}</span>
-      </div>
+        <span>{inspectItem(item).name}</span>
+        <span>{activityStatusLabel(item.status)}</span>
+        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+      </button>
+      {open && <div className="tool-card-body"><ToolCallDetails item={item} /></div>}
     </article>
   )
 }

@@ -8,7 +8,7 @@ export const trajectoryPlugin: HarnessPlugin = {
     id: 'builtin.trajectory',
     name: '轨迹',
     description: '按时间顺序展示当前会话公开的消息、命令、工具与文件修改。',
-    version: '1.0.1',
+    version: '1.1.0',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
     supportedProviders: ['codex'],
@@ -19,7 +19,7 @@ export const trajectoryPlugin: HarnessPlugin = {
       label: '轨迹',
       order: 20,
       icon: Route,
-      render: ({ items }) => <TrajectoryView items={items} />,
+      render: ({ items, turns, threadId, hasEarlierTurns }) => <TrajectoryView key={threadId} items={items} turns={turns} hasEarlierTurns={hasEarlierTurns} />,
     })
   },
 }

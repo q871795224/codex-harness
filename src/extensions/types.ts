@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import type { CodexModel, Thread, ThreadCodexSettings, ThreadItemEntry, Workspace } from '../core/domain/codex'
+import type { CodexModel, Thread, ThreadCodexSettings, ThreadItemEntry, Turn, Workspace } from '../core/domain/codex'
 
 export type PluginScopeKind = 'global' | 'workspace' | 'thread'
 export type PluginProvider = 'codex' | 'claude'
@@ -46,6 +46,8 @@ export interface PluginViewContext {
 }
 
 export interface ConversationTabProps extends PluginViewContext {
+  turns?: Turn[]
+  hasEarlierTurns?: boolean
   items: ThreadItemEntry[]
   workspaces: Workspace[]
   threads: Thread[]

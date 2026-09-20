@@ -2099,7 +2099,8 @@ export function useHarness() {
       const turnId = typeof params.turnId === 'string' ? params.turnId : null
       const item = eventThreadItem(params.item)
       if (threadId && turnId && item) {
-        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'itemUpserted', turnId, item }))
+        const observedAt = Date.now()
+        updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'itemUpserted', turnId, item, observedAt, phase: method === 'item/started' ? 'started' : 'completed' }))
         if (item.type === 'userMessage') {
           const clientId = typeof item.clientId === 'string' ? item.clientId : null
           if (clientId) {
