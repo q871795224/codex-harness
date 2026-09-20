@@ -1,3 +1,4 @@
+import type { MessageReference } from '../../core/domain/codex'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ApprovalRequest, UserInput } from '../../core/domain/codex'
 import { recordWorkspaceContextDiagnostic, runtime } from '../../core/runtime/bridge'
@@ -262,7 +263,7 @@ export function useUnifiedHarness() {
     }
   }, [claude, codex, currentThread?.cwd])
 
-  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue') => {
+  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = []) => {
     recordWorkspaceContextDiagnostic({
       level: 'info',
       event: 'conversation.message.dispatch',
@@ -294,7 +295,7 @@ export function useUnifiedHarness() {
       }
       return
     }
-    return codex.sendMessage(input, mode)
+    return codex.sendMessage(input, mode, references)
   }, [claude, codex, selectedProvider, selectedThreadId])
 
   const stopTurn = useCallback(() => {

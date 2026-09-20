@@ -44,7 +44,7 @@ describe('image attachments', () => {
       { kind: 'skill', name: 'tdd', path: '/skills/tdd/SKILL.md' },
     ])).toEqual([
       { type: 'localImage', path: '/tmp/shot.png' },
-      { type: 'text', text: 'inspect\n/repo/README.md', text_elements: [] },
+      { type: 'text', text: '[Image #1] inspect\n/repo/README.md', text_elements: [{ byteRange: { start: 0, end: 10 }, placeholder: '[Image #1]' }] },
       { type: 'skill', name: 'tdd', path: '/skills/tdd/SKILL.md' },
     ])
   })

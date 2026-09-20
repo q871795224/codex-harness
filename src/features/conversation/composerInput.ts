@@ -1,4 +1,4 @@
-import type { SendShortcut, UserInput } from '../../core/domain/codex'
+import type { MessageReference, SendShortcut, UserInput } from '../../core/domain/codex'
 
 export const LONG_PASTE_THRESHOLD = 1_000
 
@@ -14,6 +14,7 @@ export interface CollapsedPaste {
   label: string
   /** 标识这条折叠区间的来源；普通粘贴为空，项目背景卡为 project-doc。 */
   origin?: CollapsedPasteOrigin
+  reference?: { kind: 'file' | 'skill' | 'command'; path?: string; name: string }
 }
 
 export interface CollapsedPasteEdit {
@@ -60,7 +61,7 @@ interface ComposerInputAttachment {
   kind: 'image' | 'file' | 'skill'
 }
 
-export function composerInputs(text: string, attachments: ComposerInputAttachment[], preserveWhitespace = false): UserInput[] {
+export function composerInputs(text: string, attachments: ComposerInputAttachment[], preserveWhitespace = false, imagePlaceholders = true): UserInput[] {
   const selectedSkillNames = attachments.filter((attachment) => attachment.kind === 'skill').map((attachment) => attachment.name)
   const body = preserveWhitespace ? text : text.trim()
   const images: UserInput[] = attachments
@@ -74,7 +75,18 @@ export function composerInputs(text: string, attachments: ComposerInputAttachmen
   const bodyWithFilePaths = attachments
     .filter((attachment) => attachment.kind === 'file')
     .reduce((acc, attachment) => (acc ? `${acc}\n${attachment.path}` : attachment.path), body)
-  return [...images, ...(bodyWithFilePaths ? [composerTextInput(bodyWithFilePaths, selectedSkillNames)] : []), ...skills]
+  const imageLabels = (imagePlaceholders ? images : []).map((_, index) => `[Image #${index + 1}]`).join(' ')
+  const message = imageLabels ? `${imageLabels}${bodyWithFilePaths ? ` ${bodyWithFilePaths}` : ''}` : bodyWithFilePaths
+  const textInput = composerTextInput(message, selectedSkillNames)
+  let imageOffset = 0
+  const labeledImages = imagePlaceholders ? images : []
+  labeledImages.forEach((_, index) => {
+    const label = `[Image #${index + 1}]`
+    textInput.text_elements.unshift({ byteRange: { start: imageOffset, end: imageOffset + label.length }, placeholder: label })
+    imageOffset += label.length + 1
+  })
+  textInput.text_elements.sort((a, b) => a.byteRange.start - b.byteRange.start)
+  return [...images, ...(message ? [textInput] : []), ...skills]
 }
 
 interface ComposerSuggestionLike {
@@ -130,7 +142,7 @@ export function insertCollapsedPaste(
   const characterCount = pastedCharacterCount(content)
   const label = labelOverride ?? `[Pasted Content ${characterCount} chars]`
   const nextText = `${text.slice(0, selectionStart)}${label}${text.slice(selectionEnd)}`
-  const nextPastes = reconcileCollapsedPastes(text, nextText, pastes)
+  const nextPastes = reconcilePasteEdit(pastes, selectionStart, selectionEnd, nextText.length - text.length)
   nextPastes.push({
     start: selectionStart,
     end: selectionStart + label.length,
@@ -156,9 +168,11 @@ export function reconcileCollapsedPastes(previousText: string, nextText: string,
   ) sharedSuffix += 1
 
   const previousEditEnd = previousText.length - sharedSuffix
-  const offset = nextText.length - previousText.length
-  const insertionOnly = editStart === previousEditEnd
+  return reconcilePasteEdit(pastes, editStart, previousEditEnd, nextText.length - previousText.length)
+}
 
+export function reconcilePasteEdit(pastes: CollapsedPaste[], editStart: number, previousEditEnd: number, offset: number): CollapsedPaste[] {
+  const insertionOnly = editStart === previousEditEnd
   return pastes.flatMap((paste) => {
     if (insertionOnly) {
       if (editStart <= paste.start) return [{ ...paste, start: paste.start + offset, end: paste.end + offset }]
@@ -273,4 +287,55 @@ export function insertComposerPrompt(current: string, prompt: string): string {
 export function absoluteMentionPath(root: string, path: string): string {
   if (/^(?:\/|[A-Za-z]:[\\/])/.test(path)) return path
   return `${root.replace(/[\\/]$/, '')}/${path.replace(/^[\\/]/, '')}`
+}
+
+/** UI ranges use UTF-16; only App Server text_elements use UTF-8 byte offsets. */
+export function composerSubmission(text: string, pastes: CollapsedPaste[], attachments: ComposerInputAttachment[]) {
+  const expanded = expandCollapsedPastes(text, pastes)
+  const preserveWhitespace = pastes.some((paste) => !paste.reference)
+  const input = composerInputs(expanded, attachments, preserveWhitespace)
+  const trimOffset = preserveWhitespace ? 0 : expanded.length - expanded.trimStart().length
+  const body = input.find((item) => item.type === 'text')
+  const references: MessageReference[] = []
+  const images = attachments.filter((item) => item.kind === 'image')
+  let offset = 0
+  images.forEach((item, index) => {
+    const label = `[Image #${index + 1}]`
+    references.push({ kind: 'image', start: offset, end: offset + label.length, path: item.path })
+    offset += label.length + 1
+  })
+  const bodyOffset = images.length ? offset : 0
+  let expansionOffset = 0
+  for (const paste of [...pastes].sort((a, b) => a.start - b.start)) {
+    if (text.slice(paste.start, paste.end) !== paste.label) continue
+    const start = bodyOffset + paste.start + expansionOffset - trimOffset
+    const end = start + paste.content.length
+    if (paste.reference?.kind === 'file' || paste.reference?.kind === 'skill') {
+      references.push({ kind: paste.reference.kind, start, end, path: paste.reference.path! })
+    } else if (!paste.origin && !paste.reference) {
+      references.push({ kind: 'paste', start, end })
+    }
+    expansionOffset += paste.content.length - (paste.end - paste.start)
+  }
+  // The file picker and restored legacy drafts can still contain file attachments.
+  let fileOffset = bodyOffset + (preserveWhitespace ? expanded.length : expanded.trim().length)
+  for (const file of attachments.filter((item) => item.kind === 'file')) {
+    if (fileOffset > bodyOffset) fileOffset += 1
+    references.push({ kind: 'file', start: fileOffset, end: fileOffset + file.path.length, path: file.path })
+    fileOffset += file.path.length
+  }
+  if (body) {
+    // Selected occurrences only: typing the same $name elsewhere is still plain text.
+    const selectedNames = new Set(pastes.filter((paste) => paste.reference?.kind === 'skill').map((paste) => paste.reference!.name))
+    body.text_elements = body.text_elements.filter((element) => !selectedNames.has(element.placeholder.slice(1)))
+    const encoder = new TextEncoder()
+    for (const reference of references.filter((item) => item.kind === 'skill')) {
+      body.text_elements.push({
+        byteRange: { start: encoder.encode(body.text.slice(0, reference.start)).length, end: encoder.encode(body.text.slice(0, reference.end)).length },
+        placeholder: body.text.slice(reference.start, reference.end),
+      })
+    }
+    body.text_elements.sort((a, b) => a.byteRange.start - b.byteRange.start)
+  }
+  return { input, references: references.sort((a, b) => a.start - b.start) }
 }
