@@ -18,6 +18,7 @@ import { mcpNeedsAttention, mcpStatusLabel } from '../codex/mcpStatus'
 import { fastServiceTier, fastServiceTierTooltip } from '../codex/serviceTier'
 import { conflictingAction, formatShortcut, harnessActionDefinitions, shortcutFromEvent } from '../actions/harnessActions'
 import { ConversationStats } from '../conversation/ConversationStats'
+import { WorkspaceSettings } from './WorkspaceSettings'
 import { ClaudeDefaultModelSettings } from './ClaudeDefaultModelSettings'
 import {
   conversationStatDefinition,
@@ -27,6 +28,10 @@ import {
 } from '../conversation/conversationStatsConfig'
 
 interface SettingsDialogProps {
+  workspaces: Workspace[]
+  onAddWorkspace: () => Promise<unknown>
+  onRemoveWorkspace: (root: string) => void
+
   theme: Theme
   fontSizes: FontSizePreferences
   sendShortcut: SendShortcut
@@ -62,7 +67,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'handover' | 'skills' | 'mcp'
+type SettingsPage = 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'handover' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -71,13 +76,14 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
   const [versionsError, setVersionsError] = useState<string | null>(null)
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const pageMeta: Record<SettingsPage, { heading: string; kicker: string }> = {
+    workspaces: { heading: '工作区', kicker: 'WORKSPACES' },
     appearance: { heading: '外观', kicker: 'APPEARANCE' },
     'conversation-stats': { heading: '底部信息', kicker: 'CONVERSATION' },
     keyboard: { heading: '快捷键', kicker: 'KEYBOARD' },
@@ -131,6 +137,9 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
             <h2>设置</h2>
           </button>
           <nav>
+            <button type="button" className={page === 'workspaces' ? 'selected' : ''} aria-current={page === 'workspaces' ? 'page' : undefined} onClick={() => setPage('workspaces')}>
+              <FolderOpen size={16} />工作区
+            </button>
             <button type="button" className={page === 'appearance' ? 'selected' : ''} aria-current={page === 'appearance' ? 'page' : undefined} onClick={() => setPage('appearance')}>
               <Palette size={16} />外观
             </button>
@@ -170,6 +179,7 @@ export function SettingsDialog({ theme, fontSizes, sendShortcut, followUpMode, a
             <button type="button" className="settings-close" onClick={onClose} aria-label="关闭设置"><X size={18} /></button>
           </header>
 
+          {page === 'workspaces' && <WorkspaceSettings workspaces={workspaces} onAdd={onAddWorkspace} onRemove={onRemoveWorkspace} />}
           {page === 'appearance' && <AppearanceSettings theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
           {page === 'conversation-stats' && <ConversationStatsSettings preferences={conversationStats} data={conversationStatsData} onChange={onConversationStats} />}
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
