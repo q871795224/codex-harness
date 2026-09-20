@@ -33,13 +33,13 @@ Harness 与 CLI 的核对要区分两个层次：
 ## Token 埋点
 
 当前不引入 Grafana 或新的指标数据库。Rust 原生层会把诊断日志写入
-`~/.codex-harness/logs/harness.jsonl`，并轮转保留一个旧文件；日志只保留
+`~/.codex-harness/logs/harness-<version>-<timestampMs>-<pid>-<segment>.jsonl`，每段约 2 MiB，按版本分文件且轮转后永久保留；日志只保留
 turn 来源、model、effort、耗时、状态和数值 usage，不写 prompt、回复、文件内容或完整 MCP 结果。
 
 快速查看最近的 Codex usage：
 
 ```bash
-rg '"area":"codex-usage"' ~/.codex-harness/logs/harness.jsonl | tail -20
+rg --no-filename '"area":"codex-usage"' ~/.codex-harness/logs/harness-*.jsonl | tail -20
 ```
 
 `usage.updated` 中的 `last` 是最近一次 usage，`total` 是会话累计值；做成本比较时按

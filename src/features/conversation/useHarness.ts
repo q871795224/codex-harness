@@ -649,9 +649,17 @@ export function useHarness() {
     }
   }, [notify])
 
+  const isUnstartedLocalThread = useCallback((threadId: string) => {
+    const detail = detailsRef.current[threadId]
+    return unstartedDraftThreadIdsRef.current.has(threadId)
+      && Boolean(detail && detail.turns.length === 0 && detail.items.length === 0 && !detail.activeTurnId)
+      && !locallyStartingRef.current.has(threadId)
+      && !activeTurnIdsRef.current[threadId]
+  }, [])
+
   const discardEmptyDraftThread = useCallback((threadId: string | null) => {
     if (!threadId || !shouldDiscardDraftThread(
-      unstartedDraftThreadIdsRef.current.has(threadId),
+      isUnstartedLocalThread(threadId),
       draftContentThreadIdsRef.current.has(threadId),
     )) return
     unstartedDraftThreadIdsRef.current.delete(threadId)
@@ -668,10 +676,12 @@ export function useHarness() {
       return next
     })
     void appServer.deleteThread(threadId).catch((error) => {
+      // A never-submitted local thread may have no persisted rollout to delete.
+      if (isMissingRollout(error)) return
       notify('无法清理空白会话', 'error', error, { threadId })
       void refreshThreads()
     })
-  }, [notify, refreshThreads])
+  }, [isUnstartedLocalThread, notify, refreshThreads])
 
   const setThreadDraftContent = useCallback((threadId: string, hasContent: boolean) => {
     if (!unstartedDraftThreadIdsRef.current.has(threadId)) return
@@ -1770,7 +1780,38 @@ export function useHarness() {
   const archiveThread = useCallback(async (threadId: string) => {
     try {
       const archivedThread = threadsRef.current.find((thread) => thread.id === threadId)
-      await appServer.archiveThread(threadId)
+      const emptyDraft = isUnstartedLocalThread(threadId)
+      if (emptyDraft && draftContentThreadIdsRef.current.has(threadId)) {
+        notify('会话有未发送草稿，请先发送或清空草稿后再归档。', 'warning', undefined, { threadId })
+        return
+      }
+      if (emptyDraft) {
+        // Empty local threads have nothing to archive. Close them, accepting
+        // missing rollout only for this positively identified draft case.
+        await appServer.deleteThread(threadId).catch((error) => {
+          if (!isMissingRollout(error)) throw error
+        })
+        unstartedDraftThreadIdsRef.current.delete(threadId)
+        draftContentThreadIdsRef.current.delete(threadId)
+        draftInitialCwdsRef.current.delete(threadId)
+        setDetails((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        setThreadRoots((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        setThreadGitCwds((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+      } else {
+        await appServer.archiveThread(threadId)
+      }
       ++threadListRequestRef.current
       pendingCatalogThreadIdsRef.current.delete(threadId)
       setThreads((current) => current.filter((thread) => thread.id !== threadId))
@@ -1779,11 +1820,11 @@ export function useHarness() {
         selectedThreadIdRef.current = null
         setSelectedThreadId(null)
       }
-      notify('已归档会话', 'info', undefined, { threadId, silent: true })
+      notify(emptyDraft ? '已关闭空白会话' : '已归档会话', 'info', undefined, { threadId, silent: true })
     } catch (error) {
       notify('无法归档会话', 'error', error, { threadId })
     }
-  }, [notify, rememberNextThreadCwd])
+  }, [isUnstartedLocalThread, notify, rememberNextThreadCwd])
 
   const archiveOldThreads = useCallback(async () => {
     if (busy.archiveOldThreads) return

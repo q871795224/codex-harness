@@ -263,7 +263,7 @@ describe('archive view navigation', () => {
 })
 
 
-describe('first-turn catalog refresh', () => {
+describe('draft lifecycle and first-turn catalog refresh', () => {
   async function draft() {
     vi.mocked(runtime.listWorkspaces).mockResolvedValueOnce([{ root: '/repo', checkoutRoot: '/repo', name: 'repo', branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 }])
     vi.mocked(appServer.startThread).mockImplementation(async (params) => ({
@@ -278,6 +278,88 @@ describe('first-turn catalog refresh', () => {
   }
   const accepted = { turn: { id: 'turn-1', status: 'inProgress' as const, items: [], error: null, startedAt: 1, completedAt: null, durationMs: null } }
   const input = [{ type: 'text' as const, text: 'usage analysis', text_elements: [] }]
+
+  it.each([false, true])('closes a known empty draft instead of archiving it (missing rollout: %s)', async (missing) => {
+    const { result } = await draft()
+    const publish = vi.spyOn(notifications, 'publish')
+    if (missing) vi.mocked(appServer.deleteThread).mockRejectedValueOnce(new Error('no rollout found for thread id draft'))
+    await act(async () => { await result.current.archiveThread('draft') })
+    expect(appServer.deleteThread).toHaveBeenCalledWith('draft')
+    expect(appServer.archiveThread).not.toHaveBeenCalled()
+    expect(result.current.selectedThreadId).toBeNull()
+    expect(result.current.details.draft).toBeUndefined()
+    expect(result.current.threads.some((item) => item.id === 'draft')).toBe(false)
+    await act(async () => { await result.current.refresh() })
+    expect(result.current.threads.some((item) => item.id === 'draft')).toBe(false)
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已关闭空白会话', silent: true }))
+    publish.mockRestore()
+  })
+
+  it('preserves a draft with unsent content when archiving or switching conversations', async () => {
+    const { result } = await draft()
+    const publish = vi.spyOn(notifications, 'publish')
+    act(() => { result.current.setThreadDraftContent('draft', true) })
+    await act(async () => { await result.current.archiveThread('draft') })
+    expect(result.current.selectedThreadId).toBe('draft')
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ level: 'warning', threadId: 'draft' }))
+    vi.mocked(appServer.resumeThread).mockResolvedValueOnce(resumeResponse('active'))
+    await act(async () => { await result.current.selectThread('active') })
+    expect(result.current.details.draft).toBeDefined()
+    expect(appServer.deleteThread).not.toHaveBeenCalled()
+    expect(appServer.archiveThread).not.toHaveBeenCalled()
+    publish.mockRestore()
+  })
+
+  it('keeps the empty draft available and reports real delete failures', async () => {
+    const { result } = await draft()
+    const publish = vi.spyOn(notifications, 'publish')
+    vi.mocked(appServer.deleteThread).mockRejectedValueOnce(new Error('connection offline'))
+    await act(async () => { await result.current.archiveThread('draft') })
+    expect(result.current.selectedThreadId).toBe('draft')
+    expect(result.current.details.draft).toBeDefined()
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ level: 'error', details: expect.stringContaining('connection offline') }))
+    // The failed close has not forgotten the local-draft identity.
+    await act(async () => { await result.current.archiveThread('draft') })
+    expect(appServer.deleteThread).toHaveBeenCalledTimes(2)
+    expect(appServer.archiveThread).not.toHaveBeenCalled()
+    publish.mockRestore()
+  })
+
+  it.each(['no rollout found for thread id draft', 'connection offline'])('handles automatic draft cleanup failure: %s', async (error) => {
+    const { result } = await draft()
+    const publish = vi.spyOn(notifications, 'publish')
+    vi.mocked(appServer.deleteThread).mockRejectedValueOnce(new Error(error))
+    vi.mocked(appServer.resumeThread).mockResolvedValueOnce(resumeResponse('active'))
+    await act(async () => { await result.current.selectThread('active') })
+    expect(appServer.deleteThread).toHaveBeenCalledWith('draft')
+    if (error.startsWith('no rollout')) {
+      expect(publish).not.toHaveBeenCalledWith(expect.objectContaining({ title: '无法清理空白会话' }))
+    } else {
+      expect(publish).toHaveBeenCalledWith(expect.objectContaining({ title: '无法清理空白会话', details: expect.stringContaining(error) }))
+    }
+    publish.mockRestore()
+  })
+
+  it('does not treat an unknown thread with missing rollout as an empty draft', async () => {
+    const { result } = await ready()
+    const publish = vi.spyOn(notifications, 'publish')
+    vi.mocked(appServer.archiveThread).mockRejectedValueOnce(new Error('no rollout found for thread id active'))
+    await act(async () => { await result.current.archiveThread('active') })
+    expect(appServer.deleteThread).not.toHaveBeenCalled()
+    expect(result.current.threads.some((item) => item.id === 'active')).toBe(true)
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '无法归档会话', level: 'error' }))
+    publish.mockRestore()
+  })
+
+  it('never deletes a draft that has received history from the server', async () => {
+    const { result } = await draft()
+    vi.mocked(appServer.resumeThread).mockResolvedValueOnce({ ...resumeResponse('draft'), initialTurnsPage: { data: [turn('history')], nextCursor: null } })
+    await act(async () => { await result.current.selectThread('draft') })
+    expect(result.current.details.draft.turns).toHaveLength(1)
+    await act(async () => { await result.current.archiveThread('draft') })
+    expect(appServer.archiveThread).toHaveBeenCalledWith('draft')
+    expect(appServer.deleteThread).not.toHaveBeenCalled()
+  })
 
   it.each([false, true])('keeps the first turn visible through stale lists and then loads server data (changed cwd: %s)', async (changeCwd) => {
     const { result } = await draft()

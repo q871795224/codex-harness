@@ -54,9 +54,15 @@ pub(crate) struct CodexCommandSummary {
 #[derive(Clone)]
 struct Connection {
     outgoing: mpsc::Sender<String>,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>,
+    pending: Arc<Mutex<HashMap<u64, PendingRequest>>>,
     alive: Arc<AtomicBool>,
     intentional_disconnect: Arc<AtomicBool>,
+}
+
+struct PendingRequest {
+    sender: oneshot::Sender<Result<Value, String>>,
+    method: String,
+    context: Option<Value>,
 }
 
 pub struct AppServerManager {
@@ -309,10 +315,7 @@ impl AppServerManager {
     fn attach(&self, socket: tokio_tungstenite::WebSocketStream<UnixStream>) -> Connection {
         let (mut writer, mut reader) = socket.split();
         let (outgoing, mut outbound) = mpsc::channel::<String>(128);
-        let pending = Arc::new(Mutex::new(HashMap::<
-            u64,
-            oneshot::Sender<Result<Value, String>>,
-        >::new()));
+        let pending = Arc::new(Mutex::new(HashMap::<u64, PendingRequest>::new()));
         let reader_pending = pending.clone();
         let alive = Arc::new(AtomicBool::new(true));
         let writer_alive = alive.clone();
@@ -352,14 +355,23 @@ impl AppServerManager {
                                     .get("id")
                                     .and_then(Value::as_u64)
                                     .unwrap_or_default();
-                                let sender = reader_pending.lock().await.remove(&id);
-                                if let Some(sender) = sender {
+                                let pending = reader_pending.lock().await.remove(&id);
+                                if let Some(pending) = pending {
                                     let response = if let Some(error) = payload.get("error") {
+                                        reader_diagnostics.record(
+                                            "error", "app-server", "rpc.rejected",
+                                            json!({
+                                                "requestId": id,
+                                                "method": pending.method,
+                                                "requestMeta": pending.context,
+                                                "failure": crate::diagnostics::rpc_error_metadata(error),
+                                            }),
+                                        );
                                         Err(describe_error(error))
                                     } else {
                                         Ok(payload.get("result").cloned().unwrap_or(Value::Null))
                                     };
-                                    let _ = sender.send(response);
+                                    let _ = pending.sender.send(response);
                                 }
                             } else {
                                 let method = payload.get("method").and_then(Value::as_str);
@@ -433,8 +445,10 @@ impl AppServerManager {
             reader_alive.store(false, Ordering::Relaxed);
             reader_diagnostics.record("info", "app-server", "connection.closed", json!({}));
             let mut waiters = reader_pending.lock().await;
-            for (_, sender) in waiters.drain() {
-                let _ = sender.send(Err("Codex App Server 连接已关闭。请重试。".to_string()));
+            for (_, pending) in waiters.drain() {
+                let _ = pending
+                    .sender
+                    .send(Err("Codex App Server 连接已关闭。请重试。".to_string()));
             }
             if !reader_intentional_disconnect.load(Ordering::Relaxed) {
                 let _ = app.emit(
@@ -473,7 +487,14 @@ impl AppServerManager {
     ) -> Result<Value, String> {
         let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = oneshot::channel();
-        connection.pending.lock().await.insert(id, sender);
+        connection.pending.lock().await.insert(
+            id,
+            PendingRequest {
+                sender,
+                method: method.clone(),
+                context: request_context(&params),
+            },
+        );
         let frame = json!({ "id": id, "method": method, "params": params });
         if let Err(error) = self.send_frame(connection, frame).await {
             connection.pending.lock().await.remove(&id);

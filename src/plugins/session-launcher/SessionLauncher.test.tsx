@@ -15,7 +15,7 @@ it('defaults over inherited settings once, then preserves manual choices across 
   const changed = vi.fn()
   function Host() {
     const [settings, setSettings] = useState<ThreadCodexSettings>({ model: 'gpt-5.6-sol', effort: 'low', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null })
-    return <SessionLauncher radar={radar} storage={storage} threadId="selection-test" threadCwd={null} workspaceRoot={null} isNewThread models={models} settings={settings} disabled={false} onSettingsChange={(patch) => { changed(patch); setSettings((old) => ({ ...old, ...patch })) }} />
+    return <SessionLauncher radar={radar} storage={storage} notifications={{ publish: vi.fn() }} threadId="selection-test" threadCwd={null} workspaceRoot={null} isNewThread models={models} settings={settings} disabled={false} onSettingsChange={(patch) => { changed(patch); setSettings((old) => ({ ...old, ...patch })) }} />
   }
   const first = render(<Host />)
   await waitFor(() => expect(changed).toHaveBeenCalledWith({ model: 'gpt-6-astra', effort: 'low' }))
@@ -29,4 +29,38 @@ it('defaults over inherited settings once, then preserves manual choices across 
   await waitFor(() => expect(radar.modelTable).toHaveBeenCalledTimes(2))
   await screen.findByRole('button', { name: /Sol.*low/i })
   expect(changed).not.toHaveBeenCalled()
+})
+
+it.each(['async', 'sync'] as const)('stops after %s initialization failure across rerenders/remounts, notifies once, and allows manual selection', async (failure) => {
+  const models: CodexModel[] = [{ id: 'gpt-6-astra', model: 'gpt-6-astra', displayName: 'Astra', description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'low', description: '' }], defaultReasoningEffort: 'low', inputModalities: ['text'], isDefault: true }]
+  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [{ group: 'reference' as const, model: 'gpt-6-astra', effort: 'low', iq: 100, price: 1, minutes: 1, bestIq: true, bestPrice: true, bestMinutes: true, automatic: false, defaultCursor: true }] })) }
+  const storage: PluginStorage = { get: vi.fn(async () => null), set: vi.fn(async () => {}) }
+  const notifications = { publish: vi.fn(() => 'notice') }
+  const changed = vi.fn().mockImplementationOnce(() => {
+    if (failure === 'sync') throw new Error('thread not found')
+    return Promise.reject(new Error('thread not found'))
+  }).mockResolvedValue(undefined)
+  function Host() {
+    const [settings, setSettings] = useState<ThreadCodexSettings>({ model: 'gpt-6-astra', effort: 'low', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null })
+    return <SessionLauncher radar={radar} storage={storage} notifications={notifications} threadId={`failure-${failure}`} threadCwd={null} workspaceRoot="/repo" isNewThread models={models} settings={settings} disabled={false} onSettingsChange={(patch) => {
+      setSettings((previous) => ({ ...previous }))
+      return changed(patch)
+    }} />
+  }
+  const first = render(<Host />)
+  await waitFor(() => expect(notifications.publish).toHaveBeenCalledTimes(1))
+  expect(notifications.publish).toHaveBeenCalledWith(expect.objectContaining({ level: 'error', threadId: `failure-${failure}`, workspaceRoot: '/repo', details: expect.stringContaining('thread not found') }))
+  first.rerender(<Host />)
+  fireEvent.click(screen.getByRole('button', { name: '刷新 Radar 数据' }))
+  await waitFor(() => expect(radar.modelTable).toHaveBeenCalledTimes(2))
+  first.unmount()
+  render(<Host />)
+  await waitFor(() => expect(radar.modelTable).toHaveBeenCalledTimes(3))
+  await screen.findByRole('button', { name: /Astra.*low/i })
+  expect(changed).toHaveBeenCalledTimes(1)
+  expect(storage.set).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: /Astra.*low/i }))
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(storage.set).toHaveBeenCalledWith(`model-initialized:failure-${failure}`, true))
+  expect(notifications.publish).toHaveBeenCalledTimes(1)
 })
