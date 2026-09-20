@@ -415,6 +415,20 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .mermaid-modal-body svg { display: block; margin: 0 auto; max-width: none !important; height: auto; }
 .mermaid-modal-close { position: absolute; z-index: 1; top: 8px; right: 8px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #d9dee7; border-radius: 6px; background: rgba(255, 255, 255, .92); color: #737b87; cursor: pointer; }
 .mermaid-modal-close:hover { border-color: #bfc7d5; color: #3f4f6f; }
+.markdown-image-block { display: block; overflow: hidden; }
+.markdown-image-toolbar > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #737b87; font-size: 12px; }
+.markdown-image-toolbar > svg { color: #737b87; flex: 0 0 auto; }
+.markdown-image-preview { display: block; width: 100%; padding: 12px; border: 0; background: transparent; cursor: zoom-in; }
+.markdown-image-preview:disabled { cursor: default; }
+.markdown-image-preview img { display: block; max-width: 100%; max-height: 320px; width: auto; height: auto; margin: 0 auto; object-fit: contain; border-radius: 4px; }
+.markdown-image-loading, .markdown-image-error { display: block; padding: 14px; font-size: 12px; color: #737b87; overflow-wrap: anywhere; }
+.markdown-image-error { color: #a55252; }
+.markdown-image-modal { width: min(1440px, 100%); }
+.markdown-image-modal .mermaid-modal-body { width: 100%; max-height: calc(100vh - 48px); }
+.markdown-image-modal img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.app-shell[data-theme='dark'] .markdown-image-toolbar > :is(span, svg), .app-shell[data-theme='dark'] .markdown-image-loading { color: #aab1bc; }
+.app-shell[data-theme='dark'] .markdown-image-error { color: #e19a9f; }
+
 .markdown-body blockquote { margin: 10px 0; padding-left: 12px; border-left: 2px solid #74a98c; color: #397654; }
 .markdown-body hr { height: 1px; margin: 18px 0; border: 0; background: #e1e3e7; }
 .markdown-body table { display: block; width: max-content; max-width: 100%; margin: 10px 0 13px; overflow-x: auto; border-collapse: collapse; font-size: .91em; }
