@@ -18,6 +18,7 @@ import {
 import { parseThreadCreditUsage } from '../domain/codex'
 import type { AgentRun, ThreadInspection } from '../agent-runs/types'
 import type { LocalConnectorHealth, LocalConnectorMessage, LocalConnectorSendInput } from '../local-connectors/types'
+import type { JevRequest, JevResponse, JevStatus } from '../domain/jev'
 import type { RadarModelTable } from '../codex-radar/types'
 import type { QuickCommandId, QuickCommandResult } from '../quick-commands/types'
 import type { ReleaseCommandInfo, ReleaseRunStatus } from '../release-command/types'
@@ -565,6 +566,14 @@ export const runtime = {
 
   localConnectorSendMessage(baseUrl: string, input: LocalConnectorSendInput): Promise<{ ok: boolean; messageId?: string }> {
     return invoke<{ ok: boolean; messageId?: string }>('local_connector_send_message', { baseUrl, input })
+  },
+
+  jevStatus(): Promise<JevStatus> {
+    return invoke<JevStatus>('jev_status')
+  },
+
+  jevEvaluate(input: JevRequest): Promise<JevResponse> {
+    return invoke<JevResponse>('jev_evaluate', { input })
   },
 
   codexRadarModelTable(): Promise<RadarModelTable> {

@@ -10,6 +10,7 @@ mod diagnostics;
 mod git_workspace;
 mod handover_store;
 mod harness_files;
+mod jev;
 mod local_connector;
 mod project_doc_proposals;
 mod project_doc_server;
@@ -47,6 +48,7 @@ struct AppState {
     diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
     codex_radar: CodexRadarClient,
+    jev: jev::JevClient,
     codex_analytics: CodexAnalytics,
     store: Arc<HarnessStore>,
     project_docs: Mutex<Option<project_doc_store::ProjectDocStore>>,
@@ -186,6 +188,24 @@ async fn local_connector_send_message(
     input: SendMessageInput,
 ) -> Result<SendMessageResult, String> {
     state.local_connector.send_message(&base_url, input).await
+}
+
+#[tauri::command]
+fn jev_status(state: State<'_, AppState>) -> Result<jev::JevStatus, String> {
+    state
+        .jev
+        .status(&store::harness_data_dir()?.join("secrets"))
+}
+
+#[tauri::command]
+async fn jev_evaluate(
+    state: State<'_, AppState>,
+    input: jev::JevRequest,
+) -> Result<jev::JevResponse, String> {
+    state
+        .jev
+        .evaluate(&store::harness_data_dir()?.join("secrets"), input)
+        .await
 }
 
 #[tauri::command]
@@ -1186,6 +1206,7 @@ pub fn run() {
                 diagnostics,
                 local_connector: LocalConnector::new(),
                 codex_radar: CodexRadarClient::new(),
+                jev: jev::JevClient::new()?,
                 codex_analytics: analytics,
                 store: Arc::new(store),
                 project_docs: Mutex::new(None),
@@ -1269,6 +1290,8 @@ pub fn run() {
             local_connector_list_messages,
             local_connector_send_message,
             codex_radar_model_table,
+            jev_status,
+            jev_evaluate,
             usage_cached_snapshot,
             usage_refresh_snapshot,
             codex_analytics_snapshot,
