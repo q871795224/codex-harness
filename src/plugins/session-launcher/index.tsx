@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, Gauge, LoaderCircle, RefreshCw, Shield, ShieldCheck, ShieldOff, Sparkles } from 'lucide-react'
 import type { CodexRadarService } from '../../core/codex-radar/types'
 import type { CodexModel, ThreadCodexSettings } from '../../core/domain/codex'
+import type { NotificationService } from '../../core/notifications/store'
 import type { HarnessPlugin, NewThreadPanelProps, PluginInstanceRecord, PluginStorage } from '../../extensions/types'
 
 type LaunchMode = 'yolo' | 'auto-review' | 'manual'
@@ -21,6 +22,8 @@ export interface PickerRow {
 }
 
 const yoloInitializedThreads = new Set<string>()
+// Includes failed attempts so switching panels cannot restart automatic retries.
+const defaultInitializedThreads = new Set<string>()
 
 export const sessionLauncherPlugin: HarnessPlugin = {
   manifest: {
@@ -36,10 +39,11 @@ export const sessionLauncherPlugin: HarnessPlugin = {
   },
   activate(ctx) {
     const radar = ctx.services.get<CodexRadarService>('harness.codexRadar')
+    const notifications = ctx.services.get<NotificationService>('harness.notifications')
     ctx.slots.newThreadPanels.register({
       id: 'session-launcher',
       order: 10,
-      render: (props) => <SessionLauncher radar={radar} storage={ctx.storage} {...props} />,
+      render: (props) => <SessionLauncher radar={radar} storage={ctx.storage} notifications={notifications} {...props} />,
     })
   },
 }
@@ -54,14 +58,13 @@ export const sessionLauncherDefaultInstance: PluginInstanceRecord = {
   updatedAt: 0,
 }
 
-export function SessionLauncher({ radar, storage, threadId, isNewThread, models, settings, disabled, onSettingsChange }: NewThreadPanelProps & { radar: CodexRadarService; storage: PluginStorage }) {
+export function SessionLauncher({ radar, storage, notifications, threadId, workspaceRoot, isNewThread, models, settings, disabled, onSettingsChange }: NewThreadPanelProps & { radar: CodexRadarService; storage: PluginStorage; notifications: NotificationService }) {
   const [remoteRows, setRemoteRows] = useState<PickerRow[] | null>(null)
   const [fetchedAt, setFetchedAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const defaultInitializedThreads = useRef(new Set<string>())
   const [loadedDefaultThread, setLoadedDefaultThread] = useState<string | null>(null)
   const rows = useMemo(() => availableRows(remoteRows, models, settings), [models, remoteRows, settings])
   const selectedRow = useMemo(() => selectedRadarRow(rows, settings), [rows, settings])
@@ -90,7 +93,7 @@ export function SessionLauncher({ radar, storage, threadId, isNewThread, models,
     let disposed = false
     void storage.get<boolean>(`model-initialized:${threadId}`).then((initialized) => {
       if (disposed) return
-      if (initialized) defaultInitializedThreads.current.add(threadId)
+      if (initialized) defaultInitializedThreads.add(threadId)
       setLoadedDefaultThread(threadId)
     }).catch((error) => { if (!disposed) setSettingsError(messageOf(error)) })
     return () => { disposed = true }
@@ -105,20 +108,26 @@ export function SessionLauncher({ radar, storage, threadId, isNewThread, models,
   }, [disabled, onSettingsChange, settings, threadId])
 
   useEffect(() => {
-    if (!threadId || loadedDefaultThread !== threadId || !isNewThread || disabled || loading || models.length === 0 || !defaultRow || defaultInitializedThreads.current.has(threadId)) return
-    defaultInitializedThreads.current.add(threadId)
+    if (!threadId || loadedDefaultThread !== threadId || !isNewThread || disabled || loading || models.length === 0 || !defaultRow || defaultInitializedThreads.has(threadId)) return
+    defaultInitializedThreads.add(threadId)
     setSaving(true)
-    void Promise.resolve(onSettingsChange({ model: defaultRow.model, effort: defaultRow.effort }))
+    void Promise.resolve().then(() => onSettingsChange({ model: defaultRow.model, effort: defaultRow.effort }))
       .then(() => storage.set(`model-initialized:${threadId}`, true)).catch((nextError) => {
-        defaultInitializedThreads.current.delete(threadId)
+        // Keep the attempt marked: rollback/rerender must not retry a failed initialization.
         setSettingsError(messageOf(nextError))
+        notifications.publish({
+          source: '会话启动器', level: 'error', title: '默认模型初始化未完成',
+          message: '已停止自动重试，可在会话启动器中手动选择模型。',
+          details: `模型：${defaultRow.model}；推理强度：${defaultRow.effort}\n${messageOf(nextError)}`,
+          threadId, workspaceRoot,
+        })
       }).finally(() => setSaving(false))
-  }, [defaultRow, disabled, isNewThread, loading, loadedDefaultThread, models.length, onSettingsChange, storage, threadId])
+  }, [defaultRow, disabled, isNewThread, loading, loadedDefaultThread, models.length, notifications, onSettingsChange, storage, threadId, workspaceRoot])
 
   const apply = async (patch: Partial<ThreadCodexSettings>) => {
     if (disabled || saving) return
     const selectingModel = threadId && (patch.model !== undefined || patch.effort !== undefined)
-    if (selectingModel) defaultInitializedThreads.current.add(threadId)
+    if (selectingModel) defaultInitializedThreads.add(threadId)
     setSaving(true)
     setSettingsError(null)
     try {

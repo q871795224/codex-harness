@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "codex-harness"
-version = "0.8.14"
+version = "0.8.15"
 dependencies = [
  "arboard",
  "block2",

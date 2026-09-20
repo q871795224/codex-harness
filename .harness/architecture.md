@@ -30,7 +30,7 @@
 - Composer 通过 `+`、`@` 或剪贴板添加 PNG、JPEG、GIF、WebP 图片，发送前统一构造成 `localImage`。剪贴板图片由 Rust 原生层读取并转换成系统临时目录下的 PNG，前端草稿只保留路径，不保存 base64；临时文件不在发送后立即删除，以免破坏排队和重试。
 - Composer 选中 `$skill` 后，文本项保留可见 marker，并带 CLI 兼容的 `text_elements`；独立的 `skill` 项仍由 App Server 解析。普通文件只发结构化 `mention`，不要在前端展开文件内容。当前 CLI 0.151.0 的文件选择发送路径文本，和 Harness 的结构化 mention 是已知协议差异。
 - `thread/tokenUsage/updated` 提供 Codex 会话的累计和最近一次 usage，前端已用于会话统计。累计值不能直接当成单 turn 值相加。
-- Rust 原生层在 `~/.codex-harness/logs/harness.jsonl` 留存低基数的 App Server 请求和 usage 诊断；`turnTrigger` 用于区分普通对话、标题生成、Quick Agent 等来源，日志不保存正文。
+- Rust 原生层在 `~/.codex-harness/logs/harness-<version>-<timestampMs>-<pid>-<segment>.jsonl` 留存低基数的 App Server 请求和 usage 诊断；每段约 2 MiB，永久保留，不自动删除。每条记录带 `harnessVersion`，升级和进程重启写新文件，旧版 `harness.jsonl` / `harness.previous.jsonl` 原样保留。`turnTrigger` 区分来源；`rpc.rejected` 保存服务端数值错误码、请求标识及白名单原因分类，不保存任意错误正文或 data。
 - Codex 分析使用有界非阻塞队列和独立 SQLite 写线程。初始化、队列或写入失败一律 fail-open，不得阻塞 App Server 或阻止 Harness 启动；页面显示丢弃/写入错误计数。真实 Token 仅累加已登记 Harness 轮次的 `thread/tokenUsage/updated.tokenUsage.last`；累计值的签名永久保存用于重放去重，不参与相加，回退或缺口标记不完整。启动应答之前的通知和有明确父任务关系的子 Agent 通知使用有界暂存。
 - Skill 显式选择与 `commandActions.read` 观测读取分别统计，后者只采用 App Server 提供的路径，不自行解析 shell。多文件输出不强行分摊；AGENTS.md 自动加载没有证据时显示未采集。`turn/steer` 的追加输入只关联已经登记的轮次。模型记录有效配置，重路由仅标记，不将整轮消耗改归新模型。
 - 用户输入、Skill 和 MCP 内容默认由后台 `o200k_base` 本地分词；单项内容超过 64 KiB 或缺失时保留事件并标记计数不可用。插件可选择官方 `/responses/input_tokens`，其请求使用独立的有界单并发线程，失败保留本地结果，不能混充实际 usage。

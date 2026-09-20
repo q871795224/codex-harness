@@ -20,7 +20,7 @@ description: Use when comparing Codex CLI and Codex Harness App Server requests 
 
 ## 成本观察
 
-- 查看 `~/.codex-harness/logs/harness.jsonl` 中 `area=codex-usage` 的记录。
+- 查看 `~/.codex-harness/logs/harness-<version>-*.jsonl` 中 `area=codex-usage` 的记录；旧版日志仍可能位于 `harness.jsonl` / `harness.previous.jsonl`，按目标版本和时间范围筛选。
 - 用 `usage.last` 估算单轮，用 `usage.total` 观察会话累计；不要把多条累计值相加。
 - 按 `turnTrigger`（缺少时归为 `conversation`）、model、effort、itemTypes、bodyChars、mentionCount、skillCount、imageCount 和 audioCount 分组。
 - 日志只能保存低基数元数据和数值 usage，不能保存 prompt、回复、文件内容、Skill 正文、凭据或完整 MCP 结果。
