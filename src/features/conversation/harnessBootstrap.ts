@@ -54,7 +54,7 @@ export const defaultAppearancePreferences: AppearancePreferences = {
 
 export const defaultKeyboardPreferences: KeyboardPreferences = {
   sendShortcut: 'mod-enter',
-  followUpMode: 'queue',
+  followUpMode: 'interject',
   actionShortcuts: defaultHarnessActionShortcuts,
 }
 
