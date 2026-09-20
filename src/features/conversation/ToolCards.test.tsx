@@ -28,3 +28,11 @@ it.each(['mcpToolCall', 'dynamicToolCall'])('reveals structured arguments and er
   fireEvent.click(screen.getAllByRole('button', { name: '原文' })[1])
   expect(screen.getByText(type === 'mcpToolCall' ? /MCP-ERROR/ : /DYNAMIC-ERROR/, { selector: 'code' })).toBeTruthy()
 })
+
+it('shows a skill read with status and retains the original command and output', async () => {
+  const command = 'cat /skills/frontend-design/SKILL.md'
+  showItem({ id: 'skill', type: 'commandExecution', command, cwd: '/repo', commandActions: [{ type: 'read', path: '/skills/frontend-design/SKILL.md' }], status: 'completed', exitCode: 0, aggregatedOutput: 'SKILL-CONTENT' })
+  fireEvent.click(screen.getByRole('button', { name: /读取技能：frontend-design.*已读取/ }))
+  expect(screen.getByText(command)).toBeTruthy()
+  expect(screen.getByText('SKILL-CONTENT')).toBeTruthy()
+})

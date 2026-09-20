@@ -41,6 +41,7 @@ export const defaultNavigationPreferences: NavigationPreferences = {
   workspaceSort: 'stable',
   pinnedThreadIds: [],
   pinnedWorkspaceRoots: [],
+  hiddenWorkspaceRoots: [],
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   sidebarCollapsed: false,
   sidebarListSplitRatio: DEFAULT_SIDEBAR_LIST_SPLIT_RATIO,
@@ -114,6 +115,9 @@ export function parseNavigationPreferences(raw: string | null): NavigationPrefer
       workspaceSort: value.workspaceSort === 'recent' ? 'recent' : 'stable',
       pinnedThreadIds: parsePinnedIdentifiers(value.pinnedThreadIds),
       pinnedWorkspaceRoots: parsePinnedIdentifiers(value.pinnedWorkspaceRoots),
+      hiddenWorkspaceRoots: Array.isArray(value.hiddenWorkspaceRoots)
+        ? [...new Set(value.hiddenWorkspaceRoots.filter((root): root is string => typeof root === 'string' && root.length > 0))]
+        : [],
       sidebarWidth: normalizeSidebarWidth(value.sidebarWidth),
       sidebarCollapsed: value.sidebarCollapsed === true,
       sidebarListSplitRatio: normalizeSidebarListSplitRatio(value.sidebarListSplitRatio),
