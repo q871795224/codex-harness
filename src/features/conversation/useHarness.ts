@@ -707,8 +707,8 @@ export function useHarness() {
         foreignActive: activeTurnId !== null && !owned,
       },
     }))
-    updateThread(threadId, (current) => ({ ...current, ...response.thread }))
-    void mapThreadRoots([response.thread])
+    updateThread(threadId, (current) => ({ ...current, ...resumedDetail.thread }))
+    void mapThreadRoots([resumedDetail.thread])
     if (loadQueueAfter) await loadQueue(threadId)
   }, [commitTurnOwnership, loadQueue, mapThreadRoots, updateThread])
 
@@ -771,13 +771,13 @@ export function useHarness() {
             requestedCwd: listedThread?.cwd ?? null,
             localThreadCwdAtResponse: localThreadAtResponse?.cwd ?? null,
             localDetailCwdAtResponse: localDetailAtResponse?.thread.cwd ?? null,
-            responseCwd: response.thread.cwd,
+            responseCwd: response.cwd ?? response.thread.cwd,
             responseRuntimeWorkspaceRoots: response.runtimeWorkspaceRoots,
             responseApplied: true,
           },
         })
         await applyResumedThread(threadId, response)
-        if (selectedThreadIdRef.current === threadId) rememberNextThreadCwd(response.thread.cwd)
+        if (selectedThreadIdRef.current === threadId) rememberNextThreadCwd(response.cwd ?? response.thread.cwd)
       } catch (error) {
         // A stale catalog can point at a thread another client archived.
         if (!isArchivedThreadError(error)) throw error
@@ -845,7 +845,7 @@ export function useHarness() {
           context: {
             source: 'useHarness.recoverActiveThreadSubscriptions',
             selectedThreadId: selectedId,
-            responseCwd: response.thread.cwd,
+            responseCwd: response.cwd ?? response.thread.cwd,
             durationMs: Math.round(performance.now() - startedAt),
           },
         })

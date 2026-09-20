@@ -71,7 +71,8 @@ export function resumedThreadDetail(response: ResumeThreadResponse): ThreadDetai
   const activeTurnId = turns.find((turn) => turn.status === 'inProgress')?.id ?? null
 
   return {
-    thread: response.thread,
+    // The persisted thread cwd can still point at the directory used at creation.
+    thread: { ...response.thread, cwd: response.cwd ?? response.thread.cwd },
     turns,
     items: turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item }))),
     nextTurnsCursor: response.initialTurnsPage?.nextCursor ?? null,
