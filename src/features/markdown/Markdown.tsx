@@ -1,5 +1,6 @@
-import { isValidElement, type ComponentPropsWithoutRef, type ReactNode } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import { MarkdownImage, imageSource } from './MarkdownImage'
+import { isValidElement, useMemo, type ComponentPropsWithoutRef, type ReactNode } from 'react'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MarkdownCodeBlock } from './MarkdownCodeBlock'
 import { JsonBlock } from './JsonBlock'
@@ -8,11 +9,12 @@ import { MermaidBlock } from './MermaidBlock'
 import { remarkRepairCjkAutolink } from './remarkRepairCjkAutolink'
 
 export function Markdown({ text, cwd, collapsibleJson = false }: { text: string; cwd?: string; collapsibleJson?: boolean }) {
-  const components: Components = {
+  const components: Components = useMemo(() => ({
+    img: ({ src, alt, title }) => <MarkdownImage key={`${cwd ?? ''}:${src}`} src={src} alt={alt} title={title} cwd={cwd} />,
     pre: collapsibleJson ? ConversationPre : MarkdownPre,
     ...(cwd === undefined ? {} : { a: (props: ComponentPropsWithoutRef<'a'>) => <MarkdownLink {...props} cwd={cwd} /> }),
-  }
-  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkRepairCjkAutolink]} components={components}>{text}</ReactMarkdown>
+  }), [cwd, collapsibleJson])
+  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkRepairCjkAutolink]} components={components} urlTransform={(url, key, node) => key === 'src' && node.tagName === 'img' && imageSource(url) ? url : defaultUrlTransform(url)}>{text}</ReactMarkdown>
 }
 
 function ConversationPre({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {

@@ -232,6 +232,11 @@ export const runtime = {
     return invoke<Workspace>('register_workspace', { path })
   },
 
+  async readMarkdownImage(path: string, cwd?: string): Promise<ArrayBuffer> {
+    const bytes = await invoke<ArrayBuffer | number[]>('read_markdown_image', { path, cwd: cwd ?? null })
+    return bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer
+  },
+
   async chooseComposerFiles(): Promise<string[]> {
     const paths = await open({
       directory: false,
