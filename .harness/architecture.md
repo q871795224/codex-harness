@@ -22,6 +22,13 @@
 - 官方费用通过 `account/usage/read({ threadId })` 查询会话累计估算。模型额度图仅在整个会话落入所选日期、各模型 Token 与采集账本一致时展示 credits；任一记录不可核对时显示不可用，不按 Token 比例分摊累计费用。会话详情可独立查看整个会话累计估算，美元金额允许缺失。
 - Codex Radar 请求由 Rust 固定域名客户端完成并缓存，内置会话启动器只能通过 `harness.codexRadar` 读取整理后的指标。
 
+## Jev 决策服务
+
+- `src-tauri/src/jev.rs` 按需调用固定 Vercel `/v1/evaluate` 端点和 `typesafe-ai/jev`；核心通过 `bridge.ts` 的 `jevStatus`、`jevEvaluate` 接入，领域类型位于 `src/core/domain/jev.ts`。
+- 密钥只由 Rust 从 `~/.codex-harness/secrets` 的 `VERCEL_API_KEY` 读取，每次调用重新读取；状态接口只报告本地是否配置，不代表远端权限或额度已验证。
+- 调用方显式提供 state 和 questions；不自动携带会话、加载记忆或触发模型调用。结果保留答案、usage 和费用，缺失费用与零费用分开表示；不持久化或记录输入、回答、密钥。
+- 这是独立的决策服务，不接入聊天 Provider 或绕过 App Server 的 Skill/MCP 管理。后续插件使用需通过 extension service 契约接入。
+
 ## Codex 运行时
 
 - Harness 启动时复用或启动共享 `codex app-server daemon`，初始化一次连接并转发事件。关闭 Harness 不停止 daemon。
