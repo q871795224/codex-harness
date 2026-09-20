@@ -374,6 +374,8 @@ export interface ThreadItem extends JsonObject {
 export interface ThreadItemEntry {
   turnId: string
   item: ThreadItem
+  /** Client receipt times, session-only; never treated as server timestamps. */
+  timing?: { startedAt?: number; completedAt?: number }
 }
 
 export interface TokenUsageBreakdown {

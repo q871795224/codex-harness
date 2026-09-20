@@ -852,6 +852,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
                     threadId: harness.selectedThreadId,
                     threadCwd,
                     workspaceRoot: workspace?.root ?? null,
+                    turns: harness.currentDetail?.turns ?? [],
+                    hasEarlierTurns: Boolean(harness.currentDetail?.nextTurnsCursor),
                     items: harness.currentDetail?.items ?? [],
                     workspaces: harness.workspaces,
                     threads: harness.threads,

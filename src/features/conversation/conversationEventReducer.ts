@@ -14,7 +14,7 @@ export type ThreadDetailEvent =
   | { type: 'statusChanged'; status: Thread['status'] }
   | { type: 'nameUpdated'; name: string | null }
   | { type: 'turnStarted'; turn: Turn }
-  | { type: 'itemUpserted'; turnId: string; item: ThreadItem }
+  | { type: 'itemUpserted'; turnId: string; item: ThreadItem; observedAt?: number; phase?: 'started' | 'completed' }
   | { type: 'agentMessageDelta'; itemId: string; delta: string }
   | { type: 'commandOutputDelta'; itemId: string; delta: string }
   | { type: 'turnCompleted'; turn: Turn }
@@ -47,7 +47,13 @@ export function reduceThreadDetailEvent(detail: ThreadDetail, event: ThreadDetai
     }
   }
   if (event.type === 'itemUpserted') {
-    return { ...detail, items: upsertItem(detail.items, event.turnId, event.item) }
+    const items = upsertItem(detail.items, event.turnId, event.item)
+    if (event.observedAt !== undefined && event.phase && event.item.id) {
+      const key = event.phase === 'started' ? 'startedAt' : 'completedAt'
+      return { ...detail, items: items.map((entry) => entry.turnId === event.turnId && entry.item.id === event.item.id
+        ? { ...entry, timing: { ...entry.timing, [key]: entry.timing?.[key] ?? event.observedAt } } : entry) }
+    }
+    return { ...detail, items }
   }
   if (event.type === 'agentMessageDelta') {
     return {
@@ -73,10 +79,10 @@ export function reduceThreadDetailEvent(detail: ThreadDetail, event: ThreadDetai
 function upsertItem(items: ThreadItemEntry[], turnId: string, nextItem: ThreadItem): ThreadItemEntry[] {
   const id = typeof nextItem.id === 'string' ? nextItem.id : null
   if (!id) return [...items, { turnId, item: nextItem }]
-  const found = items.findIndex((entry) => entry.item.id === id)
+  const found = items.findIndex((entry) => entry.turnId === turnId && entry.item.id === id)
   if (found < 0) return [...items, { turnId, item: nextItem }]
   const copy = [...items]
-  copy[found] = { turnId, item: { ...copy[found].item, ...nextItem } }
+  copy[found] = { ...copy[found], turnId, item: { ...copy[found].item, ...nextItem } }
   return copy
 }
 
