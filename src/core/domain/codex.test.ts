@@ -190,7 +190,7 @@ describe('display and keyboard preferences', () => {
     expect(normalizeSendShortcut('shift-enter')).toBe('mod-enter')
     expect(normalizeFollowUpMode('interject')).toBe('interject')
     expect(normalizeFollowUpMode('queue')).toBe('queue')
-    expect(normalizeFollowUpMode('unknown')).toBe('queue')
+    expect(normalizeFollowUpMode('unknown')).toBe('interject')
   })
 })
 
