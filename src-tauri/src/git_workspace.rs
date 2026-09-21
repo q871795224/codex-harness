@@ -237,6 +237,10 @@ fn percent_encode(value: &str) -> String {
 
 fn git<const N: usize>(cwd: &Path, args: [&str; N]) -> Result<String, String> {
     let output = Command::new("git")
+        // Callers classify Git errors (for example, non-repository directories).
+        // Keep diagnostics stable regardless of the application's locale.
+        .env("LC_ALL", "C")
+        .env("LANGUAGE", "C")
         .arg("-C")
         .arg(cwd)
         .args(args)
@@ -352,7 +356,7 @@ mod tests {
         let error = resolve_workspace(directory.0.to_str().expect("UTF-8 path"))
             .expect_err("non-Git directory must be rejected");
 
-        assert!(!error.trim().is_empty());
+        assert!(error.contains("not a git repository"), "{error}");
     }
 
     #[test]
