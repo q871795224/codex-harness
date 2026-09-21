@@ -50,12 +50,12 @@ it('accepts no-op without calling storage and cleans up the ephemeral thread', a
   expect(service.isRunning('source')).toBe(false)
 })
 it('passes structured candidates to Harness, reports success only after persistence', async () => {
-  const candidate = { title: '经验', kind: 'fact', scope: 'workspace/repo', content: '内容', applicability: '条件', evidence: '证据', sourceTurnIds: ['t1'], relatedWorkspaces: [] }
+  const candidate = { title: '经验', kind: 'fact', scope: 'workspace/repo', content: '内容', applicability: '条件', evidence: '证据', sourceTurnIds: ['t1'] }
   result(JSON.stringify({ memories: [candidate] }))
   vi.mocked(runtime.memorySave).mockResolvedValue([{ id: 'mem-1', title: '经验', scope: 'workspace/repo', path: '/memory/MEMORY.md' }])
   const publish = vi.fn().mockReturnValue('notice')
   await createMemoryService({ publish }).saveConversation({ threadId: 'source', cwd: '/repo' })
-  expect(runtime.memorySave).toHaveBeenCalledWith({ threadId: 'source', cwd: '/repo', sourceTurnIds: ['t1'], memories: [candidate] })
+  expect(runtime.memorySave).toHaveBeenCalledWith({ threadId: 'source', cwd: '/repo', sourceWorkspace: 'repo', sourceTurnIds: ['t1'], memories: [candidate] })
   expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已保存 1 条记忆' }))
   vi.mocked(runtime.memorySave).mockRejectedValueOnce(new Error('磁盘已满'))
   await expect(createMemoryService({ publish }).saveConversation({ threadId: 'source', cwd: '/repo' })).rejects.toThrow('磁盘已满')

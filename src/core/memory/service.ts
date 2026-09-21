@@ -110,7 +110,7 @@ export function createMemoryService(notifications: NotificationService): MemoryS
         const model = settings.model || (typeof config.model === 'string' && config.model ? config.model : 'gpt-5.6-luna')
         const output = await extractMemoryJson(cwd, prompt, model, contextWindow, percent, config, settings)
         const memories = parseMemories(output)
-        const saved = memories.length ? await runtime.memorySave({ threadId, cwd, sourceTurnIds: turns.map((turn) => turn.id), memories }) : []
+        const saved = memories.length ? await runtime.memorySave({ threadId, cwd, sourceWorkspace: catalog.currentWorkspace, sourceTurnIds: turns.map((turn) => turn.id), memories }) : []
         notifications.publish({
           ...notice, id, level: 'info', state: 'done',
           title: saved.length ? `已保存 ${saved.length} 条记忆` : '本次没有值得保存的记忆',

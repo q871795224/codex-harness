@@ -1851,3 +1851,15 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .json-tree-number { color: #acbaff; }
 .app-shell[data-theme='dark'] .json-tree-literal { color: #d9b07c; }
 .app-shell[data-theme='dark'] :is(.json-tree-toggle, .json-tree-ellipsis) { color: #aab1bc; }
+
+/* Workspace domain tags share the settings surface in both themes. */
+.workspace-domain-create { display: flex; gap: 8px; margin: 16px 0 12px; }
+.workspace-domain-create input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #dfe2e7; border-radius: 7px; background: #fff; color: #454b56; font: inherit; }
+.workspace-domain-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 8px 0; }
+.workspace-domain-create button, .workspace-domain-tags button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border: 1px solid #dfe2e7; border-radius: 7px; background: #fff; color: #657083; font: inherit; font-size: calc(12px + var(--h-settings-font-offset)); cursor: pointer; }
+.workspace-domain-tags .workspace-domain-tag[aria-pressed='true'] { border-color: #a6b5e7; background: #eef2ff; color: #4159a6; }
+.workspace-domain-create button:disabled, .workspace-domain-tags button:disabled { opacity: .5; cursor: default; }
+.workspace-domain-definition { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px; border: 1px solid #dfe2e7; border-radius: 7px; font-size: calc(13px + var(--h-settings-font-offset)); }
+.workspace-domain-tags .workspace-domain-definition button { border: 0; padding: 3px; }
+.app-shell[data-theme='dark'] .workspace-domain-create input, .app-shell[data-theme='dark'] .workspace-domain-create button, .app-shell[data-theme='dark'] .workspace-domain-tags button, .app-shell[data-theme='dark'] .workspace-domain-definition { border-color: #3d424c; background: #25292f; color: #c8cdd5; }
+.app-shell[data-theme='dark'] .workspace-domain-tags .workspace-domain-tag[aria-pressed='true'] { border-color: #596baf; background: #303954; color: #cfdaff; }

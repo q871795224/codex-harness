@@ -1,5 +1,5 @@
 mod memory;
-pub use memory::{MemoryCatalog, MemorySaveInput, SavedMemory};
+pub use memory::{MemoryCatalog, MemoryDomainSettings, MemorySaveInput, SavedMemory};
 pub mod project_bindings;
 
 use rusqlite::{params, Connection};

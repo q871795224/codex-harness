@@ -1,5 +1,8 @@
 //! Harness-owned memory: SQLite stores identities/links, Markdown stores content.
+mod domains;
 use super::HarnessStore;
+use domains::workspace_domains;
+pub use domains::MemoryDomainSettings;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -28,11 +31,11 @@ pub struct MemoryCandidate {
     applicability: String,
     evidence: String,
     source_turn_ids: Vec<String>,
-    related_workspaces: Vec<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemorySaveInput {
+    source_workspace: String,
     thread_id: String,
     cwd: String,
     source_turn_ids: Vec<String>,
@@ -155,10 +158,7 @@ impl HarnessStore {
             &transaction,
             "SELECT name FROM memory_workspaces ORDER BY name",
         )?;
-        let domains = names(
-            &transaction,
-            "SELECT name FROM memory_domains ORDER BY name",
-        )?;
+        let domains = workspace_domains(&transaction, &current_workspace)?;
         transaction.commit().map_err(err)?;
         Ok(MemoryCatalog {
             current_workspace,
@@ -189,11 +189,18 @@ impl HarnessStore {
             .map_err(err)?;
         recover(&self.root)?;
         let known = names(&transaction, "SELECT name FROM memory_workspaces")?;
+        if !known.contains(&input.source_workspace) {
+            return Err("未知来源工作区".into());
+        }
+        let allowed_domains = workspace_domains(&transaction, &input.source_workspace)?;
         // Validate the entire batch before modifying either files or metadata.
         for item in &input.memories {
             let parts = scope_parts(&item.scope)?;
             if parts[0] == "workspace" && !known.iter().any(|name| name == parts[1]) {
                 return Err("未知记忆工作区".into());
+            }
+            if parts[0] == "domain" && !allowed_domains.iter().any(|name| name == parts[1]) {
+                return Err("领域不存在或已不再关联当前工作区，请检查领域标签后重新提炼".into());
             }
             if !["preference", "fact", "experience", "reference"].contains(&item.kind.as_str()) {
                 return Err("记忆类型无效".into());
@@ -217,38 +224,7 @@ impl HarnessStore {
             {
                 return Err("记忆标题或来源 turn 无效".into());
             }
-            if item
-                .related_workspaces
-                .iter()
-                .any(|name| !known.contains(name))
-                || (parts[0] != "domain" && !item.related_workspaces.is_empty())
-            {
-                return Err("记忆领域关联无效".into());
-            }
         }
-        for item in &input.memories {
-            let parts = scope_parts(&item.scope)?;
-            if parts[0] == "domain" {
-                transaction
-                    .execute(
-                        "INSERT OR IGNORE INTO memory_domains(name) VALUES (?1)",
-                        [parts[1]],
-                    )
-                    .map_err(err)?;
-                for name in &item.related_workspaces {
-                    transaction.execute("INSERT OR IGNORE INTO memory_domain_workspaces(domain_name,workspace_name) VALUES (?1,?2)", params![parts[1],name]).map_err(err)?;
-                }
-            }
-        }
-        transaction.commit().map_err(err)?;
-        // Reacquire the cross-process writer lock before reading Markdown.
-        connection
-            .busy_timeout(std::time::Duration::from_secs(10))
-            .map_err(err)?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(err)?;
-        recover(&self.root)?;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(err)?
@@ -399,6 +375,7 @@ mod tests {
     fn setup() -> (tempfile::TempDir, HarnessStore) {
         let dir = tempfile::tempdir().unwrap();
         let store = HarnessStore::open_at(dir.path().join("data")).unwrap();
+        store.upsert_workspace("/test/harness", "harness").unwrap();
         let connection = store.connection.lock().unwrap();
         register_workspace(&connection, "harness", Some("/test/harness")).unwrap();
         drop(connection);
@@ -406,8 +383,8 @@ mod tests {
     }
     fn input() -> MemorySaveInput {
         serde_json::from_value(serde_json::json!({
-            "threadId":"t1", "cwd":"/test/harness", "sourceTurnIds":["turn-1"],
-            "memories":[{"title":"保留来源", "kind":"experience", "scope":"workspace/harness", "content":"保存记忆时保留原会话来源。", "applicability":"Harness 记忆设计", "evidence":"用户明确要求", "sourceTurnIds":["turn-1"], "relatedWorkspaces":[]}]
+            "threadId":"t1", "sourceWorkspace":"harness", "cwd":"/test/harness", "sourceTurnIds":["turn-1"],
+            "memories":[{"title":"保留来源", "kind":"experience", "scope":"workspace/harness", "content":"保存记忆时保留原会话来源。", "applicability":"Harness 记忆设计", "evidence":"用户明确要求", "sourceTurnIds":["turn-1"]}]
         })).unwrap()
     }
     #[test]
@@ -457,7 +434,10 @@ mod tests {
         let (_dir, store) = setup();
         let mut data = input();
         data.memories[0].scope = "domain/工程经验".into();
-        data.memories[0].related_workspaces = vec!["harness".into()];
+        store.memory_create_domain("工程经验").unwrap();
+        store
+            .memory_set_domain_binding(Some("/test/harness"), "工程经验", true)
+            .unwrap();
         store.memory_save(data).unwrap();
         let conn = store.connection.lock().unwrap();
         assert_eq!(
@@ -558,5 +538,42 @@ mod tests {
         let body = fs::read_to_string(&a[0].path).unwrap();
         assert!(body.contains(&a[0].id));
         assert!(body.contains(&b[0].id));
+    }
+    #[test]
+    fn unbound_or_removed_domains_cannot_be_created_by_extraction() {
+        let (_dir, store) = setup();
+        let mut data = input();
+        data.memories[0].scope = "domain/DNS".into();
+        assert!(store.memory_save(data).is_err());
+        assert_eq!(
+            names(
+                &store.connection.lock().unwrap(),
+                "SELECT name FROM memory_domains"
+            )
+            .unwrap()
+            .len(),
+            0
+        );
+        store.memory_create_domain("DNS").unwrap();
+        let mut data = input();
+        data.memories[0].scope = "domain/DNS".into();
+        assert!(store.memory_save(data).is_err());
+        store
+            .memory_set_domain_binding(Some("/test/harness"), "DNS", true)
+            .unwrap();
+        let mut data = input();
+        data.memories[0].scope = "domain/DNS".into();
+        store.memory_save(data).unwrap();
+        store
+            .memory_set_domain_binding(Some("/test/harness"), "DNS", false)
+            .unwrap();
+        let mut data = input();
+        data.memories[0].scope = "domain/DNS".into();
+        data.memories[0].content = "任务启动后关联已经改变".into();
+        assert!(store.memory_save(data).is_err());
+        store.memory_delete_domain("DNS").unwrap();
+        let body = fs::read_to_string(store.root.join("memory/domain/DNS/MEMORY.md")).unwrap();
+        assert!(!body.contains("任务启动后关联已经改变"));
+        assert!(body.contains("保存记忆时保留原会话来源"));
     }
 }

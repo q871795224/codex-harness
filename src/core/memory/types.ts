@@ -6,7 +6,6 @@ export interface MemoryCandidate {
   applicability: string
   evidence: string
   sourceTurnIds: string[]
-  relatedWorkspaces: string[]
 }
 
 export interface MemoryCatalog {
@@ -16,6 +15,7 @@ export interface MemoryCatalog {
 }
 
 export interface MemorySaveInput {
+  sourceWorkspace: string
   threadId: string
   cwd: string
   sourceTurnIds: string[]
@@ -33,4 +33,9 @@ export interface MemoryService {
   saveConversation(input: { threadId: string; cwd: string }): Promise<SavedMemory[]>
   isRunning(threadId: string): boolean
   subscribe(listener: () => void): () => void
+}
+
+export interface MemoryDomainSettings {
+  domains: string[]
+  bindings: Array<{ workspaceName: string; workspaceRoot: string | null; domains: string[] }>
 }
