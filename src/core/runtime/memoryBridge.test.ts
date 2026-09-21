@@ -24,3 +24,13 @@ it('passes domain management and binding deltas through IPC', async () => {
   await runtime.memoryDeleteDomain('DNS')
   expect(invoke).toHaveBeenLastCalledWith('memory_delete_domain', { name: 'DNS' })
 })
+
+it('passes the loaded file content to the native conflict check and preserves errors', async () => {
+  const path = '/data/memory/global/MEMORY.md'
+  await runtime.writeHarnessFile('/repo', path, 'edited', [], 'codex', 'loaded')
+  expect(invoke).toHaveBeenLastCalledWith('write_harness_file', {
+    cwd: '/repo', path, content: 'edited', fallbackFilenames: [], provider: 'codex', expectedContent: 'loaded',
+  })
+  vi.mocked(invoke).mockRejectedValueOnce(new Error('记忆文件已被其他操作修改'))
+  await expect(runtime.writeHarnessFile('/repo', path, 'edited', [], 'codex', 'loaded')).rejects.toThrow('其他操作修改')
+})

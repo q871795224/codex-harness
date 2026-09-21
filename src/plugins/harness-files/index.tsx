@@ -48,17 +48,21 @@ export const harnessFilesDefaultInstance: PluginInstanceRecord = {
   updatedAt: 0,
 }
 
-function HarnessFilesTab({ files, context }: { files: HarnessFilesService; context: ConversationTabProps }) {
+export function HarnessFilesTab({ files, context }: { files: HarnessFilesService; context: ConversationTabProps }) {
   const cwd = context.threadCwd
   const provider = context.provider ?? 'codex'
+  const workspaceName = context.workspaces.find((workspace) => workspace.root === context.workspaceRoot)?.name
+    ?? (context.workspaceRoot ?? cwd)?.split('/').filter(Boolean).pop() ?? '工作区'
   const providerLabel = provider === 'claude' ? 'Claude' : 'Codex'
   const configurationKey = files.configurationKey(provider)
+  const [revision, setRevision] = useState(0)
   const [tree, setTree] = useState<HarnessFileTree | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [content, setContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
   const [loading, setLoading] = useState(false)
+  const [readFailed, setReadFailed] = useState(false)
   const [reading, setReading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -77,7 +81,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     setLoading(true)
     setError(null)
     try {
-      const next = await files.list(cwd, provider)
+      const next = organizeTree(await files.list(cwd, provider))
       const flattened = flattenNodes(next.roots)
       const preferred = preferredPath ?? selectedPath
       const nextSelected = flattened.find((node) => node.path === preferred)
@@ -85,6 +89,7 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
         ?? flattened.find((node) => node.kind === 'file')
         ?? null
       setTree(next)
+      setRevision((value) => value + 1)
       setSelectedPath(nextSelected?.path ?? null)
       setExpanded((current) => {
         if (current.size > 0) return current
@@ -114,6 +119,8 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
       return
     }
     if (!selected.exists) {
+      setReadFailed(false)
+      setReading(false)
       setContent('')
       setSavedContent('')
       setError(null)
@@ -121,17 +128,19 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     }
     let disposed = false
     setReading(true)
+    setReadFailed(true)
     setError(null)
     void files.read(cwd, selected.path, provider)
       .then((value) => {
         if (disposed) return
+        setReadFailed(false)
         setContent(value)
         setSavedContent(value)
       })
       .catch((nextError) => { if (!disposed) setError(messageOf(nextError)) })
       .finally(() => { if (!disposed) setReading(false) })
     return () => { disposed = true }
-  }, [cwd, files, provider, selected?.exists, selected?.kind, selected?.path])
+  }, [cwd, files, provider, selected?.exists, selected?.kind, selected?.path, revision])
 
   const selectNode = (node: HarnessFileNode) => {
     if (node.path !== selectedPath && dirty && !window.confirm('当前文件有未保存的修改，确定切换吗？')) return
@@ -145,12 +154,12 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
   }
 
   const save = async () => {
-    if (!cwd || !selected || selected.kind !== 'file') return
+    if (!cwd || !selected || selected.kind !== 'file' || reading || readFailed || saving) return
     setSaving(true)
     setError(null)
     setNotice(null)
     try {
-      await files.write(cwd, selected.path, content, provider)
+      await files.write(cwd, selected.path, content, provider, savedContent)
       setSavedContent(content)
       setNotice('已保存')
       await refresh(selected.path)
@@ -162,11 +171,11 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
   }
 
   const createEntry = async (kind: 'file' | 'directory') => {
-    if (!cwd || !tree) return
+    if (!cwd || !tree || selected?.virtual) return
     if (dirty && !window.confirm('当前文件有未保存的修改，确定继续创建吗？')) return
     const selectedBase = createBase(selected, tree)
     const base = kind === 'directory' && selectedBase?.source !== 'harness'
-      ? tree.roots.find((root) => root.source === 'harness') ?? null
+      ? flattenNodes(tree.roots).find((root) => root.source === 'harness' && !root.virtual) ?? null
       : selectedBase
     if (!base) return
     const suggested = kind === 'directory'
@@ -232,13 +241,12 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
     <section className="harness-files-shell">
       <aside className="harness-files-explorer">
         <header className="harness-files-heading">
-          <div><span>THREAD FILES · {providerLabel.toUpperCase()}</span><strong>{providerLabel} 指令管理器</strong></div>
-          <button type="button" onClick={() => void refresh(selectedPath)} disabled={loading} title="刷新文件树"><RefreshCw className={loading ? 'spin' : ''} size={15} /></button>
+          <strong title={workspaceName}>{workspaceName}</strong>
+          <button type="button" onClick={() => { if (!dirty || window.confirm('当前文件有未保存的修改，确定重新读取吗？')) void refresh(selectedPath) }} disabled={loading} title="刷新文件树"><RefreshCw className={loading ? 'spin' : ''} size={15} /></button>
         </header>
-        <div className="harness-files-path" title={cwd}>{compactPath(cwd)}</div>
         <div className="harness-files-tools">
-          <button type="button" onClick={() => void createEntry('file')} title="新建文件"><FilePlus2 size={15} />文件</button>
-          <button type="button" onClick={() => void createEntry('directory')} title={`在 ${provider === 'claude' ? '.claude' : '.harness'} 内新建目录`}><FolderPlus size={15} />目录</button>
+          <button type="button" onClick={() => void createEntry('file')} disabled={selected?.virtual || selected?.source === 'memory'} title="新建文件"><FilePlus2 size={15} />文件</button>
+          <button type="button" onClick={() => void createEntry('directory')} disabled={selected?.virtual || selected?.source === 'memory'} title={`在 ${provider === 'claude' ? '.claude' : '.harness'} 内新建目录`}><FolderPlus size={15} />目录</button>
         </div>
         <nav className="harness-file-tree" aria-label={`${providerLabel} 文件`}>
           {tree?.roots.map((node) => (
@@ -257,27 +265,18 @@ function HarnessFilesTab({ files, context }: { files: HarnessFilesService; conte
                 <div><strong>{selected.name}{dirty && <i>●</i>}</strong><span title={selected.path}>{selected.path}</span></div>
               </div>
               <div className="harness-editor-actions">
-                <button type="button" onClick={() => void renameSelected()} disabled={!selected.exists} title="重命名"><Pencil size={15} /></button>
-                <button type="button" onClick={() => void removeSelected()} disabled={!selected.exists} title="删除"><Trash2 size={15} /></button>
-                <button type="button" className="primary" onClick={() => void save()} disabled={saving || reading || !dirty}><Save size={15} />{saving ? '保存中' : '保存'}</button>
+                {notice && <span role="status">{notice}</span>}
+                <button type="button" onClick={() => void renameSelected()} disabled={!selected.exists || selected.source === 'memory'} title="重命名"><Pencil size={15} /></button>
+                <button type="button" onClick={() => void removeSelected()} disabled={!selected.exists || selected.source === 'memory'} title="删除"><Trash2 size={15} /></button>
+                <button type="button" className="primary" title={selected.source === 'memory' && selected.name === 'MEMORY.md' ? '保存正文并更新索引' : '保存'} onClick={() => void save()} disabled={saving || reading || readFailed || !dirty}><Save size={15} />{saving ? '保存中' : '保存'}</button>
               </div>
             </header>
-            <div className="harness-editor-meta">
-              <span>{sourceLabel(selected.source, providerLabel)}</span>
-              {selected.instructionStatus && (
-                <em className={`harness-instruction-status ${selected.instructionStatus}`} title={instructionStatusDescription(selected.instructionStatus, providerLabel)}>
-                  {instructionStatusLabel(selected.instructionStatus)}
-                </em>
-              )}
-              {!selected.exists && <em>文件尚未创建，输入内容后保存即可创建</em>}
-              {notice && <em className="success">{notice}</em>}
-            </div>
             <textarea
               className="harness-code-editor"
               value={content}
               onChange={(event) => setContent(event.target.value)}
               onKeyDown={onEditorKeyDown}
-              disabled={reading}
+              disabled={reading || readFailed || saving || (selected.source === 'memory' && !['MEMORY.md', 'memory_summary.md'].includes(selected.name))}
               spellCheck={false}
               aria-label={`${selected.name} 内容`}
             />
@@ -308,7 +307,7 @@ function TreeNode({ node, selectedPath, expanded, depth, providerLabel, onSelect
         className={`${selectedPath === node.path ? 'selected' : ''}${node.exists ? '' : ' missing'}`}
         style={{ '--tree-depth': depth } as CSSProperties}
         onClick={() => onSelect(node)}
-        title={node.path}
+        title={node.virtual ? node.name : node.path}
       >
         {node.kind === 'directory' ? (open ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="tree-spacer" />}
         {node.kind === 'directory' ? <DirectoryIcon size={15} /> : <FileCode2 size={14} />}
@@ -324,6 +323,35 @@ function TreeNode({ node, selectedPath, expanded, depth, providerLabel, onSelect
   )
 }
 
+export function organizeTree(tree: HarnessFileTree): HarnessFileTree {
+  const global = tree.roots.find((node) => node.source === 'global')
+  const project = tree.roots.find((node) => node.source === 'project')
+  const harness = tree.roots.find((node) => node.source === 'harness')
+  const directories = project?.children.map((node) => ({ ...node, children: [...node.children] })) ?? []
+  if (harness) {
+    directories.find((node) => node.path === parentPath(harness.path))?.children.push(harness)
+  }
+  for (let index = directories.length - 1; index > 0; index--) {
+    const child = directories[index]
+    child.name = child.path.split('/').filter(Boolean).pop() ?? child.path
+    directories[index - 1].children.push(child)
+  }
+  const root = directories[0]
+  if (root) root.name = root.path
+  const documents: HarnessFileNode = {
+    path: 'harness:documents', name: 'harness', kind: 'directory', source: 'harness',
+    exists: true, virtual: true, instructionStatus: null,
+    children: [
+      ...(global ? [{ ...global, name: global.path }] : []),
+      ...(root ? [root] : []),
+    ],
+  }
+  return { ...tree, roots: [
+    documents,
+    ...tree.roots.filter((node) => !['global', 'project', 'harness'].includes(node.source)),
+  ] }
+}
+
 export function flattenNodes(nodes: HarnessFileNode[]): HarnessFileNode[] {
   return nodes.flatMap((node) => [node, ...flattenNodes(node.children)])
 }
@@ -336,7 +364,7 @@ function toggled(current: Set<string>, path: string): Set<string> {
 }
 
 function createBase(selected: HarnessFileNode | null, tree: HarnessFileTree): HarnessFileNode | null {
-  if (!selected) return tree.roots.find((root) => root.source === 'harness') ?? null
+  if (!selected) return flattenNodes(tree.roots).find((root) => root.source === 'harness' && !root.virtual) ?? null
   if (selected.kind === 'directory') return selected
   return flattenNodes(tree.roots).find((node) => node.kind === 'directory' && node.path === parentPath(selected.path)) ?? null
 }
@@ -352,17 +380,6 @@ function parentPath(path: string): string {
 
 function joinPath(parent: string, name: string): string {
   return `${parent.replace(/\/$/, '')}/${name}`
-}
-
-function compactPath(path: string): string {
-  const parts = path.split('/').filter(Boolean)
-  return parts.length <= 3 ? path : `…/${parts.slice(-3).join('/')}`
-}
-
-function sourceLabel(source: HarnessFileNode['source'], providerLabel: string): string {
-  if (source === 'global') return `${providerLabel.toUpperCase()} GLOBAL`
-  if (source === 'project') return 'PROJECT INSTRUCTIONS'
-  return `THREAD .${providerLabel === 'Claude' ? 'CLAUDE' : 'HARNESS'}`
 }
 
 function instructionStatusLabel(status: NonNullable<HarnessFileNode['instructionStatus']>): string {

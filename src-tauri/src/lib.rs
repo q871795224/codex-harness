@@ -998,28 +998,35 @@ fn set_plugin_state(
 
 #[tauri::command]
 fn list_harness_files(
+    state: State<'_, AppState>,
     cwd: String,
     fallback_filenames: Vec<String>,
     max_bytes: usize,
     provider: Option<String>,
 ) -> Result<harness_files::HarnessFileTree, String> {
     let codex_home = app_server::resolved_codex_home()?;
-    harness_files::list_for_provider(
+    let mut tree = harness_files::list_for_provider(
         &cwd,
         &codex_home,
         &fallback_filenames,
         max_bytes,
         provider.as_deref().unwrap_or("codex"),
-    )
+    )?;
+    tree.roots.push(state.store.memory_files_node()?);
+    Ok(tree)
 }
 
 #[tauri::command]
 fn read_harness_file(
+    state: State<'_, AppState>,
     cwd: String,
     path: String,
     fallback_filenames: Vec<String>,
     provider: Option<String>,
 ) -> Result<String, String> {
+    if state.store.is_memory_file_path(&path) {
+        return state.store.memory_read_file(&path);
+    }
     let codex_home = app_server::resolved_codex_home()?;
     harness_files::read_for_provider(
         &cwd,
@@ -1032,12 +1039,17 @@ fn read_harness_file(
 
 #[tauri::command]
 fn write_harness_file(
+    state: State<'_, AppState>,
+    expected_content: Option<String>,
     cwd: String,
     path: String,
     content: String,
     fallback_filenames: Vec<String>,
     provider: Option<String>,
 ) -> Result<(), String> {
+    if state.store.is_memory_file_path(&path) {
+        return state.store.memory_write_file(&path, &content, expected_content.as_deref());
+    }
     let codex_home = app_server::resolved_codex_home()?;
     harness_files::write_for_provider(
         &cwd,

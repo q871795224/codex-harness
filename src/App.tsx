@@ -115,9 +115,9 @@ export default function App() {
         const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
         return runtime.readHarnessFile(cwd, path, config.fallbackFilenames, provider)
       },
-      write: (cwd, path, content, provider = 'codex') => {
+      write: (cwd, path, content, provider = 'codex', expectedContent) => {
         const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
-        return runtime.writeHarnessFile(cwd, path, content, config.fallbackFilenames, provider)
+        return runtime.writeHarnessFile(cwd, path, content, config.fallbackFilenames, provider, expectedContent)
       },
       createDirectory: (cwd, path, provider = 'codex') => {
         const config = harnessInstructionConfigFor(harnessInstructionConfig.current, provider)
