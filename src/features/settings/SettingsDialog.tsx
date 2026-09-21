@@ -1,3 +1,4 @@
+import { MemorySettings } from './MemorySettings'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Activity, ArrowDown, ArrowUp, Blocks, BrainCircuit, CircleHelp, FolderOpen, GripVertical, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
@@ -67,7 +68,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'handover' | 'skills' | 'mcp'
+type SettingsPage = 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -90,6 +91,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
     models: { heading: '模型', kicker: 'CODEX' },
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
     recap: { heading: '会话回顾', kicker: 'AUTOMATION' },
+    memory: { heading: '记忆', kicker: 'MEMORY' },
     handover: { heading: '交接', kicker: 'AUTOMATION' },
     skills: { heading: '技能', kicker: 'CODEX' },
     mcp: { heading: 'MCP', kicker: 'CODEX' },
@@ -158,6 +160,9 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
             <button type="button" className={page === 'recap' ? 'selected' : ''} aria-current={page === 'recap' ? 'page' : undefined} onClick={() => setPage('recap')}>
               <Sparkles size={16} />会话回顾
             </button>
+            <button type="button" className={page === 'memory' ? 'selected' : ''} aria-current={page === 'memory' ? 'page' : undefined} onClick={() => setPage('memory')}>
+              <BrainCircuit size={16} />记忆
+            </button>
             <button type="button" className={page === 'handover' ? 'selected' : ''} aria-current={page === 'handover' ? 'page' : undefined} onClick={() => setPage('handover')}>
               <MessageSquareText size={16} />交接
             </button>
@@ -186,6 +191,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           {page === 'models' && <ModelsSettings codex={codex} claudeModels={claudeModels} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'recap' && <RecapSettings codex={codex} settings={recapGeneration} onChange={onRecapGeneration} />}
+          {page === 'memory' && <MemorySettings models={codex.models} />}
           {page === 'handover' && <HandoverSettings />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
           {page === 'mcp' && <McpSettings codex={codex} />}

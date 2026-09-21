@@ -1,3 +1,4 @@
+import type { MemoryCatalog, MemorySaveInput, SavedMemory, MemoryDomainSettings } from '../memory/types'
 import type { ThreadProjectBinding } from '../project-docs/types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -94,6 +95,30 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
 }
 
 export const runtime = {
+  memoryDomainSettings(): Promise<MemoryDomainSettings> {
+    return invoke<MemoryDomainSettings>('memory_domain_settings')
+  },
+
+  memoryCreateDomain(name: string): Promise<void> {
+    return invoke<void>('memory_create_domain', { name })
+  },
+
+  memoryDeleteDomain(name: string): Promise<void> {
+    return invoke<void>('memory_delete_domain', { name })
+  },
+
+  memorySetDomainBinding(workspaceRoot: string | null, domain: string, linked: boolean): Promise<void> {
+    return invoke<void>('memory_set_domain_binding', { workspaceRoot, domain, linked })
+  },
+
+  memoryCatalog(cwd: string): Promise<MemoryCatalog> {
+    return invoke<MemoryCatalog>('memory_catalog', { cwd })
+  },
+
+  memorySave(input: MemorySaveInput): Promise<SavedMemory[]> {
+    return invoke<SavedMemory[]>('memory_save', { input })
+  },
+
   async request<T>(method: string, params: JsonObject = {}): Promise<T> {
     const started = performance.now()
     try {

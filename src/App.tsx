@@ -1,3 +1,5 @@
+import { MemoryButton } from './features/memory/MemoryButton'
+import { createMemoryService } from './core/memory/service'
 import { notifications } from './core/notifications/service'
 import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter, NotificationViewport } from './features/notifications/Notifications'
@@ -53,6 +55,7 @@ import { archiveStore } from './plugins/project-doc/archiveStore'
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 // 项目文档服务是无状态桥接封装，模块级单例即可（绑定走 appState，读写直连 Rust store）。
 const projectDocs = createProjectDocService()
+const memory = createMemoryService(notifications)
 const SettingsDialog = lazy(() => import('./features/settings/SettingsDialog').then((module) => ({ default: module.SettingsDialog })))
 const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDialog').then((module) => ({ default: module.PluginSettingsDialog })))
 
@@ -965,21 +968,29 @@ function HarnessShell({ harness, agentRuns, codex }: {
                   onCollapse={composerCollapsible
                     ? () => setCollapsedComposerKeys((current) => ({ ...current, [composerCollapseKey]: true }))
                     : undefined}
-                  actions={(api) => composerActions.map((action) => (
-                    <PluginComposerAction
-                      key={`${action.pluginId}:${action.contribution.id}`}
-                      action={action}
-                      props={{
-                        provider: harness.selectedProvider,
-                        threadId: harness.selectedThreadId,
-                        threadCwd,
-                        workspaceRoot: workspace?.root ?? null,
-                        items: harness.currentDetail?.items ?? [],
-                        checkoutRoot: harness.currentThread?.cwd ?? null,
-                        ...api,
-                      }}
-                    />
-                  ))}
+                  actions={(api) => {
+                    const actions = composerActions.map((action) => (
+                      <PluginComposerAction
+                        key={`${action.pluginId}:${action.contribution.id}`}
+                        action={action}
+                        props={{
+                          provider: harness.selectedProvider,
+                          threadId: harness.selectedThreadId,
+                          threadCwd,
+                          workspaceRoot: workspace?.root ?? null,
+                          items: harness.currentDetail?.items ?? [],
+                          checkoutRoot: harness.currentThread?.cwd ?? null,
+                          ...api,
+                        }}
+                      />
+                    ))
+                    if (codexConversation) {
+                      const archiveIndex = composerActions.findIndex((action) => action.pluginId === 'builtin.project-doc' && action.contribution.id.endsWith('archive-to-project'))
+                      actions.splice(archiveIndex < 0 ? actions.length : archiveIndex + 1, 0,
+                        <MemoryButton key="core-memory" service={memory} threadId={harness.selectedThreadId} cwd={harness.currentThread?.cwd ?? null} disabled={api.disabled} />)
+                    }
+                    return actions
+                  }}
                   completionProviders={resolvedComposerCompletions.map((entry) => ({
                     key: `${entry.pluginId}:${entry.contribution.id}`,
                     trigger: entry.contribution.trigger,

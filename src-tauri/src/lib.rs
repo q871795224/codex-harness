@@ -65,6 +65,52 @@ struct AppState {
 }
 
 #[tauri::command]
+async fn memory_domain_settings(state: State<'_, AppState>) -> Result<store::MemoryDomainSettings, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.memory_domain_settings()).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn memory_create_domain(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.memory_create_domain(&name)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn memory_delete_domain(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.memory_delete_domain(&name)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn memory_set_domain_binding(state: State<'_, AppState>, workspace_root: Option<String>, domain: String, linked: bool) -> Result<(), String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.memory_set_domain_binding(workspace_root.as_deref(), &domain, linked)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn memory_catalog(
+    state: State<'_, AppState>,
+    cwd: String,
+) -> Result<store::MemoryCatalog, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.memory_catalog(&cwd))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn memory_save(
+    state: State<'_, AppState>,
+    input: store::MemorySaveInput,
+) -> Result<Vec<store::SavedMemory>, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.memory_save(input))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn claude_runtime_status(state: State<'_, AppState>) -> ClaudeRuntimeStatus {
     state.claude_runtime.status()
 }
@@ -1232,6 +1278,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            memory_domain_settings,
+            memory_create_domain,
+            memory_delete_domain,
+            memory_set_domain_binding,
+            memory_catalog,
+            memory_save,
             app_server_request,
             app_server_respond,
             claude_runtime_status,
