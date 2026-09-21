@@ -1,3 +1,4 @@
+import type { MemoryCatalog, MemorySaveInput, SavedMemory } from '../memory/types'
 import type { ThreadProjectBinding } from '../project-docs/types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -94,6 +95,14 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
 }
 
 export const runtime = {
+  memoryCatalog(cwd: string): Promise<MemoryCatalog> {
+    return invoke<MemoryCatalog>('memory_catalog', { cwd })
+  },
+
+  memorySave(input: MemorySaveInput): Promise<SavedMemory[]> {
+    return invoke<SavedMemory[]>('memory_save', { input })
+  },
+
   async request<T>(method: string, params: JsonObject = {}): Promise<T> {
     const started = performance.now()
     try {

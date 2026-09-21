@@ -22,6 +22,13 @@
 - 官方费用通过 `account/usage/read({ threadId })` 查询会话累计估算。模型额度图仅在整个会话落入所选日期、各模型 Token 与采集账本一致时展示 credits；任一记录不可核对时显示不可用，不按 Token 比例分摊累计费用。会话详情可独立查看整个会话累计估算，美元金额允许缺失。
 - Codex Radar 请求由 Rust 固定域名客户端完成并缓存，内置会话启动器只能通过 `harness.codexRadar` 读取整理后的指标。
 
+## Harness 记忆
+
+- 记忆是核心能力，`features/memory/MemoryButton.tsx` 直接接入输入框操作区，不依赖插件启停；`core/memory/` 负责分页读取会话、预算截断和 ephemeral Agent 的结构化提炼。
+- 核心设置的“记忆”页管理模型、推理强度、提示词、轮数和预算，使用 state.sqlite 的 app_state 键 `memory.settings.v1`；每次提炼读取一次设置，运行中的任务保持启动时配置。
+- `src-tauri/src/store/memory.rs` 通过现有 `state.sqlite` 的 `memory_*` 表维护名称与关联，Markdown 正文和索引保存到 `memory/`；模型只返回候选，Harness 校验来源与范围后写文件。
+- 文件写入由 SQLite 写锁协调，未完成的正文/索引批次在下次记忆操作时恢复。详细范围及当前阶段限制见 `docs/memory/phase-1/README.md`。
+
 ## Jev 决策服务
 
 - `src-tauri/src/jev.rs` 按需调用固定 Vercel `/v1/evaluate` 端点和 `typesafe-ai/jev`；核心通过 `bridge.ts` 的 `jevStatus`、`jevEvaluate` 接入，领域类型位于 `src/core/domain/jev.ts`。

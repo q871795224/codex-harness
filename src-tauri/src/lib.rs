@@ -65,6 +65,28 @@ struct AppState {
 }
 
 #[tauri::command]
+async fn memory_catalog(
+    state: State<'_, AppState>,
+    cwd: String,
+) -> Result<store::MemoryCatalog, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.memory_catalog(&cwd))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn memory_save(
+    state: State<'_, AppState>,
+    input: store::MemorySaveInput,
+) -> Result<Vec<store::SavedMemory>, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.memory_save(input))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn claude_runtime_status(state: State<'_, AppState>) -> ClaudeRuntimeStatus {
     state.claude_runtime.status()
 }
@@ -1232,6 +1254,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            memory_catalog,
+            memory_save,
             app_server_request,
             app_server_respond,
             claude_runtime_status,

@@ -1,3 +1,5 @@
+mod memory;
+pub use memory::{MemoryCatalog, MemorySaveInput, SavedMemory};
 pub mod project_bindings;
 
 use rusqlite::{params, Connection};
@@ -131,6 +133,7 @@ pub struct PluginRun {
 }
 
 pub struct HarnessStore {
+    root: PathBuf,
     connection: Mutex<Connection>,
 }
 
@@ -237,7 +240,9 @@ impl HarnessStore {
         migrate_plugin_runs_workspace_access(&connection)?;
         migrate_plugin_runs_workspace_removed_at(&connection)?;
 
+        memory::initialize(&connection)?;
         Ok(Self {
+            root,
             connection: Mutex::new(connection),
         })
     }

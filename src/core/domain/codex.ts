@@ -7,6 +7,7 @@ export type CodexTurnTrigger =
   | 'handover'
   | 'quick-agent'
   | 'recap'
+  | 'memory-save'
   | 'return-to-parent'
   | 'thread-title'
 
