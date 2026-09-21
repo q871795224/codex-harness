@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Key
 import {
   ChevronDown,
   ChevronRight,
+  Code2,
+  Eye,
   FileCode2,
   FilePlus2,
   Folder,
@@ -12,6 +14,7 @@ import {
   Save,
   Trash2,
 } from 'lucide-react'
+import { Markdown } from '../../features/markdown/Markdown'
 import type { HarnessFileNode, HarnessFileTree, HarnessFilesService } from '../../core/harness-files/types'
 import type { ConversationTabProps, HarnessPlugin, PluginInstanceRecord } from '../../extensions/types'
 
@@ -59,6 +62,7 @@ export function HarnessFilesTab({ files, context }: { files: HarnessFilesService
   const [tree, setTree] = useState<HarnessFileTree | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [preview, setPreview] = useState(false)
   const [content, setContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
   const [loading, setLoading] = useState(false)
@@ -226,7 +230,7 @@ export function HarnessFilesTab({ files, context }: { files: HarnessFilesService
     }
   }
 
-  const onEditorKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onEditorKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
       event.preventDefault()
       if (dirty) void save()
@@ -266,12 +270,24 @@ export function HarnessFilesTab({ files, context }: { files: HarnessFilesService
               </div>
               <div className="harness-editor-actions">
                 {notice && <span role="status">{notice}</span>}
+                <button
+                  type="button"
+                  onClick={() => setPreview((value) => !value)}
+                  disabled={reading || readFailed}
+                  title={preview ? '切换为普通文本' : '切换为 Markdown 预览'}
+                  aria-label={preview ? '切换为普通文本' : '切换为 Markdown 预览'}
+                  aria-pressed={preview}
+                >{preview ? <Code2 size={15} /> : <Eye size={15} />}</button>
                 <button type="button" onClick={() => void renameSelected()} disabled={!selected.exists || selected.source === 'memory'} title="重命名"><Pencil size={15} /></button>
                 <button type="button" onClick={() => void removeSelected()} disabled={!selected.exists || selected.source === 'memory'} title="删除"><Trash2 size={15} /></button>
                 <button type="button" className="primary" title={selected.source === 'memory' && selected.name === 'MEMORY.md' ? '保存正文并更新索引' : '保存'} onClick={() => void save()} disabled={saving || reading || readFailed || !dirty}><Save size={15} />{saving ? '保存中' : '保存'}</button>
               </div>
             </header>
-            <textarea
+            {preview ? (
+              <div className="harness-markdown-preview markdown-body" role="region" aria-label={`${selected.name} Markdown 预览`} tabIndex={0} onKeyDown={onEditorKeyDown}>
+                {!reading && !readFailed && <Markdown text={content} cwd={parentPath(selected.path)} />}
+              </div>
+            ) : <textarea
               className="harness-code-editor"
               value={content}
               onChange={(event) => setContent(event.target.value)}
@@ -279,7 +295,7 @@ export function HarnessFilesTab({ files, context }: { files: HarnessFilesService
               disabled={reading || readFailed || saving || (selected.source === 'memory' && !['MEMORY.md', 'memory_summary.md'].includes(selected.name))}
               spellCheck={false}
               aria-label={`${selected.name} 内容`}
-            />
+            />}
           </>
         ) : (
           <div className="harness-editor-empty"><FolderOpen size={32} /><strong>{selected?.name ?? '选择文件'}</strong><p>{selected ? '从左侧选择文件进行查看和编辑。' : `正在读取当前线程的 ${providerLabel} 文件。`}</p></div>
