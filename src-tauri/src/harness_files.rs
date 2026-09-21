@@ -41,6 +41,7 @@ pub enum NodeSource {
     Global,
     Project,
     Harness,
+    Memory,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -544,7 +545,7 @@ fn apply_instruction_budget(
     *has_active_document = true;
 }
 
-fn read_directory_nodes(directory: &Path, source: NodeSource) -> Vec<HarnessFileNode> {
+pub(crate) fn read_directory_nodes(directory: &Path, source: NodeSource) -> Vec<HarnessFileNode> {
     let Ok(entries) = fs::read_dir(directory) else {
         return Vec::new();
     };
@@ -594,7 +595,7 @@ fn node_rank(node: &HarnessFileNode) -> u8 {
     }
 }
 
-fn directory_node(
+pub(crate) fn directory_node(
     path: PathBuf,
     name: String,
     source: NodeSource,

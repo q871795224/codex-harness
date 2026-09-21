@@ -126,6 +126,109 @@ fn register_workspace(
 }
 
 impl HarnessStore {
+    pub fn memory_files_node(&self) -> Result<crate::harness_files::HarnessFileNode, String> {
+        let mut connection = self.connection.lock().map_err(err)?;
+        connection
+            .busy_timeout(std::time::Duration::from_secs(10))
+            .map_err(err)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(err)?;
+        recover(&self.root)?;
+        let path = checked_path(&self.root, "global")?
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let mut children = crate::harness_files::read_directory_nodes(
+            &path,
+            crate::harness_files::NodeSource::Memory,
+        );
+        fn markdown_only(nodes: &mut Vec<crate::harness_files::HarnessFileNode>) {
+            nodes.retain(|node| {
+                node.kind == crate::harness_files::NodeKind::Directory || node.name.ends_with(".md")
+            });
+            for node in nodes {
+                markdown_only(&mut node.children);
+            }
+        }
+        markdown_only(&mut children);
+        transaction.commit().map_err(err)?;
+        Ok(crate::harness_files::directory_node(
+            path,
+            "memory".into(),
+            crate::harness_files::NodeSource::Memory,
+            children,
+        ))
+    }
+
+    pub fn is_memory_file_path(&self, path: &str) -> bool {
+        Path::new(path).starts_with(self.root.join("memory"))
+    }
+
+    fn memory_file_key(&self, path: &str) -> Result<String, String> {
+        let relative = Path::new(path)
+            .strip_prefix(self.root.join("memory"))
+            .map_err(err)?;
+        let key = relative.to_str().ok_or("记忆路径无效")?;
+        let (scope, file) = key.rsplit_once('/').ok_or("请选择记忆文件")?;
+        scope_parts(scope)?;
+        if !file.ends_with(".md") {
+            return Err("只能访问记忆 Markdown 文件".into());
+        }
+        checked_path(&self.root, key)?;
+        Ok(key.into())
+    }
+
+    pub fn memory_read_file(&self, path: &str) -> Result<String, String> {
+        let key = self.memory_file_key(path)?;
+        let mut connection = self.connection.lock().map_err(err)?;
+        connection
+            .busy_timeout(std::time::Duration::from_secs(10))
+            .map_err(err)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(err)?;
+        recover(&self.root)?;
+        let text = fs::read_to_string(checked_path(&self.root, &key)?).map_err(err)?;
+        transaction.commit().map_err(err)?;
+        Ok(text)
+    }
+
+    pub fn memory_write_file(
+        &self,
+        path: &str,
+        content: &str,
+        expected: Option<&str>,
+    ) -> Result<(), String> {
+        let key = self.memory_file_key(path)?;
+        let (scope, file) = key.rsplit_once('/').ok_or("记忆路径无效")?;
+        if !["MEMORY.md", "memory_summary.md"].contains(&file) {
+            return Err("历史记忆文件仅供查看".into());
+        }
+        validate_scope_header(content, scope)?;
+        let expected = expected.ok_or("请先读取记忆文件再保存")?;
+        let mut connection = self.connection.lock().map_err(err)?;
+        connection
+            .busy_timeout(std::time::Duration::from_secs(10))
+            .map_err(err)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(err)?;
+        recover(&self.root)?;
+        if fs::read_to_string(checked_path(&self.root, &key)?).map_err(err)? != expected {
+            return Err("记忆文件已被其他操作修改，请重新读取后再保存；当前草稿仍保留".into());
+        }
+        let mut files = BTreeMap::from([(key.clone(), content.to_string())]);
+        if file == "MEMORY.md" {
+            files.insert(
+                format!("{scope}/memory_summary.md"),
+                memory_index(content, scope)?,
+            );
+        }
+        write_batch(&self.root, &files)?;
+        transaction.commit().map_err(err)
+    }
+
     pub fn memory_catalog(&self, cwd: &str) -> Result<MemoryCatalog, String> {
         let cwd = fs::canonicalize(cwd).map_err(err)?;
         if !cwd.is_dir() {
@@ -299,6 +402,51 @@ impl HarnessStore {
     }
 }
 
+fn validate_scope_header(content: &str, scope: &str) -> Result<(), String> {
+    let quoted = format!("scope: {}", serde_json::to_string(scope).map_err(err)?);
+    let plain = format!("scope: {scope}");
+    let header = content
+        .strip_prefix("---\n")
+        .and_then(|text| text.split_once("\n---\n").map(|(header, _)| header));
+    if content.contains('\0')
+        || !header.is_some_and(|header| header.lines().any(|line| line == plain || line == quoted))
+    {
+        return Err("请保留与目录一致的 scope 文件头".into());
+    }
+    Ok(())
+}
+
+fn memory_index(body: &str, scope: &str) -> Result<String, String> {
+    let mut index = format!(
+        "---\nscope: {}\n---\n\n# {scope} · 记忆索引\n",
+        serde_json::to_string(scope).map_err(err)?
+    );
+    let mut ids = std::collections::HashSet::new();
+    for section in body.split("<a id=\"").skip(1) {
+        let (id, text) = section.split_once("\"></a>").ok_or("记忆锚点格式无效")?;
+        if !id.starts_with("mem-")
+            || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            || !ids.insert(id)
+        {
+            return Err("记忆 ID 无效或重复".into());
+        }
+        let title = text
+            .lines()
+            .find_map(|line| line.strip_prefix("### "))
+            .ok_or("记忆条目缺少标题")?;
+        let applicability = text
+            .lines()
+            .find_map(|line| line.strip_prefix("- 适用条件："))
+            .unwrap_or("");
+        index.push_str(&format!(
+            "\n- [{}](MEMORY.md#{id})：{}\n",
+            link_label(title),
+            line(applicability)
+        ));
+    }
+    Ok(index)
+}
+
 fn names(connection: &Connection, sql: &str) -> Result<Vec<String>, String> {
     let mut statement = connection.prepare(sql).map_err(err)?;
     let rows = statement.query_map([], |row| row.get(0)).map_err(err)?;
@@ -387,6 +535,66 @@ mod tests {
             "memories":[{"title":"保留来源", "kind":"experience", "scope":"workspace/harness", "content":"保存记忆时保留原会话来源。", "applicability":"Harness 记忆设计", "evidence":"用户明确要求", "sourceTurnIds":["turn-1"]}]
         })).unwrap()
     }
+    #[test]
+    fn file_edits_update_index_and_reject_stale_or_invalid_writes() {
+        let (_dir, store) = setup();
+        let saved = store.memory_save(input()).unwrap();
+        let path = &saved[0].path;
+        let original = store.memory_read_file(path).unwrap();
+        let edited = original.replace("### 保留来源", "### 新标题");
+        store
+            .memory_write_file(path, &edited, Some(&original))
+            .unwrap();
+        let index = store
+            .memory_read_file(&path.replace("MEMORY.md", "memory_summary.md"))
+            .unwrap();
+        assert!(index.contains("[新标题]"));
+        assert!(!index.contains("[保留来源]"));
+        assert!(store
+            .memory_write_file(path, &original, Some(&original))
+            .unwrap_err()
+            .contains("其他操作"));
+        assert!(store
+            .memory_write_file(
+                path,
+                &edited.replace("workspace/harness", "global"),
+                Some(&edited)
+            )
+            .is_err());
+        assert!(store.memory_write_file(path, &edited, None).is_err());
+        assert_eq!(store.memory_read_file(path).unwrap(), edited);
+        let header = "---\nscope: workspace/harness\n---\n\n# Empty\n";
+        store
+            .memory_write_file(path, header, Some(&edited))
+            .unwrap();
+        let index = store
+            .memory_read_file(&path.replace("MEMORY.md", "memory_summary.md"))
+            .unwrap();
+        assert!(!index.contains(&saved[0].id));
+    }
+
+    #[test]
+    fn file_access_rejects_internal_files_and_path_escape() {
+        let (_dir, store) = setup();
+        store.memory_save(input()).unwrap();
+        for path in [
+            "memory/.pending.json",
+            "memory/global/../../state.sqlite",
+            "memory/global/../global/MEMORY.md",
+        ] {
+            assert!(store
+                .memory_read_file(store.root.join(path).to_str().unwrap())
+                .is_err());
+        }
+        let tree = store.memory_files_node().unwrap();
+        assert_eq!(tree.name, "memory");
+        assert_eq!(tree.children[0].name, "workspace");
+        assert!(!tree
+            .children
+            .iter()
+            .any(|node| node.name == ".pending.json"));
+    }
+
     #[test]
     fn saves_frontmatter_body_index_and_deduplicates_exact_retries() {
         let (_dir, store) = setup();

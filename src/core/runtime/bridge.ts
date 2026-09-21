@@ -537,8 +537,8 @@ export const runtime = {
     return invoke<string>('read_harness_file', { cwd, path, fallbackFilenames, provider })
   },
 
-  writeHarnessFile(cwd: string, path: string, content: string, fallbackFilenames: string[], provider: 'codex' | 'claude' = 'codex'): Promise<void> {
-    return invoke<void>('write_harness_file', { cwd, path, content, fallbackFilenames, provider })
+  writeHarnessFile(cwd: string, path: string, content: string, fallbackFilenames: string[], provider: 'codex' | 'claude' = 'codex', expectedContent?: string): Promise<void> {
+    return invoke<void>('write_harness_file', { cwd, path, content, fallbackFilenames, provider, expectedContent })
   },
 
   createHarnessDirectory(cwd: string, path: string, fallbackFilenames: string[], provider: 'codex' | 'claude' = 'codex'): Promise<void> {
