@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WorkspaceSettings } from './WorkspaceSettings'
 import { runtime } from '../../core/runtime/bridge'
@@ -32,9 +32,13 @@ it('prevents repeated add clicks while the picker is open and reports errors', a
   expect(screen.getByRole('alert').textContent).toBe('无法打开目录')
 })
 
-it('creates domains and toggles multiple workspace tags, including other', async () => {
+it('keeps creation separate from per-workspace association and removal, including other', async () => {
   let domains = ['DNS', 'ADR']
-  const bindings = [{ workspaceName: 'project', workspaceRoot: workspace.root as string | null, domains: ['DNS'] }]
+  const second = { ...workspace, name: 'second', root: '/repo/second' }
+  const bindings = [
+    { workspaceName: 'project', workspaceRoot: workspace.root as string | null, domains: ['DNS'] },
+    { workspaceName: 'second', workspaceRoot: second.root as string | null, domains: ['DNS'] },
+  ]
   vi.mocked(runtime.memoryDomainSettings).mockImplementation(async () => ({ domains: [...domains], bindings: bindings.map((binding) => ({ ...binding, domains: [...binding.domains] })) }))
   vi.mocked(runtime.memoryCreateDomain).mockImplementation(async (name) => { domains = [...domains, name] })
   vi.mocked(runtime.memorySetDomainBinding).mockImplementation(async (root, domain, linked) => {
@@ -42,36 +46,67 @@ it('creates domains and toggles multiple workspace tags, including other', async
     if (!binding) { binding = { workspaceName: 'other', workspaceRoot: null, domains: [] }; bindings.push(binding) }
     binding.domains = linked ? [...binding.domains, domain] : binding.domains.filter((name) => name !== domain)
   })
-  render(<WorkspaceSettings workspaces={[workspace]} onAdd={vi.fn()} onRemove={vi.fn()} />)
-  const dns = await screen.findByRole('button', { name: 'project 领域 DNS' })
-  expect(dns.getAttribute('aria-pressed')).toBe('true')
-  const adr = screen.getByRole('button', { name: 'project 领域 ADR' })
-  fireEvent.click(adr)
-  await waitFor(() => expect(adr.getAttribute('aria-pressed')).toBe('true'))
-  expect(dns.getAttribute('aria-pressed')).toBe('true')
-  fireEvent.click(dns)
-  await waitFor(() => expect(dns.getAttribute('aria-pressed')).toBe('false'))
-  fireEvent.click(screen.getByRole('button', { name: 'other 领域 DNS' }))
-  await waitFor(() => expect(runtime.memorySetDomainBinding).toHaveBeenLastCalledWith(null, 'DNS', true))
-  await waitFor(() => expect((screen.getByLabelText('领域名称') as HTMLInputElement).disabled).toBe(false))
+  render(<WorkspaceSettings workspaces={[workspace, second]} onAdd={vi.fn()} onRemove={vi.fn()} />)
+  await screen.findByRole('button', { name: '从 project 移除领域 DNS' })
+  const projectTags = within(screen.getByRole('group', { name: 'project 的领域' }))
+  expect(projectTags.queryByText('ADR')).toBeNull()
   fireEvent.change(screen.getByLabelText('领域名称'), { target: { value: ' 工程经验 ' } })
   fireEvent.click(screen.getByRole('button', { name: '创建领域' }))
-  await screen.findByRole('button', { name: 'project 领域 工程经验' })
+  await waitFor(() => expect(within(screen.getByRole('list', { name: '所有领域' })).getByText('工程经验')).toBeTruthy())
   expect(runtime.memoryCreateDomain).toHaveBeenCalledWith('工程经验')
+  expect(runtime.memorySetDomainBinding).not.toHaveBeenCalled()
+  for (const name of ['project', 'second', 'other']) {
+    expect(within(screen.getByRole('group', { name: `${name} 的领域` })).queryByText('工程经验')).toBeNull()
+  }
+  fireEvent.click(screen.getByRole('button', { name: '为 project 添加领域' }))
+  const picker = screen.getByRole('combobox', { name: '为 project 选择领域' })
+  expect(within(picker).queryByRole('option', { name: 'DNS' })).toBeNull()
+  fireEvent.change(picker, { target: { value: 'ADR' } })
+  await screen.findByRole('button', { name: '从 project 移除领域 ADR' })
+  expect(runtime.memorySetDomainBinding).toHaveBeenLastCalledWith(workspace.root, 'ADR', true)
+  expect(screen.queryByRole('button', { name: '从 second 移除领域 ADR' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '从 project 移除领域 DNS' }))
+  await waitFor(() => expect(projectTags.queryByText('DNS')).toBeNull())
+  expect(runtime.memorySetDomainBinding).toHaveBeenLastCalledWith(workspace.root, 'DNS', false)
+  expect(screen.getByRole('button', { name: '从 second 移除领域 DNS' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '删除领域 DNS' })).toBeTruthy()
+  expect(runtime.memoryDeleteDomain).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '为 other 添加领域' }))
+  fireEvent.change(screen.getByRole('combobox', { name: '为 other 选择领域' }), { target: { value: 'DNS' } })
+  await screen.findByRole('button', { name: '从 other 移除领域 DNS' })
+  expect(runtime.memorySetDomainBinding).toHaveBeenLastCalledWith(null, 'DNS', true)
+})
+
+it('allows cancelling a picker and keeps associations unchanged when a write fails', async () => {
+  vi.mocked(runtime.memoryDomainSettings).mockResolvedValue({ domains: ['DNS', 'ADR'], bindings: [{ workspaceName: 'project', workspaceRoot: workspace.root, domains: ['DNS'] }] })
+  vi.mocked(runtime.memorySetDomainBinding).mockRejectedValue(new Error('写入失败'))
+  render(<WorkspaceSettings workspaces={[workspace]} onAdd={vi.fn()} onRemove={vi.fn()} />)
+  fireEvent.click(await screen.findByRole('button', { name: '从 project 移除领域 DNS' }))
+  await screen.findByText('写入失败')
+  expect(screen.getByRole('button', { name: '从 project 移除领域 DNS' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '为 project 添加领域' }))
+  fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' })
+  expect(screen.queryByRole('combobox')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '为 project 添加领域' }))
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ADR' } })
+  await screen.findByText('写入失败')
+  expect(screen.queryByRole('button', { name: '从 project 移除领域 ADR' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '取消为 project 添加领域' }))
+  expect(screen.queryByRole('combobox')).toBeNull()
 })
 
 it('requires a second click to delete a domain and preserves the UI on backend failure', async () => {
-  vi.mocked(runtime.memoryDomainSettings).mockResolvedValue({ domains: ['DNS'], bindings: [] })
+  vi.mocked(runtime.memoryDomainSettings).mockResolvedValue({ domains: ['DNS'], bindings: [{ workspaceName: 'project', workspaceRoot: workspace.root, domains: ['DNS'] }] })
   vi.mocked(runtime.memoryDeleteDomain).mockRejectedValueOnce(new Error('数据库忙'))
   render(<WorkspaceSettings workspaces={[workspace]} onAdd={vi.fn()} onRemove={vi.fn()} />)
   fireEvent.click(await screen.findByRole('button', { name: '删除领域 DNS' }))
   expect(runtime.memoryDeleteDomain).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: '确认删除领域 DNS' }))
   await screen.findByText('数据库忙')
-  expect(screen.getByRole('button', { name: 'project 领域 DNS' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '从 project 移除领域 DNS' })).toBeTruthy()
   vi.mocked(runtime.memoryDeleteDomain).mockImplementationOnce(async () => { vi.mocked(runtime.memoryDomainSettings).mockResolvedValue({ domains: [], bindings: [] }) })
   fireEvent.click(screen.getByRole('button', { name: '确认删除领域 DNS' }))
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'project 领域 DNS' })).toBeNull())
+  await waitFor(() => expect(screen.queryByRole('button', { name: '从 project 移除领域 DNS' })).toBeNull())
 })
 
 it('does not submit during Chinese input composition or repeat an in-flight mutation', async () => {
@@ -98,5 +133,6 @@ it('reloads after a failed list read instead of offering uninitialized tag contr
   expect((screen.getByLabelText('领域名称') as HTMLInputElement).disabled).toBe(true)
   vi.mocked(runtime.memoryDomainSettings).mockResolvedValue({ domains: ['DNS'], bindings: [] })
   fireEvent.click(screen.getByRole('button', { name: '刷新领域' }))
-  await screen.findByRole('button', { name: 'project 领域 DNS' })
+  await waitFor(() => expect((screen.getByRole('button', { name: '为 project 添加领域' }) as HTMLButtonElement).disabled).toBe(false))
+  expect(screen.queryByRole('button', { name: '从 project 移除领域 DNS' })).toBeNull()
 })

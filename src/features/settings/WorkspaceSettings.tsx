@@ -16,6 +16,7 @@ export function WorkspaceSettings({ workspaces, onAdd, onRemove }: {
   const [domainBusy, setDomainBusy] = useState(false)
   const [name, setName] = useState('')
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [addingDomainFor, setAddingDomainFor] = useState<string | null>()
   const request = useRef(0)
   const writing = useRef(false)
   const composing = useRef(false)
@@ -50,20 +51,36 @@ export function WorkspaceSettings({ workspaces, onAdd, onRemove }: {
   }
   const tags = (root: string | null, workspaceName: string) => {
     const selected = domains?.bindings.find((binding) => binding.workspaceRoot === root)?.domains ?? []
+    const available = domains?.domains.filter((domain) => !selected.includes(domain)) ?? []
     return <div className="workspace-domain-tags" role="group" aria-label={`${workspaceName} 的领域`}>
-      {!domains ? <small>正在读取领域…</small> : domains.domains.length === 0 ? <small>可在上方创建领域标签</small> : domains.domains.map((domain) => <button
-        key={domain} type="button" className="workspace-domain-tag" aria-pressed={selected.includes(domain)}
-        aria-label={`${workspaceName} 领域 ${domain}`} disabled={domainBusy}
-        title={selected.includes(domain) ? `解除 ${domain} 关联` : `关联 ${domain}`}
-        onClick={() => void mutate(() => runtime.memorySetDomainBinding(root, domain, !selected.includes(domain)))}>
-        {domain}
-      </button>)}
+      {!domains ? <small>正在读取领域…</small> : <>
+        {selected.length === 0 && <small>未关联领域</small>}
+        {selected.map((domain) => <span key={domain} className="workspace-domain-definition workspace-domain-assigned">
+          <span>{domain}</span>
+          <button type="button" aria-label={`从 ${workspaceName} 移除领域 ${domain}`} title="仅解除此工作区的关联" disabled={domainBusy}
+            onClick={() => void mutate(() => runtime.memorySetDomainBinding(root, domain, false))}><X size={12} /></button>
+        </span>)}
+        {addingDomainFor === root && available.length > 0 ? <>
+          <select autoFocus aria-label={`为 ${workspaceName} 选择领域`} value="" disabled={domainBusy}
+            onKeyDown={(event) => { if (event.key === 'Escape') setAddingDomainFor(undefined) }}
+            onChange={(event) => {
+              const domain = event.target.value
+              if (domain) void mutate(() => runtime.memorySetDomainBinding(root, domain, true), () => setAddingDomainFor(undefined))
+            }}>
+            <option value="" disabled>选择要添加的领域</option>
+            {available.map((domain) => <option key={domain} value={domain}>{domain}</option>)}
+          </select>
+          <button type="button" disabled={domainBusy} aria-label={`取消为 ${workspaceName} 添加领域`} onClick={() => setAddingDomainFor(undefined)}>取消</button>
+        </> : <button type="button" disabled={domainBusy || available.length === 0} aria-label={`为 ${workspaceName} 添加领域`}
+          onClick={() => setAddingDomainFor(root)}><Plus size={14} />添加领域</button>}
+        {domains.domains.length === 0 && <small>请先在上方创建领域</small>}
+      </>}
     </div>
   }
 
   return <div className="settings-section codex-settings">
     <section className="codex-setting-card">
-      <div className="settings-section-title"><Tags size={17} /><div><h3>领域标签</h3><p>先创建领域，再给工作区选择一个或多个标签。解除关联或删除领域均保留已有记忆文件。</p></div>
+      <div className="settings-section-title"><Tags size={17} /><div><h3>领域标签管理</h3><p>创建标签不会自动关联工作区。删除标签会解除所有工作区的关联，已有记忆文件保留。</p></div>
         <button className="codex-refresh-button" type="button" aria-label="刷新领域" disabled={domainBusy} onClick={() => { setDomainError(null); void loadDomains().catch((next) => setDomainError(messageOf(next))) }}><RefreshCw size={14} /></button>
       </div>
       <form className="workspace-domain-create" onSubmit={(event) => {
@@ -91,7 +108,7 @@ export function WorkspaceSettings({ workspaces, onAdd, onRemove }: {
     <section className="codex-setting-card">
       <div className="settings-section-title">
         <FolderOpen size={17} />
-        <div><h3>已有工作区 · {workspaces.length}</h3><p>点击领域标签关联或解除关联。移除工作区后，本地文件和历史会话会保留。</p></div>
+        <div><h3>已有工作区 · {workspaces.length}</h3><p>这里只展示已关联的领域；点击“添加领域”选择标签，× 仅解除当前工作区的关联。移除工作区后，本地文件和历史会话会保留。</p></div>
         <button type="button" className="codex-refresh-button" aria-label="添加工作区" title="添加工作区" disabled={adding} onClick={() => void add()}>
           {adding ? <LoaderCircle size={14} className="spin" /> : <Plus size={14} />}
         </button>
