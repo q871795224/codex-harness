@@ -55,6 +55,17 @@ export function shouldGenerateClaudeTitle(title: string, providerSessionId: stri
 export function useUnifiedHarness() {
   const codex = useHarness()
   const claude = useClaudeHarness()
+  const previousViewMode = useRef(codex.viewMode)
+
+  useEffect(() => {
+    // Codex can also change the view internally when restoring/opening a thread.
+    // Claude loads the active list on mount; refresh on every subsequent switch.
+    if (previousViewMode.current === codex.viewMode) return
+    previousViewMode.current = codex.viewMode
+    void claude.refresh(codex.viewMode === 'archived').catch((error) => {
+      codex.notify('无法读取 Claude 会话', 'error', error)
+    })
+  }, [claude.refresh, codex.notify, codex.viewMode])
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const previousCodexSelection = useRef<string | null>(null)
   const restoredSelection = useRef(false)
@@ -343,10 +354,6 @@ export function useUnifiedHarness() {
     ? claude.answerApproval(request, decision)
     : codex.answerApproval(request, decision), [claude, codex])
 
-  const setViewMode = useCallback(async (mode: 'active' | 'archived') => {
-    await Promise.all([codex.setViewMode(mode), claude.refresh(mode === 'archived')])
-  }, [claude, codex])
-
   const refresh = useCallback(async () => {
     await Promise.all([codex.refresh(), claude.refresh(codex.viewMode === 'archived')])
   }, [claude, codex])
@@ -400,7 +407,6 @@ export function useUnifiedHarness() {
     archiveThread,
     unarchiveThread,
     answerApproval,
-    setViewMode,
     refresh,
     loadOlderTurns: selectedProvider === 'claude' ? async () => undefined : codex.loadOlderTurns,
     forkThreadAtTurn: selectedProvider === 'claude' ? async () => undefined : codex.forkThreadAtTurn,
