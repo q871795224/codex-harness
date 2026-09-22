@@ -63,6 +63,7 @@ interface SidebarProps {
   threadSort: ThreadSort
   workspaceSort: WorkspaceSort
   manualThreadOrder: string[]
+  sidebarUnpinnedCount?: number
   pinnedThreadIds: string[]
   pinnedWorkspaceRoots: string[]
   sidebarWidth: number
@@ -109,6 +110,7 @@ export function Sidebar({
   threadSort,
   workspaceSort,
   manualThreadOrder,
+  sidebarUnpinnedCount = 1,
   pinnedThreadIds,
   pinnedWorkspaceRoots,
   sidebarWidth,
@@ -302,9 +304,10 @@ export function Sidebar({
     unsorted: grouped.unsorted,
     expanded,
     visibleCounts,
+    sidebarUnpinnedCount,
     pinnedThreadIds,
     listSections,
-  }), [expanded, grouped, listSections, navigationLayout, orderedThreads, orderedWorkspaces, pinnedThreadIds, visibleCounts])
+  }), [expanded, grouped, listSections, navigationLayout, orderedThreads, orderedWorkspaces, pinnedThreadIds, sidebarUnpinnedCount, visibleCounts])
 
   useEffect(() => onVisibleThreadOrder(visibleThreadIds), [onVisibleThreadOrder, visibleThreadIds])
 
@@ -427,6 +430,7 @@ export function Sidebar({
       groupKey={groupKey}
       visibleCount={visibleCounts[groupKey]}
       manualSort={threadSort === 'manual'}
+      sidebarUnpinnedCount={sidebarUnpinnedCount}
       pinnedThreadIds={pinnedThreadIds}
       draggedThreadId={draggedThreadId}
       threadDrop={threadDrop}
@@ -437,7 +441,7 @@ export function Sidebar({
       onTogglePinned={onToggleThreadPinned}
       onShowMore={() => setVisibleCounts((current) => ({
         ...current,
-        [groupKey]: visibleThreads(items, current[groupKey], undefined, pinnedThreadIds).length + 5,
+        [groupKey]: visibleThreads(items, current[groupKey], undefined, pinnedThreadIds, sidebarUnpinnedCount).length + 5,
       }))}
       showNumberHint={metaPressed}
       threadNumberById={threadNumberById}
@@ -747,6 +751,7 @@ function ThreadList({
   groupKey,
   visibleCount,
   manualSort,
+  sidebarUnpinnedCount = 1,
   pinnedThreadIds,
   draggedThreadId,
   threadDrop,
@@ -767,6 +772,7 @@ function ThreadList({
   groupKey: string
   visibleCount: number | undefined
   manualSort: boolean
+  sidebarUnpinnedCount?: number
   pinnedThreadIds: string[]
   draggedThreadId: string | null
   threadDrop: { id: string; edge: 'before' | 'after' } | null
@@ -780,7 +786,7 @@ function ThreadList({
   threadNumberById: Map<string, number>
 }) {
   if (threads.length === 0) return <p className="empty-thread-list">暂无会话</p>
-  const shownThreads = visibleThreads(threads, visibleCount, undefined, pinnedThreadIds)
+  const shownThreads = visibleThreads(threads, visibleCount, undefined, pinnedThreadIds, sidebarUnpinnedCount)
   return (
     <div className="thread-list" data-workspace-group={groupKey}>
       {shownThreads.map((thread) => {
