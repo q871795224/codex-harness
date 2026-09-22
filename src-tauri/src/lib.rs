@@ -54,8 +54,7 @@ struct AppState {
     store: Arc<HarnessStore>,
     project_docs: Mutex<Option<project_doc_store::ProjectDocStore>>,
     project_doc_proposals: Mutex<Option<project_doc_proposals::ProposalQueue>>,
-    project_doc_server_port: Mutex<Option<u16>>,
-    project_doc_server_start: tokio::sync::Mutex<()>,
+    project_doc_server: Mutex<Option<project_doc_server::ProjectDocServer>>,
     terminal: Arc<terminal::TerminalManager>,
     api_workbench: api_workbench::ApiWorkbenchStore,
     codex_update: tokio::sync::Mutex<()>,
@@ -835,28 +834,11 @@ fn project_doc_reject_proposal(
     guard.as_ref().unwrap().remove(&proposal_id)
 }
 
-/// 启动项目文档本地回传服务（幂等：已启动则直接返回端口）。
+/// Compatibility IPC: the native application lifecycle now starts the server.
 #[tauri::command]
-async fn project_doc_server_ensure(state: State<'_, AppState>) -> Result<u16, String> {
-    // 用 tokio Mutex 把「检查端口 + 启动 + 记录端口」做成临界区，防止并发 ensure 双重起服务。
-    let _guard = state.project_doc_server_start.lock().await;
-    if let Some(port) = *state.project_doc_server_port.lock().map_err(|_| "服务状态锁不可用")? {
-        return Ok(port);
-    }
-    let store = project_doc_store::ProjectDocStore::open()?;
-    let db = store::harness_data_dir()?.join("projects").join("project_docs.sqlite");
-    let connection = rusqlite::Connection::open(db).map_err(|e| format!("无法打开提议队列库: {e}"))?;
-    let proposals = project_doc_proposals::ProposalQueue::open_at(connection)?;
-
-    // 绑定查询闭包：从 appState 读 projectDocThreadBindings。
-    let app_state = state.store.clone();
-    let lookup: project_doc_server::ThreadProjectLookup = std::sync::Arc::new(move |thread_id: &str| {
-        thread_project_lookup(&app_state, thread_id)
-    });
-
-    let port = project_doc_server::serve(store, proposals, lookup).await?;
-    *state.project_doc_server_port.lock().map_err(|_| "服务状态锁不可用")? = Some(port);
-    Ok(port)
+fn project_doc_server_ensure(state: State<'_, AppState>) -> Result<u16, String> {
+    let server = state.project_doc_server.lock().map_err(|_| "服务状态锁不可用")?;
+    server.as_ref().ok_or("项目文档服务未启动")?.port()
 }
 
 #[tauri::command]
@@ -1267,6 +1249,25 @@ pub fn run() {
                 diagnostics.clone(),
             ));
             let terminal = Arc::new(terminal::TerminalManager::new(diagnostics.clone()));
+            let store = Arc::new(store);
+            let app_state = store.clone();
+            let lookup: project_doc_server::ThreadProjectLookup = Arc::new(move |thread_id| {
+                thread_project_lookup(&app_state, thread_id)
+            });
+            // A required local capability: fail setup visibly instead of silently
+            // leaving the CLI pointed at a previous process's endpoint.
+            let project_doc_server = tauri::async_runtime::block_on(async {
+                let docs = project_doc_store::ProjectDocStore::open()?;
+                let dir = store::harness_data_dir()?;
+                let connection = rusqlite::Connection::open(dir.join("projects/project_docs.sqlite"))
+                    .map_err(|e| e.to_string())?;
+                let proposals = project_doc_proposals::ProposalQueue::open_at(connection)?;
+                project_doc_server::serve(docs, proposals, lookup, &dir).await
+            }).map_err(|error: String| {
+                diagnostics.record("error", "project-doc", "server.start_failed",
+                    json!({ "errorCode": "initialization_failed" }));
+                std::io::Error::other(format!("无法启动项目文档服务: {error}"))
+            })?;
             app.manage(AppState {
                 app_server: manager,
                 claude_runtime,
@@ -1275,11 +1276,10 @@ pub fn run() {
                 codex_radar: CodexRadarClient::new(),
                 jev: jev::JevClient::new()?,
                 codex_analytics: analytics,
-                store: Arc::new(store),
+                store,
                 project_docs: Mutex::new(None),
                 project_doc_proposals: Mutex::new(None),
-                project_doc_server_port: Mutex::new(None),
-                project_doc_server_start: tokio::sync::Mutex::new(()),
+                project_doc_server: Mutex::new(Some(project_doc_server)),
                 terminal,
                 api_workbench,
                 codex_update: tokio::sync::Mutex::new(()),
@@ -1395,6 +1395,13 @@ pub fn run() {
             validate_composer_image,
             read_markdown_image,
         ])
-        .run(tauri::generate_context!())
-        .expect("运行 Codex Harness 时出错");
+        .build(tauri::generate_context!())
+        .expect("运行 Codex Harness 时出错")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Ok(mut server) = app.state::<AppState>().project_doc_server.lock() {
+                    server.take();
+                }
+            }
+        });
 }

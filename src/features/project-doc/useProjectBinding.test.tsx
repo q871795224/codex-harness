@@ -63,6 +63,7 @@ it('starts unbound, binds as pending, and exposes project meta', async () => {
   expect(result.current.binding).toEqual({ projectId: 'demo', phase: 'pending' })
   expect(result.current.locked).toBe(false)
   expect(result.current.project?.name).toBe('示例项目')
+  expect(service.ensureServer).not.toHaveBeenCalled()
 })
 
 it('lockOnSend transitions pending to locked', async () => {
