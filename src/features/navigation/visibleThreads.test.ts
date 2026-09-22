@@ -26,8 +26,8 @@ describe('visible sidebar threads', () => {
     const threads = Array.from({ length: 7 }, (_, index) => thread(`thread-${index + 1}`, 1))
     const pinnedThreadIds = ['thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6', 'thread-7']
     const shown = visibleThreads(threads, undefined, 1_000_000, pinnedThreadIds)
-    expect(shown).toHaveLength(6)
-    expect(shown.map(({ id }) => id)).toEqual(['thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6', 'thread-7'])
+    expect(shown).toHaveLength(7)
+    expect(shown.map(({ id }) => id)).toEqual(['thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6', 'thread-7', 'thread-1'])
   })
 
   it('counts pinned threads toward the five-session default', () => {
@@ -49,10 +49,31 @@ describe('visible sidebar threads', () => {
     const pinnedThreadIds = ['thread-1', 'thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6']
 
     expect(visibleThreads(threads, undefined, 1_000_000, pinnedThreadIds).map(({ id }) => id)).toEqual([
-      'thread-1', 'thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6',
+      'thread-1', 'thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6', 'thread-7',
     ])
     expect(visibleThreads(threads, 8, 1_000_000, pinnedThreadIds).map(({ id }) => id)).toEqual([
       'thread-1', 'thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6', 'thread-7', 'thread-8',
     ])
+  })
+})
+
+describe('non-pinned sidebar reserve', () => {
+  const threads = Array.from({ length: 12 }, (_, index) => thread(String(index), 1))
+  const pinned = threads.slice(0, 6).map(({ id }) => id)
+
+  it.each([[0, 6], [1, 7], [3, 9], [20, 12]])('reserves %s non-pinned sessions', (count, expected) => {
+    expect(visibleThreads(threads, undefined, undefined, pinned, count)).toHaveLength(expected)
+  })
+
+  it('preserves show-more counts above the reserve', () => {
+    expect(visibleThreads(threads, 11, undefined, pinned, 3)).toHaveLength(11)
+  })
+
+  it.each(['workspace', 'list'] as const)('keeps keyboard order aligned in %s layout', (layout) => {
+    expect(visibleThreadOrder({
+      layout, orderedThreads: threads, orderedWorkspaceRoots: ['/a'],
+      groupedByRoot: new Map([['/a', threads]]), unsorted: [],
+      expanded: {}, visibleCounts: {}, pinnedThreadIds: pinned, sidebarUnpinnedCount: 3,
+    })).toEqual(threads.slice(0, 9).map(({ id }) => id))
   })
 })

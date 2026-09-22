@@ -46,6 +46,7 @@ import {
   normalizeSendShortcut,
   normalizeSidebarListSplitRatio,
   normalizeSidebarWidth,
+  normalizeSidebarUnpinnedCount,
   normalizeTheme,
   rebaseSandboxPolicy,
   textInput,
@@ -314,6 +315,10 @@ export function useHarness() {
 
   const setWorkspaceSort = useCallback((workspaceSort: WorkspaceSort) => {
     updateNavigation((current) => ({ ...current, workspaceSort }))
+  }, [updateNavigation])
+
+  const setSidebarUnpinnedCount = useCallback((value: number) => {
+    updateNavigation((current) => ({ ...current, sidebarUnpinnedCount: normalizeSidebarUnpinnedCount(value) }))
   }, [updateNavigation])
 
   const setSidebarWidth = useCallback((sidebarWidth: number) => {
@@ -2392,6 +2397,7 @@ export function useHarness() {
     toggleThreadPinned,
     toggleWorkspacePinned,
     setSidebarWidth,
+    setSidebarUnpinnedCount,
     setSidebarListSplitRatio,
     setSidebarCollapsed,
     setFontSize,

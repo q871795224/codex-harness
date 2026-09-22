@@ -33,9 +33,15 @@ export interface NavigationPreferences {
   pinnedThreadIds: string[]
   pinnedWorkspaceRoots: string[]
   hiddenWorkspaceRoots: string[]
+  sidebarUnpinnedCount: number
   sidebarWidth: number
   sidebarCollapsed: boolean
   sidebarListSplitRatio: number
+}
+
+export function normalizeSidebarUnpinnedCount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1
+  return Math.max(0, Math.floor(value))
 }
 
 export const MIN_SIDEBAR_WIDTH = 214

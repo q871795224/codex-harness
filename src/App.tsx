@@ -662,6 +662,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
         threadSort={harness.navigation.sort}
         workspaceSort={harness.navigation.workspaceSort}
         manualThreadOrder={harness.navigation.manualThreadOrder}
+        sidebarUnpinnedCount={harness.navigation.sidebarUnpinnedCount}
         pinnedThreadIds={harness.navigation.pinnedThreadIds}
         pinnedWorkspaceRoots={harness.navigation.pinnedWorkspaceRoots}
         sidebarWidth={harness.navigation.sidebarWidth}
@@ -1050,6 +1051,8 @@ function HarnessShell({ harness, agentRuns, codex }: {
           workspaces={harness.workspaces}
           onAddWorkspace={harness.chooseWorkspace}
           onRemoveWorkspace={harness.removeWorkspace}
+          sidebarUnpinnedCount={harness.navigation.sidebarUnpinnedCount}
+          onSidebarUnpinnedCount={harness.setSidebarUnpinnedCount}
           theme={harness.appearance.theme}
           fontSizes={harness.appearance.fontSizes}
           sendShortcut={harness.keyboard.sendShortcut}
