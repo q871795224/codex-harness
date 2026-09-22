@@ -106,3 +106,14 @@ describe('bootstrap preference helpers', () => {
     expect(parseRecapGenerationSettings('not json')).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
   })
 })
+
+describe('sidebar non-pinned reserve restoration', () => {
+  it.each([
+    [undefined, 1], [0, 0], [3, 3], [-2, 0], [2.8, 2], ['3', 1],
+  ])('restores %s as %s', async (value, expected) => {
+    const state = await loadHarnessBootstrap(storage({
+      [NAVIGATION_PREFERENCES_KEY]: JSON.stringify({ sidebarUnpinnedCount: value }),
+    }))
+    expect(state.navigation.sidebarUnpinnedCount).toBe(expected)
+  })
+})

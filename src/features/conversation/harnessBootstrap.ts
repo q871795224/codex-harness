@@ -18,6 +18,7 @@ import {
   normalizeSendShortcut,
   normalizeSidebarListSplitRatio,
   normalizeSidebarWidth,
+  normalizeSidebarUnpinnedCount,
   normalizeTheme,
 } from '../../core/domain/codex'
 import { defaultHarnessActionShortcuts, normalizeHarnessActionShortcuts } from '../actions/harnessActions'
@@ -42,6 +43,7 @@ export const defaultNavigationPreferences: NavigationPreferences = {
   pinnedThreadIds: [],
   pinnedWorkspaceRoots: [],
   hiddenWorkspaceRoots: [],
+  sidebarUnpinnedCount: 1,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   sidebarCollapsed: false,
   sidebarListSplitRatio: DEFAULT_SIDEBAR_LIST_SPLIT_RATIO,
@@ -118,6 +120,7 @@ export function parseNavigationPreferences(raw: string | null): NavigationPrefer
       hiddenWorkspaceRoots: Array.isArray(value.hiddenWorkspaceRoots)
         ? [...new Set(value.hiddenWorkspaceRoots.filter((root): root is string => typeof root === 'string' && root.length > 0))]
         : [],
+      sidebarUnpinnedCount: normalizeSidebarUnpinnedCount(value.sidebarUnpinnedCount),
       sidebarWidth: normalizeSidebarWidth(value.sidebarWidth),
       sidebarCollapsed: value.sidebarCollapsed === true,
       sidebarListSplitRatio: normalizeSidebarListSplitRatio(value.sidebarListSplitRatio),

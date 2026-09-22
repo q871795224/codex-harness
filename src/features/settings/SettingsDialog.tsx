@@ -33,6 +33,8 @@ interface SettingsDialogProps {
   onAddWorkspace: () => Promise<unknown>
   onRemoveWorkspace: (root: string) => void
 
+  sidebarUnpinnedCount: number
+  onSidebarUnpinnedCount: (count: number) => void
   theme: Theme
   fontSizes: FontSizePreferences
   sendShortcut: SendShortcut
@@ -77,7 +79,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, sidebarUnpinnedCount, onSidebarUnpinnedCount, theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -185,7 +187,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           </header>
 
           {page === 'workspaces' && <WorkspaceSettings workspaces={workspaces} onAdd={onAddWorkspace} onRemove={onRemoveWorkspace} />}
-          {page === 'appearance' && <AppearanceSettings theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
+          {page === 'appearance' && <AppearanceSettings sidebarUnpinnedCount={sidebarUnpinnedCount} onSidebarUnpinnedCount={onSidebarUnpinnedCount} theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
           {page === 'conversation-stats' && <ConversationStatsSettings preferences={conversationStats} data={conversationStatsData} onChange={onConversationStats} />}
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
           {page === 'models' && <ModelsSettings codex={codex} claudeModels={claudeModels} />}
@@ -654,7 +656,9 @@ function ConversationStatsSettings({ preferences, data, onChange }: {
   )
 }
 
-function AppearanceSettings({ theme, fontSizes, onTheme, onFontSize, onResetFontSizes }: {
+function AppearanceSettings({ sidebarUnpinnedCount, onSidebarUnpinnedCount, theme, fontSizes, onTheme, onFontSize, onResetFontSizes }: {
+  sidebarUnpinnedCount: number
+  onSidebarUnpinnedCount: (count: number) => void
   theme: Theme
   fontSizes: FontSizePreferences
   onTheme: (theme: Theme) => void
@@ -678,6 +682,18 @@ function AppearanceSettings({ theme, fontSizes, onTheme, onFontSize, onResetFont
             <span className="theme-preview dark"><Moon size={16} /></span><span><strong>深色</strong><small>低光环境</small></span>
           </button>
         </div>
+      </section>
+      <section className="settings-preference-block" aria-labelledby="sidebar-threads-title">
+        <div className="settings-section-title">
+          <div><h3 id="sidebar-threads-title">侧边栏会话</h3><p>每组默认显示 5 个会话，并显示全部置顶会话；置顶之外至少显示指定数量的非置顶会话。</p></div>
+        </div>
+        <label className="settings-row">
+          <span>至少显示的非置顶会话数</span>
+          <input type="number" min={0} step={1} value={sidebarUnpinnedCount} onChange={(event) => {
+            if (event.target.value !== '' && event.target.validity.valid) onSidebarUnpinnedCount(event.target.valueAsNumber)
+          }} />
+        </label>
+        <p className="settings-note">默认 1，设为 0 可恢复原来的显示规则。此设置不影响归档。</p>
       </section>
       <section className="settings-preference-block" aria-labelledby="font-size-title">
         <div className="settings-section-title">
