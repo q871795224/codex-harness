@@ -68,7 +68,7 @@ export interface ProjectDocService {
   approveProposal(proposalId: string): Promise<ProjectDocWriteOutcome>
   /** 拒绝并移除一条提议。 */
   rejectProposal(proposalId: string): Promise<void>
-  /** 确保本地回传服务已启动，返回端口（供 skill 命令写入的 project-doc-server.json 已就绪）。 */
+  /** 检查由 Harness 原生启动流程管理的回传服务，返回端口；服务不可用时返回错误。 */
   ensureServer(): Promise<number>
 
   /** 会话 ↔ 项目绑定（UI 态，存 appState；正文与版本在 Rust store）。 */

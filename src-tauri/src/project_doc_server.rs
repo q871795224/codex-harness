@@ -13,10 +13,9 @@
 
 use crate::project_doc_proposals::{self, ProposalQueue};
 use crate::project_doc_store::{ProjectDocStore, WriteOutcome};
-use crate::store;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::{path::{Path, PathBuf}, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -121,26 +120,82 @@ pub fn handle_read(store: &ProjectDocStore, project_id: &str) -> (u16, Value) {
     }
 }
 
-/// 启动本地 HTTP 服务（绑定随机 loopback 端口），把端口写入 endpoint 状态文件。
-/// 返回绑定的端口。服务在后台 tokio 任务里跑，随 Harness 进程退出。
+/// Harness owns the listener and endpoint registration for its entire lifetime.
+pub struct ProjectDocServer {
+    port: u16,
+    task: tokio::task::JoinHandle<()>,
+    _endpoint: EndpointRegistration,
+}
+
+impl ProjectDocServer {
+    pub fn port(&self) -> Result<u16, String> {
+        if self.task.is_finished() {
+            return Err("项目文档服务已停止，请重启 Harness".into());
+        }
+        Ok(self.port)
+    }
+}
+
+impl Drop for ProjectDocServer {
+    fn drop(&mut self) {
+        self.task.abort();
+        // EndpointRegistration removes only this instance's registration.
+    }
+}
+
+struct EndpointRegistration {
+    path: PathBuf,
+    body: String,
+}
+
+impl EndpointRegistration {
+    fn publish(dir: &Path, port: u16) -> Result<Self, String> {
+        let path = dir.join(ENDPOINT_STATE_FILE);
+        let body = serde_json::to_string_pretty(&json!({
+            "baseUrl": format!("http://127.0.0.1:{port}"),
+            "pid": std::process::id(),
+        })).map_err(|e| e.to_string())?;
+        let registration = Self { path, body };
+        let _lock = registration.lock()?;
+        // Rename in the same directory: CLI readers never see partial JSON.
+        let mut file = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
+        std::io::Write::write_all(&mut file, registration.body.as_bytes()).map_err(|e| e.to_string())?;
+        file.persist(&registration.path).map_err(|e| format!("无法写入项目文档服务端点: {e}"))?;
+        Ok(registration)
+    }
+
+    fn lock(&self) -> Result<std::fs::File, String> {
+        let file = std::fs::OpenOptions::new().create(true).truncate(false).write(true)
+            .open(self.path.with_extension("lock")).map_err(|e| e.to_string())?;
+        file.lock().map_err(|e| e.to_string())?;
+        Ok(file)
+    }
+}
+
+impl Drop for EndpointRegistration {
+    fn drop(&mut self) {
+        let Ok(_lock) = self.lock() else { return };
+        if std::fs::read_to_string(&self.path).ok().as_ref() == Some(&self.body) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Called by native setup, before any frontend thread selection or binding.
 pub async fn serve(
     store: ProjectDocStore,
     proposals: ProposalQueue,
     lookup: ThreadProjectLookup,
-) -> Result<u16, String> {
+    endpoint_dir: &Path,
+) -> Result<ProjectDocServer, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| format!("无法绑定本地项目文档服务: {e}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("无法读取项目文档服务地址: {e}"))?
-        .port();
-
-    write_endpoint_state(port)?;
-
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let endpoint = EndpointRegistration::publish(endpoint_dir, port)?;
     let store = Arc::new(store);
     let proposals = Arc::new(proposals);
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
@@ -151,20 +206,14 @@ pub async fn serve(
                         let _ = handle_connection(stream, store, proposals, lookup).await;
                     });
                 }
-                Err(_) => break,
+                Err(error) => {
+                    eprintln!("项目文档服务接受连接失败，将重试: {error}");
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
             }
         }
     });
-    Ok(port)
-}
-
-/// 把当前端口写到 `<harness_dir>/project-doc-server.json`，供 skill 命令读取。
-fn write_endpoint_state(port: u16) -> Result<(), String> {
-    let dir = store::harness_data_dir()?;
-    let path = dir.join(ENDPOINT_STATE_FILE);
-    let body = json!({ "baseUrl": format!("http://127.0.0.1:{port}") });
-    std::fs::write(&path, serde_json::to_string_pretty(&body).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("无法写入项目文档服务端点文件 {}: {e}", path.display()))
+    Ok(ProjectDocServer { port, task, _endpoint: endpoint })
 }
 
 /// 处理单个连接：解析请求行 + 头 + 体，路由到 handler，写响应。
@@ -342,6 +391,53 @@ mod tests {
             section: section.into(),
             content: content.into(),
         }
+    }
+
+    #[tokio::test]
+    async fn startup_replaces_stale_endpoint_and_serves_without_a_thread_binding() {
+        let (dir, store, proposals) = stores();
+        store.create_project("p1", "Demo").unwrap();
+        let path = dir.path().join(ENDPOINT_STATE_FILE);
+        std::fs::write(&path, r#"{"baseUrl":"http://127.0.0.1:1"}"#).unwrap();
+        let server = serve(store, proposals, lookup_binding(&[]), dir.path()).await.unwrap();
+        let port = server.port().unwrap();
+        let endpoint: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(endpoint["baseUrl"], format!("http://127.0.0.1:{port}"));
+        let client = reqwest::Client::new();
+        let response = client.get(format!("http://127.0.0.1:{port}/read?project_id=p1"))
+            .send().await.unwrap();
+        assert_eq!(response.status(), 200);
+        let response = client.post(format!("http://127.0.0.1:{port}/propose"))
+            .header("Content-Type", "application/json")
+            .body(r#"{"threadId":"unbound","projectId":"p1","section":"log","content":"test"}"#)
+            .send().await.unwrap();
+        assert_eq!(response.status(), 404); // Transport is up; binding validation still applies.
+        drop(server);
+        assert!(!path.exists());
+        tokio::task::yield_now().await;
+        assert!(tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn older_instance_exit_preserves_newer_instance_endpoint() {
+        let (dir, store, proposals) = stores();
+        let first = serve(store, proposals, lookup_binding(&[]), dir.path()).await.unwrap();
+        let (_other_dir, store, proposals) = stores();
+        let second = serve(store, proposals, lookup_binding(&[]), dir.path()).await.unwrap();
+        let path = dir.path().join(ENDPOINT_STATE_FILE);
+        let current = std::fs::read_to_string(&path).unwrap();
+        drop(first);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), current);
+        assert!(tokio::net::TcpStream::connect(("127.0.0.1", second.port().unwrap())).await.is_ok());
+        drop(second);
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn startup_reports_endpoint_publication_failure() {
+        let (dir, store, proposals) = stores();
+        std::fs::create_dir(dir.path().join(ENDPOINT_STATE_FILE)).unwrap();
+        assert!(serve(store, proposals, lookup_binding(&[]), dir.path()).await.is_err());
     }
 
     #[test]
