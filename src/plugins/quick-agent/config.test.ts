@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateQuickAgentInstances, readQuickAgentConfig, settingsForMode, type QuickAgentJob } from './config'
+import { DEFAULT_QUICK_AGENT_JOB, newQuickAgentJob, migrateQuickAgentInstances, readQuickAgentConfig, settingsForMode, type QuickAgentJob } from './config'
 import type { PluginInstanceRecord } from '../../extensions/types'
 
 const job = (overrides: Partial<QuickAgentJob> = {}): QuickAgentJob => ({
@@ -15,6 +15,12 @@ const job = (overrides: Partial<QuickAgentJob> = {}): QuickAgentJob => ({
 })
 
 describe('quick agent config', () => {
+  it('starts new jobs with GPT-6 Luna while preserving configured models', () => {
+    expect(DEFAULT_QUICK_AGENT_JOB).toMatchObject({ model: 'gpt-6-luna', effort: 'max' })
+    expect(newQuickAgentJob()).toMatchObject({ model: 'gpt-6-luna', effort: 'max' })
+    expect(readQuickAgentConfig({ jobs: [job({ model: 'custom' })] }).jobs[0].model).toBe('custom')
+  })
+
   it('drops invalid and duplicate job ids', () => {
     const config = readQuickAgentConfig({ jobs: [job(), job({ name: '重复' }), { id: '', name: '无效' }] })
     expect(config.jobs).toEqual([job()])

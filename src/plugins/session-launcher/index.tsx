@@ -220,7 +220,14 @@ export function defaultRadarRow(rows: PickerRow[]): PickerRow | null {
 
 export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel[], settings: ThreadCodexSettings): PickerRow[] {
   if (remoteRows === null) return []
-  const supported = remoteRows.filter((row) => modelSupports(models, row.model, row.effort))
+  const supported = remoteRows.map((row): PickerRow => {
+    if (row.group !== 'simple' || row.model !== 'gpt-5.6-luna' || row.effort !== 'max') return row
+    // Radar has no GPT-6 Luna measurements yet; never reuse GPT-5.6 metrics.
+    return {
+      ...row, model: 'gpt-6-luna', iq: null, price: null, minutes: null,
+      bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: false,
+    }
+  }).filter((row) => modelSupports(models, row.model, row.effort))
   if (supported.length > 0) return withAgiRows(supported, models)
   const preferred = models.find((model) => model.model === 'gpt-5.6-sol') ?? models.find((model) => model.model === settings.model) ?? models[0]
   if (!preferred) return []
@@ -279,6 +286,7 @@ function groupLabel(group: PickerRow['group']): string {
 
 function modelLabel(model: string): string {
   if (model === 'gpt-6-astra') return '6 Astra'
+  if (model === 'gpt-6-luna') return '6 Luna'
   if (model === 'gpt-5.6-sol') return '5.6 Sol'
   if (model === 'gpt-5.6-terra') return '5.6 Terra'
   if (model === 'gpt-5.6-luna') return '5.6 Luna'

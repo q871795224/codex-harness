@@ -1,4 +1,5 @@
 import { runtime } from '../runtime/bridge'
+import { DEFAULT_BACKGROUND_MODEL } from '../domain/codex'
 import { MEMORY_INSTRUCTIONS } from './extraction'
 
 export interface MemorySettings {
@@ -12,7 +13,7 @@ export interface MemorySettings {
 }
 export const MEMORY_SETTINGS_KEY = 'memory.settings.v1'
 export const DEFAULT_MEMORY_SETTINGS: MemorySettings = {
-  model: '', effort: 'low', prompt: MEMORY_INSTRUCTIONS,
+  model: DEFAULT_BACKGROUND_MODEL, effort: 'low', prompt: MEMORY_INSTRUCTIONS,
   maxTurns: 0, budgetPercent: 70, contextWindowTokens: 0,
 }
 

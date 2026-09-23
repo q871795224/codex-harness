@@ -1,3 +1,4 @@
+import { DEFAULT_BACKGROUND_MODEL } from '../../core/domain/codex'
 import type { PluginInstanceRecord } from '../../extensions/types'
 import { DEFAULT_ARCHIVE_PROMPT_TEMPLATE } from '../../features/project-doc/archive'
 
@@ -18,7 +19,7 @@ export interface ProjectDocConfig {
 }
 
 export const DEFAULT_PROJECT_DOC_CONFIG: ProjectDocConfig = {
-  archiveModel: 'gpt-5.6-luna',
+  archiveModel: DEFAULT_BACKGROUND_MODEL,
   archiveEffort: 'max',
   archiveTurns: 10,
   archivePromptTemplate: DEFAULT_ARCHIVE_PROMPT_TEMPLATE,
