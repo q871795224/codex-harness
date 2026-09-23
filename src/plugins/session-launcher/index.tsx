@@ -229,10 +229,10 @@ export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel
     }
   }).filter((row) => modelSupports(models, row.model, row.effort))
   if (supported.length > 0) return withAgiRows(supported, models)
-  const preferred = models.find((model) => model.model === 'gpt-5.6-sol') ?? models.find((model) => model.model === settings.model) ?? models[0]
+  const preferred = models.find((model) => model.model === settings.model) ?? models.find((model) => model.isDefault) ?? models[0]
   if (!preferred) return []
-  const effort = preferred.supportedReasoningEfforts.some((candidate) => candidate.reasoningEffort === 'xhigh')
-    ? 'xhigh'
+  const effort = preferred.supportedReasoningEfforts.some((candidate) => candidate.reasoningEffort === settings.effort)
+    ? settings.effort
     : preferred.defaultReasoningEffort
   return withAgiRows([{
     group: 'fallback', model: preferred.model, effort, iq: null, price: null, minutes: null,

@@ -12,9 +12,10 @@ function recordLinkOpenDiagnostic(kind: 'external' | 'local', href: string, erro
   }).catch(() => undefined)
 }
 
-export function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWithoutRef<'a'> & { cwd: string }) {
+export function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWithoutRef<'a'> & { cwd?: string }) {
   const local = href ? parseLocalFileReference(href) : null
-  if (local) return (
+  if (local && !cwd) return <span className="local-link-label" title={href}>{children || href}</span>
+  if (local && cwd) return (
     <button
       type="button"
       className="local-link"
@@ -25,7 +26,7 @@ export function MarkdownLink({ href, children, cwd, ...props }: ComponentPropsWi
     </button>
   )
   if (!href || !isOpenableExternalUrl(href)) return <span className="local-link-label" title={href}>{children || href}</span>
-  const showDestination = markdownLinkLabel(children) !== decodeHrefForCompare(href)
+  const showDestination = cwd !== undefined && markdownLinkLabel(children) !== decodeHrefForCompare(href)
   return (
     <a
       href={href}

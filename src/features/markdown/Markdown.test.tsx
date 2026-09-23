@@ -55,10 +55,27 @@ it('opens external links through the runtime when cwd is provided', () => {
   expect(runtime.openExternalUrl).toHaveBeenCalledWith('https://example.com/docs')
 })
 
-it('renders plain anchors when no cwd is provided', () => {
-  render(<Markdown text={'[docs](https://example.com/docs)'} />)
-  const link = screen.getByRole('link', { name: 'docs' })
-  expect(link.getAttribute('href')).toBe('https://example.com/docs')
+it('opens external links before and after workspace context becomes available', () => {
+  runtime.openExternalUrl.mockResolvedValue(undefined)
+  const text = '[#104](https://github.com/q871795224/codex-harness/pull/104)'
+  const { rerender } = render(<Markdown text={text} />)
+  expect(fireEvent.click(screen.getByRole('link', { name: /#104/ }))).toBe(false)
+  expect(runtime.openExternalUrl).toHaveBeenCalledWith('https://github.com/q871795224/codex-harness/pull/104')
+  rerender(<Markdown text={text} cwd="/repo" />)
+  expect(fireEvent.click(screen.getByRole('link', { name: /#104/ }))).toBe(false)
+  expect(runtime.openExternalUrl).toHaveBeenCalledTimes(2)
+})
+
+it('waits for workspace context before opening relative files', () => {
+  runtime.openWorkspacePath.mockResolvedValue(undefined)
+  const { rerender } = render(<Markdown text="[file](src/main.ts)" />)
+  expect(screen.queryByRole('link')).toBeNull()
+  expect(screen.queryByRole('button')).toBeNull()
+  fireEvent.click(screen.getByText('file'))
+  expect(runtime.openWorkspacePath).not.toHaveBeenCalled()
+  rerender(<Markdown text="[file](src/main.ts)" cwd="/repo" />)
+  fireEvent.click(screen.getByRole('button', { name: 'file' }))
+  expect(runtime.openWorkspacePath).toHaveBeenCalledWith('goland', '/repo', 'src/main.ts', undefined)
 })
 
 describe('CJK autolink repair', () => {

@@ -80,6 +80,21 @@ describe('session launcher model selection', () => {
     expect(availableRows([], [model('gpt-5.6-sol', ['high'])], base)).toHaveLength(1)
   })
 
+  it('uses configured model and effort for fallback even when old Sol is available', () => {
+    const models = [model('gpt-5.6-sol', ['high', 'xhigh']), model('gpt-6-luna', ['low', 'high', 'max'])]
+    const settings = { ...base, model: 'gpt-6-luna', effort: 'max' }
+    for (const remote of [[], [row('unavailable', 'high')]]) {
+      expect(availableRows(remote, models, settings)[0]).toMatchObject({ group: 'fallback', model: 'gpt-6-luna', effort: 'max' })
+    }
+    expect(availableRows([], models, { ...settings, effort: 'ultra' })[0].effort).toBe('low')
+  })
+
+  it('uses the App Server default when the configured model is unavailable', () => {
+    const models = [model('gpt-5.6-sol', ['xhigh']), { ...model('gpt-6-luna', ['low']), isDefault: true }]
+    expect(availableRows([], models, { ...base, model: 'unavailable' })[0]).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
+    expect(availableRows([], [], base)).toEqual([])
+  })
+
   it('moves existing Astra rows into AGI without duplicating or losing metrics', () => {
     const rows = availableRows([{ ...row('gpt-6-astra', 'low', true), iq: 99, price: 1.23, minutes: 4.5 }], [model('gpt-6-astra', ['low', 'medium'])], base)
     expect(rows).toHaveLength(2)

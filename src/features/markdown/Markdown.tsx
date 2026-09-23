@@ -12,7 +12,7 @@ export function Markdown({ text, cwd, collapsibleJson = false }: { text: string;
   const components: Components = useMemo(() => ({
     img: ({ src, alt, title }) => <MarkdownImage key={`${cwd ?? ''}:${src}`} src={src} alt={alt} title={title} cwd={cwd} />,
     pre: collapsibleJson ? ConversationPre : MarkdownPre,
-    ...(cwd === undefined ? {} : { a: (props: ComponentPropsWithoutRef<'a'>) => <MarkdownLink {...props} cwd={cwd} /> }),
+    a: (props: ComponentPropsWithoutRef<'a'>) => <MarkdownLink {...props} cwd={cwd} />,
   }), [cwd, collapsibleJson])
   return <ReactMarkdown remarkPlugins={[remarkGfm, remarkRepairCjkAutolink]} components={components} urlTransform={(url, key, node) => key === 'src' && node.tagName === 'img' && imageSource(url) ? url : defaultUrlTransform(url)}>{text}</ReactMarkdown>
 }
