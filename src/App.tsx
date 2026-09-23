@@ -1048,6 +1048,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
       )}
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
+          codexUpdate={codexUpdate}
           workspaces={harness.workspaces}
           onAddWorkspace={harness.chooseWorkspace}
           onRemoveWorkspace={harness.removeWorkspace}

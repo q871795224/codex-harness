@@ -13,6 +13,7 @@ use std::{
 
 const UPDATE_STATE_KEY: &str = "codexUpdateState";
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+const RETRY_INTERVAL_MS: i64 = 15 * 60 * 1000;
 const CHECK_INTERVAL_MS: i64 = 24 * 60 * 60 * 1000;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -53,7 +54,12 @@ pub async fn status(
     let mut persisted = read_state(store, diagnostics);
     let versions = app_server::runtime_versions();
     let now = now_ms();
-    let due = check_due(persisted.last_checked_at, now, force);
+    let due = check_due(
+        persisted.last_checked_at,
+        persisted.last_error_code.is_some(),
+        now,
+        force,
+    );
     let mut check_error = None;
 
     if due {
@@ -109,7 +115,7 @@ pub async fn status(
             "codex-update",
             "check.deferred",
             json!({
-                "reason": "daily-interval",
+                "reason": if persisted.last_error_code.is_some() { "retry-interval" } else { "daily-interval" },
                 "lastCheckedAt": persisted.last_checked_at,
                 "currentVersion": versions.codex_cli,
             }),
@@ -323,7 +329,12 @@ fn make_status(
         update_available: available,
         skipped: available && persisted.skipped_version == persisted.latest_version,
         last_checked_at: persisted.last_checked_at,
-        check_error,
+        check_error: check_error.or_else(|| {
+            persisted
+                .last_error_code
+                .as_ref()
+                .map(|_| "上次检查 Codex 更新失败，将自动重试；也可在设置中刷新。".to_string())
+        }),
     }
 }
 
@@ -337,10 +348,17 @@ fn update_available(current: Option<&str>, latest: Option<&str>) -> bool {
     }
 }
 
-fn check_due(last_checked_at: Option<i64>, now: i64, force: bool) -> bool {
+fn check_due(last_checked_at: Option<i64>, failed: bool, now: i64, force: bool) -> bool {
     force
         || last_checked_at
-            .map(|checked| now.saturating_sub(checked) >= CHECK_INTERVAL_MS)
+            .map(|checked| {
+                now.saturating_sub(checked)
+                    >= if failed {
+                        RETRY_INTERVAL_MS
+                    } else {
+                        CHECK_INTERVAL_MS
+                    }
+            })
             .unwrap_or(true)
 }
 
@@ -441,10 +459,32 @@ mod tests {
 
     #[test]
     fn checks_at_most_once_per_day_unless_forced() {
-        assert!(check_due(None, 100, false));
-        assert!(!check_due(Some(100), 100 + CHECK_INTERVAL_MS - 1, false));
-        assert!(check_due(Some(100), 100 + CHECK_INTERVAL_MS, false));
-        assert!(check_due(Some(100), 101, true));
+        assert!(check_due(None, false, 100, false));
+        assert!(!check_due(
+            Some(100),
+            false,
+            100 + CHECK_INTERVAL_MS - 1,
+            false
+        ));
+        assert!(check_due(Some(100), false, 100 + CHECK_INTERVAL_MS, false));
+        assert!(check_due(Some(100), false, 101, true));
+    }
+
+    #[test]
+    fn failed_checks_retry_early_and_manual_checks_bypass_cooldown() {
+        assert!(!check_due(Some(100), true, 101, false));
+        assert!(check_due(Some(100), true, 100 + RETRY_INTERVAL_MS, false));
+        assert!(check_due(Some(100), true, 101, true));
+        let state = PersistedUpdateState {
+            last_error_code: Some("request_failed".to_string()),
+            ..PersistedUpdateState::default()
+        };
+        let versions = RuntimeVersions {
+            harness: "test".into(),
+            codex_cli: None,
+            app_server: None,
+        };
+        assert!(make_status(&versions, &state, None).check_error.is_some());
     }
 
     #[test]
