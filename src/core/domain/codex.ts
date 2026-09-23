@@ -145,8 +145,10 @@ Start with an imperative verb. Capitalize only the first word unless the user's 
 Preserve ticket references exactly. Write in the user's language. Do not use quotes, Markdown, or trailing punctuation.
 Return only the title. Do not answer the user's request.`
 
+export const DEFAULT_BACKGROUND_MODEL = 'gpt-6-luna'
+
 export const DEFAULT_THREAD_TITLE_GENERATION: ThreadTitleGenerationSettings = {
-  model: 'gpt-5.6-luna',
+  model: DEFAULT_BACKGROUND_MODEL,
   effort: 'low',
   prompt: DEFAULT_THREAD_TITLE_PROMPT,
 }
@@ -160,7 +162,7 @@ export interface RecapGenerationSettings {
 export const DEFAULT_RECAP_PROMPT = `Write a brief catch-up for a user returning to this Codex task. In at most 40 words and one or two plain-text sentences, explain the objective, what was completed or learned, and the next step or blocker. Mention changed files, tests, approvals, or requested decisions only when relevant. Never claim changes were made or tests passed unless the conversation confirms it. If the task is complete, say so instead of inventing more work. Use the user's language; omit greetings, markdown, lists, and tool chatter.`
 
 export const DEFAULT_RECAP_GENERATION: RecapGenerationSettings = {
-  model: 'gpt-5.6-luna',
+  model: DEFAULT_BACKGROUND_MODEL,
   effort: 'low',
   prompt: DEFAULT_RECAP_PROMPT,
 }

@@ -1,5 +1,5 @@
 import { loadMemorySettings, DEFAULT_MEMORY_SETTINGS, type MemorySettings } from './settings'
-import { EPHEMERAL_THREAD_DISABLED_CONFIG, textInput, type AppServerEvent, type ThreadItem, type Turn } from '../domain/codex'
+import { DEFAULT_BACKGROUND_MODEL, EPHEMERAL_THREAD_DISABLED_CONFIG, textInput, type AppServerEvent, type ThreadItem, type Turn } from '../domain/codex'
 import { appServer } from '../runtime/appServerClient'
 import { runtime } from '../runtime/bridge'
 import type { NotificationService } from '../notifications/store'
@@ -107,7 +107,7 @@ export function createMemoryService(notifications: NotificationService): MemoryS
         const contextWindow = settings.contextWindowTokens || (positive(config.model_context_window) ? Math.floor(config.model_context_window) : 150_000)
         const percent = positive(config.model_effective_context_window_percent) ? Math.min(100, config.model_effective_context_window_percent) : 95
         const { prompt, truncated } = extractionPrompt(transcript, catalog, Math.floor(contextWindow * percent / 100), settings.prompt, settings.budgetPercent)
-        const model = settings.model || (typeof config.model === 'string' && config.model ? config.model : 'gpt-5.6-luna')
+        const model = settings.model || (typeof config.model === 'string' && config.model ? config.model : DEFAULT_BACKGROUND_MODEL)
         const output = await extractMemoryJson(cwd, prompt, model, contextWindow, percent, config, settings)
         const memories = parseMemories(output)
         const saved = memories.length ? await runtime.memorySave({ threadId, cwd, sourceWorkspace: catalog.currentWorkspace, sourceTurnIds: turns.map((turn) => turn.id), memories }) : []

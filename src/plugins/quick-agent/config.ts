@@ -1,4 +1,4 @@
-import type { ThreadCodexSettings } from '../../core/domain/codex'
+import { DEFAULT_BACKGROUND_MODEL, type ThreadCodexSettings } from '../../core/domain/codex'
 import type { PluginInstanceRecord } from '../../extensions/types'
 
 export type QuickAgentRunMode = 'yolo' | 'auto-review' | 'manual'
@@ -24,7 +24,7 @@ export const DEFAULT_QUICK_AGENT_JOB: QuickAgentJob = {
   id: 'builtin.commit-push-mr',
   name: '提交、推送并创建 MR',
   prompt: '当前分支已经开发完成。请检查当前工作区的改动，创建内容准确的 commit，推送当前分支，并创建 Merge Request。完成后返回 commit、远端分支和 MR 链接；如果无法安全完成，请明确说明阻塞原因。',
-  model: 'gpt-5.6-luna',
+  model: DEFAULT_BACKGROUND_MODEL,
   effort: 'max',
   mode: 'yolo',
   workspaceAccess: 'isolated-delivery',
@@ -36,7 +36,7 @@ export function newQuickAgentJob(): QuickAgentJob {
     id: crypto.randomUUID(),
     name: '新 Job',
     prompt: '',
-    model: 'gpt-5.6-luna',
+    model: DEFAULT_BACKGROUND_MODEL,
     effort: 'max',
     mode: 'yolo',
     workspaceAccess: 'read-only',

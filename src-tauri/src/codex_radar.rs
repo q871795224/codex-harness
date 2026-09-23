@@ -48,6 +48,8 @@ impl CodexRadarClient {
     pub fn new() -> Self {
         Self {
             client: Client::builder()
+                .gzip(true)
+                .connect_timeout(Duration::from_secs(12))
                 .timeout(Duration::from_secs(12))
                 .build()
                 .expect("无法初始化 Codex Radar HTTP 客户端"),
@@ -65,7 +67,12 @@ impl CodexRadarClient {
         }
 
         let insights_request = self.client.get(INSIGHTS_URL).send();
-        let efficiency_request = self.client.get(EFFICIENCY_URL).send();
+        // This payload includes several MB of history; allow the full body to finish.
+        let efficiency_request = self
+            .client
+            .get(EFFICIENCY_URL)
+            .timeout(Duration::from_secs(60))
+            .send();
         let fetched = async {
             let (insights_response, efficiency_response) =
                 futures_util::future::try_join(insights_request, efficiency_request)

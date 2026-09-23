@@ -206,16 +206,16 @@ describe('thread title trigger', () => {
 
 describe('thread title generation settings', () => {
   it('defaults to Luna low and preserves valid custom settings', () => {
-    expect(parseThreadTitleGenerationSettings(null)).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
+    expect(parseThreadTitleGenerationSettings(null)).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
     expect(parseThreadTitleGenerationSettings(JSON.stringify({ model: 'custom', effort: 'high', prompt: 'Only a title' }))).toEqual({
       model: 'custom', effort: 'high', prompt: 'Only a title',
     })
   })
 
   it('falls back for empty or invalid values', () => {
-    expect(parseThreadTitleGenerationSettings('{broken')).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
+    expect(parseThreadTitleGenerationSettings('{broken')).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
     expect(parseThreadTitleGenerationSettings(JSON.stringify({ model: '', effort: '', prompt: '' }))).toMatchObject({
-      model: 'gpt-5.6-luna', effort: 'low',
+      model: 'gpt-6-luna', effort: 'low',
     })
   })
 })

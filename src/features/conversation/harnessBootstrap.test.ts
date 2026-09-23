@@ -64,7 +64,7 @@ describe('Harness bootstrap restoration', () => {
     expect(state.appearance.theme).toBe('dark')
     expect(state.keyboard).toMatchObject({ sendShortcut: 'enter', followUpMode: 'interject' })
     expect(state.threadTitleGeneration).toEqual({ model: 'custom', effort: 'high', prompt: 'Only a title' })
-    expect(state.recapGeneration).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
+    expect(state.recapGeneration).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
     expect(client.getAppState).toHaveBeenCalledTimes(7)
   })
 
@@ -82,7 +82,7 @@ describe('Harness bootstrap restoration', () => {
     expect(state.navigation).toEqual(defaultNavigationPreferences)
     expect(state.appearance.theme).toBe('light')
     expect(state.keyboard).toMatchObject({ sendShortcut: 'mod-enter', followUpMode: 'interject' })
-    expect(state.threadTitleGeneration).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
+    expect(state.threadTitleGeneration).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
   })
 })
 
@@ -94,16 +94,16 @@ describe('bootstrap preference helpers', () => {
 
   it('defaults empty title-generation fields independently', () => {
     expect(parseThreadTitleGenerationSettings(JSON.stringify({ model: '', effort: '', prompt: '' }))).toMatchObject({
-      model: 'gpt-5.6-luna', effort: 'low',
+      model: 'gpt-6-luna', effort: 'low',
     })
   })
 
   it('defaults empty recap-generation fields independently', () => {
     expect(parseRecapGenerationSettings(JSON.stringify({ model: '', effort: '', prompt: '' }))).toMatchObject({
-      model: 'gpt-5.6-luna', effort: 'low',
+      model: 'gpt-6-luna', effort: 'low',
     })
     expect(parseRecapGenerationSettings(null).prompt).toBeTruthy()
-    expect(parseRecapGenerationSettings('not json')).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' })
+    expect(parseRecapGenerationSettings('not json')).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
   })
 })
 
