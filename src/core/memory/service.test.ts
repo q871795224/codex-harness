@@ -23,6 +23,19 @@ beforeEach(() => {
   result('{"memories":[]}')
 })
 afterEach(() => vi.useRealTimers())
+it.each([
+  [null, {}, 'gpt-6-luna'],
+  [null, { model: 'workspace-model' }, 'gpt-6-luna'],
+  [{ model: '' }, { model: 'workspace-model' }, 'workspace-model'],
+  [{ model: '' }, {}, 'gpt-6-luna'],
+  [{ model: 'saved-model' }, { model: 'workspace-model' }, 'saved-model'],
+])('resolves memory model from saved settings, workspace config, then the default', async (settings, config, expected) => {
+  vi.mocked(runtime.getAppState).mockResolvedValue(settings ? JSON.stringify(settings) : null)
+  vi.mocked(appServer.readConfig).mockResolvedValue({ config } as never)
+  await createMemoryService({ publish: vi.fn() }).saveConversation({ threadId: 'source', cwd: '/repo' })
+  expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({ model: expected }))
+})
+
 function result(text: string) {
   vi.mocked(appServer.startTurn).mockImplementation(async () => {
     handle({ method: 'item/completed', params: { threadId: 'child', item: { type: 'agentMessage', phase: 'final_answer', text } } })

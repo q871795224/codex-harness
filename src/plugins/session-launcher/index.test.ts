@@ -45,17 +45,33 @@ describe('session launcher model selection', () => {
       { ...row('gpt-6-astra', 'low'), iq: 106.96, price: 2.029284, minutes: 9.35 },
       { ...row('gpt-6-astra', 'medium'), iq: 110.46, price: 2.297875, minutes: 8.87 },
       { ...row('gpt-5.6-luna', 'max'), group: 'simple' },
-    ], [model('gpt-5.6-sol', ['high']), model('gpt-5.6-luna', ['max']), model('gpt-6-astra', ['low', 'medium', 'high'])], base)
+    ], [model('gpt-5.6-sol', ['high']), model('gpt-6-luna', ['max']), model('gpt-6-astra', ['low', 'medium', 'high'])], base)
     expect(rows.map(({ group, model, effort }) => [group, model, effort])).toEqual([
       ['reference', 'gpt-5.6-sol', 'high'],
       ['agi', 'gpt-6-astra', 'low'],
       ['agi', 'gpt-6-astra', 'medium'],
-      ['simple', 'gpt-5.6-luna', 'max'],
+      ['simple', 'gpt-6-luna', 'max'],
     ])
     expect(defaultRadarRow(rows)).toBe(rows[2])
     expect(rows[1]).toMatchObject({ iq: 106.96, price: 2.029284, minutes: 9.35 })
     expect(rows[2]).toMatchObject({ iq: 110.46, price: 2.297875, minutes: 8.87 })
     expect(selectedRadarRow(rows, { model: 'gpt-6-astra', effort: 'medium' })).toBe(rows[2])
+  })
+
+  it('switches only the simple Luna choice without carrying over old metrics', () => {
+    const reference = { ...row('gpt-5.6-luna', 'xhigh'), iq: 94, price: 0.3, minutes: 33 }
+    const simple: PickerRow = {
+      ...row('gpt-5.6-luna', 'max'), group: 'simple', iq: 96, price: 0.48, minutes: 34,
+    }
+    const models = [model('gpt-5.6-luna', ['max', 'xhigh']), model('gpt-6-luna', ['max'])]
+    const rows = availableRows([reference, simple], models, base)
+    expect(rows).toEqual([reference, {
+      ...simple, model: 'gpt-6-luna', iq: null, price: null, minutes: null,
+    }])
+    expect(selectedRadarRow(rows, { model: 'gpt-6-luna', effort: 'max' })).toBe(rows[1])
+    expect(defaultRadarRow(rows)).toBe(rows[0])
+    expect(availableRows([reference, simple], [models[0], model('gpt-6-luna', ['high'])], base)).toEqual([reference])
+    expect(availableRows([reference, simple], [models[0]], base)).toEqual([reference])
   })
 
   it('retains AGI choices when Radar is unavailable and respects supported efforts', () => {
