@@ -436,7 +436,6 @@ export function SettingsVersions({
   return (
     <footer className="settings-versions" aria-label="版本信息">
       <div className="settings-versions-copy">
-        <span className="settings-versions-title">版本信息</span>
         <dl className="settings-version-list" title={error ?? undefined}>
           {entries.map(([label, version]) => (
             <div key={label}>
@@ -445,13 +444,7 @@ export function SettingsVersions({
             </div>
           ))}
         </dl>
-        <span className="settings-update-status" role={error || updateStatus?.checkError ? 'alert' : 'status'}>
-          {loading ? '正在刷新版本信息…' : error ?? updateStatus?.checkError ?? (
-            updateStatus?.updateAvailable ? `Codex v${updateStatus.latestVersion} 可用${updateStatus.skipped ? '（已跳过此版本）' : '，可在新会话中更新'}`
-              : updateStatus?.currentVersion && updateStatus?.latestVersion ? '当前 Codex 已是最新版本' : '点击刷新检查 Codex 更新'
-          )}
-        </span>
-        <span className="settings-diagnostics-note">诊断日志不记录对话正文或凭证</span>
+        {updateStatus?.updateAvailable && <span className="settings-update-status" role="status">（有新版本）</span>}
       </div>
       <div className="settings-versions-actions">
         <button
@@ -465,7 +458,7 @@ export function SettingsVersions({
         <button
           className="settings-versions-refresh"
           type="button"
-          title="刷新版本并检查 Codex 更新（忽略冷却期）"
+          title={error ?? updateStatus?.checkError ?? '刷新版本并检查 Codex 更新（忽略冷却期）'}
           aria-label="刷新版本并检查更新"
           onClick={onRefresh}
           disabled={loading}
