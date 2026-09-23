@@ -541,7 +541,20 @@ def verify_remote_asset(tag: str, asset_name: str, checksum: str) -> dict[str, o
             run("gh", "release", "view", tag, "--json", "url,tagName,assets", capture=True)
         )
         asset = next((item for item in details["assets"] if item["name"] == asset_name), None)
-        if asset and asset.get("digest") == expected_digest:
+        reason = (
+            "asset-missing" if asset is None else
+            "digest-pending" if not asset.get("digest") else
+            "verified" if asset["digest"] == expected_digest else "digest-mismatch"
+        )
+        log_event(
+            "release.asset.verification", tag=tag, attempt=attempt + 1,
+            maxAttempts=REMOTE_ASSET_VERIFY_RETRIES + 1, reason=reason,
+            releaseUrl=details.get("url"), expectedAsset=asset_name,
+            expectedDigest=expected_digest,
+            assets=[{key: item.get(key) for key in ("name", "size", "state", "digest")}
+                    for item in details["assets"]],
+        )
+        if reason == "verified":
             return details
         if attempt < REMOTE_ASSET_VERIFY_RETRIES:
             delay = REMOTE_ASSET_VERIFY_INITIAL_WAIT_SECONDS * (2**attempt)
@@ -552,7 +565,11 @@ def verify_remote_asset(tag: str, asset_name: str, checksum: str) -> dict[str, o
             time.sleep(delay)
     if asset and not asset.get("digest"):
         raise ReleaseError(ASSET_DIGEST_PENDING_MESSAGE)
-    raise ReleaseError(f"remote release asset verification failed: {asset}")
+    raise ReleaseError(
+        f"remote release asset verification failed: {reason}; tag={tag}; "
+        f"expected asset={asset_name}, digest={expected_digest}; "
+        f"observed assets={json.dumps(details['assets'], ensure_ascii=False)}"
+    )
 
 
 def require_matching_release_tag(version: str, head: str) -> bool:
@@ -664,7 +681,6 @@ def command_publish(version: str, github: bool = True) -> None:
             "release",
             "create",
             tag,
-            str(zip_path),
             "--verify-tag",
             "--title",
             f"Codex Harness {tag}",
@@ -672,6 +688,11 @@ def command_publish(version: str, github: bool = True) -> None:
             "--notes",
             notes,
         )
+        log_event(
+            "release.asset.upload", tag=tag, path=str(zip_path),
+            size=zip_path.stat().st_size, sha256=checksum,
+        )
+        run("gh", "release", "upload", tag, str(zip_path))
     if github:
         details = verify_remote_asset(tag, zip_path.name, checksum)
     print(

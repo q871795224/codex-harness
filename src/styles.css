@@ -882,10 +882,9 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .title-prompt-actions button:disabled { cursor: default; opacity: .42; }
 .codex-inventory-row .codex-skill-status { height: auto; padding: 3px 8px; border: 0; border-radius: 999px; font-size: calc(11px + var(--h-settings-font-offset)); font-weight: 650; }
 .settings-versions { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 67px; padding: 11px 26px; border-top: 1px solid #eceef1; background: #fbfcfd; }
-.settings-versions-copy { min-width: 0; }.settings-versions-title { display: block; color: #666e7a; font-size: calc(12px + var(--h-settings-font-offset)); font-weight: 680; }
-.settings-version-list { display: flex; flex-wrap: wrap; gap: 3px 13px; margin: 4px 0 0; }.settings-version-list > div { display: flex; gap: 4px; min-width: 0; }.settings-version-list dt, .settings-version-list dd { margin: 0; font-size: calc(11px + var(--h-settings-font-offset)); }.settings-version-list dt { color: #949aa5; }.settings-version-list dd { overflow: hidden; color: #4a5260; font-family: var(--h-font-mono); text-overflow: ellipsis; white-space: nowrap; }.settings-version-list dd.unavailable { color: #a0a6b0; font-family: var(--h-font-sans); }
-.settings-diagnostics-note { display: block; margin-top: 3px; color: #9aa0aa; font-size: calc(10px + var(--h-settings-font-offset)); }
-.settings-update-status { display: block; margin-top: 4px; color: var(--h-text-muted); font-size: calc(11px + var(--h-settings-font-offset)); overflow-wrap: anywhere; }
+.settings-versions-copy { display: flex; align-items: center; min-width: 0; overflow-x: auto; }
+.settings-version-list { display: flex; flex: 0 0 auto; gap: 13px; margin: 0; }.settings-version-list > div { display: flex; gap: 4px; min-width: 0; }.settings-version-list dt, .settings-version-list dd { margin: 0; font-size: calc(11px + var(--h-settings-font-offset)); }.settings-version-list dt { color: #949aa5; }.settings-version-list dd { overflow: hidden; color: #4a5260; font-family: var(--h-font-mono); text-overflow: ellipsis; white-space: nowrap; }.settings-version-list dd.unavailable { color: #a0a6b0; font-family: var(--h-font-sans); }
+.settings-update-status { flex: 0 0 auto; color: var(--h-text-muted); font-size: calc(11px + var(--h-settings-font-offset)); white-space: nowrap; }
 .settings-versions-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .settings-open-logs, .settings-versions-refresh { display: grid; place-items: center; height: 29px; padding: 0; border: 1px solid #dfe3e9; border-radius: 7px; background: #fff; color: #6475c3; cursor: pointer; }
 .settings-open-logs { grid-auto-flow: column; gap: 4px; padding: 0 8px; font-size: calc(11px + var(--h-settings-font-offset)); }
@@ -1560,7 +1559,6 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .settings-versions { background: #1d2025; }
 .app-shell[data-theme='dark'] .settings-row > span,
 .app-shell[data-theme='dark'] .font-size-stepper output,
-.app-shell[data-theme='dark'] .settings-versions-title,
 .app-shell[data-theme='dark'] .settings-version-list dd,
 .app-shell[data-theme='dark'] .plugin-catalog-intro > span,
 .app-shell[data-theme='dark'] .plugin-setting-row > span,
