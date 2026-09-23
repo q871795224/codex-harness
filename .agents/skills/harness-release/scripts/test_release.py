@@ -4,7 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -282,6 +282,82 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(
             [call.args[0] for call in sleep.call_args_list], [1, 2, 4, 8, 16, 32]
         )
+
+    def test_remote_asset_logs_each_observation_without_unrelated_response_fields(self):
+        for assets, reason in [
+            ([], "asset-missing"),
+            ([{"name": "bundle.zip", "size": 42, "state": "uploaded"}], "digest-pending"),
+            ([{"name": "bundle.zip", "digest": "sha256:other"}], "digest-mismatch"),
+            ([{"name": "bundle.zip", "digest": "sha256:abc"}], "verified"),
+        ]:
+            output = StringIO()
+            with (
+                self.subTest(reason=reason),
+                patch.object(release, "REMOTE_ASSET_VERIFY_RETRIES", 0),
+                patch.object(release, "run", return_value=json.dumps({
+                    "url": "https://example.com/release", "assets": assets,
+                    "body": "not-for-diagnostic-log",
+                })),
+                redirect_stdout(output),
+            ):
+                if reason == "verified":
+                    release.verify_remote_asset("v0.9.6", "bundle.zip", "abc")
+                else:
+                    with self.assertRaises(release.ReleaseError) as error:
+                        release.verify_remote_asset("v0.9.6", "bundle.zip", "abc")
+                    if reason != "digest-pending":
+                        self.assertIn(reason, str(error.exception))
+                        self.assertIn("bundle.zip", str(error.exception))
+            event = json.loads(output.getvalue())
+            self.assertEqual(event["reason"], reason)
+            self.assertEqual(event["expectedDigest"], "sha256:abc")
+            self.assertEqual(event["attempt"], 1)
+            self.assertEqual(len(event["assets"]), len(assets))
+            self.assertNotIn("not-for-diagnostic-log", output.getvalue())
+
+    def test_publish_upload_is_separate_and_failure_stops_verification(self):
+        for upload_fails in [False, True]:
+            with self.subTest(upload_fails=upload_fails), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                app = Path(directory) / "Codex Harness.app"
+                archive = app.parent / "Codex-Harness-v0.9.6-macos-universal.zip"
+                calls = []
+
+                def run(*args, **kwargs):
+                    calls.append(args)
+                    if args[:2] == ("ditto", "-c"):
+                        archive.write_bytes(b"archive")
+                    if args[:3] == ("gh", "release", "upload") and upload_fails:
+                        raise release.ReleaseError("upload failed: HTTP 502")
+                    return {
+                        ("git", "rev-parse", "HEAD"): "head",
+                        ("git", "rev-parse", "origin/main"): "head",
+                        ("gh", "api", "--paginate", "--slurp", "repos/{owner}/{repo}/releases"): "[]",
+                        ("git", "ls-remote", "--tags", "origin", "refs/tags/v0.9.6^{}"): "head ref",
+                    }.get(args, "")
+
+                stack.enter_context(patch.object(release.sys, "platform", "darwin"))
+                for name in ["configure_release_environment", "require_clean_worktree", "require_synced_versions",
+                             "require_matching_release_tag", "ensure_dependencies", "build_universal_app"]:
+                    stack.enter_context(patch.object(release, name))
+                stack.enter_context(patch.object(release, "application_path", return_value=app))
+                stack.enter_context(patch.object(release, "verify_app", return_value=["arm64", "x86_64"]))
+                stack.enter_context(patch.object(release, "install_app", return_value=(app, None)))
+                stack.enter_context(patch.object(release, "tag_message", return_value="notes"))
+                stack.enter_context(patch.object(release, "try_run", return_value=release.subprocess.CompletedProcess([], 1)))
+                stack.enter_context(patch.object(release, "run", side_effect=run))
+                verify = stack.enter_context(patch.object(release, "verify_remote_asset", return_value={"url": "release"}))
+                if upload_fails:
+                    with self.assertRaisesRegex(release.ReleaseError, "upload failed: HTTP 502"):
+                        release.command_publish("0.9.6")
+                    verify.assert_not_called()
+                else:
+                    release.command_publish("0.9.6")
+                    verify.assert_called_once()
+                create = next(args for args in calls if args[:3] == ("gh", "release", "create"))
+                upload = ("gh", "release", "upload", "v0.9.6", str(archive))
+                self.assertNotIn(str(archive), create)
+                self.assertLess(calls.index(create), calls.index(upload))
+                self.assertNotIn("--clobber", upload)
 
     def test_remote_asset_digest_pending_raises_friendly_message(self):
         checksum = "abc123"
