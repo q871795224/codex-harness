@@ -1,3 +1,4 @@
+import type { useCodexUpdate } from '../codex/useCodexUpdate'
 import { MemorySettings } from './MemorySettings'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Activity, ArrowDown, ArrowUp, Blocks, BrainCircuit, CircleHelp, FolderOpen, GripVertical, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
@@ -41,6 +42,7 @@ interface SettingsDialogProps {
   followUpMode: FollowUpMode
   actionShortcuts: HarnessActionShortcuts
   selectedWorkspaceRoot: string | null
+  codexUpdate: Pick<ReturnType<typeof useCodexUpdate>, 'status' | 'loading' | 'updating' | 'check'>
   codex: ReturnType<typeof useCodexCore>
   claudeModels?: ClaudeModel[]
   threadTitleGeneration: ThreadTitleGenerationSettings
@@ -79,7 +81,7 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, sidebarUnpinnedCount, onSidebarUnpinnedCount, theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, sidebarUnpinnedCount, onSidebarUnpinnedCount, theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, codexUpdate, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>('appearance')
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
@@ -99,17 +101,20 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
     mcp: { heading: 'MCP', kicker: 'CODEX' },
   }
 
-  const loadVersions = useCallback(async () => {
+  const loadVersions = useCallback(async (checkUpdates = false) => {
     setVersionsLoading(true)
     setVersionsError(null)
     try {
-      setVersions(await runtime.getRuntimeVersions())
+      await Promise.all([
+        runtime.getRuntimeVersions().then(setVersions),
+        checkUpdates ? codexUpdate.check(true) : Promise.resolve(),
+      ])
     } catch (error) {
       setVersionsError(error instanceof Error ? error.message : String(error))
     } finally {
       setVersionsLoading(false)
     }
-  }, [])
+  }, [codexUpdate.check])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -199,9 +204,10 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           {page === 'mcp' && <McpSettings codex={codex} />}
           <SettingsVersions
             versions={versions}
-            loading={versionsLoading}
+            loading={versionsLoading || codexUpdate.loading || codexUpdate.updating}
             error={versionsError}
-            onRefresh={() => void loadVersions()}
+            updateStatus={codexUpdate.status}
+            onRefresh={() => void loadVersions(true)}
             diagnosticsError={diagnosticsError}
             onOpenDiagnostics={() => void openDiagnostics()}
           />
@@ -404,12 +410,13 @@ function HandoverSettings() {
   )
 }
 
-function SettingsVersions({
+export function SettingsVersions({
   versions,
   loading,
   error,
   onRefresh,
   diagnosticsError,
+  updateStatus,
   onOpenDiagnostics,
 }: {
   versions: RuntimeVersions | null
@@ -417,6 +424,7 @@ function SettingsVersions({
   error: string | null
   onRefresh: () => void
   diagnosticsError: string | null
+  updateStatus: ReturnType<typeof useCodexUpdate>['status']
   onOpenDiagnostics: () => void
 }) {
   const entries = [
@@ -437,6 +445,12 @@ function SettingsVersions({
             </div>
           ))}
         </dl>
+        <span className="settings-update-status" role={error || updateStatus?.checkError ? 'alert' : 'status'}>
+          {loading ? '正在刷新版本信息…' : error ?? updateStatus?.checkError ?? (
+            updateStatus?.updateAvailable ? `Codex v${updateStatus.latestVersion} 可用${updateStatus.skipped ? '（已跳过此版本）' : '，可在新会话中更新'}`
+              : updateStatus?.currentVersion && updateStatus?.latestVersion ? '当前 Codex 已是最新版本' : '点击刷新检查 Codex 更新'
+          )}
+        </span>
         <span className="settings-diagnostics-note">诊断日志不记录对话正文或凭证</span>
       </div>
       <div className="settings-versions-actions">
@@ -451,8 +465,8 @@ function SettingsVersions({
         <button
           className="settings-versions-refresh"
           type="button"
-          title={error ? `重新读取版本：${error}` : '重新读取版本'}
-          aria-label="重新读取版本"
+          title="刷新版本并检查 Codex 更新（忽略冷却期）"
+          aria-label="刷新版本并检查更新"
           onClick={onRefresh}
           disabled={loading}
         >

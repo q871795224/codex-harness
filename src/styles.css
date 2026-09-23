@@ -885,6 +885,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .settings-versions-copy { min-width: 0; }.settings-versions-title { display: block; color: #666e7a; font-size: calc(12px + var(--h-settings-font-offset)); font-weight: 680; }
 .settings-version-list { display: flex; flex-wrap: wrap; gap: 3px 13px; margin: 4px 0 0; }.settings-version-list > div { display: flex; gap: 4px; min-width: 0; }.settings-version-list dt, .settings-version-list dd { margin: 0; font-size: calc(11px + var(--h-settings-font-offset)); }.settings-version-list dt { color: #949aa5; }.settings-version-list dd { overflow: hidden; color: #4a5260; font-family: var(--h-font-mono); text-overflow: ellipsis; white-space: nowrap; }.settings-version-list dd.unavailable { color: #a0a6b0; font-family: var(--h-font-sans); }
 .settings-diagnostics-note { display: block; margin-top: 3px; color: #9aa0aa; font-size: calc(10px + var(--h-settings-font-offset)); }
+.settings-update-status { display: block; margin-top: 4px; color: var(--h-text-muted); font-size: calc(11px + var(--h-settings-font-offset)); overflow-wrap: anywhere; }
 .settings-versions-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .settings-open-logs, .settings-versions-refresh { display: grid; place-items: center; height: 29px; padding: 0; border: 1px solid #dfe3e9; border-radius: 7px; background: #fff; color: #6475c3; cursor: pointer; }
 .settings-open-logs { grid-auto-flow: column; gap: 4px; padding: 0 8px; font-size: calc(11px + var(--h-settings-font-offset)); }

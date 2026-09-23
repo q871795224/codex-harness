@@ -56,7 +56,7 @@
 - 项目文档 HTTP 服务由 Harness Rust setup 启动，退出时停止，不依赖当前会话或项目绑定。启动失败必须报错；地址文件通过原子替换发布，异常退出的旧地址在下次启动覆盖。稳定版与开发版同时运行时，CLI 使用最后启动实例的地址；实例退出只删除自己发布且仍持有的地址，不能删除其他实例的记录。
 
 - MCP 是共享 App Server daemon 的全局配置：核心启动时加载一次，仅在用户手动 reload 时刷新。读取 `config/read`、`mcpServerStatus/list`，并结合 `mcpServer/startupStatus/updated` 区分配置启用、实际运行、启动失败和认证异常；打开设置页不能重复请求。
-- Codex 更新属于 Harness 核心：每天启动最多检查一次最新稳定版并持久化到 `state.sqlite`；安装必须调用当前实际选中的 `codex update`，然后重启共享 App Server daemon、重新 initialize，并校验 CLI/App Server 版本。不能更新 Codex App 或其他封装 CLI。
+- Codex 更新属于 Harness 核心：启动及运行期间定时检查最新稳定版并持久化到 `state.sqlite`；成功后间隔 24 小时，失败后间隔 15 分钟重试，设置底部刷新按钮同时强制检查更新并展示结果；安装必须调用当前实际选中的 `codex update`，然后重启共享 App Server daemon、重新 initialize，并校验 CLI/App Server 版本。不能更新 Codex App 或其他封装 CLI。
 - 快捷命令只能调用 Rust 固定允许的命令；VPN 成功以 Cisco 客户端的 `state: Connected` 为准，不能仅依据命令退出成功。
 - “发布”是 Codex Harness 仓库 workspace 专属的受控快捷命令，其他项目不显示。发布状态按 workspace root 共享给其中所有 thread；后台 runner 脱离 Harness 生命周期执行并将状态、日志写入 `~/.codex-harness/release-runs/`，正常路径不启动 Agent。
 - macOS 系统通知默认由 `src-tauri/Info.plist` 的 `NSUserNotificationAlertStyle=alert` 保持到用户处理，系统通知设置仍可覆盖。

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CodexUpdateStage, CodexUpdateStatus } from '../../core/codex-update/types'
 import { runtime } from '../../core/runtime/bridge'
 
@@ -10,20 +10,44 @@ export function useCodexUpdate(threadId: string | null, onUpdated: () => void | 
   const [error, setError] = useState<string | null>(null)
   const [deferredThreadIds, setDeferredThreadIds] = useState<Set<string>>(() => new Set())
 
-  useEffect(() => {
-    let disposed = false
-    void runtime.codexUpdateStatus(false)
+  const pendingCheck = useRef<Promise<CodexUpdateStatus> | null>(null)
+  const mounted = useRef(false)
+  const installing = useRef(false)
+
+  const check = useCallback((force = false): Promise<CodexUpdateStatus> => {
+    if (pendingCheck.current) {
+      // A manual check must still bypass the cache after an automatic read finishes.
+      return force ? pendingCheck.current.then(() => check(true), () => check(true)) : pendingCheck.current
+    }
+    setLoading(true)
+    const request = runtime.codexUpdateStatus(force)
       .then((next) => {
-        if (!disposed) setStatus(next)
-      })
-      .catch((nextError) => {
-        if (!disposed) setError(messageOf(nextError))
+        if (mounted.current) setStatus(next)
+        return next
       })
       .finally(() => {
-        if (!disposed) setLoading(false)
+        pendingCheck.current = null
+        if (mounted.current) setLoading(false)
       })
-    return () => { disposed = true }
+    pendingCheck.current = request
+    return request
   }, [])
+
+  useEffect(() => {
+    mounted.current = true
+    const refresh = () => {
+      if (installing.current) return
+      void check().catch((nextError) => {
+        if (mounted.current) setError(messageOf(nextError))
+      })
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 15 * 60 * 1000)
+    return () => {
+      mounted.current = false
+      window.clearInterval(timer)
+    }
+  }, [check])
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
@@ -34,6 +58,7 @@ export function useCodexUpdate(threadId: string | null, onUpdated: () => void | 
   const install = useCallback(async () => {
     if (updating) return
     setUpdating(true)
+    installing.current = true
     setUpdateStage('cli')
     setError(null)
     try {
@@ -43,6 +68,7 @@ export function useCodexUpdate(threadId: string | null, onUpdated: () => void | 
     } catch (nextError) {
       setError(messageOf(nextError))
     } finally {
+      installing.current = false
       setUpdating(false)
     }
   }, [onUpdated, updating])
@@ -79,7 +105,7 @@ export function useCodexUpdate(threadId: string | null, onUpdated: () => void | 
     [deferredThreadIds, status, threadId],
   )
 
-  return { status, loading, updating, updateStage, error, visible, install, defer, skip }
+  return { status, loading, updating, updateStage, error, visible, install, defer, skip, check }
 }
 
 export function shouldShowCodexUpdate(
