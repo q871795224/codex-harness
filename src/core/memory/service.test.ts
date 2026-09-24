@@ -2,6 +2,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import type { AppServerEvent, Turn } from '../domain/codex'
 import { appServer } from '../runtime/appServerClient'
 import { runtime } from '../runtime/bridge'
+import { MEMORY_PROVENANCE_INSTRUCTIONS, MEMORY_TITLE_INSTRUCTIONS } from './extraction'
 import { createMemoryService, extractMemoryJson, loadMemoryTurns } from './service'
 vi.mock('../runtime/appServerClient', () => ({ appServer: {
   listTurns: vi.fn(), readConfig: vi.fn(), startThread: vi.fn(), startTurn: vi.fn(), interruptTurn: vi.fn(), unsubscribeThread: vi.fn(),
@@ -62,13 +63,14 @@ it('accepts no-op without calling storage and cleans up the ephemeral thread', a
   expect(unlisten).toHaveBeenCalled()
   expect(service.isRunning('source')).toBe(false)
 })
-it('passes structured candidates to Harness, reports success only after persistence', async () => {
-  const candidate = { title: '经验', kind: 'fact', scope: 'workspace/repo', content: '内容', applicability: '条件', evidence: '证据', sourceTurnIds: ['t1'] }
-  result(JSON.stringify({ memories: [candidate] }))
+it('assembles provenance from all selected pages, ignores model metadata and reports success only after persistence', async () => {
+  const candidate = { title: '经验', kind: 'fact', scope: 'workspace/repo', content: '内容', applicability: '条件', evidence: '证据' }
+  vi.mocked(appServer.listTurns).mockResolvedValueOnce({ data: [turn('t1')], nextCursor: 'next' }).mockResolvedValueOnce({ data: [turn('t2')], nextCursor: null })
+  result(JSON.stringify({ memories: [{ ...candidate, sourceTurnIds: ['invented'], threadId: 'fake', id: 'fake', cwd: '/fake', createdAt: 123 }] }))
   vi.mocked(runtime.memorySave).mockResolvedValue([{ id: 'mem-1', title: '经验', scope: 'workspace/repo', path: '/memory/MEMORY.md' }])
   const publish = vi.fn().mockReturnValue('notice')
   await createMemoryService({ publish }).saveConversation({ threadId: 'source', cwd: '/repo' })
-  expect(runtime.memorySave).toHaveBeenCalledWith({ threadId: 'source', cwd: '/repo', sourceWorkspace: 'repo', sourceTurnIds: ['t1'], memories: [candidate] })
+  expect(runtime.memorySave).toHaveBeenCalledWith({ threadId: 'source', cwd: '/repo', sourceWorkspace: 'repo', sourceTurnIds: ['t1', 't2'], memories: [{ ...candidate, sourceTurnIds: ['t1', 't2'] }] })
   expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已保存 1 条记忆' }))
   vi.mocked(runtime.memorySave).mockRejectedValueOnce(new Error('磁盘已满'))
   await expect(createMemoryService({ publish }).saveConversation({ threadId: 'source', cwd: '/repo' })).rejects.toThrow('磁盘已满')
@@ -103,7 +105,10 @@ it('uses saved settings for the model, effort, prompt, turn selection and input 
   recent.items = [{ type: 'agentMessage', text: 'HEAD ' + 'x'.repeat(20000) + ' TAIL' }]
   vi.mocked(appServer.listTurns).mockResolvedValue({ data: [recent], nextCursor: 'older' })
   await createMemoryService({ publish: vi.fn() }).saveConversation({ threadId: 'source', cwd: '/repo' })
-  expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({ model: 'custom-model', developerInstructions: '只保留用户纠正', config: expect.objectContaining({ model_context_window: 20000 }) }))
+  expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({ model: 'custom-model', developerInstructions: expect.stringContaining('只保留用户纠正'), config: expect.objectContaining({ model_context_window: 20000 }) }))
+  const instructions = vi.mocked(appServer.startThread).mock.calls[0][0].developerInstructions
+  expect(instructions).toContain(MEMORY_TITLE_INSTRUCTIONS)
+  expect(instructions).toContain(MEMORY_PROVENANCE_INSTRUCTIONS)
   const request = vi.mocked(appServer.startTurn).mock.calls[0][0]
   expect(request.effort).toBe('high')
   const text = (request.input as Array<{ text: string }>)[0].text
@@ -119,4 +124,20 @@ it('loads only the requested recent turns and restores chronological order', asy
   expect((await loadMemoryTurns('source', 2)).map((value) => value.id)).toEqual(['previous', 'newest'])
   expect(appServer.listTurns).toHaveBeenCalledTimes(1)
   expect(appServer.listTurns).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, sortDirection: 'desc' }))
+})
+
+it('keeps the selected extraction range as provenance when history is truncated', async () => {
+  vi.mocked(runtime.getAppState).mockResolvedValue(JSON.stringify({ maxTurns: 1, budgetPercent: 10, contextWindowTokens: 20000 }))
+  const recent = turn('recent')
+  recent.items = [{ type: 'agentMessage', text: 'head ' + 'x'.repeat(20000) + ' tail' }]
+  vi.mocked(appServer.listTurns).mockResolvedValue({ data: [recent], nextCursor: 'older' })
+  result(JSON.stringify({ memories: [{ title: '经验', kind: 'fact', scope: 'workspace/repo', content: '内容', applicability: '条件', evidence: '证据' }] }))
+  vi.mocked(runtime.memorySave).mockResolvedValue([])
+  await createMemoryService({ publish: vi.fn() }).saveConversation({ threadId: 'source', cwd: '/repo' })
+  expect(runtime.memorySave).toHaveBeenCalledWith(expect.objectContaining({
+    threadId: 'source', sourceTurnIds: ['recent'], memories: [expect.objectContaining({ sourceTurnIds: ['recent'] })],
+  }))
+  expect(appServer.listTurns).toHaveBeenCalledTimes(1)
+  const request = vi.mocked(appServer.startTurn).mock.calls[0][0]
+  expect((request.input as Array<{ text: string }>)[0].text).toContain('中间上下文')
 })

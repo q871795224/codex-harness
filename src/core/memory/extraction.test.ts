@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { extractionPrompt, memoryTranscript, parseMemories, truncateHeadTail, OMITTED, MEMORY_INSTRUCTIONS, MEMORY_OUTPUT_SCHEMA } from './extraction'
+import { extractionPrompt, memoryTranscript, parseMemories, truncateHeadTail, OMITTED, MEMORY_TITLE_INSTRUCTIONS, MEMORY_INSTRUCTIONS, MEMORY_OUTPUT_SCHEMA } from './extraction'
 import type { Turn } from '../domain/codex'
 const size = (text: string) => new TextEncoder().encode(text).length
 
 describe('memory extraction input', () => {
+  it('includes title limits even when the user saved a custom extraction prompt', () => {
+    const result = extractionPrompt('history', { currentWorkspace: 'test', workspaces: ['test'], domains: [] }, 5000, '只保留用户纠正')
+    expect(result.prompt).toContain(MEMORY_TITLE_INSTRUCTIONS)
+    expect(MEMORY_INSTRUCTIONS).toContain(MEMORY_TITLE_INSTRUCTIONS)
+    expect(size('🙂'.repeat(60))).toBe(240)
+  })
   it('preserves the entire transcript below budget, including the middle', () => {
     expect(truncateHeadTail('开头 middle 结尾', 1000)).toBe('开头 middle 结尾')
   })
@@ -32,6 +38,14 @@ describe('memory extraction input', () => {
     expect(text).toContain('t1')
     expect(text).not.toContain('秘密规则')
     expect(text).not.toContain('内部推理')
+  })
+  it('requests content only and discards model-supplied provenance', () => {
+    const fields = ['title', 'kind', 'scope', 'content', 'applicability', 'evidence']
+    expect(Object.keys(MEMORY_OUTPUT_SCHEMA.properties.memories.items.properties)).toEqual(fields)
+    expect(MEMORY_OUTPUT_SCHEMA.properties.memories.items.required).toEqual(fields)
+    const draft = { title: '标题', kind: 'fact', scope: 'workspace/test', content: '内容', applicability: '条件', evidence: '依据' }
+    expect(parseMemories(JSON.stringify({ memories: [{ ...draft, sourceTurnIds: ['fake'], threadId: 'fake', id: 'fake', timestamp: 123 }] }))).toEqual([draft])
+    expect(() => parseMemories('{"memories":[null]}')).toThrow('格式无效')
   })
   it('allows an empty result, rejects prose and wrong containers', () => {
     expect(parseMemories('{"memories":[]}')).toEqual([])
