@@ -1,3 +1,4 @@
+import { ImageViewItem, WebSearchItem } from './BrowsingActivity'
 import { skillReads, skillReadStatus } from './skillActivity'
 import { SkillCatalogContext, useSkillCatalog } from './SkillCatalog'
 import { ToolCallDetails } from './ItemDetails'
@@ -725,6 +726,8 @@ const ThreadItemView = memo(function ThreadItemView({
       </article>
     )
   }
+  if (item.type === 'webSearch') return <WebSearchItem item={item} />
+  if (item.type === 'imageView') return <ImageViewItem item={item} cwd={cwd} />
   if (item.type === 'commandExecution') return <CommandItem item={item} />
   if (item.type === 'fileChange') return <FileChangeItem item={item} cwd={cwd} />
   if (['mcpToolCall', 'dynamicToolCall', 'functionCallOutput'].includes(item.type)) return <McpItem item={item} />
