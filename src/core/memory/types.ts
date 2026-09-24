@@ -1,10 +1,14 @@
-export interface MemoryCandidate {
+export interface MemoryDraft {
   title: string
   kind: 'preference' | 'fact' | 'experience' | 'reference'
   scope: string
   content: string
   applicability: string
   evidence: string
+}
+
+/** Harness-owned provenance for the selected extraction range, not per-item evidence. */
+export interface MemoryCandidate extends MemoryDraft {
   sourceTurnIds: string[]
 }
 

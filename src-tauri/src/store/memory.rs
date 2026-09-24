@@ -408,7 +408,7 @@ impl HarnessStore {
             let body = files.get_mut(&body_key).unwrap();
             let anchor = format!("<a id=\"{id}\"></a>");
             if !body.contains(&anchor) {
-                body.push_str(&format!("\n{anchor}\n\n### {}\n\n- ID：{id}\n- 类型：{}\n- 写入时间：{now}（Unix 秒，UTC）\n- 来源：会话 {}；turn {}\n- 来源目录：{}\n- 适用条件：{}\n- 验证情况：{}\n\n#### 内容\n\n{}\n", line(&item.title), item.kind, line(&input.thread_id), item.source_turn_ids.iter().map(|id| line(id)).collect::<Vec<_>>().join(", "), line(&input.cwd), line(&item.applicability), line(&item.evidence), item.content.trim()));
+                body.push_str(&format!("\n{anchor}\n\n### {}\n\n- ID：{id}\n- 类型：{}\n- 写入时间：{now}（Unix 秒，UTC）\n- 提炼来源范围（非逐条证据定位，历史可能按预算省略）：会话 {}；turn {}\n- 来源目录：{}\n- 适用条件：{}\n- 验证情况：{}\n\n#### 内容\n\n{}\n", line(&item.title), item.kind, line(&input.thread_id), item.source_turn_ids.iter().map(|id| line(id)).collect::<Vec<_>>().join(", "), line(&input.cwd), line(&item.applicability), line(&item.evidence), item.content.trim()));
             }
             let summary = files.get_mut(&summary_key).unwrap();
             if !summary.contains(&format!("MEMORY.md#{id}")) {
@@ -640,6 +640,7 @@ mod tests {
         assert!(body.starts_with("---\nscope: \"workspace/harness\"\n---"));
         assert_eq!(body.matches("### 保留来源").count(), 1);
         assert!(body.contains("turn-1"));
+        assert!(body.contains("提炼来源范围（非逐条证据定位，历史可能按预算省略）"));
         let index = fs::read_to_string(
             store
                 .root

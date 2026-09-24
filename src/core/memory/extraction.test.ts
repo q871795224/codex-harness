@@ -39,6 +39,14 @@ describe('memory extraction input', () => {
     expect(text).not.toContain('秘密规则')
     expect(text).not.toContain('内部推理')
   })
+  it('requests content only and discards model-supplied provenance', () => {
+    const fields = ['title', 'kind', 'scope', 'content', 'applicability', 'evidence']
+    expect(Object.keys(MEMORY_OUTPUT_SCHEMA.properties.memories.items.properties)).toEqual(fields)
+    expect(MEMORY_OUTPUT_SCHEMA.properties.memories.items.required).toEqual(fields)
+    const draft = { title: '标题', kind: 'fact', scope: 'workspace/test', content: '内容', applicability: '条件', evidence: '依据' }
+    expect(parseMemories(JSON.stringify({ memories: [{ ...draft, sourceTurnIds: ['fake'], threadId: 'fake', id: 'fake', timestamp: 123 }] }))).toEqual([draft])
+    expect(() => parseMemories('{"memories":[null]}')).toThrow('格式无效')
+  })
   it('allows an empty result, rejects prose and wrong containers', () => {
     expect(parseMemories('{"memories":[]}')).toEqual([])
     expect(() => parseMemories('nothing worth saving')).toThrow()

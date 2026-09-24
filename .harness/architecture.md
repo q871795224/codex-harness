@@ -26,7 +26,7 @@
 
 - 记忆是核心能力，`features/memory/MemoryButton.tsx` 直接接入输入框操作区，不依赖插件启停；`core/memory/` 负责分页读取会话、预算截断和 ephemeral Agent 的结构化提炼。
 - 核心设置的“记忆”页管理模型、推理强度、提示词、轮数和预算，使用 state.sqlite 的 app_state 键 `memory.settings.v1`；每次提炼读取一次设置，运行中的任务保持启动时配置。
-- `src-tauri/src/store/memory.rs` 通过现有 `state.sqlite` 的 `memory_*` 表维护名称与关联，Markdown 正文和索引保存到 `memory/`；模型只返回候选，Harness 校验来源与范围后写文件。
+- `src-tauri/src/store/memory.rs` 通过现有 `state.sqlite` 的 `memory_*` 表维护名称与关联，Markdown 正文和索引保存到 `memory/`。模型只返回标题、类型、归属、正文、适用条件和依据说明；Harness 自动组装来源会话、所选提炼轮次范围、目录、记忆 ID 和写入时间，忽略模型返回的元数据。来源范围不代表逐条证据定位，历史可能按预算省略；Harness 校验内容与范围后写文件。
 - 领域由“设置 → 工作区”的 tag 管理入口维护，绑定/解绑为增量操作，删除定义或解除关联均保留 Markdown 文件。提炼仅提供来源工作区关联的领域，写入时重新校验；Agent 不创建领域或修改关联。
 - Harness tab 在同一文件树中展示虚拟 `harness` 文档分组和 `memory` 目录；记忆文件经核心 store 读取和编辑，保存时比较读取版本并校验 scope，正文保存与索引重建共用批次写入，插件只消费 `harness.files` 服务。
 - 文件写入由 SQLite 写锁协调，未完成的正文/索引批次在下次记忆操作时恢复。详细范围及当前阶段限制见 `docs/memory/phase-1/README.md`。

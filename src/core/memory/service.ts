@@ -3,7 +3,7 @@ import { DEFAULT_BACKGROUND_MODEL, EPHEMERAL_THREAD_DISABLED_CONFIG, textInput, 
 import { appServer } from '../runtime/appServerClient'
 import { runtime } from '../runtime/bridge'
 import type { NotificationService } from '../notifications/store'
-import { extractionPrompt, MEMORY_OUTPUT_SCHEMA, memoryTranscript, parseMemories } from './extraction'
+import { extractionPrompt, memoryDeveloperInstructions, MEMORY_OUTPUT_SCHEMA, memoryTranscript, parseMemories } from './extraction'
 import type { MemoryService, SavedMemory } from './types'
 
 export async function loadMemoryTurns(threadId: string, maxTurns = 0): Promise<Turn[]> {
@@ -24,7 +24,7 @@ export async function loadMemoryTurns(threadId: string, maxTurns = 0): Promise<T
 export async function extractMemoryJson(cwd: string, prompt: string, model: string, window: number, percent: number, config: Record<string, unknown>, settings: MemorySettings = DEFAULT_MEMORY_SETTINGS): Promise<string> {
   const response = await appServer.startThread({
     cwd, runtimeWorkspaceRoots: [cwd], model, approvalPolicy: 'never', sandbox: 'read-only',
-    ephemeral: true, developerInstructions: settings.prompt,
+    ephemeral: true, developerInstructions: memoryDeveloperInstructions(settings.prompt),
     config: {
       ...EPHEMERAL_THREAD_DISABLED_CONFIG,
       ...Object.fromEntries(Object.keys((config.mcp_servers as object | undefined) ?? {}).map((name) => [`mcp_servers.${name}.enabled`, false])),
@@ -109,8 +109,9 @@ export function createMemoryService(notifications: NotificationService): MemoryS
         const { prompt, truncated } = extractionPrompt(transcript, catalog, Math.floor(contextWindow * percent / 100), settings.prompt, settings.budgetPercent)
         const model = settings.model || (typeof config.model === 'string' && config.model ? config.model : DEFAULT_BACKGROUND_MODEL)
         const output = await extractMemoryJson(cwd, prompt, model, contextWindow, percent, config, settings)
-        const memories = parseMemories(output)
-        const saved = memories.length ? await runtime.memorySave({ threadId, cwd, sourceWorkspace: catalog.currentWorkspace, sourceTurnIds: turns.map((turn) => turn.id), memories }) : []
+        const sourceTurnIds = turns.map((turn) => turn.id)
+        const memories = parseMemories(output).map((draft) => ({ ...draft, sourceTurnIds: [...sourceTurnIds] }))
+        const saved = memories.length ? await runtime.memorySave({ threadId, cwd, sourceWorkspace: catalog.currentWorkspace, sourceTurnIds, memories }) : []
         notifications.publish({
           ...notice, id, level: 'info', state: 'done',
           title: saved.length ? `已保存 ${saved.length} 条记忆` : '本次没有值得保存的记忆',
