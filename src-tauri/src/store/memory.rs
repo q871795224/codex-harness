@@ -41,6 +41,33 @@ pub struct MemorySaveInput {
     source_turn_ids: Vec<String>,
     memories: Vec<MemoryCandidate>,
 }
+const MAX_MEMORY_TITLE_BYTES: usize = 240;
+
+impl MemorySaveInput {
+    // Only operational metadata: never persist candidate titles, bodies or supplied IDs.
+    pub fn validation_diagnostics(&self) -> serde_json::Value {
+        serde_json::json!({
+            "threadId": self.thread_id,
+            "candidateCount": self.memories.len(),
+            "allowedTurnCount": self.source_turn_ids.len(),
+            "candidates": self.memories.iter().enumerate().map(|(index, item)| {
+                let unknown_count = item.source_turn_ids.iter()
+                    .filter(|id| !self.source_turn_ids.contains(id)).count();
+                serde_json::json!({
+                    "candidateIndex": index + 1,
+                    "titleBytes": item.title.len(),
+                    "titleChars": item.title.chars().count(),
+                    "titleLimitBytes": MAX_MEMORY_TITLE_BYTES,
+                    "sourceTurnCount": item.source_turn_ids.len(),
+                    "unknownSourceTurnCount": unknown_count,
+                    "titleTooLong": item.title.len() > MAX_MEMORY_TITLE_BYTES,
+                    "sourcesEmpty": item.source_turn_ids.is_empty(),
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct SavedMemory {
     id: String,
@@ -297,7 +324,7 @@ impl HarnessStore {
         }
         let allowed_domains = workspace_domains(&transaction, &input.source_workspace)?;
         // Validate the entire batch before modifying either files or metadata.
-        for item in &input.memories {
+        for (index, item) in input.memories.iter().enumerate() {
             let parts = scope_parts(&item.scope)?;
             if parts[0] == "workspace" && !known.iter().any(|name| name == parts[1]) {
                 return Err("未知记忆工作区".into());
@@ -318,14 +345,22 @@ impl HarnessStore {
                     return Err("记忆内容为空或过长".into());
                 }
             }
-            if item.title.len() > 240
-                || item.source_turn_ids.is_empty()
-                || item
-                    .source_turn_ids
-                    .iter()
-                    .any(|id| !input.source_turn_ids.contains(id))
-            {
-                return Err("记忆标题或来源 turn 无效".into());
+            let number = index + 1;
+            if item.title.len() > MAX_MEMORY_TITLE_BYTES {
+                return Err(format!("第 {number} 条记忆标题过长：{} UTF-8 字节，限制 {MAX_MEMORY_TITLE_BYTES} 字节（{} 个字符）", item.title.len(), item.title.chars().count()));
+            }
+            if item.source_turn_ids.is_empty() {
+                return Err(format!(
+                    "第 {number} 条记忆缺少来源轮次：sourceTurnIds 不能为空"
+                ));
+            }
+            let unknown_count = item
+                .source_turn_ids
+                .iter()
+                .filter(|id| !input.source_turn_ids.contains(id))
+                .count();
+            if unknown_count > 0 {
+                return Err(format!("第 {number} 条记忆引用了 {unknown_count} 个不在本次提炼范围内的来源轮次（允许 {} 个轮次）", input.source_turn_ids.len()));
             }
         }
         let now = SystemTime::now()
@@ -637,6 +672,67 @@ mod tests {
         assert!(store.memory_save(invalid).is_err());
         assert!(!store.root.join("memory").exists());
     }
+    #[test]
+    fn validation_errors_identify_candidate_and_preserve_batch_atomicity() {
+        for (title, sources, expected) in [
+            (
+                "中".repeat(81),
+                vec!["turn-1".into()],
+                "第 2 条记忆标题过长：243 UTF-8 字节",
+            ),
+            ("private-title".into(), vec![], "第 2 条记忆缺少来源轮次"),
+            (
+                "private-title".into(),
+                vec!["private-invalid-id".into()],
+                "第 2 条记忆引用了 1 个不在本次提炼范围内的来源轮次",
+            ),
+        ] {
+            let (_dir, store) = setup();
+            let mut data = input();
+            let mut bad = data.memories[0].clone();
+            bad.title = title;
+            bad.source_turn_ids = sources;
+            data.memories.push(bad);
+            let metadata = data.validation_diagnostics();
+            assert_eq!(metadata["candidateCount"], 2);
+            assert_eq!(metadata["candidates"][1]["candidateIndex"], 2);
+            let serialized = metadata.to_string();
+            for private in [
+                "private-title",
+                "private-invalid-id",
+                "保存记忆时",
+                "turn-1",
+            ] {
+                assert!(!serialized.contains(private));
+            }
+            let error = store.memory_save(data).unwrap_err();
+            assert!(error.starts_with(expected), "{error}");
+            assert!(!error.contains("private-"));
+            assert!(!store.root.join("memory").exists());
+        }
+    }
+
+    #[test]
+    fn title_byte_boundary_and_diagnostic_counts_are_explicit() {
+        let (_dir, store) = setup();
+        let mut data = input();
+        data.memories[0].title = "中".repeat(80);
+        let metadata = data.validation_diagnostics();
+        let candidate = &metadata["candidates"][0];
+        assert_eq!(candidate["titleBytes"], 240);
+        assert_eq!(candidate["titleChars"], 80);
+        assert_eq!(candidate["titleTooLong"], false);
+        assert_eq!(candidate["sourcesEmpty"], false);
+        assert_eq!(candidate["unknownSourceTurnCount"], 0);
+        assert!(store.memory_save(data).is_ok());
+        let mut bad = input();
+        bad.memories[0].source_turn_ids = vec!["unknown".into(), "turn-1".into()];
+        assert_eq!(
+            bad.validation_diagnostics()["candidates"][0]["unknownSourceTurnCount"],
+            1
+        );
+    }
+
     #[test]
     fn domain_links_and_content_have_separate_storage() {
         let (_dir, store) = setup();

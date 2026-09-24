@@ -104,7 +104,15 @@ async fn memory_save(
     input: store::MemorySaveInput,
 ) -> Result<Vec<store::SavedMemory>, String> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || store.memory_save(input))
+    let diagnostics = state.diagnostics.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let metadata = input.validation_diagnostics();
+        let result = store.memory_save(input);
+        if result.is_err() {
+            diagnostics.record("warn", "memory", "save.failed", metadata);
+        }
+        result
+    })
         .await
         .map_err(|e| e.to_string())?
 }
