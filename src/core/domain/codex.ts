@@ -339,6 +339,7 @@ export type McpRuntimeStatus =
 
 export interface Turn {
   id: string
+  itemsView?: 'notLoaded' | 'summary' | 'full'
   items: ThreadItem[]
   status: 'completed' | 'interrupted' | 'failed' | 'inProgress'
   error: { message?: string } | null

@@ -726,7 +726,7 @@ export function useHarness() {
   const loadArchivedThread = useCallback(async (threadId: string) => {
     const [read, turnsPage] = await Promise.all([
       appServer.readThread({ threadId, includeTurns: false }),
-      appServer.listTurns({ threadId, limit: 5, sortDirection: 'desc', itemsView: 'full' }),
+      appServer.listConversationTurns({ threadId, limit: 5, sortDirection: 'desc', itemsView: 'full' }),
     ])
     setDetails((current) => ({ ...current, [threadId]: archivedThreadDetail(read.thread, turnsPage) }))
     updateThread(threadId, (current) => ({ ...current, ...read.thread }))
@@ -927,7 +927,7 @@ export function useHarness() {
 
     setBusy((current) => ({ ...current, olderTurns: true }))
     try {
-      const response = await appServer.listTurns({
+      const response = await appServer.listConversationTurns({
         threadId,
         cursor,
         limit: 5,
@@ -2287,6 +2287,14 @@ export function useHarness() {
       (event) => {
         if (event.kind === 'disconnected') {
           handleTransportDisconnect()
+          if (event.retryable === false) {
+            if (transportRecoveryTimerRef.current !== null) {
+              window.clearTimeout(transportRecoveryTimerRef.current)
+              transportRecoveryTimerRef.current = null
+            }
+            notify('会话数据过大，已停止自动恢复。', 'error', event.message)
+            return
+          }
           notify('与 Codex 的连接已断开，正在尝试恢复会话。', 'warning', event.message)
           scheduleTransportRecovery()
         }

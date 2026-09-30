@@ -33,7 +33,7 @@ vi.mock('../../core/runtime/appServerClient', () => ({
     updateThreadMetadata: vi.fn().mockResolvedValue(undefined),
     startThread: vi.fn(), deleteThread: vi.fn().mockResolvedValue(undefined),
     resumeThread: vi.fn(), listQueue: vi.fn().mockResolvedValue({ data: [] }),
-    readThread: vi.fn(), listTurns: vi.fn(), unarchiveThread: vi.fn().mockResolvedValue(undefined),
+    readThread: vi.fn(), listConversationTurns: vi.fn(), unarchiveThread: vi.fn().mockResolvedValue(undefined),
   },
 }))
 
@@ -68,6 +68,29 @@ beforeEach(() => {
   vi.mocked(appServer.listThreads).mockImplementation(async (params) => page(params.archived ? 'archived' : 'active'))
 })
 afterEach(cleanup)
+
+it('cancels a scheduled transport recovery after a non-retryable size failure', async () => {
+  vi.mocked(appServer.resumeThread).mockResolvedValueOnce(resumeResponse('active'))
+  const { result, unmount } = await ready()
+  await act(async () => { await result.current.selectThread('active') })
+  vi.mocked(appServer.resumeThread).mockClear()
+  const onTransport = vi.mocked(runtime.listenTransport).mock.calls.at(-1)![0]
+  const publish = vi.spyOn(notifications, 'publish')
+  vi.useFakeTimers()
+  try {
+    act(() => {
+      onTransport({ kind: 'disconnected', message: 'temporary connection failure' })
+      onTransport({ kind: 'disconnected', message: '响应过大', retryable: false })
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    expect(appServer.resumeThread).not.toHaveBeenCalled()
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '会话数据过大，已停止自动恢复。', level: 'error' }))
+  } finally {
+    unmount()
+    vi.useRealTimers()
+    publish.mockRestore()
+  }
+})
 
 describe('archive view navigation', () => {
   it('keeps successful archive notifications silent but reports archive failures', async () => {
@@ -174,7 +197,7 @@ describe('archive view navigation', () => {
     await act(async () => { await result.current.setViewMode('archived') })
     const pending = deferred<Awaited<ReturnType<typeof appServer.readThread>>>()
     vi.mocked(appServer.readThread).mockReturnValue(pending.promise)
-    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [], nextCursor: null })
+    vi.mocked(appServer.listConversationTurns).mockResolvedValue({ data: [], nextCursor: null })
     let selecting!: Promise<void>
     act(() => { selecting = result.current.selectThread('archived') })
     await act(async () => { await result.current.setViewMode('active') })
@@ -190,11 +213,11 @@ describe('archive view navigation', () => {
     const { result } = await ready()
     await act(async () => { await result.current.setViewMode('archived') })
     vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('archived') })
-    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [turn('turn-new'), turn('turn-old')], nextCursor: 'older-page' })
+    vi.mocked(appServer.listConversationTurns).mockResolvedValue({ data: [turn('turn-new'), turn('turn-old')], nextCursor: 'older-page' })
     await act(async () => { await result.current.selectThread('archived') })
     expect(appServer.resumeThread).not.toHaveBeenCalled()
     expect(appServer.readThread).toHaveBeenCalledWith({ threadId: 'archived', includeTurns: false })
-    expect(appServer.listTurns).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'archived', limit: 5, sortDirection: 'desc' }))
+    expect(appServer.listConversationTurns).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'archived', limit: 5, sortDirection: 'desc' }))
     const detail = result.current.details.archived
     expect(detail.turns.map((item) => item.id)).toEqual(['turn-old', 'turn-new'])
     expect(detail.items.map((entry) => entry.item.id)).toEqual(['item-turn-old', 'item-turn-new'])
@@ -207,7 +230,7 @@ describe('archive view navigation', () => {
     const { result } = await ready()
     vi.mocked(appServer.resumeThread).mockRejectedValueOnce(new Error('session active is archived. Run `codex unarchive active` to unarchive it first.'))
     vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('active') })
-    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [turn('turn-1')], nextCursor: null })
+    vi.mocked(appServer.listConversationTurns).mockResolvedValue({ data: [turn('turn-1')], nextCursor: null })
     const publish = vi.spyOn(notifications, 'publish')
     await act(async () => { await result.current.selectThread('active') })
     expect(appServer.readThread).toHaveBeenCalledWith({ threadId: 'active', includeTurns: false })
@@ -221,7 +244,7 @@ describe('archive view navigation', () => {
     const { result } = await ready()
     await act(async () => { await result.current.setViewMode('archived') })
     vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('archived') })
-    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [], nextCursor: null })
+    vi.mocked(appServer.listConversationTurns).mockResolvedValue({ data: [], nextCursor: null })
     await act(async () => { await result.current.selectThread('archived') })
     vi.mocked(appServer.listThreads).mockImplementation(async (params) => params.archived ? { data: [], nextCursor: null } : page('archived'))
     vi.mocked(appServer.resumeThread).mockResolvedValue(resumeResponse('archived'))
@@ -239,7 +262,7 @@ describe('archive view navigation', () => {
     const { result } = await ready()
     await act(async () => { await result.current.setViewMode('archived') })
     vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('archived') })
-    vi.mocked(appServer.listTurns).mockResolvedValue({ data: [], nextCursor: null })
+    vi.mocked(appServer.listConversationTurns).mockResolvedValue({ data: [], nextCursor: null })
     await act(async () => { await result.current.selectThread('archived') })
     vi.mocked(appServer.listThreads).mockImplementation(async (params) => params.archived ? { data: [], nextCursor: null } : page('archived'))
     vi.mocked(appServer.resumeThread).mockResolvedValue(resumeResponse('archived'))

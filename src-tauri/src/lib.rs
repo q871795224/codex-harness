@@ -1251,6 +1251,9 @@ pub fn run() {
                 app.handle().clone(),
                 diagnostics.clone(),
                 analytics.clone(),
+                app_server::history_response_limit(
+                    store.get_app_state("conversationHistoryPreferences")?.as_deref(),
+                ),
             ));
             let claude_runtime = Arc::new(ClaudeRuntime::new(
                 app.handle().clone(),

@@ -23,7 +23,46 @@ use tokio::{
     sync::{mpsc, oneshot, Mutex},
     time::timeout,
 };
-use tokio_tungstenite::{client_async, tungstenite::Message};
+use tokio_tungstenite::{
+    client_async_with_config,
+    tungstenite::{
+        error::CapacityError, protocol::WebSocketConfig, Error as WebSocketError, Message,
+    },
+};
+
+pub fn history_response_limit(raw: Option<&str>) -> usize {
+    let mib = raw
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .filter(|value| {
+            matches!(
+                value.get("loading").and_then(Value::as_str),
+                Some("on-demand" | "eager")
+            )
+        })
+        .and_then(|value| value.get("maxResponseMiB").and_then(Value::as_u64))
+        .filter(|value| (16..=1024).contains(value))
+        .unwrap_or(256);
+    mib as usize * 1024 * 1024
+}
+
+fn websocket_config(max_response_bytes: usize) -> WebSocketConfig {
+    // Bound both a single image/item frame and the assembled message. History
+    // must still be paginated; increasing this is not a substitute for paging.
+    WebSocketConfig::default()
+        .max_frame_size(Some(max_response_bytes))
+        .max_message_size(Some(max_response_bytes))
+}
+
+fn transport_error(error: &WebSocketError) -> (String, bool) {
+    if let WebSocketError::Capacity(CapacityError::MessageTooLong { size, max_size }) = error {
+        (
+            format!("Codex App Server 响应过大（{size} > {max_size} 字节），已停止自动恢复。"),
+            false,
+        )
+    } else {
+        (format!("Codex App Server 连接已断开: {error}"), true)
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,17 +110,24 @@ pub struct AppServerManager {
     analytics: CodexAnalytics,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
+    max_response_bytes: usize,
     analytics_requests: tokio::sync::Semaphore,
 }
 
 impl AppServerManager {
-    pub fn new(app: AppHandle, diagnostics: Arc<DiagnosticLog>, analytics: CodexAnalytics) -> Self {
+    pub fn new(
+        app: AppHandle,
+        diagnostics: Arc<DiagnosticLog>,
+        analytics: CodexAnalytics,
+        max_response_bytes: usize,
+    ) -> Self {
         Self {
             app,
             diagnostics,
             analytics,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
+            max_response_bytes,
             analytics_requests: tokio::sync::Semaphore::new(4),
         }
     }
@@ -276,7 +322,13 @@ impl AppServerManager {
                 return Err(error);
             }
         };
-        let (socket, _) = match client_async("ws://localhost/", stream).await {
+        let (socket, _) = match client_async_with_config(
+            "ws://localhost/",
+            stream,
+            Some(websocket_config(self.max_response_bytes)),
+        )
+        .await
+        {
             Ok(socket) => socket,
             Err(error) => {
                 let error = format!("无法建立 Codex App Server WebSocket 连接: {error}");
@@ -344,6 +396,7 @@ impl AppServerManager {
 
         tauri::async_runtime::spawn(async move {
             let mut disconnect_message: Option<String> = None;
+            let mut retryable = true;
             while let Some(next) = reader.next().await {
                 match next {
                     Ok(Message::Text(text)) => match serde_json::from_str::<Value>(&text) {
@@ -430,13 +483,15 @@ impl AppServerManager {
                     Ok(Message::Close(_)) => break,
                     Ok(_) => {}
                     Err(error) => {
+                        let (message, can_retry) = transport_error(&error);
                         reader_diagnostics.record(
                             "error",
                             "app-server",
                             "connection.disconnected",
-                            json!({ "errorCode": error_code(&error.to_string()) }),
+                            json!({ "errorCode": error_code(&message) }),
                         );
-                        disconnect_message = Some(format!("Codex App Server 连接已断开: {error}"));
+                        disconnect_message = Some(message);
+                        retryable = can_retry;
                         break;
                     }
                 }
@@ -444,18 +499,19 @@ impl AppServerManager {
 
             reader_alive.store(false, Ordering::Relaxed);
             reader_diagnostics.record("info", "app-server", "connection.closed", json!({}));
+            let message = disconnect_message
+                .unwrap_or_else(|| "Codex App Server 连接已关闭。请重试。".to_string());
             let mut waiters = reader_pending.lock().await;
             for (_, pending) in waiters.drain() {
-                let _ = pending
-                    .sender
-                    .send(Err("Codex App Server 连接已关闭。请重试。".to_string()));
+                let _ = pending.sender.send(Err(message.clone()));
             }
             if !reader_intentional_disconnect.load(Ordering::Relaxed) {
                 let _ = app.emit(
                     "app-server:transport",
                     json!({
                         "kind": "disconnected",
-                        "message": disconnect_message.unwrap_or_else(|| "Codex App Server 连接已关闭。".to_string())
+                        "message": message,
+                        "retryable": retryable,
                     }),
                 );
             }
@@ -1194,6 +1250,56 @@ fn should_persist_notification(method: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn configurable_limit_accepts_large_frames_and_stops_retrying_over_limit() {
+        for (mib, accepted) in [(256, true), (16, false)] {
+            let (client, server) = UnixStream::pair().unwrap();
+            let sender = tokio::spawn(async move {
+                let mut ws = tokio_tungstenite::accept_async(server).await.unwrap();
+                let _ = ws
+                    .send(Message::Text("x".repeat(17 * 1024 * 1024).into()))
+                    .await;
+            });
+            let limit = history_response_limit(Some(&format!(
+                r#"{{"loading":"eager","maxResponseMiB":{mib}}}"#
+            )));
+            let config = websocket_config(limit);
+            assert_eq!(config.max_frame_size, config.max_message_size);
+            let (mut ws, _) = client_async_with_config("ws://localhost/", client, Some(config))
+                .await
+                .unwrap();
+            let received = ws.next().await.unwrap();
+            if accepted {
+                assert_eq!(received.unwrap().len(), 17 * 1024 * 1024);
+            } else {
+                let (message, retryable) = transport_error(&received.unwrap_err());
+                assert!(!retryable);
+                assert_eq!(error_code(&message), "response_too_large");
+            }
+            drop(ws);
+            sender.await.unwrap();
+        }
+    }
+
+    #[test]
+    fn validates_persisted_response_limits_and_keeps_transient_errors_retryable() {
+        for raw in [
+            None,
+            Some("invalid"),
+            Some(r#"{"loading":"invalid","maxResponseMiB":250}"#),
+            Some(r#"{"maxResponseMiB":0}"#),
+            Some(r#"{"maxResponseMiB":1025}"#),
+            Some(r#"{"maxResponseMiB":20.5}"#),
+        ] {
+            assert_eq!(history_response_limit(raw), 256 * 1024 * 1024);
+        }
+        assert_eq!(
+            history_response_limit(Some(r#"{"loading":"eager","maxResponseMiB":250}"#)),
+            250 * 1024 * 1024
+        );
+        assert!(transport_error(&WebSocketError::ConnectionClosed).1);
+    }
 
     #[test]
     fn reads_app_server_version_from_daemon_status() {
