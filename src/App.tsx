@@ -8,7 +8,7 @@ import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter, NotificationViewport } from './features/notifications/Notifications'
 import { useReleaseNotifications } from './features/notifications/useReleaseNotifications'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw, Users } from 'lucide-react'
+import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
@@ -661,13 +661,11 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
       } as CSSProperties}
     >
       <div className="native-titlebar-drag-region" data-tauri-drag-region />
-      <nav className="interface-mode-switch" aria-label="工作模式">
-        <button type="button" aria-pressed={mode === 'conversation'} onClick={() => selectMode('conversation')}><MessageSquareText size={12} />会话</button>
-        <button type="button" aria-pressed={mode === 'team'} onClick={() => selectMode('team')}><Users size={12} />团队</button>
-      </nav>
       {teamVisited && <div className="native-team-surface" hidden={mode !== 'team'}>
         <Suspense fallback={<div className="team-mode-loading">正在加载团队…</div>}><TeamMode
           service={teams}
+          sidebarWidth={harness.navigation.sidebarWidth}
+          onSwitchView={() => selectMode('conversation')}
           workspaces={harness.workspaces}
           initialWorkspace={workspace?.root ?? harness.selectedWorkspaceRoot}
           onOpenConversation={(threadId) => {
@@ -681,6 +679,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
         /></Suspense>
       </div>}
       <Sidebar
+        onSwitchView={() => selectMode('team')}
         workspaces={harness.workspaces}
         threads={harness.threads}
         threadRoots={harness.threadRoots}

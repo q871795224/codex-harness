@@ -1,3 +1,5 @@
+import { BrandRow } from '../navigation/BrandRow'
+import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { ArrowLeft, Bell, Bot, CheckCircle2, Circle, CircleDot, ClipboardList, Plus, Search, Settings2, Users } from 'lucide-react'
 import type { Workspace } from '../../core/domain/codex'
@@ -13,6 +15,8 @@ const pages = { tasks: '任务', members: '成员', teams: '团队' }
 const freshMember = (): AgentMember => ({ id: crypto.randomUUID(), name: '', description: '', instructions: '', provider: 'codex', model: '', effort: '', skills: [], access: 'isolated-delivery', archived: false })
 
 interface Props {
+  onSwitchView?: () => void
+  sidebarWidth?: number
   service: TeamsService
   workspaces: Workspace[]
   initialWorkspace: string | null
@@ -23,7 +27,7 @@ interface Props {
 }
 
 /** A core application surface. The plugin tab is only an alternative view of the same service. */
-export function TeamMode({ service, workspaces, initialWorkspace, onOpenConversation, onSettings, onNotifications, unreadNotifications }: Props) {
+export function TeamMode({ onSwitchView, sidebarWidth = 284, service, workspaces, initialWorkspace, onOpenConversation, onSettings, onNotifications, unreadNotifications }: Props) {
   const { state, loading, error } = useSyncExternalStore(service.subscribe, service.snapshot)
   const runs = useSyncExternalStore(service.runs.subscribe, service.runs.snapshot)
   const [page, setPage] = useState<Page>('tasks')
@@ -50,22 +54,22 @@ export function TeamMode({ service, workspaces, initialWorkspace, onOpenConversa
   const createTask = (target = selectedTeam && !selectedTeam.archived ? `team:${selectedTeam.id}` : '') => { setPage('tasks'); setSelection({ kind: 'new-task', target }) }
   const refresh = () => { void service.refresh().catch((e) => setSaveError(String(e))) }
   const heading = selection?.kind === 'new-task' ? '新任务' : selection?.kind === 'member' ? selection.member.name || '新成员' : selection?.kind === 'team' ? selection.team.name || '新团队' : task?.title ?? pages[page]
-  return <div className="team-mode team-workspace">
-    <aside className="team-mode-sidebar" aria-label="团队导航侧栏">
+  return <div className="team-mode" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
+    <aside className="sidebar team-mode-sidebar" aria-label="团队导航侧栏">
+      <BrandRow view="team" onSwitchView={onSwitchView} />
+      <div className="new-chat-split"><button className="new-chat-button solo" disabled={!state.members.some((m) => !m.archived)} onClick={() => createTask()}><Plus size={17} />新任务</button></div>
       <div className="team-mode-sidebar-header">
         <label className="team-mode-workspace"><span className="team-mode-workspace-icon"><Bot size={17} /></span><select aria-label="团队模式工作区" value={workspaceRoot} onChange={(e) => { setWorkspaceRoot(e.target.value); setSelection(null) }}><option value="">所有工作区</option>{workspaceChoices.map((root) => <option key={root} value={root}>{workspaces.find((w) => w.root === root)?.name ?? root.split('/').at(-1)}</option>)}</select></label>
-        <button className="team-mode-new-task" disabled={!state.members.some((m) => !m.archived)} onClick={() => createTask()}><Plus size={16} />新任务</button>
       </div>
       <div className="team-mode-sidebar-content">
-        <div className="team-mode-personal"><button onClick={onNotifications}><Bell size={16} />通知{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button></div>
         <nav className="team-mode-nav" aria-label="团队页面">
-          <section><h3>工作</h3><button aria-current={page === 'tasks' ? 'page' : undefined} onClick={() => navigate('tasks')}><ClipboardList size={16} />任务<b>{scopedTasks.filter((t) => !['done', 'stopped'].includes(t.status)).length}</b></button></section>
-          <section><h3>AI 团队</h3>{([{ id: 'members', icon: Bot }, { id: 'teams', icon: Users }] as const).map(({ id, icon: Icon }) => <button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={16} />{pages[id]}<b>{id === 'members' ? roster.filter((m) => !m.archived).length : state.teams.filter((t) => !t.archived).length}</b></button>)}</section>
+          <section><h3 className="sidebar-section-heading">工作</h3><button className={`thread-row ${page === 'tasks' ? 'selected' : ''}`} aria-current={page === 'tasks' ? 'page' : undefined} onClick={() => navigate('tasks')}><ClipboardList size={16} />任务<b>{scopedTasks.filter((t) => !['done', 'stopped'].includes(t.status)).length}</b></button></section>
+          <section><h3 className="sidebar-section-heading">AI 团队</h3>{([{ id: 'members', icon: Bot }, { id: 'teams', icon: Users }] as const).map(({ id, icon: Icon }) => <button key={id} className={`thread-row ${page === id ? 'selected' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={16} />{pages[id]}<b>{id === 'members' ? roster.filter((m) => !m.archived).length : state.teams.filter((t) => !t.archived).length}</b></button>)}</section>
         </nav>
       </div>
-      <footer className="team-mode-footer"><button onClick={onSettings}><Settings2 size={16} />设置</button><span>Harness</span></footer>
+      <footer className="sidebar-footer"><div className="notification-nav-split"><button className="notification-nav solo" onClick={onNotifications}><Bell size={16} />通知中心{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button></div><div className="settings-split"><button className="settings-toggle solo" onClick={onSettings}><Settings2 size={16} />设置</button></div></footer>
     </aside>
-    <main className="team-mode-main" aria-label="团队工作区">
+    <main className="main-pane team-workspace team-mode-main" aria-label="团队工作区">
       <header className="team-mode-header">
         <div className="team-mode-breadcrumb">{selection && <button aria-label="返回列表" onClick={() => setSelection(null)}><ArrowLeft size={15} /></button>}<span>{selectedTeam?.name ?? (teamId === 'direct' ? '直接派活' : '全部团队')}</span><span>/</span><strong>{heading}</strong></div>
         {!selection && page !== 'tasks' && <button className="primary" onClick={() => page === 'members' ? setSelection({ kind: 'member', member: freshMember() }) : setSelection({ kind: 'team', team: { id: crypto.randomUUID(), name: '', leaderId: '', memberIds: [], instructions: '', archived: false } })}><Plus size={14} />{page === 'members' ? '新成员' : '新团队'}</button>}
