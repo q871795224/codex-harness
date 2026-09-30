@@ -118,6 +118,14 @@ describe('thread lifecycle hydration', () => {
     expect(resume).toHaveBeenCalledTimes(1)
   })
 
+  it('does not retry a response-size failure even when it mentions a disconnected socket', async () => {
+    for (const message of ['Codex App Server 响应过大，已停止自动恢复。', 'WebSocket connection: Message too long: 29870831 > 16777216']) {
+      const resume = vi.fn().mockRejectedValue(new Error(message))
+      await expect(resumeThreadWithRetry(resume)).rejects.toThrow(message)
+      expect(resume).toHaveBeenCalledTimes(1)
+    }
+  })
+
   it('restores a descending history page into chronological UI state', () => {
     const detail = resumedThreadDetail(response())
 

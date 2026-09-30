@@ -1,3 +1,4 @@
+import { HistorySettings } from './HistorySettings'
 import type { useCodexUpdate } from '../codex/useCodexUpdate'
 import { MemorySettings } from './MemorySettings'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -72,7 +73,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
+type SettingsPage = 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -90,6 +91,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
   const pageMeta: Record<SettingsPage, { heading: string; kicker: string }> = {
     workspaces: { heading: '工作区', kicker: 'WORKSPACES' },
     appearance: { heading: '外观', kicker: 'APPEARANCE' },
+    history: { heading: '会话历史', kicker: 'CONVERSATION' },
     'conversation-stats': { heading: '底部信息', kicker: 'CONVERSATION' },
     keyboard: { heading: '快捷键', kicker: 'KEYBOARD' },
     models: { heading: '模型', kicker: 'CODEX' },
@@ -155,6 +157,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
             <button type="button" className={page === 'conversation-stats' ? 'selected' : ''} aria-current={page === 'conversation-stats' ? 'page' : undefined} onClick={() => setPage('conversation-stats')}>
               <Activity size={16} />底部信息
             </button>
+            <button type="button" className={page === 'history' ? 'selected' : ''} aria-current={page === 'history' ? 'page' : undefined} onClick={() => setPage('history')}><MessageSquareText size={16} />会话历史</button>
             <button type="button" className={page === 'keyboard' ? 'selected' : ''} aria-current={page === 'keyboard' ? 'page' : undefined} onClick={() => setPage('keyboard')}>
               <Keyboard size={16} />快捷键
             </button>
@@ -194,6 +197,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           {page === 'workspaces' && <WorkspaceSettings workspaces={workspaces} onAdd={onAddWorkspace} onRemove={onRemoveWorkspace} />}
           {page === 'appearance' && <AppearanceSettings sidebarUnpinnedCount={sidebarUnpinnedCount} onSidebarUnpinnedCount={onSidebarUnpinnedCount} theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
           {page === 'conversation-stats' && <ConversationStatsSettings preferences={conversationStats} data={conversationStatsData} onChange={onConversationStats} />}
+          {page === 'history' && <HistorySettings />}
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
           {page === 'models' && <ModelsSettings codex={codex} claudeModels={claudeModels} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}

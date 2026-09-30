@@ -59,6 +59,7 @@ export type DiagnosticErrorCode =
   | 'no_rollout_found'
   | 'timeout'
   | 'connection_failed'
+  | 'response_too_large'
   | 'permission_denied'
   | 'request_failed'
   | 'unhandled_error'
@@ -88,6 +89,7 @@ export interface ClientDiagnostic {
 export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
   const message = error instanceof Error ? error.message : String(error)
   const normalized = message.toLowerCase()
+  if (message.includes('响应过大') || normalized.includes('message too long')) return 'response_too_large'
   if (normalized.includes('no rollout found')) return 'no_rollout_found'
   if (normalized.includes('timeout') || message.includes('超时')) return 'timeout'
   if (normalized.includes('connection') || message.includes('连接') || normalized.includes('socket')) return 'connection_failed'
@@ -746,7 +748,7 @@ interface ResumeThreadResponse {
 function resumeThread(threadId: string, limit: number): Promise<ResumeThreadResponse> {
   return invoke<ResumeThreadResponse>('app_server_request', {
     method: 'thread/resume',
-    params: { threadId, excludeTurns: true, initialTurnsPage: { limit, sortDirection: 'desc', itemsView: 'full' } },
+    params: { threadId, excludeTurns: true, initialTurnsPage: { limit, sortDirection: 'desc', itemsView: 'summary' } },
   })
 }
 

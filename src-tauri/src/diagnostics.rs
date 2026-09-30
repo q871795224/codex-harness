@@ -136,7 +136,9 @@ impl DiagnosticLog {
 
 pub fn error_code(error: &str) -> &'static str {
     let message = error.to_ascii_lowercase();
-    if message.contains("no rollout found") {
+    if message.contains("响应过大") || message.contains("message too long") {
+        "response_too_large"
+    } else if message.contains("no rollout found") {
         "no_rollout_found"
     } else if message.contains("timeout") || message.contains("超时") {
         "timeout"

@@ -10,6 +10,7 @@ export interface TranscriptItem {
 
 export interface TranscriptTurn {
   turnId: string
+  itemsView?: Turn['itemsView']
   status?: Turn['status']
   error?: Turn['error']
   userRows: TranscriptItem[]
@@ -52,7 +53,7 @@ export function groupTranscriptItems(items: ThreadItemEntry[]): TranscriptItem[]
 
 export function groupTranscriptTurns(
   items: ThreadItemEntry[],
-  turnDetails: Array<Pick<Turn, 'id' | 'status' | 'error'>> = [],
+  turnDetails: Array<Pick<Turn, 'id' | 'status' | 'error' | 'itemsView'>> = [],
 ): TranscriptTurn[] {
   const turns: TranscriptTurn[] = []
   const byId = new Map<string, TranscriptItem[]>()
@@ -62,7 +63,7 @@ export function groupTranscriptTurns(
     if (byId.has(turnId)) return
     const detail = detailById.get(turnId)
     byId.set(turnId, [])
-    turns.push({ turnId, status: detail?.status, error: detail?.error, userRows: [], processRows: [], finalRows: [] })
+    turns.push({ turnId, itemsView: detail?.itemsView, status: detail?.status, error: detail?.error, userRows: [], processRows: [], finalRows: [] })
   }
 
   for (const detail of turnDetails) ensureTurn(detail.id)

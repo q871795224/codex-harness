@@ -23,6 +23,7 @@ export async function resumeThreadWithRetry<T>(resume: () => Promise<T>): Promis
 
 function isAppServerTransportError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
+  if (/响应过大|message too long/i.test(message)) return false
   return /(connection|socket|websocket|closed|连接|断开)/i.test(message)
 }
 
