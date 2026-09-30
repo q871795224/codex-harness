@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { AssignAction, TeamWorkspace } from './TeamWorkspace'
+import { AssignAction, MemberEditor, MemoryEditor, TeamWorkspace } from './TeamWorkspace'
 import type { TeamsService, TeamSnapshot, AgentMember, TeamTask } from '../../core/teams/types'
 import type { ConversationTabProps } from '../../extensions/types'
 vi.mock('../markdown/Markdown', () => ({ Markdown: ({ text }: { text: string }) => <div>{text}</div> }))
@@ -83,4 +83,28 @@ describe('team workspace', () => {
     fireEvent.click(screen.getByTitle('把这条回复作为任务说明，交给成员或团队'))
     expect((screen.getByLabelText('任务说明与验收要求') as HTMLTextAreaElement).value).toBe('实施方案：增加登录校验')
   })
+})
+
+it('keeps separate unsaved memory drafts across scopes and Markdown preview', async () => {
+  const { service } = fixture()
+  render(<MemoryEditor memberId="member" service={service} cwd="/repo" />)
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '经验 Markdown' }) as HTMLTextAreaElement).value).toBe('# 当前经验'))
+  fireEvent.change(screen.getByRole('textbox', { name: '经验 Markdown' }), { target: { value: '工作区草稿' } })
+  fireEvent.change(screen.getByLabelText('记忆范围'), { target: { value: 'global' } })
+  fireEvent.change(screen.getByRole('textbox', { name: '经验 Markdown' }), { target: { value: '通用草稿' } })
+  fireEvent.click(screen.getByRole('button', { name: '预览 Markdown' }))
+  expect(screen.getByText('通用草稿')).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('记忆范围'), { target: { value: 'workspace' } })
+  expect((screen.getByRole('textbox', { name: '经验 Markdown' }) as HTMLTextAreaElement).value).toBe('工作区草稿')
+  fireEvent.click(screen.getByRole('button', { name: '保存记忆' }))
+  await waitFor(() => expect(service.saveMemory).toHaveBeenCalledWith('member', 3, '工作区草稿', '/repo'))
+})
+it('keeps unsaved member configuration when visiting memory', async () => {
+  const { service } = fixture()
+  render(<MemberEditor member={member} service={service} cwd="/repo" saved={() => {}} />)
+  fireEvent.change(screen.getByLabelText('成员名称'), { target: { value: '新名字' } })
+  fireEvent.click(screen.getByRole('button', { name: '成员记忆' }))
+  fireEvent.click(screen.getByRole('button', { name: '职责与配置' }))
+  expect((screen.getByLabelText('成员名称') as HTMLInputElement).value).toBe('新名字')
+  await waitFor(() => expect(service.models).toHaveBeenCalled())
 })
