@@ -57,13 +57,14 @@ export function TeamWorkspace({ service, context }: { service: TeamsService; con
   const [member, setMember] = useState<AgentMember | null>(null)
   const [team, setTeam] = useState<AgentTeam | null>(null)
   const [creatingTask, setCreatingTask] = useState(false)
+  const [scope, setScope] = useState<'workspace' | 'all'>('workspace')
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const action = useAction()
   const { state } = snapshot
   const task = state.tasks.find((t) => t.id === selected)
   const cwd = context.threadCwd ?? context.workspaceRoot ?? ''
-  const tasks = state.tasks.filter((t) => (filter === 'all' || t.status === filter) && `${t.title} ${t.brief}`.toLowerCase().includes(query.toLowerCase()))
+  const tasks = state.tasks.filter((t) => (scope === 'all' || !cwd || t.workspaceRoot === cwd) && (filter === 'all' || t.status === filter) && `${t.title} ${t.brief}`.toLowerCase().includes(query.toLowerCase()))
   const navigate = (next: typeof page) => { setPage(next); setSelected(null); setMember(null); setTeam(null); setCreatingTask(false) }
   const newTeam = () => setTeam({ id: crypto.randomUUID(), name: '', leaderId: '', memberIds: [], instructions: '', archived: false })
   const hasDetail = Boolean(task || member || team || creatingTask)
@@ -71,12 +72,13 @@ export function TeamWorkspace({ service, context }: { service: TeamsService; con
   const closeDetail = () => { setSelected(null); setMember(null); setTeam(null); setCreatingTask(false) }
   return <div className="team-workspace">
     <div className="team-topbar">
-      <nav className="team-nav" aria-label="团队导航">
+      <nav className="team-nav" aria-label="团队导航" hidden={hasDetail}>
         <button className={page === 'tasks' ? 'selected' : ''} onClick={() => navigate('tasks')}><ClipboardList size={14} />任务 <b>{state.tasks.filter((t) => !['done', 'stopped'].includes(t.status)).length}</b></button>
         <button className={page === 'members' ? 'selected' : ''} onClick={() => navigate('members')}><Bot size={14} />成员 <b>{state.members.filter((m) => !m.archived).length}</b></button>
         <button className={page === 'teams' ? 'selected' : ''} onClick={() => navigate('teams')}><Users size={14} />团队 <b>{state.teams.filter((t) => !t.archived).length}</b></button>
       </nav>
-      <div className="team-actions"><button aria-label="刷新团队" title="刷新" onClick={() => void action.perform(() => service.refresh())} disabled={action.busy}><RefreshCw size={14} /></button>
+      {hasDetail && <button className="team-back" onClick={closeDetail}><ArrowLeft size={14} />{page === 'tasks' ? '任务' : page === 'members' ? '成员' : '团队'}</button>}
+      <div className="team-actions" hidden={hasDetail}><button aria-label="刷新团队" title="刷新" onClick={() => void action.perform(() => service.refresh())} disabled={action.busy}><RefreshCw size={14} /></button>
         {page === 'tasks' ? <button onClick={() => { closeDetail(); setCreatingTask(true) }} disabled={!state.members.some((m) => !m.archived)}><Plus size={14} />新任务</button>
           : page === 'members' ? <button onClick={() => setMember(newMember())}><Plus size={14} />创建成员</button>
           : <button disabled={state.members.filter((m) => !m.archived).length < 2} onClick={newTeam}><Plus size={14} />创建团队</button>}
@@ -84,17 +86,17 @@ export function TeamWorkspace({ service, context }: { service: TeamsService; con
     </div>
     <ErrorLine text={snapshot.error ?? action.error} />
     {snapshot.loading ? <p className="team-empty">正在加载…</p> : <div className={`team-split${hasDetail ? ' has-detail' : ''}`}>
-      <section className="team-list-pane" aria-label={page === 'tasks' ? '任务列表' : page === 'members' ? '成员列表' : '团队列表'}>
+      <section className="team-list-pane" hidden={hasDetail} aria-label={page === 'tasks' ? '任务列表' : page === 'members' ? '成员列表' : '团队列表'}>
         {page === 'tasks' ? <>
-          <div className="team-toolbar"><input aria-label="搜索任务" placeholder="搜索任务" value={query} onChange={(e) => setQuery(e.target.value)} /><select aria-label="任务状态" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">全部状态</option>{Object.entries(statusLabels).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></div>
+          <div className="team-toolbar"><input aria-label="搜索任务" placeholder="搜索任务" value={query} onChange={(e) => setQuery(e.target.value)} /><select aria-label="任务范围" value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}><option value="workspace">当前工作区</option><option value="all">所有工作区</option></select><select aria-label="任务状态" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">全部状态</option>{Object.entries(statusLabels).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></div>
           <div className="team-task-list">{tasks.map((t) => <button key={t.id} className={`team-list-row${t.id === selected ? ' selected' : ''}`} aria-pressed={t.id === selected} onClick={() => { closeDetail(); setSelected(t.id) }}><span className={`team-status-dot ${t.status}`} /><span className="team-row-text"><strong>{t.title}</strong><small>{t.team?.name ?? t.members[0]?.name} · {t.workspaceRoot.split('/').at(-1)} · {t.steps.length} 次</small></span><span className={`team-badge ${t.status}`}>{statusLabels[t.status]}</span></button>)}
             {!tasks.length && <div className="team-empty">{state.members.length ? '暂无任务' : <button onClick={() => { navigate('members'); setMember(newMember()) }}>创建成员</button>}</div>}
           </div>
         </> : page === 'members' ? <div className="team-task-list">{state.members.map((m) => <button key={m.id} className={`team-list-row${m.id === member?.id ? ' selected' : ''}`} aria-pressed={m.id === member?.id} onClick={() => setMember(structuredClone(m))}><Bot size={14} /><span className="team-row-text"><strong>{m.name}</strong><small>{m.description || m.model || m.provider}</small></span><span className="team-badge">{m.archived ? '已归档' : m.access === 'read-only' ? '只读' : '开发'}</span></button>)}{!state.members.length && <p className="team-empty">暂无成员</p>}</div>
         : <div className="team-task-list">{state.teams.map((t) => <button key={t.id} className={`team-list-row${t.id === team?.id ? ' selected' : ''}`} aria-pressed={t.id === team?.id} onClick={() => setTeam(structuredClone(t))}><Users size={14} /><span className="team-row-text"><strong>{t.name}</strong><small>{state.members.find((m) => m.id === t.leaderId)?.name} · {t.memberIds.length} 人</small></span>{t.archived && <span className="team-badge">已归档</span>}</button>)}{!state.teams.length && <p className="team-empty">{state.members.length < 2 ? '至少两名成员可组建团队' : '暂无团队'}</p>}</div>}
       </section>
-      {task ? <TaskDetail key={task.id} task={task} service={service} close={closeDetail} /> : <section className="team-detail" aria-label="详情">
-        {hasDetail ? <><header><button aria-label="关闭详情" onClick={closeDetail}><ArrowLeft size={14} /></button><h3>{detailTitle}</h3></header>
+      {task ? <TaskDetail key={task.id} task={task} service={service} /> : <section className="team-detail" hidden={!hasDetail} aria-label="详情">
+        {hasDetail ? <><header><h3>{detailTitle}</h3></header>
           {member ? <MemberEditor key={member.id} member={member} service={service} cwd={cwd} saved={() => void action.perform(() => service.refresh())} />
             : team ? <TeamEditor key={team.id} team={team} service={service} saved={() => void action.perform(() => service.refresh())} />
             : <TaskForm service={service} cwd={cwd} threadId={context.threadId} created={(id) => { setCreatingTask(false); setSelected(id) }} />}
@@ -174,7 +176,7 @@ function TaskForm({ service, cwd, threadId, initialBrief = '', created }: { serv
   </form>
 }
 
-function TaskDetail({ task, service, close }: { task: TeamTask; service: TeamsService; close: () => void }) {
+function TaskDetail({ task, service }: { task: TeamTask; service: TeamsService }) {
   const runs = useSyncExternalStore(service.runs.subscribe, service.runs.snapshot)
   const action = useAction()
   const [feedback, setFeedback] = useState('')
@@ -182,7 +184,7 @@ function TaskDetail({ task, service, close }: { task: TeamTask; service: TeamsSe
   const [showBudget, setShowBudget] = useState(false)
   const [result, setResult] = useState<{ step: TeamStep; text: string } | null>(null)
   const [memoryDraft, setMemoryDraft] = useState<{ memberId: string; revision: number; text: string } | null>(null)
-  return <aside className="team-detail"><header><button aria-label="关闭任务详情" onClick={close}><ArrowLeft size={16} /></button><span className={`team-badge ${task.status}`}>{statusLabels[task.status]}</span><h3>{task.title}</h3></header>
+  return <aside className="team-detail"><header><span className={`team-badge ${task.status}`}>{statusLabels[task.status]}</span><h3>{task.title}</h3></header>
     <div className="team-detail-body"><div className="team-actions">
       {(['draft', 'paused'].includes(task.status) || (task.status === 'running' && !service.isCoordinating(task.id))) && <button disabled={action.busy} onClick={() => void action.perform(() => service.startTask(task.id))}><Play size={14} />{task.status === 'running' ? '接管调度' : '启动 / 继续'}</button>}
       {task.status === 'running' && <button disabled={action.busy} onClick={() => void action.perform(() => service.pauseTask(task.id))}><Pause size={14} />暂停</button>}

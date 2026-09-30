@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { AssignAction, TeamWorkspace } from './TeamWorkspace'
-import type { TeamsService, TeamSnapshot, AgentMember } from '../../core/teams/types'
+import type { TeamsService, TeamSnapshot, AgentMember, TeamTask } from '../../core/teams/types'
 import type { ConversationTabProps } from '../../extensions/types'
 vi.mock('../markdown/Markdown', () => ({ Markdown: ({ text }: { text: string }) => <div>{text}</div> }))
 afterEach(cleanup)
@@ -37,7 +37,7 @@ describe('team workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /开发成员.*实现功能/ }))
     await screen.findByRole('option', { name: 'Test model' })
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.getByRole('region', { name: '成员列表' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: '成员列表' })).toBeNull()
     fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'claude' } })
     fireEvent.click(screen.getByRole('button', { name: '保存成员' }))
     await waitFor(() => expect(service.saveMember).toHaveBeenCalledWith(expect.objectContaining({ provider: 'claude', model: '', skills: [], effort: '' })))
@@ -55,6 +55,27 @@ describe('team workspace', () => {
     await screen.findByRole('alert')
     expect(service.saveMemory).toHaveBeenCalledWith('member', 3, '不能丢失的编辑', '/repo')
     expect((screen.getByLabelText('经验 Markdown') as HTMLTextAreaElement).value).toBe('不能丢失的编辑')
+  })
+  it('keeps editing in the main pane and returns to the member list', async () => {
+    const { service } = fixture(); render(<TeamWorkspace service={service} context={context} />)
+    fireEvent.click(screen.getByRole('button', { name: '成员 1' }))
+    fireEvent.click(screen.getByRole('button', { name: /开发成员.*实现功能/ }))
+    expect(screen.queryByRole('navigation', { name: '团队导航' })).toBeNull()
+    expect(screen.queryByRole('region', { name: '成员列表' })).toBeNull()
+    expect(screen.getByRole('region', { name: '详情' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '成员' }))
+    expect(screen.getByRole('region', { name: '成员列表' })).toBeTruthy()
+    expect(screen.queryByLabelText('成员名称')).toBeNull()
+  })
+  it('defaults to tasks from the selected workspace and can show all workspaces', () => {
+    const { service, snapshot } = fixture()
+    const task = { id: 'local', title: '本项目任务', brief: '说明', workspaceRoot: '/repo', members: [member], steps: [], status: 'draft', team: null } as unknown as TeamTask
+    snapshot.state.tasks = [task, { ...task, id: 'other', title: '其他项目任务', workspaceRoot: '/elsewhere' }]
+    render(<TeamWorkspace service={service} context={context} />)
+    expect(screen.getByText('本项目任务')).toBeTruthy()
+    expect(screen.queryByText('其他项目任务')).toBeNull()
+    fireEvent.change(screen.getByLabelText('任务范围'), { target: { value: 'all' } })
+    expect(screen.getByText('其他项目任务')).toBeTruthy()
   })
   it('uses the selected reply as the assignment brief instead of assuming inherited context', async () => {
     const { service } = fixture()
