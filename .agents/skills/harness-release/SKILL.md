@@ -19,6 +19,7 @@ Agent 只在排查发布失败、执行人工恢复或维护发布实现时使�
 
 ## 版本和工作树
 
+- 新版本重试遇到同名本地 release 分支时，`prepare` 保存旧提交引用，并将占用该分支的 worktree 切到原提交的 detached HEAD，保留目录及未提交改动，再删除旧分支并从本次基线重建。远端同名分支或已有 tag 仍拒绝，不自动删除远端发布状态。
 - 先检查工作树和 diff，确认没有夹带无关改动。
 - 版本号一旦用于 release commit、构建发布或同名 tag，后续改动必须先按 SemVer 递增版本号；patch/minor 可直接递增，major 需要用户明确确认。
 - 在 `isolated-delivery` worktree 中选择版本后执行 `scripts/release.py prepare <version>`，由脚本从最新 `origin/main` 创建 release 分支并同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`。快捷发布 runner 会额外传入已 fetch 的 `--base-sha`，此时 prepare 从该精确 commit 创建 release 分支。变更过的内置插件应在对应开发 PR 中同步更新 manifest 版本，不留到发布阶段判断。

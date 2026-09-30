@@ -264,6 +264,25 @@ def require_synced_versions(version: str) -> None:
         raise ReleaseError(f"version sources are not synchronized at {expected}: {mismatched}")
 
 
+def remove_previous_release_branch(branch: str) -> None:
+    ref = f"refs/heads/{branch}"
+    if try_run("git", "show-ref", "--verify", ref).returncode != 0:
+        return
+    old_sha = run("git", "rev-parse", ref, capture=True)
+    # Keep commits reachable even when the failed run has no remaining worktree.
+    backup = f"refs/harness/release-retries/{branch}/{time.time_ns()}"
+    run("git", "update-ref", backup, old_sha)
+    entries = run("git", "worktree", "list", "--porcelain", "-z", capture=True)
+    for entry in entries.split("\0\0"):
+        fields = entry.split("\0")
+        if f"branch {ref}" in fields:
+            path = next(field.removeprefix("worktree ") for field in fields if field.startswith("worktree "))
+            # Detaching at the same commit preserves staged and unstaged changes.
+            run("git", "switch", "--detach", old_sha, cwd=Path(path))
+    run("git", "branch", "-D", branch)
+    log_event("release.branch-replaced", branch=branch, previousCommit=old_sha, backupRef=backup)
+
+
 def command_prepare(version: str, base_sha: str | None = None) -> None:
     version = normalized_version(version)
     require_clean_worktree()
@@ -290,10 +309,9 @@ def command_prepare(version: str, base_sha: str | None = None) -> None:
     if run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}", capture=True):
         raise ReleaseError(f"remote tag already exists: {tag}")
     branch = f"release/{tag}"
-    if try_run("git", "show-ref", "--verify", f"refs/heads/{branch}").returncode == 0:
-        raise ReleaseError(f"local branch already exists: {branch}")
     if run("git", "ls-remote", "--heads", "origin", f"refs/heads/{branch}", capture=True):
         raise ReleaseError(f"remote branch already exists: {branch}")
+    remove_previous_release_branch(branch)
     run("git", "switch", "--create", branch, base_sha)
     update_version_files(REPO_ROOT, version)
     require_synced_versions(version)
