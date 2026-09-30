@@ -36,6 +36,13 @@ import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeRuntime
 import type { ProjectDocSnapshot, ProjectDocWriteOutcome, ProjectMeta, ProjectVersion } from '../../features/project-doc/types'
 import type { ProjectDocProposal } from '../project-docs/types'
 import type { SectionKey } from '../../features/project-doc/document'
+import { createThreadPermissionRequest } from './threadPermissions'
+
+const requestWithThreadPermissions = createThreadPermissionRequest({
+  request: (method, params) => invoke('app_server_request', { method, params }),
+  read: (key) => invoke<string | null>('get_app_state', { key }),
+  write: (key, value) => invoke<void>('set_app_state', { key, value }),
+})
 
 interface PluginInstanceDto {
   instanceId: string
@@ -124,7 +131,7 @@ export const runtime = {
   async request<T>(method: string, params: JsonObject = {}): Promise<T> {
     const started = performance.now()
     try {
-      return await invoke<T>('app_server_request', { method, params })
+      return await requestWithThreadPermissions<T>(method, params)
     } catch (error) {
       void invoke<void>('record_client_diagnostic', {
         diagnostic: {
@@ -674,10 +681,7 @@ export const runtime = {
   },
 
   async startCodexThread(workspaceRoot: string): Promise<string> {
-    const response = await invoke<{ thread: Thread }>('app_server_request', {
-      method: 'thread/start',
-      params: { cwd: workspaceRoot },
-    })
+    const response = await runtime.request<{ thread: Thread }>('thread/start', { cwd: workspaceRoot })
     return response.thread.id
   },
 
@@ -739,9 +743,8 @@ interface ResumeThreadResponse {
 }
 
 function resumeThread(threadId: string, limit: number): Promise<ResumeThreadResponse> {
-  return invoke<ResumeThreadResponse>('app_server_request', {
-    method: 'thread/resume',
-    params: { threadId, excludeTurns: true, initialTurnsPage: { limit, sortDirection: 'desc', itemsView: 'summary' } },
+  return runtime.request<ResumeThreadResponse>('thread/resume', {
+    threadId, excludeTurns: true, initialTurnsPage: { limit, sortDirection: 'desc', itemsView: 'summary' },
   })
 }
 
