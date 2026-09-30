@@ -70,3 +70,39 @@
 .team-modal .team-form { padding: 14px; }.team-modal .team-field { grid-template-columns: minmax(0, 1fr); }
 .team-limits .team-field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .team-toolbar select[aria-label="任务范围"] { width: 118px; }
+
+/* Shared full-page forms: centered settings groups and a pinned action footer. */
+.team-editor-page, .team-memory-page { display: flex; flex: 1; flex-direction: column; min-height: 0; height: 100%; }
+.team-workspace .team-editor-form { display: flex; flex-direction: column; gap: 0; width: 100%; max-width: none; height: 100%; min-height: 0; padding: 0; overflow: hidden; }
+.team-editor-scroll { flex: 1; min-height: 0; overflow: auto; }
+.team-editor-content { width: min(100%, 880px); margin: 0 auto; padding: 28px 24px 40px; }
+.team-form-section + .team-form-section { margin-top: 26px; }
+.team-form-section h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+.team-form-card { border: 1px solid var(--team-line); border-radius: 10px; background: var(--team-panel); overflow: hidden; }
+.team-form-card > * + * { border-top: 1px solid var(--team-line); }
+.team-form-card > .team-field { grid-template-columns: minmax(120px, .8fr) minmax(0, 1.2fr); gap: 20px; padding: 16px; align-items: center; }
+.team-form-card .team-field > span { color: var(--team-ink); font-size: 12px; padding: 0; }
+.team-form-card input, .team-form-card textarea, .team-form-card select { min-height: 32px; }
+.team-form-wide { padding: 16px; }.team-form-wide .team-field { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.team-form-card > .team-check { padding: 16px; }
+.team-skills-field { padding: 16px; }.team-skills-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; font-size: 12px; }
+.team-skills-options { max-height: 220px; overflow: auto; margin-top: 8px; }
+.team-workspace .team-editor-footer { display: block; flex-shrink: 0; padding: 12px 24px; border-top: 1px solid var(--team-line); background: var(--team-panel); }
+.team-editor-footer > div { max-width: 832px; margin: auto; display: flex; align-items: center; gap: 12px; }
+.team-editor-footer button { margin-left: auto; flex-shrink: 0; }
+.team-editor-footer .team-error { padding: 0; margin: 0; max-height: 65px; overflow: auto; }
+.team-memory-scope { max-width: 880px; width: 100%; margin: 0 auto; padding: 16px 24px 0; }
+.team-memory-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.team-memory-page .team-editor-content > .team-field { grid-template-columns: minmax(0, 1fr); }
+.team-memory-preview { min-height: 320px; border: 1px solid var(--team-line); border-radius: 8px; padding: 16px; }
+.team-editor-page > .team-subnav { flex-shrink: 0; padding: 0 max(16px, calc((100% - 832px) / 2)); }
+@media (max-width: 800px) { .team-form-card > .team-field { grid-template-columns: minmax(0, 1fr); gap: 10px; }.team-editor-content { padding: 20px 16px 30px; }.team-skills-heading { flex-wrap: wrap; } }
+
+.team-split.has-detail { display: flex; flex-direction: column; overflow: hidden; }
+.team-split.has-detail > .team-detail { flex: 1; min-height: 0; overflow: hidden; }
+.team-detail > header { flex-shrink: 0; }
+.team-modal .team-editor-form { padding: 0; max-height: calc(90vh - 75px); }
+.team-task-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 28px; min-height: 0; flex: 1; }
+.team-task-layout > .team-detail-body { min-height: 0; overflow: auto; padding-right: 4px; }.team-task-properties { min-height: 0; overflow: auto; border-left: 1px solid var(--team-line); padding: 0 0 20px 20px; }
+.team-task-properties .team-limits { grid-template-columns: minmax(0, 1fr); }.team-task-properties h4 { margin-top: 16px; }
+@media (max-width: 1050px) { .team-task-layout { display: block; overflow: auto; }.team-task-layout > .team-detail-body { overflow: visible; }.team-task-properties { border-left: 0; border-top: 1px solid var(--team-line); padding: 0 0 20px; } }

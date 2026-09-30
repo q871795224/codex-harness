@@ -106,54 +106,75 @@ export function TeamWorkspace({ service, context }: { service: TeamsService; con
   </div>
 }
 
-export function MemberEditor({ member, service, cwd, saved }: { member: AgentMember; service: TeamsService; cwd: string; saved: () => void }) {
+function FormSection({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="team-form-section"><h3>{title}</h3><div className="team-form-card">{children}</div></section>
+}
+export function MemberEditor({ member, service, cwd, saved, profileOnly = false }: { profileOnly?: boolean; member: AgentMember; service: TeamsService; cwd: string; saved: () => void }) {
+  const { state } = useSyncExternalStore(service.subscribe, service.snapshot)
+  const existing = state.members.some((m) => m.id === member.id)
   const [draft, setDraft] = useState(member)
   const [savedMessage, setSavedMessage] = useState('')
   const [section, setSection] = useState<'profile' | 'memory'>('profile')
   const [models, setModels] = useState<Awaited<ReturnType<TeamsService['models']>>>([])
   const [skills, setSkills] = useState<CodexSkill[]>([])
+  const [skillsLoaded, setSkillsLoaded] = useState(false)
+  const [skillQuery, setSkillQuery] = useState('')
   const [loadError, setLoadError] = useState('')
   const action = useAction()
   useEffect(() => { let active = true; service.models().then((m) => { if (active) setModels(m) }).catch((e) => { if (active) setLoadError(errorText(e)) }); return () => { active = false } }, [service])
-  const patch = (value: Partial<AgentMember>) => setDraft((old) => ({ ...old, ...value }))
+  const patch = (value: Partial<AgentMember>) => { setDraft((old) => ({ ...old, ...value })); setSavedMessage('') }
   const submit = (e: FormEvent) => { e.preventDefault(); void action.perform(async () => { await service.saveMember(draft); setSavedMessage('已保存'); saved() }) }
-  return <><nav className="team-subnav"><button className={section === 'profile' ? 'selected' : ''} onClick={() => setSection('profile')}>职责与配置</button><button className={section === 'memory' ? 'selected' : ''} onClick={() => setSection('memory')}>成员记忆</button></nav>
-    {section === 'memory' ? <MemoryEditor memberId={member.id} service={service} cwd={cwd} /> : <form className="team-form" onChange={() => setSavedMessage('')} onSubmit={submit}>
-      <div className="team-form-pair"><Field label="成员名称"><input autoFocus required maxLength={80} value={draft.name} onChange={(e) => patch({ name: e.target.value })} /></Field><Field label="Provider"><select value={draft.provider} onChange={(e) => patch({ provider: e.target.value as AgentMember['provider'], model: '', effort: '', skills: [] })}><option value="codex">Codex</option><option value="claude">Claude</option></select></Field></div>
-      <Field label="简介"><input value={draft.description} maxLength={500} onChange={(e) => patch({ description: e.target.value })} placeholder="例如：负责 React 实现与测试" /></Field>
-      <Field label="职责"><textarea required rows={4} maxLength={16000} value={draft.instructions} onChange={(e) => patch({ instructions: e.target.value })} placeholder="负责什么、如何工作、交付要求，以及遇到什么情况应停止。" /></Field>
-      <div className="team-form-pair"><Field label="模型"><select value={draft.model} onChange={(e) => patch({ model: e.target.value, effort: '' })}><option value="">使用 Provider 默认模型</option>{models.filter((m) => m.provider === draft.provider).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}{draft.model && !models.some((m) => m.id === draft.model) && <option value={draft.model}>{draft.model}</option>}</select></Field><Field label="推理强度"><select value={draft.effort} onChange={(e) => patch({ effort: e.target.value })}><option value="">模型默认</option>{(models.find((m) => m.id === draft.model && m.provider === draft.provider)?.efforts ?? []).map((value) => <option key={value}>{value}</option>)}</select></Field></div>
-      <Field label="工作区方式"><select value={draft.access} onChange={(e) => patch({ access: e.target.value as AgentMember['access'] })}><option value="isolated-delivery">隔离开发 · 为任务创建 worktree</option><option value="read-only">只读 · 分析、协调、审查</option></select></Field>
-      {draft.provider === 'codex' && <fieldset><legend>明确选用的 Skills</legend><button type="button" disabled={!cwd || action.busy} onClick={() => void action.perform(async () => setSkills(await service.skills(cwd)))}>读取当前工作区 Skills</button>{draft.skills.filter((s) => !skills.some((a) => a.path === s.path)).map((s) => <label className="team-check" key={s.path}><input type="checkbox" checked onChange={() => patch({ skills: draft.skills.filter((a) => a.path !== s.path) })} />{s.name}</label>)}{skills.map((s) => <label className="team-check" key={s.path}><input type="checkbox" checked={draft.skills.some((a) => a.path === s.path)} onChange={(e) => patch({ skills: e.target.checked ? [...draft.skills, { name: s.name, path: s.path }] : draft.skills.filter((a) => a.path !== s.path) })} />{s.name}</label>)}</fieldset>}
-
-      <label className="team-check"><input type="checkbox" checked={draft.archived} onChange={(e) => patch({ archived: e.target.checked })} />归档成员</label>
-      <ErrorLine text={action.error || loadError} /><footer>{savedMessage && <span role="status">{savedMessage}</span>}<button type="submit" className="primary" disabled={action.busy}>{action.busy ? '保存中…' : '保存成员'}</button></footer>
-    </form>}
-  </>
+  const visibleSkills = [...draft.skills.filter((s) => !skills.some((a) => a.path === s.path)), ...skills].filter((s) => s.name.toLowerCase().includes(skillQuery.toLowerCase()))
+  return <div className="team-editor-page">
+    {existing && !profileOnly && <nav className="team-subnav"><button className={section === 'profile' ? 'selected' : ''} onClick={() => setSection('profile')}>职责与配置</button><button className={section === 'memory' ? 'selected' : ''} onClick={() => setSection('memory')}>成员记忆</button></nav>}
+    <form className="team-form team-editor-form" hidden={section !== 'profile'} onSubmit={submit}>
+      <div className="team-editor-scroll"><div className="team-editor-content">
+        <FormSection title="身份"><Field label="成员名称"><input autoFocus required maxLength={80} value={draft.name} onChange={(e) => patch({ name: e.target.value })} placeholder="例如：前端开发" /></Field><Field label="简介"><textarea rows={2} value={draft.description} maxLength={500} onChange={(e) => patch({ description: e.target.value })} placeholder="这个成员负责什么？" /></Field></FormSection>
+        <FormSection title="行为与能力"><div className="team-form-wide"><Field label="职责"><textarea required rows={7} maxLength={16000} value={draft.instructions} onChange={(e) => patch({ instructions: e.target.value })} placeholder="写下工作目标、交付要求和需要停下来确认的情况。" /></Field></div>
+          {draft.provider === 'codex' && <div className="team-skills-field"><div className="team-skills-heading"><span>Skills · {draft.skills.length} 项已选</span><button type="button" disabled={!cwd || action.busy} onClick={() => void action.perform(async () => { setSkills(await service.skills(cwd)); setSkillsLoaded(true) })}>读取当前工作区 Skills</button></div>{(skillsLoaded || draft.skills.length > 0) && <><input aria-label="搜索 Skills" placeholder="搜索 Skills" value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} /><div className="team-skills-options">{visibleSkills.map((s) => <label className="team-check" key={s.path}><input type="checkbox" checked={draft.skills.some((a) => a.path === s.path)} onChange={(e) => patch({ skills: e.target.checked ? [...draft.skills, { name: s.name, path: s.path }] : draft.skills.filter((a) => a.path !== s.path) })} />{s.name}</label>)}{!visibleSkills.length && <p className="team-help">没有匹配的 Skills</p>}</div></>}{!cwd && <p className="team-help">选择工作区后可读取 Skills</p>}</div>}
+        </FormSection>
+        <FormSection title="执行配置"><Field label="Provider"><select value={draft.provider} onChange={(e) => { patch({ provider: e.target.value as AgentMember['provider'], model: '', effort: '', skills: [] }); setSkills([]); setSkillsLoaded(false) }}><option value="codex">Codex</option><option value="claude">Claude</option></select></Field>
+          <Field label="模型"><select value={draft.model} onChange={(e) => patch({ model: e.target.value, effort: '' })}><option value="">使用 Provider 默认模型</option>{models.filter((m) => m.provider === draft.provider).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}{draft.model && !models.some((m) => m.id === draft.model && m.provider === draft.provider) && <option value={draft.model}>{draft.model}</option>}</select></Field>
+          <Field label="推理强度"><select value={draft.effort} onChange={(e) => patch({ effort: e.target.value })}><option value="">模型默认</option>{(models.find((m) => m.id === draft.model && m.provider === draft.provider)?.efforts ?? []).map((value) => <option key={value}>{value}</option>)}</select></Field>
+          <Field label="工作区方式"><select value={draft.access} onChange={(e) => patch({ access: e.target.value as AgentMember['access'] })}><option value="isolated-delivery">隔离开发 · 为任务创建 worktree</option><option value="read-only">只读 · 分析、协调、审查</option></select></Field>
+        </FormSection>
+        {existing && <FormSection title="成员状态"><label className="team-check"><input type="checkbox" checked={draft.archived} onChange={(e) => patch({ archived: e.target.checked })} />归档成员</label></FormSection>}
+      </div></div>
+      <footer className="team-editor-footer"><div><ErrorLine text={action.error || loadError} />{savedMessage && <span role="status">{savedMessage}</span>}<button type="submit" className="primary" disabled={action.busy}>{action.busy ? '保存中…' : '保存成员'}</button></div></footer>
+    </form>
+    {existing && !profileOnly && <div className="team-memory-page" hidden={section !== 'memory'}><MemoryEditor memberId={member.id} service={service} cwd={cwd} /></div>}
+  </div>
 }
 
-function MemoryEditor({ memberId, service, cwd }: { memberId: string; service: TeamsService; cwd: string }) {
+export function MemoryEditor({ memberId, service, cwd }: { memberId: string; service: TeamsService; cwd: string }) {
   const [scope, setScope] = useState(cwd ? 'workspace' : 'global')
-  const workspace = scope === 'workspace' ? cwd : undefined
+  return <div className="team-editor-page"><div className="team-memory-scope"><Field label="记忆范围"><select value={cwd ? scope : 'global'} onChange={(e) => setScope(e.target.value)}><option value="global">成员通用经验 · 跨工作区</option>{cwd && <option value="workspace">当前工作区 · {cwd}</option>}</select></Field></div><div className="team-memory-page" hidden={!!cwd && scope !== 'global'}><MemoryDocument active={!cwd || scope === 'global'} memberId={memberId} service={service} /></div>{cwd && <div className="team-memory-page" hidden={scope !== 'workspace'}><MemoryDocument active={scope === 'workspace'} key={cwd} memberId={memberId} service={service} workspace={cwd} /></div>}</div>
+}
+function MemoryDocument({ memberId, service, workspace, active }: { active: boolean; memberId: string; service: TeamsService; workspace?: string }) {
   const [text, setText] = useState('')
   const [revision, setRevision] = useState<number | null>(null)
   const [saved, setSaved] = useState(false)
+  const [preview, setPreview] = useState(false)
   const action = useAction()
   useEffect(() => { let active = true; void action.perform(async () => { const doc = await service.readMemory(memberId, workspace); if (active) { setText(doc.content); setRevision(doc.revision) } }); return () => { active = false } }, [memberId, service, workspace])
-  return <div className="team-form"><Field label="记忆范围"><select value={scope} onChange={(e) => { setRevision(null); setSaved(false); setScope(e.target.value) }}><option value="global">成员通用经验 · 跨工作区</option>{cwd && <option value="workspace">当前工作区 · {cwd}</option>}</select></Field><Field label="经验 Markdown"><textarea rows={12} maxLength={32000} disabled={revision === null} value={text} onChange={(e) => { setText(e.target.value); setSaved(false) }} /></Field><ErrorLine text={action.error} />{saved && <p role="status">记忆已保存，下次执行生效。</p>}<footer><button className="primary" disabled={action.busy || revision === null} onClick={() => void action.perform(async () => { const doc = await service.saveMemory(memberId, revision!, text, workspace); setRevision(doc.revision); setSaved(true) })}>保存记忆</button></footer></div>
+  if (!active) return null
+  return <div className="team-form team-editor-form"><div className="team-editor-scroll"><div className="team-editor-content"><div className="team-memory-toolbar"><strong>成员经验</strong><button aria-pressed={preview} onClick={() => setPreview(!preview)}>{preview ? '继续编辑' : '预览 Markdown'}</button></div>{preview ? <div className="team-memory-preview"><Markdown text={text || '暂无记忆'} /></div> : <Field label="经验 Markdown"><textarea rows={18} maxLength={32000} disabled={revision === null} value={text} onChange={(e) => { setText(e.target.value); setSaved(false) }} /></Field>}</div></div><footer className="team-editor-footer"><div><ErrorLine text={action.error} />{saved && <span role="status">记忆已保存，下次执行生效。</span>}<button className="primary" disabled={action.busy || revision === null} onClick={() => void action.perform(async () => { const doc = await service.saveMemory(memberId, revision!, text, workspace); setRevision(doc.revision); setSaved(true) })}>保存记忆</button></div></footer></div>
 }
 
 export function TeamEditor({ team, service, saved }: { team: AgentTeam; service: TeamsService; saved: () => void }) {
   const { state } = useSyncExternalStore(service.subscribe, service.snapshot)
   const [draft, setDraft] = useState(team)
   const [savedMessage, setSavedMessage] = useState('')
+  const [query, setQuery] = useState('')
   const action = useAction()
   const members = state.members.filter((m) => !m.archived)
-  return <form className="team-form" onChange={() => setSavedMessage('')} onSubmit={(e) => { e.preventDefault(); void action.perform(async () => { await service.saveTeam(draft); setSavedMessage('已保存'); saved() }) }}>
-    <Field label="团队名称"><input autoFocus required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></Field><Field label="队长"><select required value={draft.leaderId} onChange={(e) => setDraft({ ...draft, leaderId: e.target.value })}><option value="">选择队长</option>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field>
-    <fieldset><legend>成员</legend>{members.map((m) => <label className="team-check" key={m.id}><input type="checkbox" disabled={m.id === draft.leaderId} checked={m.id === draft.leaderId || draft.memberIds.includes(m.id)} onChange={(e) => setDraft({ ...draft, memberIds: e.target.checked ? [...draft.memberIds, m.id] : draft.memberIds.filter((id) => id !== m.id) })} />{m.name}<small>{m.description}</small></label>)}</fieldset>
-    <Field label="团队协作要求"><textarea rows={5} value={draft.instructions} onChange={(e) => setDraft({ ...draft, instructions: e.target.value })} placeholder="例如：开发完成后交给审查成员检查；测试失败时先修复再提交验收。" /></Field>
-    <label className="team-check"><input type="checkbox" checked={draft.archived} onChange={(e) => setDraft({ ...draft, archived: e.target.checked })} />归档团队</label><ErrorLine text={action.error} /><footer>{savedMessage && <span role="status">{savedMessage}</span>}<button className="primary" disabled={action.busy}>保存团队</button></footer>
+  const existing = state.teams.some((t) => t.id === team.id)
+  return <form className="team-form team-editor-form" onChange={() => setSavedMessage('')} onSubmit={(e) => { e.preventDefault(); void action.perform(async () => { await service.saveTeam(draft); setSavedMessage('已保存'); saved() }) }}>
+    <div className="team-editor-scroll"><div className="team-editor-content">
+      <FormSection title="团队"><Field label="团队名称"><input autoFocus required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="例如：产品交付小队" /></Field><div className="team-form-wide"><Field label="团队协作要求"><textarea rows={5} value={draft.instructions} onChange={(e) => setDraft({ ...draft, instructions: e.target.value })} placeholder="定义团队的目标、分工与验收要求。" /></Field></div></FormSection>
+      <FormSection title="队长与成员"><Field label="队长"><select required value={draft.leaderId} onChange={(e) => setDraft({ ...draft, leaderId: e.target.value })}><option value="">选择队长</option>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field><div className="team-skills-field"><input aria-label="搜索团队成员" placeholder="搜索成员" value={query} onChange={(e) => setQuery(e.target.value)} /><div className="team-skills-options">{members.filter((m) => m.name.toLowerCase().includes(query.toLowerCase())).map((m) => <label className="team-check" key={m.id}><input type="checkbox" disabled={m.id === draft.leaderId} checked={m.id === draft.leaderId || draft.memberIds.includes(m.id)} onChange={(e) => setDraft({ ...draft, memberIds: e.target.checked ? [...draft.memberIds, m.id] : draft.memberIds.filter((id) => id !== m.id) })} />{m.name}<small>{m.id === draft.leaderId ? '队长' : m.description}</small></label>)}</div><p className="team-help">队长负责接收任务与协调；至少选择一名其他成员。</p></div></FormSection>
+      {existing && <FormSection title="团队状态"><label className="team-check"><input type="checkbox" checked={draft.archived} onChange={(e) => setDraft({ ...draft, archived: e.target.checked })} />归档团队</label></FormSection>}
+    </div></div><footer className="team-editor-footer"><div><ErrorLine text={action.error} />{savedMessage && <span role="status">{savedMessage}</span>}<button className="primary" disabled={action.busy}>保存团队</button></div></footer>
   </form>
 }
 
@@ -168,11 +189,11 @@ export function TaskForm({ service, cwd, threadId, initialBrief = '', initialTar
   const [target, setTarget] = useState(initialTarget)
   const [limits, setLimits] = useState(DEFAULT_TASK_LIMITS)
   const action = useAction()
-  return <form className="team-form" onSubmit={(e) => { e.preventDefault(); void action.perform(async () => { const [kind, id] = target.split(':'); const taskId = await service.createTask({ title, brief, workspaceRoot: root, parentThreadId: threadId, target: { kind: kind as 'member' | 'team', id }, limits }); created(taskId) }) }}>
-    <Field label="任务标题"><input autoFocus required maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="要交付什么？" /></Field>
+  return <form className="team-form team-editor-form" onSubmit={(e) => { e.preventDefault(); void action.perform(async () => { const [kind, id] = target.split(':'); const taskId = await service.createTask({ title, brief, workspaceRoot: root, parentThreadId: threadId, target: { kind: kind as 'member' | 'team', id }, limits }); created(taskId) }) }}>
+    <div className="team-editor-scroll"><div className="team-editor-content"><FormSection title="任务"><Field label="任务标题"><input autoFocus required maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="要交付什么？" /></Field>
     <Field label="交给谁"><select required value={target} onChange={(e) => setTarget(e.target.value)}><option value="">选择成员或团队</option><optgroup label="直接指派成员">{state.members.filter((m) => !m.archived).map((m) => <option key={m.id} value={`member:${m.id}`}>{m.name}</option>)}</optgroup><optgroup label="由队长组织协作">{state.teams.filter((t) => !t.archived).map((t) => <option key={t.id} value={`team:${t.id}`}>{t.name}</option>)}</optgroup></select></Field>
-    <Field label="工作区"><input required value={root} onChange={(e) => setRoot(e.target.value)} /></Field><Field label="任务说明与验收要求"><textarea required rows={9} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="写清目标、必要背景、相关文件、限制和验收标准。成员不会自动继承来源会话。" /></Field>
-    <LimitsEditor value={limits} change={setLimits} /><p className="team-help">创建后手动启动；预算不限制 Token 或费用。</p><ErrorLine text={action.error} /><footer><button className="primary" disabled={action.busy}>创建任务</button></footer>
+    <Field label="工作区"><input required value={root} onChange={(e) => setRoot(e.target.value)} /></Field></FormSection><FormSection title="说明与验收"><div className="team-form-wide"><Field label="任务说明与验收要求"><textarea required rows={9} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="写清目标、必要背景、相关文件、限制和验收标准。成员不会自动继承来源会话。" /></Field>
+    </div></FormSection><FormSection title="执行预算"><div className="team-form-wide"><LimitsEditor value={limits} change={setLimits} /><p className="team-help">创建后手动启动；预算不限制 Token 或费用。</p></div></FormSection></div></div><footer className="team-editor-footer"><div><ErrorLine text={action.error} /><button className="primary" disabled={action.busy}>创建任务</button></div></footer>
   </form>
 }
 
@@ -185,20 +206,20 @@ export function TaskDetail({ task, service, onOpenConversation }: { task: TeamTa
   const [result, setResult] = useState<{ step: TeamStep; text: string } | null>(null)
   const [memoryDraft, setMemoryDraft] = useState<{ memberId: string; revision: number; text: string } | null>(null)
   return <aside className="team-detail"><header><span className={`team-badge ${task.status}`}>{statusLabels[task.status]}</span><h3>{task.title}</h3></header>
-    <div className="team-detail-body"><div className="team-actions">
+    <div className="team-task-layout"><div className="team-detail-body"><div className="team-actions">
       {(['draft', 'paused'].includes(task.status) || (task.status === 'running' && !service.isCoordinating(task.id))) && <button disabled={action.busy} onClick={() => void action.perform(() => service.startTask(task.id))}><Play size={14} />{task.status === 'running' ? '接管调度' : '启动 / 继续'}</button>}
       {task.status === 'running' && <button disabled={action.busy} onClick={() => void action.perform(() => service.pauseTask(task.id))}><Pause size={14} />暂停</button>}
       {!['done', 'stopped'].includes(task.status) && <button disabled={action.busy} onClick={() => void action.perform(() => service.stopTask(task.id))}><Square size={13} />停止</button>}
       {task.status === 'review' && <button className="primary" disabled={action.busy} onClick={() => void action.perform(() => service.approveTask(task.id))}><Check size={14} />验收通过</button>}
     </div><ErrorLine text={action.error} />{task.note && <p className="team-task-note">{task.note}</p>}{task.status === 'running' && !service.isCoordinating(task.id) && <p className="team-help">该任务由之前的应用实例或其他窗口启动。先检查当前执行；结束后可接管调度。</p>}
-    <dl className="team-facts"><dt>负责人</dt><dd>{task.team?.name ?? task.members[0]?.name}</dd><dt>执行预算</dt><dd>{task.steps.length} / {task.limits.maxRuns} 次 · 返工 {task.reworks} / {task.limits.maxReworks} 次</dd><dt>时间窗口</dt><dd>{task.limits.maxMinutes} 分钟{task.deadline ? ` · 截止 ${new Date(task.deadline).toLocaleTimeString()}` : ''}</dd><dt>工作目录</dt><dd>{task.executionRoot ?? task.workspaceRoot}</dd></dl>
-    {!['running', 'done', 'stopped'].includes(task.status) && <><button className="team-link" onClick={() => setShowBudget(!showBudget)}>调整预算</button>{showBudget && <div className="team-budget-edit"><LimitsEditor value={limits} change={setLimits} /><button disabled={action.busy} onClick={() => void action.perform(async () => { await service.extendLimits(task.id, limits); setShowBudget(false) })}>保存预算并重新计时</button></div>}</>}
-    <details><summary>任务说明与验收要求</summary><Markdown text={task.brief} /></details>
+    <details open><summary>任务说明与验收要求</summary><Markdown text={task.brief} /></details>
     {task.status === 'review' && <div className="team-review"><Field label="返工意见"><textarea rows={3} value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="指出未满足的验收要求" /></Field><button disabled={action.busy || !feedback.trim()} onClick={() => void action.perform(() => service.reworkTask(task.id, feedback))}>保存返工意见</button></div>}
     <h4>执行记录 <small>{task.steps.length}</small></h4>
     {!task.steps.length && <p className="team-help">暂无执行记录</p>}
     <ol className="team-timeline">{task.steps.map((step, index) => { const run = runs.find((r) => r.runId === step.id); return <li key={step.id}><span className="team-step-number">{index + 1}</span><div><strong>{step.member.name}</strong><span className="team-step-meta">{step.role === 'leader' ? '协调' : '执行'} · {run?.status ?? '待确认'}</span><p>{step.instruction}</p><div className="team-actions"><button disabled={!run?.childThreadId} onClick={() => run?.childThreadId && (onOpenConversation ? onOpenConversation(run.childThreadId) : service.runs.openThread(run.childThreadId))}>查看会话</button><button disabled={action.busy || run?.status !== 'completed'} onClick={() => void action.perform(async () => setResult({ step, text: await service.result(step) }))}>查看结果 / 保存经验</button>{run?.workspaceAccess === 'isolated-delivery' && <button onClick={() => void action.perform(() => service.runs.openWorkspace(run.runId))}><FolderOpen size={13} />工作区</button>}</div></div></li> })}</ol>
-    </div>
+    </div><aside className="team-task-properties"><h4>任务属性</h4>    <dl className="team-facts"><dt>负责人</dt><dd>{task.team?.name ?? task.members[0]?.name}</dd><dt>执行预算</dt><dd>{task.steps.length} / {task.limits.maxRuns} 次 · 返工 {task.reworks} / {task.limits.maxReworks} 次</dd><dt>时间窗口</dt><dd>{task.limits.maxMinutes} 分钟{task.deadline ? ` · 截止 ${new Date(task.deadline).toLocaleTimeString()}` : ''}</dd><dt>工作目录</dt><dd>{task.executionRoot ?? task.workspaceRoot}</dd></dl>
+    {!['running', 'done', 'stopped'].includes(task.status) && <><button className="team-link" onClick={() => setShowBudget(!showBudget)}>调整预算</button>{showBudget && <div className="team-budget-edit"><LimitsEditor value={limits} change={setLimits} /><button disabled={action.busy} onClick={() => void action.perform(async () => { await service.extendLimits(task.id, limits); setShowBudget(false) })}>保存预算并重新计时</button></div>}</>}
+<dl className="team-facts"><dt>创建时间</dt><dd>{new Date(task.createdAt).toLocaleString()}</dd><dt>更新时间</dt><dd>{new Date(task.updatedAt).toLocaleString()}</dd></dl></aside></div>
     {result && <Modal title={`${result.step.member.name} · 执行结果`} close={() => { setResult(null); setMemoryDraft(null) }}><div className="team-form">{memoryDraft ? <><Field label="编辑成员经验 · 保存前请删去临时状态与无关内容"><textarea rows={12} value={memoryDraft.text} maxLength={32000} onChange={(e) => setMemoryDraft({ ...memoryDraft, text: e.target.value })} /></Field><button className="primary" disabled={action.busy} onClick={() => void action.perform(async () => { await service.saveMemory(memoryDraft.memberId, memoryDraft.revision, memoryDraft.text, task.workspaceRoot); setMemoryDraft(null); setResult(null) })}>确认保存到成员记忆</button></> : <><div className="team-result"><Markdown text={result.text} /></div><button disabled={action.busy} onClick={() => void action.perform(async () => { const doc = await service.readMemory(result.step.member.id, task.workspaceRoot); setMemoryDraft({ memberId: result.step.member.id, revision: doc.revision, text: doc.content + `\n\n## ${task.title}\n\n来源任务：${task.id}\n来源执行：${result.step.runId}\n适用工作区：${task.workspaceRoot}\n时间：${new Date().toISOString()}\n\n${result.text}` }) })}>编辑后保存为成员经验</button></>}<ErrorLine text={action.error} /></div></Modal>}
   </aside>
 }
