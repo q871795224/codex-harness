@@ -43,7 +43,11 @@ fn open_path_with(
         .arg(path)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(if cfg!(test) {
+            std::process::Stdio::inherit()
+        } else {
+            std::process::Stdio::null()
+        })
         .spawn()
         .map_err(|error| format!("无法在 GoLand 中打开文件: {error}"))?;
     // GoLand 是长驻 GUI 进程，不能同步等待它退出（该命令运行在主线程上，
@@ -276,7 +280,9 @@ mod tests {
             "open_path_with must return without waiting for the editor process"
         );
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        // Child startup is independent of the non-blocking API assertion above.
+        // Allow cold process startup more time and retain stderr on test failures.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let args = loop {
             match std::fs::read_to_string(&args_file) {
                 Ok(args) => break args,

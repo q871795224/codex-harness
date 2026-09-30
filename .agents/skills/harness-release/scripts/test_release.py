@@ -19,6 +19,66 @@ SPEC.loader.exec_module(release)
 
 
 class ReleaseScriptTest(unittest.TestCase):
+    def test_replaces_local_release_branch_without_losing_failed_worktree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            root.mkdir()
+
+            def git_run(*args, cwd=root, capture=False):
+                result = release.subprocess.run(args, cwd=cwd, text=True, capture_output=True, check=True)
+                return result.stdout.rstrip()
+
+            def git_try(*args, cwd=root):
+                return release.subprocess.run(args, cwd=cwd, text=True, capture_output=True)
+
+            git_run("git", "init")
+            git_run("git", "config", "user.name", "Release test")
+            git_run("git", "config", "user.email", "test@example.com")
+            (root / "version").write_text("old\n")
+            git_run("git", "add", ".")
+            git_run("git", "commit", "-m", "base")
+            base = git_run("git", "rev-parse", "HEAD")
+            branch = "release/v0.10.2"
+            old = Path(directory) / "old worktree"
+            git_run("git", "worktree", "add", "-b", branch, str(old))
+            (old / "version").write_text("release\n")
+            git_run("git", "commit", "-am", "release", cwd=old)
+            previous = git_run("git", "rev-parse", "HEAD", cwd=old)
+            (old / "version").write_text("staged\n")
+            git_run("git", "add", "version", cwd=old)
+            (old / "version").write_text("unstaged\n")
+            (old / "notes").write_text("keep me")
+            status = git_run("git", "status", "--porcelain", cwd=old)
+
+            with patch.object(release, "run", side_effect=git_run), patch.object(release, "try_run", side_effect=git_try):
+                release.remove_previous_release_branch(branch)
+
+            self.assertNotEqual(git_try("git", "show-ref", "--verify", f"refs/heads/{branch}").returncode, 0)
+            self.assertEqual(git_run("git", "rev-parse", "HEAD", cwd=old), previous)
+            self.assertEqual(git_run("git", "status", "--porcelain", cwd=old), status)
+            self.assertEqual((old / "version").read_text(), "unstaged\n")
+            self.assertEqual(git_run("git", "show", ":version", cwd=old), "staged")
+            self.assertEqual((old / "notes").read_text(), "keep me")
+            self.assertEqual(git_run("git", "for-each-ref", "--format=%(objectname)", "refs/harness/release-retries"), previous)
+            git_run("git", "switch", "--create", branch, base)
+            self.assertEqual(git_run("git", "rev-parse", "HEAD"), base)
+
+    def test_remote_release_branch_blocks_prepare_before_local_deletion(self):
+        with (
+            patch.object(release, "require_clean_worktree"),
+            patch.object(release, "origin_main_version", return_value="0.10.1"),
+            patch.object(release, "try_run", return_value=release.subprocess.CompletedProcess([], 1)),
+            patch.object(release, "run", side_effect=lambda *args, **kwargs: {
+                ("git", "rev-parse", "base-sha^{commit}"): "base-sha",
+                ("git", "rev-parse", "HEAD"): "base-sha",
+                ("git", "ls-remote", "--heads", "origin", "refs/heads/release/v0.10.2"): "remote-sha",
+            }.get(args, "")),
+            patch.object(release, "remove_previous_release_branch") as remove,
+            self.assertRaisesRegex(release.ReleaseError, "remote branch already exists"),
+        ):
+            release.command_prepare("0.10.2", "base-sha")
+        remove.assert_not_called()
+
     def test_main_ci_waits_for_check_creation_and_completion(self):
         snapshots = [[], [{"id":1,"name":"test-and-build","conclusion":None}],
                      [{"id":1,"name":"test-and-build","conclusion":"success"}]]
