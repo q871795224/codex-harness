@@ -791,6 +791,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
             <div className="notification-anchor"><NotificationViewport store={notifications} onOpen={openNotifications} /></div>
             {tab === 'chat' ? (
               <ConversationView
+                threadId={harness.currentThread.id}
                 provider={harness.selectedProvider}
                 items={harness.currentDetail?.items ?? []}
                 turns={harness.currentDetail?.turns ?? []}

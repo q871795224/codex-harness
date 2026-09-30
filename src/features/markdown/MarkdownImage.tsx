@@ -5,6 +5,7 @@ import { runtime } from '../../core/runtime/bridge'
 
 export function imageSource(src: string): { kind: 'local' | 'remote'; value: string } | null {
   if (!src || /[\u0000-\u001f]/.test(src)) return null
+  if (/^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src)) return { kind: 'remote', value: src }
   if (/^https?:\/\//i.test(src)) return { kind: 'remote', value: src }
   if (src.startsWith('//')) return { kind: 'remote', value: `https:${src}` }
   try {

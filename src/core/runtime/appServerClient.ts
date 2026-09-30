@@ -10,10 +10,12 @@ import type {
   QueuedSubmission,
   SandboxPolicy,
   Thread,
+  ThreadItemEntry,
   Turn,
   UserInput,
 } from '../domain/codex'
 import { runtime } from './bridge'
+import { historyItemsView } from './historySettings'
 
 export interface ThreadSettingsResponse {
   approvalPolicy: ApprovalPolicy
@@ -56,7 +58,10 @@ export interface FuzzyFileSearchResult {
 
 export const appServer = {
   listThreads: (params: JsonObject) => runtime.request<{ data: Thread[]; nextCursor: string | null }>('thread/list', params),
-  resumeThread: (params: JsonObject) => runtime.request<ResumeThreadResponse>('thread/resume', params),
+  resumeThread: async (params: JsonObject) => runtime.request<ResumeThreadResponse>('thread/resume', {
+    ...params,
+    ...(params.initialTurnsPage ? { initialTurnsPage: { ...params.initialTurnsPage as JsonObject, itemsView: await historyItemsView() } } : {}),
+  }),
   startThread: (params: JsonObject) => runtime.request<StartThreadResponse>('thread/start', params),
   forkThread: (threadId: string, lastTurnId: string) => runtime.request<ForkThreadResponse>('thread/fork', { threadId, lastTurnId }),
   unsubscribeThread: (threadId: string) => runtime.request<void>('thread/unsubscribe', { threadId }),
@@ -67,6 +72,8 @@ export const appServer = {
   updateThreadSettings: (params: JsonObject) => runtime.request<void>('thread/settings/update', params),
   updateThreadMetadata: (params: JsonObject) => runtime.request<void>('thread/metadata/update', params),
   listTurns: (params: JsonObject) => runtime.request<{ data: Turn[]; nextCursor: string | null }>('thread/turns/list', params),
+  listConversationTurns: async (params: JsonObject) => appServer.listTurns({ ...params, itemsView: await historyItemsView() }),
+  listItems: (params: JsonObject) => runtime.request<{ data: ThreadItemEntry[]; nextCursor: string | null }>('thread/items/list', params),
   readThread: (params: JsonObject) => runtime.request<ReadThreadResponse>('thread/read', params),
   startTurn: (params: JsonObject) => runtime.request<{ turn: Turn }>('turn/start', params),
   steerTurn: (params: { threadId: string; expectedTurnId: string; clientUserMessageId: string; input: UserInput[] }) => runtime.request<void>('turn/steer', params),

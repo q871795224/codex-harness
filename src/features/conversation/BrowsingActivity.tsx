@@ -48,3 +48,22 @@ export function ImageViewItem({ item, cwd }: { item: ThreadItem; cwd: string }) 
     </div>}
   </article>
 }
+
+export function ImageGenerationItem({ item, cwd }: { item: ThreadItem; cwd: string }) {
+  const [open, setOpen] = useState(false)
+  const path = text(item.savedPath)
+  const result = text(item.result)
+  const source = result ? `data:image/png;base64,${result}` : path ? encodeURI(path).replace(/#/g, '%23').replace(/\?/g, '%3F') : ''
+  const status = item.status === 'inProgress' ? '生成中' : item.status === 'failed' ? '失败' : item.status === 'completed' ? '完成' : item.status ?? ''
+  return <article className="tool-card browsing-activity image-view-activity">
+    <button type="button" className="tool-card-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <ImageIcon size={14} /><strong>生成图片</strong><code>{path.split('/').pop() || '图片预览'}</code><small>{status}</small>
+      {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+    </button>
+    {open && <div className="tool-card-body">
+      {text(item.revisedPrompt) && <p>{text(item.revisedPrompt)}</p>}
+      {source ? <MarkdownImage src={source} alt="生成的图片" cwd={cwd} /> : <p role="status">{item.status === 'inProgress' ? '图片生成中…' : '没有可用的图片数据'}</p>}
+      {path && <code className="image-view-path">{path}</code>}
+    </div>}
+  </article>
+}

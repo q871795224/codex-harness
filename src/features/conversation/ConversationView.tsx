@@ -1,4 +1,5 @@
-import { ImageViewItem, WebSearchItem } from './BrowsingActivity'
+import { ImageGenerationItem, ImageViewItem, WebSearchItem } from './BrowsingActivity'
+import { readHistoryTurn } from './historyItems'
 import { skillReads, skillReadStatus } from './skillActivity'
 import { SkillCatalogContext, useSkillCatalog } from './SkillCatalog'
 import { ToolCallDetails } from './ItemDetails'
@@ -173,6 +174,7 @@ export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode 
 }
 
 interface ConversationViewProps {
+  threadId?: string
   provider?: 'codex' | 'claude'
   items: ThreadItemEntry[]
   turns: Turn[]
@@ -219,7 +221,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
+export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -299,10 +301,10 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
   }
   const rawTranscriptRows = items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
   const agentLabel = provider === 'claude' ? 'Claude' : 'Codex'
-  const turnDetails = turns.map((turn) => ({ id: turn.id, status: turn.status, error: turn.error }))
+  const turnDetails = turns.map((turn) => ({ id: turn.id, status: turn.status, error: turn.error, itemsView: turn.itemsView }))
   const activeTurnIndex = turnDetails.findIndex((turn) => turn.id === workingTurnId)
   if (workingTurnId && activeTurnIndex >= 0) turnDetails[activeTurnIndex] = { ...turnDetails[activeTurnIndex], status: 'inProgress' }
-  else if (workingTurnId) turnDetails.push({ id: workingTurnId, status: 'inProgress', error: null })
+  else if (workingTurnId) turnDetails.push({ id: workingTurnId, status: 'inProgress', error: null, itemsView: undefined })
   const transcriptTurns = rawMode ? [] : groupTranscriptTurns(items, turnDetails)
   const latestTurnId = turns.at(-1)?.id ?? null
   const workingMessageIndex = rawMode && working ? latestAgentMessageIndex(rawTranscriptRows, workingTurnId) : -1
@@ -387,6 +389,7 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
             <TranscriptTurnView
               key={turn.turnId}
               turn={turn}
+              historyThreadId={provider === 'codex' ? threadId : undefined}
               agentLabel={agentLabel}
               working={working && turn.turnId === workingTurnId}
               workingStartedAt={workingStartedAt}
@@ -399,6 +402,21 @@ export function ConversationView({ provider = 'codex', items, turns, cwd, approv
               rawOverrides={rawOverrides}
               onRawOverrideToggle={onRawOverrideToggle}
               renderTurnActions={renderTurnActions}
+            />
+          ))}
+          {rawMode && provider === 'codex' && threadId && turns.filter((turn) => turn.itemsView === 'summary').map((turn) => (
+            <ProcessGroup
+              key={`raw-history:${turn.id}`}
+              rows={[]}
+              loadHistory={async (signal) => processHistoryRows(await readHistoryTurn(threadId, turn.id, signal), turn.status)
+                .filter((row) => !items.some((entry) => entry.turnId === turn.id && entry.item.id === row.entry.item.id))}
+              agentLabel={agentLabel}
+              status={turn.status}
+              hasFinalAnswer={false}
+              working={working && turn.id === workingTurnId}
+              workingStartedAt={workingStartedAt}
+              cwd={cwd}
+              onOpenThread={onOpenThread}
             />
           ))}
           {rawMode && turns.filter((turn) => turn.status === 'failed').map((turn) => (
@@ -498,8 +516,9 @@ export function latestAgentMessageIndex(rows: Array<{ entry: ThreadItemEntry }>,
   return -1
 }
 
-function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking, rawOverrides, onRawOverrideToggle, renderTurnActions }: {
+function TranscriptTurnView({ turn, historyThreadId, agentLabel, working, workingStartedAt, canContinue, onContinue, cwd, onOpenThread, onFork, forking, rawOverrides, onRawOverrideToggle, renderTurnActions }: {
   turn: TranscriptTurn
+  historyThreadId?: string
   agentLabel: string
   working: boolean
   workingStartedAt: number | null
@@ -514,6 +533,9 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
   renderTurnActions?: (turnId: string) => ReactNode
 }) {
   const processRows = turn.processRows.filter(isRenderableProcessRow)
+  const loadHistory = historyThreadId && turn.itemsView === 'summary'
+    ? async (signal: AbortSignal) => processHistoryRows(await readHistoryTurn(historyThreadId, turn.turnId, signal), turn.status)
+    : undefined
   const finalRawKey = turn.finalRows.length > 0 ? messageRawKey(turn.finalRows[0].entry) : null
   const finalRawActive = finalRawKey !== null && (rawOverrides?.has(finalRawKey) ?? false)
   return (
@@ -530,11 +552,12 @@ function TranscriptTurnView({ turn, agentLabel, working, workingStartedAt, canCo
           onOpenThread={onOpenThread}
         />
       ))}
-      {(processRows.length > 0 || turn.finalRows.length > 0) && (
+      {(processRows.length > 0 || turn.finalRows.length > 0 || loadHistory) && (
         <div className="assistant-turn">
-          {processRows.length > 0 && (
+          {(processRows.length > 0 || loadHistory) && (
             <ProcessGroup
               rows={processRows}
+              loadHistory={loadHistory}
               agentLabel={agentLabel}
               status={turn.status}
               hasFinalAnswer={turn.finalRows.length > 0}
@@ -604,8 +627,21 @@ function TurnFailureNotice({ error, agentLabel = 'Codex', canContinue, onContinu
   )
 }
 
-function ProcessGroup({ rows, agentLabel, status, hasFinalAnswer, working, workingStartedAt, cwd, onOpenThread }: {
+function processHistoryRows(items: ThreadItemEntry[], status: Turn['status'] | undefined): TranscriptItem[] {
+  const turnId = items[0]?.turnId
+  if (!turnId) return []
+  return (groupTranscriptTurns(items, [{ id: turnId, status: status ?? 'completed', error: null }])[0]?.processRows ?? []).filter(isRenderableProcessRow)
+}
+
+function mergeProcessRows(history: TranscriptItem[], live: TranscriptItem[]): TranscriptItem[] {
+  const rows = new Map(history.map((row, index) => [transcriptRowKey(row, index), row]))
+  for (const [index, row] of live.entries()) rows.set(transcriptRowKey(row, index), row)
+  return [...rows.values()]
+}
+
+function ProcessGroup({ rows: liveRows, loadHistory, agentLabel, status, hasFinalAnswer, working, workingStartedAt, cwd, onOpenThread }: {
   rows: TranscriptItem[]
+  loadHistory?: (signal: AbortSignal) => Promise<TranscriptItem[]>
   agentLabel: string
   status: Turn['status'] | undefined
   hasFinalAnswer: boolean
@@ -615,8 +651,39 @@ function ProcessGroup({ rows, agentLabel, status, hasFinalAnswer, working, worki
   onOpenThread?: (threadId: string) => void
 }) {
   const skillCatalog = useContext(SkillCatalogContext)
-  const keepOpen = working || !hasFinalAnswer || status === 'failed' || status === 'interrupted'
+  const keepOpen = !loadHistory && (working || !hasFinalAnswer || status === 'failed' || status === 'interrupted')
   const [open, setOpen] = useState(keepOpen)
+  const [historyRows, setHistoryRows] = useState<TranscriptItem[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const controller = useRef<AbortController | null>(null)
+  useEffect(() => () => { controller.current?.abort(); controller.current = null }, [])
+  const rows = historyRows ? mergeProcessRows(historyRows, liveRows) : liveRows
+  const load = async () => {
+    if (!loadHistory || controller.current) return
+    const request = new AbortController()
+    controller.current = request
+    setLoading(true); setError(null)
+    try {
+      const result = await loadHistory(request.signal)
+      if (!request.signal.aborted) setHistoryRows(result)
+    } catch (error) {
+      if (!request.signal.aborted) setError(error instanceof Error ? error.message : String(error))
+    } finally {
+      if (controller.current === request) {
+        controller.current = null
+        setLoading(false)
+      }
+    }
+  }
+  const toggle = () => {
+    setOpen(!open)
+    if (open) {
+      controller.current?.abort()
+      controller.current = null
+      setLoading(false)
+    } else if (historyRows === null) void load()
+  }
 
   useEffect(() => {
     if (keepOpen) setOpen(true)
@@ -626,14 +693,17 @@ function ProcessGroup({ rows, agentLabel, status, hasFinalAnswer, working, worki
   const state = working ? 'running' : status === 'failed' ? 'failed' : status === 'interrupted' ? 'interrupted' : 'completed'
   return (
     <section className={`process-group ${state}`}>
-      <button type="button" className="process-group-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+      <button type="button" className="process-group-toggle" aria-expanded={open} onClick={toggle}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span className="process-group-title">{working ? `${agentLabel} 正在执行` : status === 'failed' ? '执行失败' : status === 'interrupted' ? '执行已中断' : '执行过程'}</span>
-        <span className="process-group-summary">{summarizeProcessRows(rows, skillCatalog)}</span>
+        <span className="process-group-summary">{loadHistory && historyRows === null ? '展开后加载历史过程' : summarizeProcessRows(rows, skillCatalog)}</span>
         {state !== 'completed' && <small>{state === 'running' ? '运行中' : state === 'failed' ? '失败' : '已中断'}</small>}
       </button>
       {open && (
         <div className="process-group-body">
+          {loading && <p role="status">正在加载执行过程…</p>}
+          {error && <div role="alert">{error}<button type="button" onClick={() => void load()}>重试加载过程</button></div>}
+          {historyRows?.length === 0 && rows.length === 0 && <p>本轮没有可展示的执行过程。</p>}
           {rows.map((row, index) => (
             <ThreadItemView
               key={transcriptRowKey(row, index)}
@@ -727,6 +797,7 @@ const ThreadItemView = memo(function ThreadItemView({
     )
   }
   if (item.type === 'webSearch') return <WebSearchItem item={item} />
+  if (item.type === 'imageGeneration') return <ImageGenerationItem item={item} cwd={cwd} />
   if (item.type === 'imageView') return <ImageViewItem item={item} cwd={cwd} />
   if (item.type === 'commandExecution') return <CommandItem item={item} />
   if (item.type === 'fileChange') return <FileChangeItem item={item} cwd={cwd} />
