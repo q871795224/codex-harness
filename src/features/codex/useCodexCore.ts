@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ApprovalPolicy, CodexConfig, CodexModel, McpRuntimeStatus, McpServerStatus, ThreadCodexSettings } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import { appServer } from '../../core/runtime/appServerClient'
+import { ThreadPermissionsSaveError } from '../../core/runtime/threadPermissions'
 import { startupRuntimeStatus } from './mcpStatus'
 
 export type { ThreadCodexSettings } from '../../core/domain/codex'
@@ -115,7 +116,9 @@ export function useCodexCore() {
         ...(patch.sandboxMode !== undefined ? { sandboxPolicy: sandboxPolicy(next.sandboxMode) } : {}),
       })
     } catch (nextError) {
-      setThreadSettings((current) => ({ ...current, [threadId]: previous }))
+      if (!(nextError instanceof ThreadPermissionsSaveError)) {
+        setThreadSettings((current) => ({ ...current, [threadId]: previous }))
+      }
       setError(messageOf(nextError))
       throw nextError
     }
