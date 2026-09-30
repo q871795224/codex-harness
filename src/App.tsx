@@ -1,3 +1,6 @@
+import { useInterfaceMode } from './features/interface/useInterfaceMode'
+import type { TeamsService } from './core/teams/types'
+import { useTeamsService } from './core/teams/react'
 import { MemoryButton } from './features/memory/MemoryButton'
 import { createMemoryService } from './core/memory/service'
 import { notifications } from './core/notifications/service'
@@ -5,7 +8,7 @@ import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter, NotificationViewport } from './features/notifications/Notifications'
 import { useReleaseNotifications } from './features/notifications/useReleaseNotifications'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw, Users } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
@@ -52,6 +55,8 @@ import { useProjectBinding } from './features/project-doc/useProjectBinding'
 import { PROJECT_DOC_TAB_KEY } from './plugins/project-doc'
 import { archiveStore } from './plugins/project-doc/archiveStore'
 
+const TeamMode = lazy(() => import('./features/teams/TeamMode').then((module) => ({ default: module.TeamMode })))
+
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 // 项目文档服务是无状态桥接封装，模块级单例即可（绑定走 appState，读写直连 Rust store）。
 const projectDocs = createProjectDocService()
@@ -68,10 +73,12 @@ export default function App() {
     [harness.selectThread],
   )
   const agentRuns = useAgentRunService(selectAgentRunThread, harness.startTurnInThread)
+  const teams = useTeamsService(agentRuns)
   const harnessInstructionConfig = useRef(resolveHarnessInstructionConfig(codex.config))
   harnessInstructionConfig.current = resolveHarnessInstructionConfig(codex.config)
   const services = useMemo(() => ({
     'harness.agentRuns': agentRuns,
+    'harness.teams': teams,
     'harness.notifications': notifications,
     'harness.projectDocs': projectDocs,
     'harness.localConnectors': {
@@ -153,7 +160,7 @@ export default function App() {
       deliveryContext: runtime.workspaceDeliveryContext,
       openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
-  }), [agentRuns, harness.onTurnCompleted, harness.selectThread])
+  }), [teams, agentRuns, harness.onTurnCompleted, harness.selectThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {
@@ -174,16 +181,18 @@ export default function App() {
 
   return (
     <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances} services={services}>
-      <HarnessShell harness={harness} agentRuns={agentRuns} codex={codex} />
+      <HarnessShell harness={harness} agentRuns={agentRuns} teams={teams} codex={codex} />
     </PluginHostProvider>
   )
 }
 
-function HarnessShell({ harness, agentRuns, codex }: {
+function HarnessShell({ harness, agentRuns, teams, codex }: {
   harness: ReturnType<typeof useUnifiedHarness>
   agentRuns: AgentRunService
+  teams: TeamsService
   codex: ReturnType<typeof useCodexCore>
 }) {
+  const { mode, selectMode, teamVisited } = useInterfaceMode(runtime, (error) => harness.notify('无法保存工作模式', 'error', error))
   const plugins = usePluginHost()
   const codexUpdate = useCodexUpdate(harness.selectedProvider === 'codex' ? harness.selectedThreadId : null, codex.reload)
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
@@ -496,7 +505,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   }, [harness.createThread, harness.navigation.sidebarCollapsed, harness.newThreadProvider, harness.selectThread, harness.setSidebarCollapsed, orderedTabIds, tab, tabFocusable, visibleThreadIds, notificationsOpen, focusTarget])
 
   useEffect(() => {
-    if (settingsOpen || pluginsOpen) return undefined
+    if (settingsOpen || pluginsOpen || mode === 'team') return undefined
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return
       const actionId = actionForShortcut(event, harness.keyboard.actionShortcuts)
@@ -506,7 +515,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [harness.keyboard.actionShortcuts, pluginsOpen, runAction, settingsOpen])
+  }, [harness.keyboard.actionShortcuts, pluginsOpen, runAction, settingsOpen, mode])
 
   const previewConversationTabDrop = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = tabDragRef.current
@@ -558,6 +567,7 @@ function HarnessShell({ harness, agentRuns, codex }: {
   }
 
   const handleNotificationAction = async (action: NotificationAction) => {
+    selectMode('conversation')
     if (action.kind === 'release-log') {
       await runtime.openReleaseLog(action.target, action.runId)
     } else if (action.kind === 'thread') {
@@ -639,8 +649,9 @@ function HarnessShell({ harness, agentRuns, codex }: {
     <div
       className="app-shell"
       data-flavor={flavor}
+      data-interface-mode={mode}
       data-theme={harness.appearance.theme}
-      data-tab-focused={tabFocused || undefined}
+      data-tab-focused={(mode === 'conversation' && tabFocused) || undefined}
       style={{
         '--h-navigation-font-offset': `${harness.appearance.fontSizes.navigation - DEFAULT_FONT_SIZES.navigation}px`,
         '--h-conversation-font-offset': `${harness.appearance.fontSizes.conversation - DEFAULT_FONT_SIZES.conversation}px`,
@@ -650,6 +661,25 @@ function HarnessShell({ harness, agentRuns, codex }: {
       } as CSSProperties}
     >
       <div className="native-titlebar-drag-region" data-tauri-drag-region />
+      <nav className="interface-mode-switch" aria-label="工作模式">
+        <button type="button" aria-pressed={mode === 'conversation'} onClick={() => selectMode('conversation')}><MessageSquareText size={12} />会话</button>
+        <button type="button" aria-pressed={mode === 'team'} onClick={() => selectMode('team')}><Users size={12} />团队</button>
+      </nav>
+      {teamVisited && <div className="native-team-surface" hidden={mode !== 'team'}>
+        <Suspense fallback={<div className="team-mode-loading">正在加载团队…</div>}><TeamMode
+          service={teams}
+          workspaces={harness.workspaces}
+          initialWorkspace={workspace?.root ?? harness.selectedWorkspaceRoot}
+          onOpenConversation={(threadId) => {
+            void harness.selectThread(threadId, 'agent-run').then(() => {
+              setTab('chat'); setFocusedTab(null); setNotificationsOpen(false); selectMode('conversation')
+            }).catch((error) => harness.notify('无法打开成员会话', 'error', error))
+          }}
+          onSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
+          onNotifications={() => { selectMode('conversation'); openNotifications() }}
+          unreadNotifications={unreadNotifications}
+        /></Suspense>
+      </div>}
       <Sidebar
         workspaces={harness.workspaces}
         threads={harness.threads}

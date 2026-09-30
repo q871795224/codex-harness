@@ -1,3 +1,4 @@
+import { composerTextInput } from '../../features/conversation/composerInput'
 import type { AppServerEvent, JsonObject } from '../domain/codex'
 import type { AgentProvider, AgentRun, AgentRunService, AgentRunTransport, StartAgentRunInput } from './types'
 
@@ -19,6 +20,18 @@ export class AgentRunCoordinator implements AgentRunService {
     return this.initializePromise
   }
 
+  async refresh(): Promise<void> {
+    await this.initialize()
+    const stored = await this.transport.listRuns()
+    const merged = new Map(this.runs.map((run) => [run.runId, run]))
+    for (const run of stored) {
+      const current = merged.get(run.runId)
+      if (!current || run.updatedAt >= current.updatedAt) merged.set(run.runId, { ...run, provider: providerOf(run) })
+    }
+    this.runs = [...merged.values()].sort((a, b) => b.createdAt - a.createdAt)
+    this.emit()
+  }
+
   snapshot = (): AgentRun[] => this.runs
 
   subscribe = (listener: () => void): (() => void) => {
@@ -28,6 +41,14 @@ export class AgentRunCoordinator implements AgentRunService {
 
   async start(input: StartAgentRunInput): Promise<AgentRun> {
     await this.initialize()
+    if (input.runId && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(input.runId)) throw new Error('执行 ID 必须是 UUID')
+    if (input.runId) {
+      const existing = this.runs.find((run) => run.runId === input.runId)
+      if (existing) {
+        if (existing.instanceId !== input.instanceId) throw new Error('执行 ID 已由其他来源使用')
+        return existing
+      }
+    }
     const prompt = input.prompt.trim()
     if (!prompt) throw new Error('任务内容不能为空')
     if (!input.workspaceRoot) throw new Error('任务必须指定 workspace')
@@ -48,7 +69,7 @@ export class AgentRunCoordinator implements AgentRunService {
     let run: AgentRun
     let workspaceRoot: string
     try {
-      const runId = crypto.randomUUID()
+      const runId = input.runId ?? crypto.randomUUID()
       workspaceRoot = await this.transport.prepareWorkspace(input.workspaceRoot, input.workspaceAccess, runId)
       run = await this.persist({
         runId,
@@ -74,10 +95,13 @@ export class AgentRunCoordinator implements AgentRunService {
     }
 
     try {
+      await input.beforeStart?.()
       const childThreadId = await this.transport.startThread(workspaceRoot, provider)
       run = await this.persist({ ...run, childThreadId, updatedAt: Date.now() })
       if (input.settings) await this.transport.configureThread(childThreadId, input.settings, provider)
-      const turnId = await this.transport.startTurn(childThreadId, prompt, provider, 'quick-agent')
+      await input.beforeStart?.()
+      const inputs = input.skills?.length ? [composerTextInput(prompt, input.skills.map((skill) => skill.name)), ...input.skills.map((skill) => ({ type: 'skill' as const, ...skill }))] : undefined
+      const turnId = await this.transport.startTurn(childThreadId, prompt, provider, 'quick-agent', inputs)
       const current = this.runs.find((candidate) => candidate.runId === run.runId)
       if (current && !isRunning(current)) {
         return current.turnId === turnId ? current : await this.persist({ ...current, turnId, updatedAt: Date.now() })

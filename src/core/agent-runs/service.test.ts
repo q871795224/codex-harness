@@ -266,3 +266,21 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   }
   throw new Error('condition not reached')
 }
+
+it('fences a revoked dispatch before creating a thread or calling a model', async () => {
+  const transport = new FakeTransport()
+  const service = new AgentRunCoordinator(transport, () => undefined)
+  await expect(service.start({ instanceId: 'team-step:test', mode: 'detached', workspaceAccess: 'read-only', workspaceRoot: '/repo', prompt: 'work', beforeStart: async () => { throw new Error('已停止') } })).rejects.toThrow('已停止')
+  expect(transport.startedPrompts).toEqual([])
+  expect(transport.startedWorkspaces).toEqual([])
+  expect(service.snapshot()[0].status).toBe('failed')
+})
+it('refreshes newly persisted runs so another window cannot dispatch twice', async () => {
+  const transport = new FakeTransport()
+  const service = new AgentRunCoordinator(transport, () => undefined)
+  await service.initialize()
+  transport.runs = [makeRun({ instanceId: 'team-step:other', status: 'running' })]
+  await service.refresh()
+  expect(service.snapshot()).toHaveLength(1)
+  expect(service.snapshot()[0].instanceId).toBe('team-step:other')
+})

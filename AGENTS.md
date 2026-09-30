@@ -33,7 +33,8 @@
 - 快捷 Agent Job 通过 `quickActions` slot 和 `harness.agentRuns` 启动独立会话；插件不能直接调用 App Server。Run 必须记录发起会话，并允许同一会话按产品约定并发启动。
 - Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery` 工作区模式；同一 checkout 的共享写任务互斥。隔离 worktree 固定在 `~/.codex-harness/agent-worktrees/<run-id>`，完成后保留，不自动清理。
 - 清理隔离 worktree 不得使用 `--force`；有未提交改动时必须失败并保留目录，分支始终保留。
-- `completion: 'return-to-parent'` 只能由用户在子任务完成后手动回传一次；父会话 active 时必须拒绝，不能自动形成父子多轮循环。
+- 旧 Quick Agent 的 `completion: 'return-to-parent'` 仍由用户手动回传一次，父会话 active 时必须拒绝。
+- 团队任务允许用户启动后的受控自动协作：队长按本任务成员名单派发、验收和有限返工；核心强制执行次数、返工与时间预算，最终完成由用户验收。不得据此自动合并、发布或扩大外部操作授权。详细规则见 [.harness/agent-interaction.md](.harness/agent-interaction.md)。
 - 快捷命令必须通过 `harness.quickCommands` 调用 Rust 固定允许的命令，插件不能执行任意 shell 字符串。
 
 ## 状态、安全与运行时

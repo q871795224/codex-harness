@@ -48,8 +48,9 @@ export function useAgentRunService(
           sandboxPolicy: sandboxPolicy(settings.sandboxMode),
         })
       },
-      startTurn: async (threadId, prompt, provider = 'codex', trigger) => {
+      startTurn: async (threadId, prompt, provider = 'codex', trigger, inputs) => {
         if (provider === 'claude') return startClaudeAgentTurn(threadId, prompt, claudeSettingsRef.current.get(threadId))
+        if (inputs) return (await appServer.startTurn({ threadId, clientUserMessageId: crypto.randomUUID(), input: inputs, turnTrigger: trigger ?? 'quick-agent' })).turn.id
         return startTurnRef.current(threadId, prompt, trigger)
       },
       interruptTurn: (threadId, turnId, provider = 'codex') => provider === 'claude'

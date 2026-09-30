@@ -64,6 +64,18 @@ struct AppState {
 }
 
 #[tauri::command]
+async fn team_read_document(state: State<'_, AppState>, key: String) -> Result<store::TeamDocument, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.team_read_document(&key)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn team_write_document(state: State<'_, AppState>, key: String, expected_revision: u64, content: String) -> Result<store::TeamDocument, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.team_write_document(&key, expected_revision, &content)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn memory_domain_settings(state: State<'_, AppState>) -> Result<store::MemoryDomainSettings, String> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || store.memory_domain_settings()).await.map_err(|e| e.to_string())?
@@ -1301,6 +1313,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            team_read_document,
+            team_write_document,
             memory_domain_settings,
             memory_create_domain,
             memory_delete_domain,

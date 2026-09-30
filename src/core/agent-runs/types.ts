@@ -1,4 +1,4 @@
-import type { AppServerEvent, CodexTurnTrigger, ThreadCodexSettings } from '../domain/codex'
+import type { AppServerEvent, CodexTurnTrigger, ThreadCodexSettings, UserInput } from '../domain/codex'
 import type { WorkspaceDeliveryContext } from '../app-launcher/types'
 
 export type AgentRunMode = 'detached' | 'delegated'
@@ -28,6 +28,8 @@ export interface AgentRun {
 }
 
 export interface StartAgentRunInput {
+  /** Stable UUID for a durably recorded team step. */
+  runId?: string
   instanceId: string
   provider?: AgentProvider
   title?: string
@@ -37,10 +39,15 @@ export interface StartAgentRunInput {
   parentThreadId?: string | null
   prompt: string
   settings?: ThreadCodexSettings
+  /** Core-validated explicit Skill inputs for member runs. */
+  skills?: Array<{ name: string; path: string }>
+  /** Revalidate a durable team dispatch intent before creating a thread or sending a turn. */
+  beforeStart?: () => Promise<void>
 }
 
 export interface AgentRunService {
   initialize(): Promise<void>
+  refresh?(): Promise<void>
   snapshot(): AgentRun[]
   subscribe(listener: () => void): () => void
   start(input: StartAgentRunInput): Promise<AgentRun>
@@ -71,7 +78,7 @@ export interface AgentRunTransport {
   prepareWorkspace(workspaceRoot: string, access: AgentWorkspaceAccess, runId: string): Promise<string>
   startThread(workspaceRoot: string, provider?: AgentProvider): Promise<string>
   configureThread(threadId: string, settings: ThreadCodexSettings, provider?: AgentProvider): Promise<void>
-  startTurn(threadId: string, prompt: string, provider?: AgentProvider, trigger?: CodexTurnTrigger): Promise<string>
+  startTurn(threadId: string, prompt: string, provider?: AgentProvider, trigger?: CodexTurnTrigger, inputs?: UserInput[]): Promise<string>
   interruptTurn(threadId: string, turnId: string, provider?: AgentProvider): Promise<void>
   inspectThread(threadId: string, provider?: AgentProvider): Promise<ThreadInspection>
   readLastAgentMessage(threadId: string, provider?: AgentProvider): Promise<string>
