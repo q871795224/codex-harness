@@ -132,7 +132,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .sidebar-resize-handle::after { position: absolute; top: 0; right: 3px; width: 1px; height: 100%; background: #8da0e9; content: ''; opacity: 0; transition: opacity .12s ease; }
 .sidebar-resize-handle:hover::after, .sidebar-resize-handle:focus-visible::after, .sidebar.resizing .sidebar-resize-handle::after { opacity: .75; }
 
-.brand-row { display: flex; align-items: center; height: 64px; padding: 0 17px; gap: 8px; }
+.brand-row { flex-shrink: 0; display: flex; align-items: center; height: 64px; padding: 0 17px; gap: 8px; }
 .brand-mark {
   display: block; flex: 0 0 auto; width: 25px; height: 25px; border-radius: 7px; object-fit: contain;
 }
@@ -248,7 +248,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .archive-old-button:disabled { cursor: wait; opacity: .65; }
 .settings-split { display: flex; min-width: 0; }.settings-split .settings-toggle { flex: 1; width: auto; border-radius: 7px 0 0 7px; }.plugins-toggle { display: grid; flex: 0 0 32px; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-left: 1px solid #e1e4e9; border-radius: 0 7px 7px 0; background: transparent; color: #69717d; cursor: pointer; }.plugins-toggle:hover { background: #eceef1; color: #303740; }
 
-.main-pane { display: flex; min-width: 0; height: 100%; padding-top: 28px; flex: 1; flex-direction: column; background: rgba(255, 255, 255, .80); -webkit-backdrop-filter: blur(14px) saturate(1.05); backdrop-filter: blur(14px) saturate(1.05); }
+.main-pane, .main-pane.team-workspace { display: flex; min-width: 0; height: 100%; padding-top: 28px; flex: 1; flex-direction: column; background: rgba(255, 255, 255, .80); -webkit-backdrop-filter: blur(14px) saturate(1.05); backdrop-filter: blur(14px) saturate(1.05); }
 .app-shell[data-flavor='dev'] button:focus-visible, .app-shell[data-flavor='dev'] input:focus-visible, .app-shell[data-flavor='dev'] textarea:focus-visible { outline-color: #279d62; }
 .app-shell[data-flavor='dev'] .brand-version { color: #188357; font-weight: 720; letter-spacing: .04em; }
 .app-shell[data-flavor='dev'] .sidebar-search:focus-within { border-color: #a9dcc0; box-shadow: 0 0 0 3px rgba(34, 166, 97, .09); }
@@ -1865,14 +1865,17 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .workspace-domain-create input, .app-shell[data-theme='dark'] .workspace-domain-create button, .app-shell[data-theme='dark'] .workspace-domain-tags button, .app-shell[data-theme='dark'] .workspace-domain-definition, .app-shell[data-theme='dark'] .workspace-domain-tags select { border-color: #3d424c; background: #25292f; color: #c8cdd5; }
 .app-shell[data-theme='dark'] .workspace-domain-tags .workspace-domain-assigned { border-color: #596baf; background: #303954; color: #cfdaff; }
 
-/* Core application mode switch. Keep both visited surfaces mounted to preserve drafts. */
-.interface-mode-switch { position: absolute; z-index: 40; top: 3px; right: 12px; display: flex; gap: 2px; height: 23px; padding: 2px; border: 1px solid #e3e6ec; border-radius: 6px; background: #f5f6f9; -webkit-app-region: no-drag; }
-.interface-mode-switch button { display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border: 0; border-radius: 4px; background: transparent; color: #7b828f; font: inherit; font-size: 10px; cursor: pointer; }
-.interface-mode-switch button[aria-pressed='true'] { background: #fff; color: #303640; box-shadow: 0 1px 3px rgb(20 25 35 / .08); }
-.app-shell > .native-titlebar-drag-region { right: 150px; }
+/* Keep both visited work views mounted to preserve drafts. */
 .native-team-surface { flex: 1; min-width: 0; height: 100%; }.native-team-surface[hidden] { display: none; }.team-mode-loading { padding: 60px 28px; font-size: 13px; color: #818793; }
 .app-shell[data-interface-mode='team'] > .sidebar,
 .app-shell[data-interface-mode='team'] > .app-sidebar-toggle,
 .app-shell[data-interface-mode='team'] > .main-pane,
 .app-shell[data-interface-mode='team'] > .notification-quick-panels { display: none !important; }
-.app-shell[data-theme='dark'] .interface-mode-switch { border-color: #343944; background: #20242c; }.app-shell[data-theme='dark'] .interface-mode-switch button { color: #939cae; }.app-shell[data-theme='dark'] .interface-mode-switch button[aria-pressed='true'] { color: #e1e5ed; background: #363d4b; }
+
+/* Both views use the same brand control and sidebar button styles. */
+.brand-switch { display: inline-flex; align-items: center; gap: 8px; padding: 0; min-width: 0; border: 0; background: transparent; cursor: pointer; border-radius: 7px; -webkit-app-region: no-drag; }
+.brand-switch:hover { opacity: .8; }
+.new-chat-button.solo { border-radius: 11px; }
+.team-mode-nav .thread-row { gap: 7px; font-size: calc(13px + var(--h-navigation-font-offset)); }
+.team-mode-nav .thread-row b { margin-left: auto; font-size: 10px; font-weight: 400; color: #737a86; }
+.app-shell[data-theme='dark'] .team-mode-nav .thread-row b { color: #929dab; }

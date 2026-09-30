@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { version as harnessVersion } from '../../../package.json'
+import { BrandRow } from './BrandRow'
 import {
   Archive,
   ArchiveRestore,
@@ -52,6 +52,7 @@ import { NumberBadge } from '../../components/NumberBadge'
 import { useModifierKey } from '../../hooks/useModifierKey'
 
 interface SidebarProps {
+  onSwitchView?: () => void
   workspaces: Workspace[]
   threads: Thread[]
   threadRoots: Record<string, string | null>
@@ -99,6 +100,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({
+  onSwitchView,
   workspaces,
   threads,
   threadRoots,
@@ -458,11 +460,7 @@ export function Sidebar({
       aria-label="工作区与会话"
       style={{ '--sidebar-width': `${displayedSidebarWidth}px` } as CSSProperties}
     >
-      <div className="brand-row">
-        <img className="brand-mark" src={isDevelopmentFlavor ? harnessDevIcon : harnessIcon} alt="" />
-        <span className="brand-name">codex <strong>HARNESS</strong></span>
-        <span className="brand-version">{isDevelopmentFlavor ? `DEV · v${harnessVersion}` : `v${harnessVersion}`}</span>
-      </div>
+      <BrandRow view="conversation" onSwitchView={onSwitchView} />
 
       <div className="new-chat-split">
         <button className="new-chat-button" type="button" onClick={() => onNewThread(newThreadProvider)} disabled={creatingThread || (newThreadProvider === 'claude' && !claudeAvailable)}>
