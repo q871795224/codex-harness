@@ -1,3 +1,4 @@
+import { useTeamsService } from './core/teams/react'
 import { MemoryButton } from './features/memory/MemoryButton'
 import { createMemoryService } from './core/memory/service'
 import { notifications } from './core/notifications/service'
@@ -68,10 +69,12 @@ export default function App() {
     [harness.selectThread],
   )
   const agentRuns = useAgentRunService(selectAgentRunThread, harness.startTurnInThread)
+  const teams = useTeamsService(agentRuns)
   const harnessInstructionConfig = useRef(resolveHarnessInstructionConfig(codex.config))
   harnessInstructionConfig.current = resolveHarnessInstructionConfig(codex.config)
   const services = useMemo(() => ({
     'harness.agentRuns': agentRuns,
+    'harness.teams': teams,
     'harness.notifications': notifications,
     'harness.projectDocs': projectDocs,
     'harness.localConnectors': {
@@ -153,7 +156,7 @@ export default function App() {
       deliveryContext: runtime.workspaceDeliveryContext,
       openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
-  }), [agentRuns, harness.onTurnCompleted, harness.selectThread])
+  }), [teams, agentRuns, harness.onTurnCompleted, harness.selectThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {

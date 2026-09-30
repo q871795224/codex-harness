@@ -1,3 +1,4 @@
+import type { TeamDocument } from '../teams/types'
 import type { MemoryCatalog, MemorySaveInput, SavedMemory, MemoryDomainSettings } from '../memory/types'
 import type { ThreadProjectBinding } from '../project-docs/types'
 import { invoke } from '@tauri-apps/api/core'
@@ -95,6 +96,12 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
 }
 
 export const runtime = {
+  teamReadDocument(key: string): Promise<TeamDocument> {
+    return invoke<TeamDocument>('team_read_document', { key })
+  },
+  teamWriteDocument(key: string, expectedRevision: number, content: string): Promise<TeamDocument> {
+    return invoke<TeamDocument>('team_write_document', { key, expectedRevision, content })
+  },
   memoryDomainSettings(): Promise<MemoryDomainSettings> {
     return invoke<MemoryDomainSettings>('memory_domain_settings')
   },

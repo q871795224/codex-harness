@@ -22,6 +22,13 @@
 - 官方费用通过 `account/usage/read({ threadId })` 查询会话累计估算。模型额度图仅在整个会话落入所选日期、各模型 Token 与采集账本一致时展示 credits；任一记录不可核对时显示不可用，不按 Token 比例分摊累计费用。会话详情可独立查看整个会话累计估算，美元金额允许缺失。
 - Codex Radar 请求由 Rust 固定域名客户端完成并缓存，内置会话启动器只能通过 `harness.codexRadar` 读取整理后的指标。
 
+## 成员与团队
+
+- `core/teams` 管理成员、团队、任务快照和受控调度；`features/teams` 提供管理界面，内置 `teams` 插件只通过 `harness.teams` service 接入。
+- 每次执行复用 `harness.agentRuns`，保留来源会话；团队运行使用 detached 模式，不触发旧委派的自动回传 UI。成员 Skill 来自核心 App Server 列表，启动时重新验证，并通过原生 Skill 输入提供；MCP 仍是共享配置。
+- `store/teams.rs` 保存版本化任务文档和成员 Markdown 记忆，正文不进 SQLite。SQLite 写事务只协调文件写入，原子替换前比较版本；记忆路径验证成员 ID，工作区键同时校验完整 scope，拒绝符号链接。
+- 任务内顺序协作，多个任务可并行使用各自隔离 worktree。重启不会自动接管。调度规则与预算语义以 `agent-interaction.md` 第八节为准。
+
 ## Harness 记忆
 
 - 记忆是核心能力，`features/memory/MemoryButton.tsx` 直接接入输入框操作区，不依赖插件启停；`core/memory/` 负责分页读取会话、预算截断和 ephemeral Agent 的结构化提炼。
