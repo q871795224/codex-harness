@@ -243,6 +243,7 @@ impl HarnessStore {
         migrate_plugin_runs_workspace_removed_at(&connection)?;
 
         memory::initialize(&connection)?;
+        teams::initialize(&mut connection)?;
         Ok(Self {
             root,
             connection: Mutex::new(connection),
@@ -592,7 +593,7 @@ impl HarnessStore {
             .map_err(|_| "本地状态库锁不可用".to_string())?;
         let mut statement = connection
             .prepare(
-                "SELECT instance_id, plugin_id, scope_kind, scope_key, enabled, config_json, created_at, updated_at FROM plugin_instances ORDER BY created_at, instance_id",
+                "SELECT instance_id, plugin_id, scope_kind, scope_key, enabled, config_json, created_at, updated_at FROM plugin_instances WHERE instance_id != 'core.teams' ORDER BY created_at, instance_id",
             )
             .map_err(|error| format!("无法读取插件实例: {error}"))?;
         let rows = statement
@@ -606,6 +607,9 @@ impl HarnessStore {
         &self,
         input: &PluginInstanceInput,
     ) -> Result<PluginInstance, String> {
+        if input.instance_id == teams::RUN_OWNER {
+            return Err("核心团队运行记录不可作为插件修改".into());
+        }
         if input.instance_id.trim().is_empty() || input.plugin_id.trim().is_empty() {
             return Err("插件 instance id 和 plugin id 不能为空".to_string());
         }
@@ -655,6 +659,9 @@ impl HarnessStore {
     }
 
     pub fn delete_plugin_instance(&self, instance_id: &str) -> Result<(), String> {
+        if instance_id == teams::RUN_OWNER {
+            return Err("核心团队运行记录不可删除".into());
+        }
         let connection = self
             .connection
             .lock()

@@ -106,7 +106,7 @@ export function TeamWorkspace({ service, context }: { service: TeamsService; con
   </div>
 }
 
-function MemberEditor({ member, service, cwd, saved }: { member: AgentMember; service: TeamsService; cwd: string; saved: () => void }) {
+export function MemberEditor({ member, service, cwd, saved }: { member: AgentMember; service: TeamsService; cwd: string; saved: () => void }) {
   const [draft, setDraft] = useState(member)
   const [savedMessage, setSavedMessage] = useState('')
   const [section, setSection] = useState<'profile' | 'memory'>('profile')
@@ -143,7 +143,7 @@ function MemoryEditor({ memberId, service, cwd }: { memberId: string; service: T
   return <div className="team-form"><Field label="记忆范围"><select value={scope} onChange={(e) => { setRevision(null); setSaved(false); setScope(e.target.value) }}><option value="global">成员通用经验 · 跨工作区</option>{cwd && <option value="workspace">当前工作区 · {cwd}</option>}</select></Field><Field label="经验 Markdown"><textarea rows={12} maxLength={32000} disabled={revision === null} value={text} onChange={(e) => { setText(e.target.value); setSaved(false) }} /></Field><ErrorLine text={action.error} />{saved && <p role="status">记忆已保存，下次执行生效。</p>}<footer><button className="primary" disabled={action.busy || revision === null} onClick={() => void action.perform(async () => { const doc = await service.saveMemory(memberId, revision!, text, workspace); setRevision(doc.revision); setSaved(true) })}>保存记忆</button></footer></div>
 }
 
-function TeamEditor({ team, service, saved }: { team: AgentTeam; service: TeamsService; saved: () => void }) {
+export function TeamEditor({ team, service, saved }: { team: AgentTeam; service: TeamsService; saved: () => void }) {
   const { state } = useSyncExternalStore(service.subscribe, service.snapshot)
   const [draft, setDraft] = useState(team)
   const [savedMessage, setSavedMessage] = useState('')
@@ -160,12 +160,12 @@ function TeamEditor({ team, service, saved }: { team: AgentTeam; service: TeamsS
 function LimitsEditor({ value, change }: { value: TaskLimits; change: (limits: TaskLimits) => void }) {
   return <div className="team-limits">{([['maxRuns', '执行次数', 1, 100], ['maxReworks', '返工次数', 0, 20], ['maxMinutes', '时间预算（分钟）', 1, 1440]] as const).map(([key, label, min, max]) => <Field key={key} label={label}><input required type="number" min={min} max={max} value={value[key]} onChange={(e) => change({ ...value, [key]: Number(e.target.value) })} /></Field>)}</div>
 }
-function TaskForm({ service, cwd, threadId, initialBrief = '', created }: { service: TeamsService; cwd: string; threadId: string | null; initialBrief?: string; created: (id: string) => void }) {
+export function TaskForm({ service, cwd, threadId, initialBrief = '', initialTarget = '', created }: { service: TeamsService; cwd: string; threadId: string | null; initialBrief?: string; initialTarget?: string; created: (id: string) => void }) {
   const { state } = useSyncExternalStore(service.subscribe, service.snapshot)
   const [title, setTitle] = useState('')
   const [brief, setBrief] = useState(initialBrief)
   const [root, setRoot] = useState(cwd)
-  const [target, setTarget] = useState('')
+  const [target, setTarget] = useState(initialTarget)
   const [limits, setLimits] = useState(DEFAULT_TASK_LIMITS)
   const action = useAction()
   return <form className="team-form" onSubmit={(e) => { e.preventDefault(); void action.perform(async () => { const [kind, id] = target.split(':'); const taskId = await service.createTask({ title, brief, workspaceRoot: root, parentThreadId: threadId, target: { kind: kind as 'member' | 'team', id }, limits }); created(taskId) }) }}>
@@ -176,7 +176,7 @@ function TaskForm({ service, cwd, threadId, initialBrief = '', created }: { serv
   </form>
 }
 
-function TaskDetail({ task, service }: { task: TeamTask; service: TeamsService }) {
+export function TaskDetail({ task, service, onOpenConversation }: { task: TeamTask; service: TeamsService; onOpenConversation?: (threadId: string) => void }) {
   const runs = useSyncExternalStore(service.runs.subscribe, service.runs.snapshot)
   const action = useAction()
   const [feedback, setFeedback] = useState('')
@@ -197,7 +197,7 @@ function TaskDetail({ task, service }: { task: TeamTask; service: TeamsService }
     {task.status === 'review' && <div className="team-review"><Field label="返工意见"><textarea rows={3} value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="指出未满足的验收要求" /></Field><button disabled={action.busy || !feedback.trim()} onClick={() => void action.perform(() => service.reworkTask(task.id, feedback))}>保存返工意见</button></div>}
     <h4>执行记录 <small>{task.steps.length}</small></h4>
     {!task.steps.length && <p className="team-help">暂无执行记录</p>}
-    <ol className="team-timeline">{task.steps.map((step, index) => { const run = runs.find((r) => r.runId === step.id); return <li key={step.id}><span className="team-step-number">{index + 1}</span><div><strong>{step.member.name}</strong><span className="team-step-meta">{step.role === 'leader' ? '协调' : '执行'} · {run?.status ?? '待确认'}</span><p>{step.instruction}</p><div className="team-actions"><button disabled={!run?.childThreadId} onClick={() => run?.childThreadId && service.runs.openThread(run.childThreadId)}>查看会话</button><button disabled={action.busy || run?.status !== 'completed'} onClick={() => void action.perform(async () => setResult({ step, text: await service.result(step) }))}>查看结果 / 保存经验</button>{run?.workspaceAccess === 'isolated-delivery' && <button onClick={() => void action.perform(() => service.runs.openWorkspace(run.runId))}><FolderOpen size={13} />工作区</button>}</div></div></li> })}</ol>
+    <ol className="team-timeline">{task.steps.map((step, index) => { const run = runs.find((r) => r.runId === step.id); return <li key={step.id}><span className="team-step-number">{index + 1}</span><div><strong>{step.member.name}</strong><span className="team-step-meta">{step.role === 'leader' ? '协调' : '执行'} · {run?.status ?? '待确认'}</span><p>{step.instruction}</p><div className="team-actions"><button disabled={!run?.childThreadId} onClick={() => run?.childThreadId && (onOpenConversation ? onOpenConversation(run.childThreadId) : service.runs.openThread(run.childThreadId))}>查看会话</button><button disabled={action.busy || run?.status !== 'completed'} onClick={() => void action.perform(async () => setResult({ step, text: await service.result(step) }))}>查看结果 / 保存经验</button>{run?.workspaceAccess === 'isolated-delivery' && <button onClick={() => void action.perform(() => service.runs.openWorkspace(run.runId))}><FolderOpen size={13} />工作区</button>}</div></div></li> })}</ol>
     </div>
     {result && <Modal title={`${result.step.member.name} · 执行结果`} close={() => { setResult(null); setMemoryDraft(null) }}><div className="team-form">{memoryDraft ? <><Field label="编辑成员经验 · 保存前请删去临时状态与无关内容"><textarea rows={12} value={memoryDraft.text} maxLength={32000} onChange={(e) => setMemoryDraft({ ...memoryDraft, text: e.target.value })} /></Field><button className="primary" disabled={action.busy} onClick={() => void action.perform(async () => { await service.saveMemory(memoryDraft.memberId, memoryDraft.revision, memoryDraft.text, task.workspaceRoot); setMemoryDraft(null); setResult(null) })}>确认保存到成员记忆</button></> : <><div className="team-result"><Markdown text={result.text} /></div><button disabled={action.busy} onClick={() => void action.perform(async () => { const doc = await service.readMemory(result.step.member.id, task.workspaceRoot); setMemoryDraft({ memberId: result.step.member.id, revision: doc.revision, text: doc.content + `\n\n## ${task.title}\n\n来源任务：${task.id}\n来源执行：${result.step.runId}\n适用工作区：${task.workspaceRoot}\n时间：${new Date().toISOString()}\n\n${result.text}` }) })}>编辑后保存为成员经验</button></>}<ErrorLine text={action.error} /></div></Modal>}
   </aside>

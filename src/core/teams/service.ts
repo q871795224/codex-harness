@@ -288,7 +288,7 @@ export class TeamCoordinator implements TeamsService {
     await this.updateTask(task)
     const prompt = memberPrompt(task, member, instruction, memoryText.slice(0, 24000) + (memoryText.length > 24000 ? '\n[记忆已截断]' : ''), history, role === 'leader')
     const run = await this.runs.start({
-      runId: step.id, instanceId: 'builtin.teams:default', provider: member.provider, title: `${task.title} · ${member.name}`,
+      runId: step.id, instanceId: 'core.teams', provider: member.provider, title: `${task.title} · ${member.name}`,
       mode: 'detached', workspaceAccess: readOnly ? 'read-only' : task.executionRoot ? 'shared-write' : 'isolated-delivery',
       workspaceRoot: cwd, parentThreadId: task.parentThreadId, prompt, settings, skills: member.skills,
       beforeStart: async () => {

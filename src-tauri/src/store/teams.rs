@@ -4,6 +4,23 @@ use rusqlite::TransactionBehavior;
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::PathBuf};
 
+// Internal run owner: team execution must survive disabling/removing its plugin view.
+pub(super) const RUN_OWNER: &str = "core.teams";
+pub(super) fn initialize(connection: &mut rusqlite::Connection) -> Result<(), String> {
+    let transaction = connection.transaction().map_err(|e| e.to_string())?;
+    transaction.execute(
+        "INSERT OR IGNORE INTO plugin_instances (instance_id, plugin_id, scope_kind, scope_key, enabled, config_json, created_at, updated_at) VALUES (?1, ?1, 'global', '', 1, '{}', 0, 0)",
+        [RUN_OWNER],
+    ).map_err(|e| e.to_string())?;
+    transaction
+        .execute(
+            "UPDATE plugin_runs SET instance_id = ?1 WHERE instance_id = 'builtin.teams:default'",
+            [RUN_OWNER],
+        )
+        .map_err(|e| e.to_string())?;
+    transaction.commit().map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TeamDocument {
@@ -253,7 +270,7 @@ mod tests {
         assert_eq!(state.revision, 1);
     }
     #[test]
-    fn team_steps_use_registered_plugin_owner_and_stable_run_id() {
+    fn legacy_team_runs_migrate_to_core_and_survive_removing_plugin_view() {
         use super::super::{PluginInstanceInput, PluginRunInput};
         let dir = tempfile::tempdir().unwrap();
         let store = HarnessStore::open_at(dir.path().to_path_buf()).unwrap();
@@ -286,6 +303,25 @@ mod tests {
         store.upsert_plugin_run(&run).unwrap();
         let reloaded = HarnessStore::open_at(dir.path().to_path_buf()).unwrap();
         assert_eq!(reloaded.list_plugin_runs().unwrap()[0].run_id, run.run_id);
+        assert_eq!(
+            reloaded.list_plugin_runs().unwrap()[0].instance_id,
+            RUN_OWNER
+        );
+        assert!(!reloaded
+            .list_plugin_instances()
+            .unwrap()
+            .iter()
+            .any(|i| i.instance_id == RUN_OWNER));
+        reloaded
+            .delete_plugin_instance("builtin.teams:default")
+            .unwrap();
+        assert_eq!(reloaded.list_plugin_runs().unwrap().len(), 1);
+        assert!(reloaded.delete_plugin_instance(RUN_OWNER).is_err());
+        let mut native_run = run;
+        native_run.run_id = "22345678-1234-1234-1234-123456789abc".into();
+        native_run.instance_id = RUN_OWNER.into();
+        reloaded.upsert_plugin_run(&native_run).unwrap();
+        assert_eq!(reloaded.list_plugin_runs().unwrap().len(), 2);
     }
     #[cfg(unix)]
     #[test]

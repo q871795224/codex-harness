@@ -24,7 +24,9 @@
 
 ## 成员与团队
 
-- `core/teams` 管理成员、团队、任务快照和受控调度；`features/teams` 提供管理界面，内置 `teams` 插件只通过 `harness.teams` service 接入。
+- `core/teams` 管理成员、团队、任务快照和受控调度；App 创建单例，原生 `TeamMode` 和内置 `teams` 插件共享它。插件只通过 `harness.teams` service 接入。
+- 会话与团队是两种核心界面模式；`app_state.interfaceMode` 记录选择，切换时保留已挂载视图与运行服务。原生团队模式使用右侧导航，可在没有当前会话或团队插件时操作。
+- 团队运行以保留的 `core.teams` 内部记录满足 `plugin_runs` 外键，启动时迁移旧 `builtin.teams:default` 运行。该记录不进入插件列表，不允许经插件接口修改或删除；移除插件视图不删除核心团队运行。
 - 每次执行复用 `harness.agentRuns`，保留来源会话；团队运行使用 detached 模式，不触发旧委派的自动回传 UI。成员 Skill 来自核心 App Server 列表，启动时重新验证，并通过原生 Skill 输入提供；MCP 仍是共享配置。
 - `store/teams.rs` 保存版本化任务文档和成员 Markdown 记忆，正文不进 SQLite。SQLite 写事务只协调文件写入，原子替换前比较版本；记忆路径验证成员 ID，工作区键同时校验完整 scope，拒绝符号链接。
 - 任务内顺序协作，多个任务可并行使用各自隔离 worktree。重启不会自动接管。调度规则与预算语义以 `agent-interaction.md` 第八节为准。
