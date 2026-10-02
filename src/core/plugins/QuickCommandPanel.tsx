@@ -24,6 +24,17 @@ export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRo
   const [states, setStates] = useState<Record<string, CommandState>>({})
   const releaseVisible = Boolean(release?.supported)
   const releaseRunning = release?.status?.status === 'running'
+  const isJewellRelease = release?.project === 'jewell'
+  const releaseLabel = isJewellRelease ? '发布 Jewell' : '发布 Codex Harness'
+  const releaseDetails = isJewellRelease
+    ? '合并到 master、打 tag、推送 GitHub 并发布签名 APK'
+    : '创建并合并发布 PR、安装本机版本并发布到 GitHub'
+  const releasePhaseLabel = (phase: string) => {
+    if (isJewellRelease && phase === 'building') return '构建签名 APK'
+    if (isJewellRelease && phase === 'submitting') return '推送 master 与 tag'
+    if (isJewellRelease && phase === 'publishing') return '创建 GitHub Release'
+    return RELEASE_PHASE_LABELS[phase as keyof typeof RELEASE_PHASE_LABELS] ?? phase
+  }
   if (commands.length === 0 && !releaseVisible) return null
 
   const run = async (entry: ResolvedContribution<QuickCommandContribution>) => {
@@ -93,8 +104,8 @@ export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRo
                   disabled={releaseRunning}
                   onClick={() => void toggleReleasePicker()}
                   aria-expanded={releasePicker}
-                  aria-label="发布 Codex Harness"
-                  title="创建并合并发布 PR、安装本机版本并发布到 GitHub"
+                  aria-label={releaseLabel}
+                  title={releaseDetails}
                 >
                   <span className={`quick-command-icon ${release.status?.status === 'succeeded' ? 'success' : release.status?.status ?? 'idle'}`}>
                     {releaseRunning || releaseRefreshing ? <LoaderCircle className="spin" size={14} />
@@ -105,7 +116,7 @@ export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRo
                   <strong>发布</strong>
                   {release.status ? (
                     <small className={release.status.status === 'failed' ? 'failed' : release.status.status === 'succeeded' ? 'success' : ''}>
-                      {release.status.version} · {RELEASE_PHASE_LABELS[release.status.phase] ?? release.status.phase}
+                      {release.status.version} · {releasePhaseLabel(release.status.phase)}
                     </small>
                   ) : <ChevronRight className="quick-command-release-chevron" size={13} />}
                 </button>
@@ -117,7 +128,7 @@ export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRo
                         <button key={version} type="button" role="menuitem" onClick={() => void startRelease(version)}>{version}</button>
                       ))}
                     </div>
-                    <small>合并 PR · 安装本机 · GitHub Release</small>
+                    <small>{isJewellRelease ? '合并 master · tag · APK · GitHub Release' : '合并 PR · 安装本机 · GitHub Release'}</small>
                   </div>
                 )}
                 {releaseError && <p className="quick-command-release-error" role="alert">{releaseError}</p>}

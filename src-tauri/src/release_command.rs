@@ -15,6 +15,57 @@ use crate::{git_workspace, store};
 const EXPECTED_REMOTE: &str = "github.com/q871795224/codex-harness";
 const RUNNER_SOURCE: &str =
     include_str!("../../.agents/skills/harness-release/scripts/release_runner.py");
+const JEWELL_RUNNER_SOURCE: &str =
+    include_str!("../../.agents/skills/harness-release/scripts/jewell_release_runner.py");
+const JEWELL_REMOTE: &str = "github.com/q871795224/jewell";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReleaseProject {
+    CodexHarness,
+    Jewell,
+}
+
+impl ReleaseProject {
+    fn remote(self) -> &'static str {
+        match self {
+            Self::CodexHarness => EXPECTED_REMOTE,
+            Self::Jewell => JEWELL_REMOTE,
+        }
+    }
+
+    fn branch(self) -> &'static str {
+        match self {
+            Self::CodexHarness => "main",
+            Self::Jewell => "master",
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::CodexHarness => "codex-harness",
+            Self::Jewell => "jewell",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::CodexHarness => "Codex Harness",
+            Self::Jewell => "Jewell",
+        }
+    }
+
+    fn runner_source(self) -> &'static str {
+        match self {
+            Self::CodexHarness => RUNNER_SOURCE,
+            Self::Jewell => JEWELL_RUNNER_SOURCE,
+        }
+    }
+}
+
+struct ReleaseWorkspace {
+    workspace: store::Workspace,
+    project: ReleaseProject,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +106,7 @@ pub struct ReleaseStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseCommandInfo {
     pub supported: bool,
+    pub project: Option<String>,
     pub current_version: Option<String>,
     pub installed_version: Option<String>,
     pub versions: Vec<String>,
@@ -63,9 +115,10 @@ pub struct ReleaseCommandInfo {
 }
 
 pub fn info(path: &str, refresh: bool) -> Result<ReleaseCommandInfo, String> {
-    let Some(workspace) = harness_workspace(path)? else {
+    let Some(release_workspace) = release_workspace(path)? else {
         return Ok(ReleaseCommandInfo {
             supported: false,
+            project: None,
             current_version: None,
             installed_version: None,
             versions: Vec::new(),
@@ -73,6 +126,8 @@ pub fn info(path: &str, refresh: bool) -> Result<ReleaseCommandInfo, String> {
             status: None,
         });
     };
+    let workspace = &release_workspace.workspace;
+    let project = release_workspace.project;
     let status = read_status(&workspace.root)?;
     if refresh
         && status
@@ -84,12 +139,26 @@ pub fn info(path: &str, refresh: bool) -> Result<ReleaseCommandInfo, String> {
             ["fetch", "origin", "--prune", "--tags"],
         )?;
     }
-    let current_version = origin_main_version(&workspace.checkout_root)?;
-    let origin_main_sha = origin_main_sha(&workspace.checkout_root)?;
-    let installed_version = installed_app_version();
-    let versions = next_versions(&release_base_version(&current_version))?;
+    let current_version = origin_branch_version(&workspace.checkout_root, project.branch())?;
+    let origin_main_sha = origin_branch_sha(&workspace.checkout_root, project.branch())?;
+    let installed_version = (project == ReleaseProject::CodexHarness)
+        .then(installed_app_version)
+        .flatten();
+    let version_base = if project == ReleaseProject::CodexHarness {
+        release_base_version(&current_version)
+    } else {
+        current_version.clone()
+    };
+    let mut versions = next_versions(&version_base)?;
+    if project == ReleaseProject::Jewell
+        && can_resume_jewell_release(status.as_ref(), &current_version)
+        && remote_tag_exists(&workspace.checkout_root, &current_version)?
+    {
+        versions.insert(0, current_version.clone());
+    }
     Ok(ReleaseCommandInfo {
         supported: true,
+        project: Some(project.key().to_string()),
         current_version: Some(current_version),
         installed_version,
         versions,
@@ -105,27 +174,42 @@ pub fn status(workspace_root: &str) -> Result<Option<ReleaseStatus>, String> {
 }
 
 pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<ReleaseStatus, String> {
-    let Some(workspace) = harness_workspace(path)? else {
-        return Err("发布命令只适用于 Codex Harness 工作区".to_string());
+    let Some(release_workspace) = release_workspace(path)? else {
+        return Err("发布命令只适用于 Codex Harness 或 Jewell 工作区".to_string());
     };
-    if let Some(current) = read_status(&workspace.root)? {
+    let workspace = release_workspace.workspace;
+    let project = release_workspace.project;
+    let previous_status = read_status(&workspace.root)?;
+    if let Some(current) = previous_status.as_ref() {
         if current.status == "running" {
-            return Err(format!("Codex Harness {} 正在发布", current.version));
+            return Err(format!("{} {} 正在发布", project.label(), current.version));
         }
     }
 
-    let current_version = origin_main_version(&workspace.checkout_root)?;
-    let current_sha = origin_main_sha(&workspace.checkout_root)?;
+    let current_version = origin_branch_version(&workspace.checkout_root, project.branch())?;
+    let current_sha = origin_branch_sha(&workspace.checkout_root, project.branch())?;
     if let Some(expected_sha) = base_sha {
         if expected_sha != current_sha {
-            return Err("版本列表对应的 origin/main 已更新，请重新打开发布菜单".to_string());
+            return Err(format!(
+                "版本列表对应的 origin/{} 已更新，请重新打开发布菜单",
+                project.branch()
+            ));
         }
     }
     let release_base_sha = base_sha.unwrap_or(current_sha.as_str());
-    if !next_versions(&release_base_version(&current_version))?
+    let version_base = if project == ReleaseProject::CodexHarness {
+        release_base_version(&current_version)
+    } else {
+        current_version.clone()
+    };
+    let resume = project == ReleaseProject::Jewell
+        && can_resume_jewell_release(previous_status.as_ref(), &current_version)
+        && version == current_version
+        && remote_tag_exists(&workspace.checkout_root, version)?;
+    let version_is_allowed = next_versions(&version_base)?
         .iter()
-        .any(|item| item == version)
-    {
+        .any(|item| item == version);
+    if !resume && !version_is_allowed {
         return Err(format!("{version} 不是 {current_version} 的可选发布版本"));
     }
 
@@ -138,7 +222,7 @@ pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<Releas
     let state_path = data_dir.join("current.json");
     let log_path = data_dir.join(format!("{run_id}.log"));
     let runner_path = data_dir.join("release_runner.py");
-    write_atomic(&runner_path, RUNNER_SOURCE.as_bytes())?;
+    write_atomic(&runner_path, project.runner_source().as_bytes())?;
 
     let initial = ReleaseStatus {
         run_id: run_id.clone(),
@@ -187,6 +271,9 @@ pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<Releas
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
+    if resume {
+        command.arg("--resume");
+    }
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = match command.spawn() {
@@ -212,9 +299,10 @@ pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<Releas
 }
 
 pub fn dismiss(path: &str) -> Result<Option<ReleaseStatus>, String> {
-    let Some(workspace) = harness_workspace(path)? else {
+    let Some(release_workspace) = release_workspace(path)? else {
         return Ok(None);
     };
+    let workspace = release_workspace.workspace;
     let state_path = release_data_dir(&workspace.root)?.join("current.json");
     let Some(mut current) = read_status(&workspace.root)? else {
         return Ok(None);
@@ -237,9 +325,10 @@ fn historical_log_path(directory: &Path, run_id: &str) -> Result<PathBuf, String
 }
 
 pub fn open_log(path: &str, run_id: Option<&str>) -> Result<(), String> {
-    let Some(workspace) = harness_workspace(path)? else {
-        return Err("发布命令只适用于 Codex Harness 工作区".to_string());
+    let Some(release_workspace) = release_workspace(path)? else {
+        return Err("发布命令只适用于 Codex Harness 或 Jewell 工作区".to_string());
     };
+    let workspace = release_workspace.workspace;
     let expected = release_data_dir(&workspace.root)?;
     let log_path = if let Some(run_id) = run_id {
         historical_log_path(&expected, run_id)?
@@ -265,7 +354,7 @@ pub fn open_log(path: &str, run_id: Option<&str>) -> Result<(), String> {
     }
 }
 
-fn harness_workspace(path: &str) -> Result<Option<store::Workspace>, String> {
+fn release_workspace(path: &str) -> Result<Option<ReleaseWorkspace>, String> {
     let workspace = match git_workspace::resolve_workspace(path) {
         Ok(workspace) => workspace,
         Err(_) => return Ok(None),
@@ -274,7 +363,11 @@ fn harness_workspace(path: &str) -> Result<Option<store::Workspace>, String> {
         Ok(remote) => remote,
         Err(_) => return Ok(None),
     };
-    Ok((normalized_remote(&remote) == EXPECTED_REMOTE).then_some(workspace))
+    let remote = normalized_remote(&remote);
+    let project = [ReleaseProject::CodexHarness, ReleaseProject::Jewell]
+        .into_iter()
+        .find(|project| remote == project.remote());
+    Ok(project.map(|project| ReleaseWorkspace { workspace, project }))
 }
 
 fn normalized_remote(remote: &str) -> String {
@@ -288,25 +381,39 @@ fn normalized_remote(remote: &str) -> String {
     value.replacen(':', "/", 1)
 }
 
-fn origin_main_version(cwd: &str) -> Result<String, String> {
-    let raw = git(cwd, ["show", "origin/main:package.json"])?;
+fn origin_branch_version(cwd: &str, branch: &str) -> Result<String, String> {
+    let reference = format!("origin/{branch}:package.json");
+    let raw = git(cwd, ["show", reference.as_str()])?;
     let package: Value = serde_json::from_str(&raw)
-        .map_err(|error| format!("origin/main package.json 无效: {error}"))?;
+        .map_err(|error| format!("origin/{branch} package.json 无效: {error}"))?;
     package
         .get("version")
         .and_then(Value::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| "origin/main package.json 缺少 version".to_string())
+        .ok_or_else(|| format!("origin/{branch} package.json 缺少 version"))
 }
 
-fn origin_main_sha(cwd: &str) -> Result<String, String> {
-    git(cwd, ["rev-parse", "origin/main"])
+fn origin_branch_sha(cwd: &str, branch: &str) -> Result<String, String> {
+    let reference = format!("origin/{branch}");
+    git(cwd, ["rev-parse", reference.as_str()])
+}
+
+fn remote_tag_exists(cwd: &str, version: &str) -> Result<bool, String> {
+    let tag = format!("refs/tags/v{version}");
+    Ok(!git(cwd, ["ls-remote", "--tags", "origin", tag.as_str()])?.is_empty())
+}
+
+fn can_resume_jewell_release(status: Option<&ReleaseStatus>, current_version: &str) -> bool {
+    status.is_some_and(|status| {
+        status.status == "failed"
+            && status.version == current_version
+            && matches!(status.phase.as_str(), "submitting" | "publishing")
+    })
 }
 
 fn installed_app_version() -> Option<String> {
     let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    let plist = home
-        .join("Applications/Codex Harness.app/Contents/Info.plist");
+    let plist = home.join("Applications/Codex Harness.app/Contents/Info.plist");
     if !plist.is_file() {
         return None;
     }

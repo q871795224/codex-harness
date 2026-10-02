@@ -3,6 +3,7 @@ export type ReleaseRunPhase =
   | 'preparing-worktree'
   | 'preparing'
   | 'checking'
+  | 'building'
   | 'submitting'
   | 'publishing'
   | 'completed'
@@ -32,6 +33,7 @@ export interface ReleaseRunStatus {
 
 export interface ReleaseCommandInfo {
   supported: boolean
+  project?: 'codex-harness' | 'jewell' | null
   currentVersion: string | null
   installedVersion: string | null
   versions: string[]
@@ -52,6 +54,7 @@ export const RELEASE_PHASE_LABELS: Record<ReleaseRunPhase, string> = {
   'preparing-worktree': '准备隔离工作区',
   preparing: '更新版本',
   checking: '运行检查',
+  building: '构建签名 APK',
   submitting: '提交并合并 PR',
   publishing: '构建并发布',
   completed: '发布完成',
