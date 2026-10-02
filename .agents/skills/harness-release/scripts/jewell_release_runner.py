@@ -246,7 +246,7 @@ def validate_workspace(workspace: Path, version: str, base_sha: str, resume: boo
     branch = git(workspace, "branch", "--show-current")
     if not branch:
         raise RuntimeError("当前 checkout 未关联分支，无法合并到 master")
-    run("git", "fetch", "origin", "--prune", "--tags", cwd=workspace)
+    command("git", "fetch", "origin", "--prune", "--tags", cwd=workspace)
     current_base_sha = git(workspace, "rev-parse", f"origin/{TARGET_BRANCH}")
     if current_base_sha != base_sha:
         raise RuntimeError("origin/master 已更新，请重新打开发布菜单并刷新版本")
