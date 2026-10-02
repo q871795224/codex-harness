@@ -22,6 +22,16 @@ REPOSITORY = "q871795224/jewell"
 EXPECTED_REMOTE = "github.com/q871795224/jewell"
 TARGET_BRANCH = "master"
 VERSION_PATTERN = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+PRODUCTION_SIGNING_FILES = (
+    ("android/app/jewell-release.jks", "android/app/jewell-release.jks"),
+    ("android/keystore.properties", "android/keystore.properties"),
+)
+LOCAL_SIGNING_FILES = (
+    ("android/app/jewell-local.jks", "android/app/jewell-local.jks"),
+    ("android/keystore-local.properties", "android/keystore-local.properties"),
+)
+PRODUCTION_APPLICATION_ID = "com.local.jewell"
+LOCAL_APPLICATION_ID = "com.local.jewell.local"
 
 
 def now_ms() -> int:
@@ -238,7 +248,13 @@ def bootstrap_tool_path() -> None:
         needed = [tool for tool in needed if shutil.which(tool) is None]
 
 
-def validate_workspace(workspace: Path, version: str, base_sha: str, resume: bool) -> str:
+def validate_workspace(
+    workspace: Path,
+    version: str,
+    base_sha: str,
+    resume: bool,
+    local_signing: bool = False,
+) -> str:
     if normalized_remote(git(workspace, "remote", "get-url", "origin")) != EXPECTED_REMOTE:
         raise RuntimeError("当前 origin 不是 Jewell GitHub 仓库")
     if git(workspace, "status", "--porcelain", "--untracked-files=all"):
@@ -246,7 +262,7 @@ def validate_workspace(workspace: Path, version: str, base_sha: str, resume: boo
     branch = git(workspace, "branch", "--show-current")
     if not branch:
         raise RuntimeError("当前 checkout 未关联分支，无法合并到 master")
-    run("git", "fetch", "origin", "--prune", "--tags", cwd=workspace)
+    command("git", "fetch", "origin", "--prune", "--tags", cwd=workspace)
     current_base_sha = git(workspace, "rev-parse", f"origin/{TARGET_BRANCH}")
     if current_base_sha != base_sha:
         raise RuntimeError("origin/master 已更新，请重新打开发布菜单并刷新版本")
@@ -296,17 +312,19 @@ def validate_workspace(workspace: Path, version: str, base_sha: str, resume: boo
     release = github_release(workspace, tag)
     if release is not None and not resume:
         raise RuntimeError(f"GitHub 已存在 release {tag}，请先核对之前的发布记录")
-    android = workspace / "android"
-    if not (android / "app/jewell-release.jks").is_file() or not (android / "keystore.properties").is_file():
-        raise RuntimeError("原版 Android 签名文件缺失；请恢复签名文件后重试")
+    names = LOCAL_SIGNING_FILES if local_signing else PRODUCTION_SIGNING_FILES
+    missing_signing_files = [
+        source for source, _ in names if not (workspace / source).is_file()
+    ]
+    if missing_signing_files:
+        profile = "本机版" if local_signing else "原版"
+        raise RuntimeError(f"{profile} Android 签名文件缺失：{', '.join(missing_signing_files)}")
     return source_sha
 
 
-def install_signing_links(workspace: Path, worktree: Path) -> list[Path]:
-    mappings = (
-        (workspace / "android/app/jewell-release.jks", worktree / "android/app/jewell-release.jks"),
-        (workspace / "android/keystore.properties", worktree / "android/keystore.properties"),
-    )
+def install_signing_links(workspace: Path, worktree: Path, local_signing: bool = False) -> list[Path]:
+    names = LOCAL_SIGNING_FILES if local_signing else PRODUCTION_SIGNING_FILES
+    mappings = tuple((workspace / source, worktree / destination) for source, destination in names)
     installed: list[Path] = []
     try:
         for source, destination in mappings:
@@ -358,7 +376,7 @@ def find_build_tool(build_tools: list[Path], name: str) -> Path | None:
     return None
 
 
-def validate_apk(apk: Path, version: str, env: dict[str, str]) -> str:
+def validate_apk(apk: Path, version: str, env: dict[str, str], application_id: str) -> str:
     if not apk.is_file() or apk.stat().st_size == 0:
         raise RuntimeError(f"APK 未生成或为空：{apk}")
     with zipfile.ZipFile(apk) as archive:
@@ -371,7 +389,7 @@ def validate_apk(apk: Path, version: str, env: dict[str, str]) -> str:
     if aapt:
         badging = capture(str(aapt), "dump", "badging", str(apk), cwd=apk.parent)
         match = re.search(r"package: name='([^']+)' versionCode='[^']*' versionName='([^']*)'", badging.stdout)
-        if not match or match.group(1) != "com.local.jewell" or match.group(2) != version:
+        if not match or match.group(1) != application_id or match.group(2) != version:
             raise RuntimeError("APK 的包名或版本与 Jewell 发布版本不一致")
     else:
         log_event("apk.metadata.validation", outcome="unavailable", detail="找不到 aapt")
@@ -397,6 +415,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--version", required=True)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--local-signing", action="store_true", help="使用独立本机版签名，并发布 Jewell local APK")
     return parser.parse_args()
 
 
@@ -425,6 +444,7 @@ def main() -> int:
         "dismissed": False,
         "warning": False,
         "baseSha": args.base_sha,
+        "signingProfile": "local" if args.local_signing else "production",
         "phaseStartedAt": now_ms(),
         "phaseDurationMs": None,
         "phaseDurations": {},
@@ -436,18 +456,19 @@ def main() -> int:
     signing_links: list[Path] = []
     try:
         set_phase(state, state_path, "preparing-worktree")
-        source_sha = validate_workspace(workspace, args.version, args.base_sha, args.resume)
+        source_sha = validate_workspace(workspace, args.version, args.base_sha, args.resume, args.local_signing)
+        asset_name = f"jewell-local-v{args.version}.apk" if args.local_signing else f"jewell-v{args.version}.apk"
+        application_id = LOCAL_APPLICATION_ID if args.local_signing else PRODUCTION_APPLICATION_ID
         if args.resume:
             existing_release = github_release(workspace, tag)
             if existing_release is not None:
                 if existing_release.get("draft"):
                     raise RuntimeError(f"GitHub Release {tag} 是 draft，停止自动恢复")
-                expected_asset = f"jewell-v{args.version}.apk"
                 asset_names = {asset.get("name") for asset in existing_release.get("assets", [])}
-                if expected_asset in asset_names:
+                if asset_name in asset_names:
                     state.update({"status": "succeeded", "phase": "completed", "completedAt": now_ms(), "step": None})
                     write_state(state_path, state)
-                    log_event("release.recovered", outcome="succeeded", version=args.version, url=existing_release.get("html_url"), asset=expected_asset)
+                    log_event("release.recovered", outcome="succeeded", version=args.version, url=existing_release.get("html_url"), asset=asset_name)
                     return 0
         if worktree.exists():
             raise RuntimeError(f"发布 worktree 已存在：{worktree}")
@@ -481,7 +502,10 @@ def main() -> int:
         set_phase(state, state_path, "checking")
         run_step(state, state_path, npm, "ci", cwd=worktree)
         run_step(state, state_path, npm, "run", "check", cwd=worktree)
-        status = git(worktree, "status", "--porcelain", "--untracked-files=all")
+        # Preserve porcelain's leading status column spaces; git() strips them.
+        status = capture(
+            "git", "status", "--porcelain", "--untracked-files=all", cwd=worktree
+        ).stdout
         unexpected = [
             line[3:]
             for line in status.splitlines()
@@ -498,12 +522,13 @@ def main() -> int:
             run_step(state, state_path, "git", "tag", "-a", tag, "-m", f"Jewell {tag}", cwd=worktree)
             tag_created = True
 
-        signing_links = install_signing_links(workspace, worktree)
+        signing_links = install_signing_links(workspace, worktree, args.local_signing)
         env = android_environment(workspace)
         set_phase(state, state_path, "building")
-        run_step(state, state_path, npm, "run", "android:apk", cwd=worktree, env=env)
-        apk = worktree / "releases" / f"jewell-v{args.version}.apk"
-        digest = validate_apk(apk, args.version, env)
+        build_script = "android:apk:local" if args.local_signing else "android:apk"
+        run_step(state, state_path, npm, "run", build_script, cwd=worktree, env=env)
+        apk = worktree / "releases" / asset_name
+        digest = validate_apk(apk, args.version, env, application_id)
         local_release_dir = workspace / "releases"
         local_release_dir.mkdir(parents=True, exist_ok=True)
         local_apk = local_release_dir / apk.name
@@ -538,22 +563,20 @@ def main() -> int:
                     "--repo", REPOSITORY, cwd=workspace,
                 )
         else:
-            run_step(
-                state,
-                state_path,
-                "gh",
-                "release",
-                "create",
-                tag,
-                str(local_apk),
-                "--repo",
-                REPOSITORY,
-                "--title",
-                f"Jewell {tag}",
-                "--generate-notes",
+            release_command = [
+                "gh", "release", "create", tag, str(local_apk),
+                "--repo", REPOSITORY,
+                "--title", f"Jewell {tag}（本机签名版）" if args.local_signing else f"Jewell {tag}",
                 "--verify-tag",
-                cwd=workspace,
-            )
+            ]
+            if args.local_signing:
+                release_command.extend([
+                    "--notes",
+                    f"此 Release 附带 Jewell 本机版 APK（{LOCAL_APPLICATION_ID}），使用独立的本机签名文件。",
+                ])
+            else:
+                release_command.append("--generate-notes")
+            run_step(state, state_path, *release_command, cwd=workspace)
         release = github_release(workspace, tag)
         if release is None:
             raise RuntimeError(f"GitHub Release {tag} 已创建，但未能回读确认")
