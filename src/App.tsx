@@ -740,6 +740,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
               workspace={workspace}
               gitContextResolved={harness.threadGitCwds[harness.currentThread.id] === harness.currentThread.cwd}
               archived={harness.viewMode === 'archived'}
+              isWorking={harness.isCurrentWorking}
               pinned={harness.navigation.pinnedThreadIds.includes(harness.currentThread.id)}
               workspaceChanging={Boolean(harness.busy.threadWorkspace)}
               canChangeWorkspace={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
