@@ -48,6 +48,7 @@ interface ConversationHeaderProps {
   workspace: Workspace | null
   gitContextResolved: boolean
   archived: boolean
+  isWorking: boolean
   pinned: boolean
   workspaceChanging: boolean
   canChangeWorkspace: boolean
@@ -64,7 +65,7 @@ interface ConversationHeaderProps {
   headerActions?: ReactNode
 }
 
-export function ConversationHeader({ thread, workspace, gitContextResolved, archived, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
+export function ConversationHeader({ thread, workspace, gitContextResolved, archived, isWorking, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -150,6 +151,7 @@ export function ConversationHeader({ thread, workspace, gitContextResolved, arch
         <button
           type="button"
           className="header-action"
+          disabled={!archived && isWorking}
           onClick={archived ? onUnarchive : onArchive}
           title={archived ? '恢复会话' : '归档会话'}
         >

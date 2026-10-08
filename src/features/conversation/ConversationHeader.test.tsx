@@ -37,6 +37,7 @@ function renderHeader(overrides: Partial<Parameters<typeof ConversationHeader>[0
     workspace,
     gitContextResolved: true,
     archived: false,
+    isWorking: false,
     pinned: false,
     workspaceChanging: false,
     canChangeWorkspace: true,
@@ -64,4 +65,29 @@ it('shows the bound project name and clicking it opens the project', () => {
   expect((chip as HTMLButtonElement).disabled).toBe(false)
   fireEvent.click(chip)
   expect(onOpenProject).toHaveBeenCalledTimes(1)
+})
+
+it('disables archive during execution and enables it once execution ends', () => {
+  const onArchive = vi.fn()
+  const view = renderHeader({ isWorking: true, onArchive })
+  const archive = screen.getByRole('button', { name: '归档' }) as HTMLButtonElement
+  expect(archive.disabled).toBe(true)
+  fireEvent.click(archive)
+  expect(onArchive).not.toHaveBeenCalled()
+
+  view.unmount()
+  renderHeader({ isWorking: false, onArchive })
+  const idleArchive = screen.getByRole('button', { name: '归档' }) as HTMLButtonElement
+  expect(idleArchive.disabled).toBe(false)
+  fireEvent.click(idleArchive)
+  expect(onArchive).toHaveBeenCalledTimes(1)
+})
+
+it('keeps restore available for archived conversations', () => {
+  const onUnarchive = vi.fn()
+  renderHeader({ archived: true, isWorking: true, onUnarchive })
+  const restore = screen.getByRole('button', { name: '恢复' }) as HTMLButtonElement
+  expect(restore.disabled).toBe(false)
+  fireEvent.click(restore)
+  expect(onUnarchive).toHaveBeenCalledTimes(1)
 })
