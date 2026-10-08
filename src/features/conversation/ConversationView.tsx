@@ -5,6 +5,7 @@ import { SkillCatalogContext, useSkillCatalog } from './SkillCatalog'
 import { ToolCallDetails } from './ItemDetails'
 import { inspectItem } from './itemInspection'
 import { UserMessageContent } from './UserMessageContent'
+import { UserInputRequestCard } from './UserInputRequestCard'
 import { memo, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   Archive,
@@ -31,7 +32,7 @@ import {
   UserRound,
   Wrench,
 } from 'lucide-react'
-import type { ApprovalRequest, Thread, ThreadItemEntry, Turn, Workspace } from '../../core/domain/codex'
+import type { ApprovalRequest, SendShortcut, Thread, ThreadItemEntry, Turn, Workspace } from '../../core/domain/codex'
 import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
 import { displayCommand } from './commandDisplay'
@@ -180,6 +181,7 @@ interface ConversationViewProps {
   turns: Turn[]
   cwd: string
   approvals: ApprovalRequest[]
+  sendShortcut?: SendShortcut
   workspace: Workspace | null
   workspaces: Workspace[]
   workspaceChanging: boolean
@@ -187,7 +189,7 @@ interface ConversationViewProps {
   scrollToLatestRequest: number
   hasOlderTurns: boolean
   loadingOlderTurns: boolean
-  onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void
+  onAnswerApproval: (request: ApprovalRequest, decision: unknown) => void | Promise<void>
   onLoadOlderTurns: () => void
   onScrollPosition: (scrollTop: number) => void
   onWorkspaceChange: (workspaceRoot: string) => void
@@ -221,7 +223,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
+export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -444,7 +446,9 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
             </div>
           )}
           {approvals.map((request) => (
-            <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
+            request.method === 'item/tool/requestUserInput'
+              ? <UserInputRequestCard key={String(request.id)} request={request} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
+              : <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
           ))}
         </div>
       </div>
@@ -1010,13 +1014,12 @@ function ApprovalCard({ request, onAnswer }: { request: ApprovalRequest; onAnswe
   const reason = typeof params.reason === 'string' ? params.reason : null
   const decisions = request.method === 'item/commandExecution/requestApproval'
     ? Array.isArray(params.availableDecisions) && params.availableDecisions.length > 0 ? params.availableDecisions : ['accept', 'decline']
-    : request.method === 'item/fileChange/requestApproval' ? ['accept', 'decline']
-      : request.method === 'item/tool/requestUserInput' ? ['cancel'] : ['accept', 'decline']
+    : ['accept', 'decline']
   return (
     <article className="approval-card">
       <div className="approval-icon"><ShieldAlert size={18} /></div>
       <div className="approval-content">
-        <h3>{request.method === 'item/fileChange/requestApproval' ? '需要确认文件修改' : request.method === 'item/tool/requestUserInput' ? 'Codex 需要你的输入' : '需要执行审批'}</h3>
+        <h3>{request.method === 'item/fileChange/requestApproval' ? '需要确认文件修改' : '需要执行审批'}</h3>
         {displayedCommand && <code title={command ?? undefined}>{displayedCommand}</code>}
         {reason && <p>{reason}</p>}
         {!command && !reason && <p>App Server 请求确认该操作。</p>}

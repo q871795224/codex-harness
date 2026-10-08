@@ -826,6 +826,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 turns={harness.currentDetail?.turns ?? []}
                 cwd={harness.currentThread.cwd}
                 approvals={currentApprovals}
+                sendShortcut={harness.keyboard.sendShortcut}
                 workspace={workspace}
                 workspaces={harness.workspaces}
                 workspaceChanging={Boolean(harness.busy.threadWorkspace)}
@@ -833,7 +834,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 scrollToLatestRequest={scrollToLatestRequest?.threadId === harness.currentThread.id ? scrollToLatestRequest.sequence : 0}
                 hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
                 loadingOlderTurns={Boolean(harness.busy.olderTurns)}
-                onAnswerApproval={(request, decision) => void harness.answerApproval(request, decision)}
+                onAnswerApproval={(request, decision) => harness.answerApproval(request, decision)}
                 onLoadOlderTurns={() => void harness.loadOlderTurns()}
                 onScrollPosition={(scrollTop) => { conversationScrollPositions.current[harness.currentThread!.id] = scrollTop }}
                 onWorkspaceChange={(workspaceRoot) => harness.selectedThreadId

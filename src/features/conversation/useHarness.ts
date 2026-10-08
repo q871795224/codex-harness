@@ -82,7 +82,7 @@ import {
   parseEventTokenUsage,
   parseEventTurnPlan,
 } from './conversationEventParser'
-import { approvalResponse, isApprovalRequestMethod } from './approvalFlow'
+import { isServerRequestMethod, serverRequestResponse } from './approvalFlow'
 import {
   APPEARANCE_PREFERENCES_KEY,
   CONVERSATION_STATS_PREFERENCES_KEY,
@@ -1909,7 +1909,7 @@ export function useHarness() {
 
   const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
     try {
-      await runtime.respond(request.id, approvalResponse(request.method, decision))
+      await runtime.respond(request.id, serverRequestResponse(request.method, decision))
       setApprovals((current) => ({
         ...current,
         [request.threadId]: (current[request.threadId] ?? []).filter((item) => item.id !== request.id),
@@ -1917,7 +1917,7 @@ export function useHarness() {
       const remaining = (approvalsRef.current[request.threadId] ?? []).filter((item) => item.id !== request.id)
       if (remaining.length === 0 && activeTurnIdsRef.current[request.threadId]) persistBadge(request.threadId, 'working')
     } catch (error) {
-      notify('无法提交审批结果', 'error', error, { threadId: request.threadId })
+      notify(request.method === 'item/tool/requestUserInput' ? '无法提交回答' : '无法提交审批结果', 'error', error, { threadId: request.threadId })
     }
   }, [notify, persistBadge])
 
@@ -1993,7 +1993,7 @@ export function useHarness() {
     if (handleTitleGeneratorEvent(method, params)) return
     if (handleRecapGeneratorEvent(method, params)) return
 
-    if (event.id !== undefined && isApprovalRequestMethod(method)) {
+    if (event.id !== undefined && isServerRequestMethod(method)) {
       const threadId = eventThreadId(params)
       if (threadId) {
         const request: ApprovalRequest = { id: event.id, method, params, threadId }

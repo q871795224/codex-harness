@@ -576,6 +576,42 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .approval-actions button { height: 27px; padding: 0 9px; border-radius: 6px; cursor: pointer; font-size: 11px; }
 .approval-actions .approve { border: 1px solid #c8a55e; background: #d2a64b; color: #fff; }.approval-actions .approve:hover { background: #bc913a; }
 .approval-actions .deny { border: 1px solid #e2cda8; background: #fffdf9; color: #866d40; }.approval-actions .deny:hover { background: #f8f0df; }
+.approval-actions button:disabled { cursor: default; opacity: .55; }
+.approval-card.user-input-card { align-items: flex-start; gap: 9px; padding: 12px; border-color: #d7def0; background: #f7f8fc; }
+.user-input-icon { width: 27px; height: 27px; background: #e5eafb; color: #5268ac; }
+.user-input-content { flex: 1; }
+.user-input-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.user-input-question-title { min-width: 0; }
+.user-input-question-meta { display: flex; align-items: center; gap: 8px; min-height: 16px; color: #818ba0; font-size: 10px; }
+.user-input-content h3 { margin: 2px 0 0; color: #35415e; font-size: 13px; line-height: 1.45; }
+.user-input-question-nav { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; color: #7e8798; font-size: 10px; }
+.user-input-question-nav button { display: grid; place-items: center; width: 25px; height: 25px; padding: 0; border: 1px solid #dfe3ed; border-radius: 6px; background: #fff; color: #5f6c88; cursor: pointer; }
+.user-input-question-nav button:hover:not(:disabled) { border-color: #aebbe0; background: #f0f3fc; }
+.user-input-question-nav button:disabled { cursor: default; opacity: .4; }
+.user-input-content form { width: 100%; }
+.user-input-content .user-input-unavailable { margin: 7px 0 0; color: #7b8494; font-size: 12px; line-height: 1.5; }
+.user-input-question { min-width: 0; margin: 9px 0 0; padding: 0; border: 0; }
+.user-input-field-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.user-input-secret { display: inline-flex; align-items: center; gap: 3px; color: #85716b; }
+.user-input-options { display: grid; gap: 5px; }
+.user-input-option { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; padding: 6px 8px; border: 1px solid #e2e5ed; border-radius: 7px; background: rgba(255, 255, 255, .8); color: inherit; cursor: pointer; text-align: left; font: inherit; }
+.user-input-option:hover:not(:disabled) { border-color: #bdc9e6; background: #fff; }
+.user-input-option.selected { border-color: #8fa2d4; background: #eef2fd; }
+.user-input-option:disabled { cursor: default; opacity: .65; }
+.user-input-option-number { display: grid; flex: 0 0 19px; place-items: center; width: 19px; height: 19px; border: 1px solid #e1e5ee; border-radius: 5px; color: #8791a5; font-family: var(--h-font-mono); font-size: 10px; }
+.user-input-option-copy { display: grid; gap: 2px; min-width: 0; }
+.user-input-option strong { color: #404b64; font-size: 11px; font-weight: 620; }
+.user-input-option small { color: #838b99; font-size: 10px; line-height: 1.4; }
+.user-input-other { cursor: text; }
+.user-input-other-label { flex: 0 0 auto; color: #404b64; font-size: 11px; font-weight: 620; }
+.user-input-other-field { flex: 1; min-width: 80px; height: 27px; padding: 4px 7px; border: 0; border-radius: 0; outline: 0; background: transparent; color: #343b47; font: inherit; font-size: 11px; }
+.user-input-other-field:focus-visible { outline: none; box-shadow: none; }
+.user-input-freeform:focus-visible { border-color: #8fa2d4; box-shadow: 0 0 0 3px rgba(99, 121, 194, .12); }
+.user-input-freeform { box-sizing: border-box; width: 100%; height: 35px; padding: 7px 9px; border: 1px solid #dfe3ed; border-radius: 7px; outline: 0; background: #fff; color: #343b47; font: inherit; font-size: 11px; }
+.user-input-freeform:disabled, .user-input-other-field:disabled { opacity: .6; }
+.user-input-actions { align-items: center; }
+.user-input-shortcut-hint { margin-left: auto; color: #8a92a0; font-size: 10px; }
+.user-input-actions .approve:disabled { background: #c6cbd8; border-color: #c6cbd8; }
 
 .trajectory-scroll { background: rgba(252, 253, 255, .66); }
 .trajectory-list { position: relative; margin-top: 6px; padding: 20px 0 40px 20px; list-style: none; }
@@ -1491,6 +1527,26 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .approval-content h3 { color: #e1c38d; }
 .app-shell[data-theme='dark'] .approval-content p { color: #bea97f; }
 .app-shell[data-theme='dark'] .approval-content code { color: #d6bd88; }
+.app-shell[data-theme='dark'] .approval-card.user-input-card { border-color: #3c4660; background: #222733; }
+.app-shell[data-theme='dark'] .user-input-icon { background: #303b59; color: #9caddf; }
+.app-shell[data-theme='dark'] .user-input-content h3 { color: #d2d8e9; }
+.app-shell[data-theme='dark'] .user-input-question-meta { color: #9aa4b7; }
+.app-shell[data-theme='dark'] .user-input-question-nav { color: #9aa4b7; }
+.app-shell[data-theme='dark'] .user-input-question-nav button { border-color: #41495a; background: #282e3a; color: #b8c2d9; }
+.app-shell[data-theme='dark'] .user-input-question-nav button:hover:not(:disabled) { border-color: #596a99; background: #2d3545; }
+.app-shell[data-theme='dark'] .user-input-content .user-input-unavailable { color: #a1a9b7; }
+.app-shell[data-theme='dark'] .user-input-secret { color: #c0a89f; }
+.app-shell[data-theme='dark'] .user-input-option { border-color: #3b4353; background: #282e3a; }
+.app-shell[data-theme='dark'] .user-input-option:hover:not(:disabled) { border-color: #596a99; background: #2d3545; }
+.app-shell[data-theme='dark'] .user-input-option.selected { border-color: #6479b3; background: #2d3855; }
+.app-shell[data-theme='dark'] .user-input-option-number { border-color: #434c5e; color: #9ba7bc; }
+.app-shell[data-theme='dark'] .user-input-option strong { color: #d1d8e9; }
+.app-shell[data-theme='dark'] .user-input-option small { color: #9aa4b6; }
+.app-shell[data-theme='dark'] .user-input-other-label { color: #d1d8e9; }
+.app-shell[data-theme='dark'] .user-input-other-field { background: transparent; color: #d4d9e2; color-scheme: dark; }
+.app-shell[data-theme='dark'] .user-input-freeform { border-color: #414a5c; background: #191d25; color: #d4d9e2; color-scheme: dark; }
+.app-shell[data-theme='dark'] .user-input-shortcut-hint { color: #929cad; }
+.app-shell[data-theme='dark'] .user-input-actions .approve:disabled { background: #454b59; border-color: #454b59; }
 .app-shell[data-theme='dark'] .trajectory-scroll,
 .app-shell[data-theme='dark'] .agent-runs-scroll,
 .app-shell[data-theme='dark'] .tasks-scroll { background: rgba(20, 22, 27, .55); }
