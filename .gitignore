@@ -1,6 +1,7 @@
 # Local reference material and generated protocol snapshots.
 -temp/
 .claude/worktrees/
+.playwright-cli/
 
 # JavaScript / Vite
 node_modules/
