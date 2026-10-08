@@ -1,5 +1,7 @@
 import type { MessageReference } from '../../core/domain/codex'
 import { restartedMessageReferences, saveMessageReferences } from './messageReferences'
+import { ASYNC_USER_INPUT_METHOD, asyncUserInputAnswer } from './asyncUserInput'
+import type { UserInputResponse } from './userInputRequest'
 import { notifications } from '../../core/notifications/service'
 import { errorDetails, type NotificationLevel } from '../../core/notifications/store'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -1909,6 +1911,27 @@ export function useHarness() {
 
   const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
     try {
+      if (request.method === ASYNC_USER_INPUT_METHOD) {
+        const input = [textInput(asyncUserInputAnswer(request, decision as UserInputResponse))]
+        const activeTurnId = activeTurnIdsRef.current[request.threadId]
+        if (!activeTurnId) {
+          await startTurn(request.threadId, null, input)
+        } else {
+          if (!ownedActiveThreadsRef.current[request.threadId]) throw new Error('该会话正由其他客户端运行；请等待当前轮结束。')
+          const result = await submitActiveTurnInput(appServer, {
+            threadId: request.threadId,
+            activeTurnId,
+            clientUserMessageId: newClientId(),
+            input,
+            mode: 'interject',
+          })
+          if (result.kind === 'steered') setPendingSteers((current) => ({
+            ...current,
+            [request.threadId]: [...(current[request.threadId] ?? []), result.pending],
+          }))
+        }
+        return
+      }
       await runtime.respond(request.id, serverRequestResponse(request.method, decision))
       setApprovals((current) => ({
         ...current,
@@ -1917,9 +1940,10 @@ export function useHarness() {
       const remaining = (approvalsRef.current[request.threadId] ?? []).filter((item) => item.id !== request.id)
       if (remaining.length === 0 && activeTurnIdsRef.current[request.threadId]) persistBadge(request.threadId, 'working')
     } catch (error) {
-      notify(request.method === 'item/tool/requestUserInput' ? '无法提交回答' : '无法提交审批结果', 'error', error, { threadId: request.threadId })
+      notify(request.method === 'item/tool/requestUserInput' || request.method === ASYNC_USER_INPUT_METHOD ? '无法提交回答' : '无法提交审批结果', 'error', error, { threadId: request.threadId })
+      if (request.method === ASYNC_USER_INPUT_METHOD) throw error
     }
-  }, [notify, persistBadge])
+  }, [notify, persistBadge, startTurn])
 
   const handleTitleGeneratorEvent = useCallback((method: string, params: JsonObject): boolean => {
     const generatorThreadId = eventThreadId(params)
