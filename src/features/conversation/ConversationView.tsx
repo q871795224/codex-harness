@@ -6,6 +6,7 @@ import { ToolCallDetails } from './ItemDetails'
 import { inspectItem } from './itemInspection'
 import { UserMessageContent } from './UserMessageContent'
 import { UserInputRequestCard } from './UserInputRequestCard'
+import { asyncUserInputAnswered, asyncUserInputRequest } from './asyncUserInput'
 import { memo, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   Archive,
@@ -303,13 +304,19 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
     followingLatest.current = true
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
-  const rawTranscriptRows = items.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
+  const asyncRequests = provider === 'codex' && threadId ? items.flatMap((entry, index) => {
+    const request = asyncUserInputRequest(threadId, entry.item)
+    return request ? [{ request, answered: asyncUserInputAnswered(request, items.slice(index + 1)) }] : []
+  }) : []
+  const asyncIds = new Set(asyncRequests.map(({ request }) => request.id))
+  const transcriptItems = items.filter(({ item }) => !asyncIds.has(item.id ?? ''))
+  const rawTranscriptRows = transcriptItems.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
   const agentLabel = provider === 'claude' ? 'Claude' : 'Codex'
   const turnDetails = turns.map((turn) => ({ id: turn.id, status: turn.status, error: turn.error, itemsView: turn.itemsView }))
   const activeTurnIndex = turnDetails.findIndex((turn) => turn.id === workingTurnId)
   if (workingTurnId && activeTurnIndex >= 0) turnDetails[activeTurnIndex] = { ...turnDetails[activeTurnIndex], status: 'inProgress' }
   else if (workingTurnId) turnDetails.push({ id: workingTurnId, status: 'inProgress', error: null, itemsView: undefined })
-  const transcriptTurns = rawMode ? [] : groupTranscriptTurns(items, turnDetails)
+  const transcriptTurns = rawMode ? [] : groupTranscriptTurns(transcriptItems, turnDetails)
   const latestTurnId = turns.at(-1)?.id ?? null
   const workingMessageIndex = rawMode && working ? latestAgentMessageIndex(rawTranscriptRows, workingTurnId) : -1
   const activeTurnHasContent = transcriptTurns.some((turn) => turn.turnId === workingTurnId && (turn.processRows.length > 0 || turn.finalRows.length > 0))
@@ -452,6 +459,9 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
               ? <UserInputRequestCard key={String(request.id)} request={request} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
               : <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
           ))}
+          {asyncRequests.map(({ request, answered }) => (
+            <AsyncUserInputCard key={`${request.threadId}:${request.id}`} request={request} answered={answered} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
+          ))}
         </div>
       </div>
       <button type="button" className="scroll-to-bottom" onClick={scrollToBottom} title="回到对话底部" aria-label="回到对话底部">
@@ -460,6 +470,29 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
     </section>
     </SkillCatalogContext.Provider>
   )
+}
+
+function AsyncUserInputCard({ request, answered, sendShortcut, onAnswer }: {
+  request: ApprovalRequest
+  answered: boolean
+  sendShortcut: SendShortcut
+  onAnswer: (request: ApprovalRequest, decision: unknown) => void | Promise<void>
+}) {
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState(false)
+  if (answered || submitted) return <article className="approval-card user-input-card" role="status">已处理 Codex 提问</article>
+  return <>
+    <UserInputRequestCard request={request} sendShortcut={sendShortcut} onAnswer={async (request, response) => {
+      setError(false)
+      try {
+        await onAnswer(request, response)
+        setSubmitted(true)
+      } catch {
+        setError(true)
+      }
+    }} />
+    {error && <p role="alert">回答未发送，请重试。</p>}
+  </>
 }
 
 function AgentActivitySummary({ activities, activeTurnIds, onOpenThread, onInterrupt }: {
