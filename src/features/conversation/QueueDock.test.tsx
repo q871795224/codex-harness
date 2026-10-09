@@ -57,6 +57,19 @@ describe('QueueDock interactions', () => {
     expect(screen.getByText('urgent correction')).toBeTruthy()
     expect(screen.getByText(/等待下一次工具调用/)).toBeTruthy()
   })
+
+  it('expands submitted question answers using the same interjection row', () => {
+    const text = '问题：如何分发？\n回答：远程服务\n\n问题：分发范围？\n回答：本组'
+    renderDock({ queue: [], pendingSteers: [{ clientUserMessageId: 'answer-1', text, input: [textInput(text)], createdAt: 1 }] })
+    const toggle = screen.getByRole('button', { name: '展开插话内容' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(document.querySelector('.steer-text')).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: '收起插话内容' }).getAttribute('aria-expanded')).toBe('true')
+    expect(document.querySelector('.steer-text')?.textContent).toBe(text)
+    fireEvent.click(screen.getByRole('button', { name: '收起插话内容' }))
+    expect(document.querySelector('.steer-text')).toBeNull()
+  })
 })
 
 function renderDock(overrides: Partial<ComponentProps<typeof QueueDock>> = {}) {

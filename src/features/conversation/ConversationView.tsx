@@ -33,7 +33,7 @@ import {
   UserRound,
   Wrench,
 } from 'lucide-react'
-import type { ApprovalRequest, SendShortcut, Thread, ThreadItemEntry, Turn, Workspace } from '../../core/domain/codex'
+import type { ApprovalRequest, PendingSteer, SendShortcut, Thread, ThreadItemEntry, Turn, Workspace } from '../../core/domain/codex'
 import { itemText, threadTitle } from '../../core/domain/codex'
 import { formatDuration, truncate } from '../../core/domain/format'
 import { displayCommand } from './commandDisplay'
@@ -184,6 +184,7 @@ interface ConversationViewProps {
   turns: Turn[]
   cwd: string
   approvals: ApprovalRequest[]
+  pendingSteers?: PendingSteer[]
   sendShortcut?: SendShortcut
   workspace: Workspace | null
   workspaces: Workspace[]
@@ -226,7 +227,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
+export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -306,7 +307,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
   }
   const asyncRequests = provider === 'codex' && threadId ? items.flatMap((entry, index) => {
     const request = asyncUserInputRequest(threadId, entry.item)
-    return request ? [{ request, answered: asyncUserInputAnswered(request, items.slice(index + 1)) }] : []
+    return request ? [{ request, turnId: entry.turnId, answered: asyncUserInputAnswered(request, items.slice(index + 1), pendingSteers.map((steer) => steer.text)) }] : []
   }) : []
   const asyncIds = new Set(asyncRequests.map(({ request }) => request.id))
   const transcriptItems = items.filter(({ item }) => !asyncIds.has(item.id ?? ''))
@@ -459,7 +460,8 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
               ? <UserInputRequestCard key={String(request.id)} request={request} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
               : <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
           ))}
-          {asyncRequests.map(({ request, answered }) => (
+          {asyncRequests.filter(({ turnId }) => turnId === workingTurnId && working
+            && !turns.some((turn) => turn.id === turnId && turn.status !== 'inProgress')).map(({ request, answered }) => (
             <AsyncUserInputCard key={`${request.threadId}:${request.id}`} request={request} answered={answered} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
           ))}
         </div>
@@ -480,7 +482,7 @@ function AsyncUserInputCard({ request, answered, sendShortcut, onAnswer }: {
 }) {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState(false)
-  if (answered || submitted) return <article className="approval-card user-input-card" role="status">已处理 Codex 提问</article>
+  if (answered || submitted) return null
   return <>
     <UserInputRequestCard request={request} sendShortcut={sendShortcut} onAnswer={async (request, response) => {
       setError(false)

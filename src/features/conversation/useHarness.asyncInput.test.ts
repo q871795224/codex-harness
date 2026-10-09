@@ -66,6 +66,24 @@ const request = asyncUserInputRequest('active', {
 const response = { answers: { 'question-0': { answers: ['安装包'] } } }
 
 describe('async question submission', () => {
+  it.each(['completed', 'interrupted', 'failed'])('clears synchronous questions for a %s turn without a resolved notification', async (status) => {
+    const { result } = await ready()
+    const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
+    await act(async () => {
+      listener({ id: 'old', method: 'item/tool/requestUserInput', params: { threadId: 'active', turnId: 'old-turn' } })
+      listener({ id: 'new', method: 'item/tool/requestUserInput', params: { threadId: 'active', turnId: 'new-turn' } })
+      listener({ id: 'other', method: 'item/tool/requestUserInput', params: { threadId: 'other', turnId: 'old-turn' } })
+    })
+    expect(result.current.approvals.active).toHaveLength(2)
+    await act(async () => {
+      listener({ method: 'turn/completed', params: { threadId: 'active', turn: {
+        id: 'old-turn', status, items: [], error: null,
+      } } })
+    })
+    expect(result.current.approvals.active.map((request) => request.id)).toEqual(['new'])
+    expect(result.current.approvals.other.map((request) => request.id)).toEqual(['other'])
+  })
+
   it('starts a turn in the originating thread even after selection changes', async () => {
     const { result } = await ready()
     await act(async () => { await result.current.selectThread('active') })

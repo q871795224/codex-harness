@@ -2199,6 +2199,12 @@ export function useHarness() {
         const completedThread = threadsRef.current.find((thread) => thread.id === threadId)
         const activeTurnIdBeforeCompletion = activeTurnIdsRef.current[threadId]
         const completionMatchesActive = !activeTurnIdBeforeCompletion || activeTurnIdBeforeCompletion === turn.id
+        setApprovals((current) => ({
+          ...current,
+          [threadId]: (current[threadId] ?? []).filter((request) =>
+            request.method !== 'item/tool/requestUserInput'
+            || (request.params.turnId ? request.params.turnId !== turn.id : !completionMatchesActive)),
+        }))
         updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'turnCompleted', turn }))
         commitTurnOwnership(completeTurn({
           activeTurnIds: activeTurnIdsRef.current,
