@@ -42,10 +42,7 @@ export function QueueDock({
         <div className="steer-panel">
           <div className="dock-label"><Send size={13} /> 已插话</div>
           {pendingSteers.map((steer) => (
-            <div className="steer-row" key={steer.clientUserMessageId}>
-              <span>{steer.text}</span>
-              <small><Clock3 size={12} /> 已提交，等待下一次工具调用</small>
-            </div>
+            <PendingSteerRow key={steer.clientUserMessageId} steer={steer} />
           ))}
         </div>
       )}
@@ -111,4 +108,16 @@ export function QueueDock({
       )}
     </section>
   )
+}
+
+function PendingSteerRow({ steer }: { steer: PendingSteer }) {
+  const [open, setOpen] = useState(false)
+  return <div className="steer-entry">
+    <button type="button" className="steer-row" aria-expanded={open} aria-label={open ? '收起插话内容' : '展开插话内容'} onClick={() => setOpen((value) => !value)}>
+      <span>{steer.text}</span>
+      <small><Clock3 size={12} /> 已提交，等待下一次工具调用</small>
+      {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+    </button>
+    {open && <div className="steer-text">{steer.text}</div>}
+  </div>
 }

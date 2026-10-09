@@ -30,8 +30,8 @@ export function asyncUserInputAnswer(request: ApprovalRequest, response: UserInp
   }).join('\n\n')
 }
 
-export function asyncUserInputAnswered(request: ApprovalRequest, laterItems: ThreadItemEntry[]): boolean {
+export function asyncUserInputAnswered(request: ApprovalRequest, laterItems: ThreadItemEntry[], pendingAnswers: string[] = []): boolean {
   const questions = parseUserInputQuestions(request.params)
-  return laterItems.some(({ item }) => item.type === 'userMessage' && questions.every((question) =>
-    itemText(item).includes(`问题：${question.question}\n回答：`)))
+  const answers = [...pendingAnswers, ...laterItems.filter(({ item }) => item.type === 'userMessage').map(({ item }) => itemText(item))]
+  return answers.some((text) => questions.every((question) => text.includes(`问题：${question.question}\n回答：`)))
 }

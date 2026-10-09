@@ -34,5 +34,7 @@ describe('async Codex questions', () => {
     const message = (text: string): ThreadItemEntry => ({ turnId: 'next-turn', item: { type: 'userMessage', content: [textInput(text)] } })
     expect(asyncUserInputAnswered(request, [message('继续检查依赖')])).toBe(false)
     expect(asyncUserInputAnswered(request, [message(asyncUserInputAnswer(request, { answers: {} }))])).toBe(true)
+    expect(asyncUserInputAnswered(request, [], [asyncUserInputAnswer(request, { answers: {} })])).toBe(true)
+    expect(asyncUserInputAnswered(request, [], ['继续检查依赖'])).toBe(false)
   })
 })

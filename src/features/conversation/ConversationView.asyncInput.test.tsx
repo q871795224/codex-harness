@@ -37,7 +37,8 @@ describe('async question cards in the conversation', () => {
       expect.objectContaining({ id: 'async-1', threadId: 'thread-1' }),
       { answers: { 'question-0': { answers: ['远程服务'] } } },
     ))
-    await waitFor(() => expect(screen.getByText('已处理 Codex 提问')).toBeTruthy())
+    await waitFor(() => expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull())
+    expect(screen.queryByText('已处理 Codex 提问')).toBeNull()
   })
 
   it('keeps a failed submission editable and supports retry', async () => {
@@ -49,10 +50,23 @@ describe('async question cards in the conversation', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
     expect(screen.queryByText('已处理 Codex 提问')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '提交回答' }))
-    await waitFor(() => expect(screen.getByText('已处理 Codex 提问')).toBeTruthy())
+    await waitFor(() => expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull())
+    expect(screen.queryByText('已处理 Codex 提问')).toBeNull()
   })
 
-  it('restores submitted questions as handled while preserving a later final answer', () => {
+  it('does not reopen an answered question after remount while its interjection is pending', () => {
+    const options = props()
+    const answer = asyncUserInputAnswer(asyncUserInputRequest('thread-1', question)!, { answers: { 'question-0': { answers: ['远程服务'] } } })
+    options.pendingSteers = [{ clientUserMessageId: 'answer-1', text: answer, input: [textInput(answer)], createdAt: 1 }]
+    const first = render(<ConversationView {...options} />)
+    expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull()
+    first.unmount()
+    render(<ConversationView {...options} />)
+    expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull()
+    expect(screen.queryByText('已处理 Codex 提问')).toBeNull()
+  })
+
+  it('keeps submitted questions out of the prompt area while preserving answer history and a later final answer', () => {
     const options = props()
     const answer = asyncUserInputAnswer(asyncUserInputRequest('thread-1', question)!, { answers: {} })
     options.items.push(
@@ -61,7 +75,19 @@ describe('async question cards in the conversation', () => {
     )
     render(<ConversationView {...options} working={false} workingTurnId={null} />)
     expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull()
-    expect(screen.getByText('已处理 Codex 提问')).toBeTruthy()
+    expect(screen.queryByText('已处理 Codex 提问')).toBeNull()
     expect(screen.getByText('已完成评估。')).toBeTruthy()
+  })
+
+  it.each(['completed', 'failed', 'interrupted'] as const)('removes unanswered cards when the turn is %s, including restored history', (status) => {
+    const options = props()
+    const { rerender } = render(<ConversationView {...options} />)
+    expect(screen.getByRole('button', { name: '提交回答' })).toBeTruthy()
+    options.turns = options.turns.map((turn) => ({ ...turn, status }))
+    rerender(<ConversationView {...options} working={false} workingTurnId={null} />)
+    expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull()
+    expect(screen.queryByText('已处理 Codex 提问')).toBeNull()
+    rerender(<ConversationView {...options} working workingTurnId="turn-2" />)
+    expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull()
   })
 })
