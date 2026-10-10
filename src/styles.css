@@ -432,9 +432,13 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 
 .markdown-body blockquote { margin: 10px 0; padding-left: 12px; border-left: 2px solid #74a98c; color: #397654; }
 .markdown-body hr { height: 1px; margin: 18px 0; border: 0; background: #e1e3e7; }
-.markdown-body table { display: block; width: max-content; max-width: 100%; margin: 10px 0 13px; overflow-x: auto; border-collapse: collapse; font-size: .91em; }
-.markdown-body th, .markdown-body td { padding: 6px 9px; border: 1px solid #dfe2e7; text-align: left; }
-.markdown-body th { background: #f5f6f8; font-weight: 680; }
+.markdown-table-scroll { max-width: 100%; margin: 10px 0 13px; overflow-x: auto; }
+.markdown-body table { width: 100%; border-collapse: collapse; font-size: .91em; }
+.markdown-body th, .markdown-body td { min-width: 112px; padding: 6px 9px; border: 1px solid #dfe2e7; text-align: left; vertical-align: top; }
+.markdown-body th { position: relative; padding-right: 17px; background: #f5f6f8; font-weight: 680; word-break: normal; overflow-wrap: normal; }
+.markdown-column-resizer { position: absolute; top: 0; right: -4px; bottom: 0; z-index: 1; width: 9px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; user-select: none; }
+.markdown-column-resizer:hover, .markdown-column-resizer:focus-visible { background: rgba(8, 126, 139, .3); outline: 1px solid #087e8b; outline-offset: -2px; }
+.markdown-table-scroll:focus-visible { outline: 2px solid #087e8b; outline-offset: 2px; }
 .markdown-body input[type='checkbox'] { margin-right: 6px; accent-color: #5972dc; }
 .markdown-body a { color: #087e8b; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .markdown-body a:hover { color: #05636d; text-decoration-thickness: 2px; }
