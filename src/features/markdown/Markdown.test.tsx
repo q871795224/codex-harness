@@ -22,12 +22,76 @@ import { Markdown } from './Markdown'
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
 })
 
 it('renders markdown content', () => {
   render(<Markdown text={'# 标题\n\n正文 **加粗**'} />)
   expect(screen.getByRole('heading', { name: '标题' })).toBeTruthy()
   expect(screen.getByText('加粗').tagName).toBe('STRONG')
+})
+
+describe('table column resizing', () => {
+  const text = '| 日期 / 编号 | 新增内容 | 意义 |\n| --- | --- | --- |\n| 10/7 · Day 2 | 内容 | [公告](https://example.com) |'
+
+  function mockColumnSizes() {
+    screen.getAllByRole('columnheader').forEach((cell, index) => {
+      vi.spyOn(cell, 'getBoundingClientRect').mockReturnValue({ width: [140, 240, 400][index] } as DOMRect)
+    })
+  }
+
+  it('preserves markdown semantics and adjusted widths as more rows stream in', () => {
+    const { container, rerender } = render(<Markdown text={text} />)
+    mockColumnSizes()
+    expect(screen.getAllByRole('columnheader')).toHaveLength(3)
+    expect(screen.getByRole('link', { name: /公告/ })).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('separator', { name: '调整第 1 列宽度' }), { key: 'ArrowRight' })
+    expect(screen.getByRole('table').style.width).toBe('796px')
+    expect(container.querySelector('col')?.style.width).toBe('156px')
+    rerender(<Markdown text={`${text}\n| 10/8 | 追加的长文本 | 意义 |`} />)
+    expect(screen.getAllByRole('row')).toHaveLength(3)
+    expect(container.querySelector('col')?.style.width).toBe('156px')
+    fireEvent.doubleClick(screen.getByRole('separator', { name: '调整第 1 列宽度' }))
+    expect(container.querySelector('colgroup')).toBeNull()
+    expect(screen.getByRole('table').style.width).toBe('')
+  })
+
+  it('clamps dragging at the minimum width and ends resizing on cancellation', () => {
+    vi.stubGlobal('PointerEvent', MouseEvent)
+    const { container } = render(<Markdown text={text} />)
+    mockColumnSizes()
+    const handle = screen.getByRole('separator', { name: '调整第 1 列宽度' })
+    Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => true, releasePointerCapture: vi.fn() })
+    fireEvent.pointerDown(handle, { button: 0, clientX: 140 })
+    fireEvent.pointerMove(handle, { clientX: 0 })
+    expect(container.querySelector('col')?.style.width).toBe('112px')
+    fireEvent.pointerCancel(handle)
+    fireEvent.pointerMove(handle, { clientX: 300 })
+    expect(container.querySelector('col')?.style.width).toBe('112px')
+    fireEvent.keyDown(handle, { key: 'Home' })
+    expect(container.querySelector('colgroup')).toBeNull()
+  })
+
+  it('returns to automatic layout when the streamed table changes column count', () => {
+    const { container, rerender } = render(<Markdown text={text} />)
+    mockColumnSizes()
+    fireEvent.keyDown(screen.getByRole('separator', { name: '调整第 1 列宽度' }), { key: 'ArrowRight' })
+    rerender(<Markdown text={'| 日期 | 内容 |\n| --- | --- |\n| 10/8 | 新内容 |'} />)
+    expect(screen.getAllByRole('columnheader')).toHaveLength(2)
+    expect(container.querySelector('colgroup')).toBeNull()
+    expect(screen.getByRole('table').style.width).toBe('')
+  })
+
+  it('keeps alignment and independent widths for multiple tables', () => {
+    const { container } = render(<Markdown text={`${text}\n\n| 金额 |\n| ---: |\n| 100 |`} />)
+    mockColumnSizes()
+    const handles = screen.getAllByRole('separator', { name: '调整第 1 列宽度' })
+    fireEvent.keyDown(handles[0], { key: 'ArrowRight' })
+    const tables = screen.getAllByRole('table')
+    expect(tables[0].style.width).toBe('796px')
+    expect(tables[1].style.width).toBe('')
+    expect(container.querySelectorAll('th')[3].style.textAlign).toBe('right')
+  })
 })
 
 it('renders mermaid fenced blocks with the MermaidBlock component', () => {

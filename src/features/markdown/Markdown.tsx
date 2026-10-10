@@ -7,9 +7,11 @@ import { JsonBlock } from './JsonBlock'
 import { MarkdownLink } from './MarkdownLink'
 import { MermaidBlock } from './MermaidBlock'
 import { remarkRepairCjkAutolink } from './remarkRepairCjkAutolink'
+import { MarkdownTable } from './MarkdownTable'
 
 export function Markdown({ text, cwd, collapsibleJson = false }: { text: string; cwd?: string; collapsibleJson?: boolean }) {
   const components: Components = useMemo(() => ({
+    table: ({ node: _node, ...props }) => <MarkdownTable {...props} />,
     img: ({ src, alt, title }) => <MarkdownImage key={`${cwd ?? ''}:${src}`} src={src} alt={alt} title={title} cwd={cwd} />,
     pre: collapsibleJson ? ConversationPre : MarkdownPre,
     a: (props: ComponentPropsWithoutRef<'a'>) => <MarkdownLink {...props} cwd={cwd} />,
