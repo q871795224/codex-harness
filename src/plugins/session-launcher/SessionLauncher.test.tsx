@@ -9,7 +9,7 @@ import { SessionLauncher } from './index'
 afterEach(cleanup)
 it('defaults over inherited settings once, then preserves manual choices across refresh and remount', async () => {
   const models: CodexModel[] = ['gpt-5.6-sol', 'gpt-6-astra'].map((model) => ({ id: model, model, displayName: model, description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'low', description: '' }], defaultReasoningEffort: 'low', inputModalities: ['text'], isDefault: false }))
-  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: models.map((m, i) => ({ group: 'reference' as const, model: m.model, effort: 'low', iq: 100 + i * 5, price: 1 + i, minutes: 1, bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: i === 0 })) })) }
+  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: models.map((m, i) => ({ group: 'reference' as const, model: m.model, effort: 'low', score: 100 + i * 5, coverage: 50, price: 1 + i, minutes: 1, bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: i === 0 })) })) }
   const values = new Map<string, unknown>()
   const storage: PluginStorage = { get: async <T,>(key: string) => (values.get(key) ?? null) as T | null, set: async (key, value) => { values.set(key, value) } }
   const changed = vi.fn()
@@ -33,7 +33,7 @@ it('defaults over inherited settings once, then preserves manual choices across 
 
 it.each(['async', 'sync'] as const)('stops after %s initialization failure across rerenders/remounts, notifies once, and allows manual selection', async (failure) => {
   const models: CodexModel[] = [{ id: 'gpt-6-astra', model: 'gpt-6-astra', displayName: 'Astra', description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'low', description: '' }], defaultReasoningEffort: 'low', inputModalities: ['text'], isDefault: true }]
-  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [{ group: 'reference' as const, model: 'gpt-6-astra', effort: 'low', iq: 100, price: 1, minutes: 1, bestIq: true, bestPrice: true, bestMinutes: true, automatic: false, defaultCursor: true }] })) }
+  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [{ group: 'reference' as const, model: 'gpt-6-astra', effort: 'low', score: 100, coverage: 50, price: 1, minutes: 1, bestScore: true, bestPrice: true, bestMinutes: true, automatic: false, defaultCursor: true }] })) }
   const storage: PluginStorage = { get: vi.fn(async () => null), set: vi.fn(async () => {}) }
   const notifications = { publish: vi.fn(() => 'notice') }
   const changed = vi.fn().mockImplementationOnce(() => {
@@ -63,4 +63,16 @@ it.each(['async', 'sync'] as const)('stops after %s initialization failure acros
   await waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
   await waitFor(() => expect(storage.set).toHaveBeenCalledWith(`model-initialized:failure-${failure}`, true))
   expect(notifications.publish).toHaveBeenCalledTimes(1)
+})
+
+it('renders Bench scores and coverage while leaving unavailable metrics blank', async () => {
+  const models: CodexModel[] = [{ id: 'gpt-6.1-sol', model: 'gpt-6.1-sol', displayName: 'Sol', description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'high', description: '' }], defaultReasoningEffort: 'high', inputModalities: ['text'], isDefault: true }]
+  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [{ group: 'reference' as const, model: 'gpt-6.1-sol', effort: 'high', score: 104.5647, coverage: 50, price: null, minutes: null, bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: true }] })) }
+  render(<SessionLauncher radar={radar} storage={{ get: async () => null, set: async () => {} }} notifications={{ publish: vi.fn() }} threadId="bench-render" threadCwd={null} workspaceRoot={null} isNewThread models={models} settings={{ model: 'gpt-6.1-sol', effort: 'high', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null }} disabled={false} onSettingsChange={vi.fn()} />)
+  expect(await screen.findByRole('button', { name: /6.1 Sol.*high/i })).toBeTruthy()
+  expect(screen.getByRole('columnheader', { name: '雷达分' })).toBeTruthy()
+  expect(screen.queryByRole('columnheader', { name: 'IQ' })).toBeNull()
+  expect(screen.getByTitle('覆盖 50/64 道题').textContent).toBe('104.6')
+  expect(screen.getAllByText('—')).toHaveLength(2)
+  expect(screen.getByText(/COST 为 API 等价费用/)).toBeTruthy()
 })

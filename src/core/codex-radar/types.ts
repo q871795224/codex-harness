@@ -2,10 +2,11 @@ export interface RadarModelRow {
   group: 'hard' | 'simple' | 'reference' | 'agi'
   model: string
   effort: string
-  iq: number
-  price: number
-  minutes: number
-  bestIq: boolean
+  score: number | null
+  coverage: number
+  price: number | null
+  minutes: number | null
+  bestScore: boolean
   bestPrice: boolean
   bestMinutes: boolean
   automatic: boolean
