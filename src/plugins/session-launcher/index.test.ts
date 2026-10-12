@@ -112,6 +112,16 @@ describe('session launcher model selection', () => {
     expect(defaultRadarRow([sparse, measured])).toBe(measured)
   })
 
+  it('allows Sol high references to become the default alongside fixed Astra choices', () => {
+    const sol = { ...row('gpt-6.1-sol', 'high', true), score: 104.6, price: 0.48 }
+    const rows = availableRows([
+      sol,
+      { ...row('gpt-6-astra', 'low'), group: 'agi', score: 99.9, price: 2.46 },
+      { ...row('gpt-6-astra', 'medium'), group: 'agi', score: 90.1, price: 2.29 },
+    ], [model('gpt-6.1-sol', ['medium', 'high']), model('gpt-6-astra', ['low', 'medium'])], base)
+    expect(defaultRadarRow(rows)).toEqual(sol)
+  })
+
   it('compares only reference and AGI, choosing a cheaper runner-up within two score points', () => {
     const highest = { ...row('astra', 'medium'), group: 'agi' as const, score: 110, price: 3 }
     const second = { ...row('sol', 'high'), score: 108, price: 1 }
