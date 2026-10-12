@@ -11,10 +11,11 @@ export interface PickerRow {
   group: 'hard' | 'simple' | 'reference' | 'agi' | 'fallback'
   model: string
   effort: string
-  iq: number | null
+  score: number | null
+  coverage: number | null
   price: number | null
   minutes: number | null
-  bestIq: boolean
+  bestScore: boolean
   bestPrice: boolean
   bestMinutes: boolean
   automatic: boolean
@@ -157,7 +158,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
 
       <div className="radar-table-wrap">
         <table className="radar-table">
-          <thead><tr><th aria-label="selected" /><th>GROUP</th><th>MODEL</th><th>IQ</th><th>COST</th><th>TIME</th></tr></thead>
+          <thead><tr><th aria-label="selected" /><th>GROUP</th><th>MODEL</th><th title="雷达 Bench · 满分 150">雷达分</th><th>COST</th><th>TIME</th></tr></thead>
           <tbody>
             {rows.map((row) => {
               const selected = selectedRow?.model === row.model && selectedRow?.effort === row.effort
@@ -166,7 +167,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
                   <td>{selected ? <Check size={14} /> : null}</td>
                   <td><span className={`radar-group ${row.group}`}>{groupLabel(row.group)}</span></td>
                   <td><button type="button" disabled={disabled || saving} onClick={() => void apply({ model: row.model, effort: row.effort })}><strong>{modelLabel(row.model)}</strong> <span>{row.effort}</span></button></td>
-                  <Metric value={row.iq === null ? '—' : row.iq.toFixed(1)} best={row.bestIq} tone="iq" />
+                  <Metric title={row.coverage === null ? undefined : `覆盖 ${row.coverage}/64 道题`} value={row.score === null ? '—' : row.score.toFixed(1)} best={row.bestScore} tone="iq" />
                   <Metric value={row.price === null ? '—' : `$${row.price.toFixed(2)}`} best={row.bestPrice} tone="price" />
                   <Metric value={row.minutes === null ? '—' : `${Math.round(row.minutes)}m`} best={row.bestMinutes} tone="time" />
                 </tr>
@@ -177,7 +178,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
         {loading && <div className="radar-table-state"><LoaderCircle className="spin" size={15} />正在加载 Radar 指标…</div>}
       </div>
       <footer className="session-launcher-foot">
-        <span className={settingsError ? 'error' : ''}>{settingsError ?? (error ? 'Radar 暂不可用，已显示 App Server 模型。' : '★ 表示当前表格中的最佳指标')}</span>
+        <span title={error ?? undefined} className={settingsError ? 'error' : ''}>{settingsError ?? (error ? 'Radar 暂不可用，已显示 App Server 模型。' : '雷达 Bench · 满分 150 · COST 为 API 等价费用 · ★ 最佳指标')}</span>
         <span className={`launch-mode-summary ${mode}`}><Gauge size={13} />{modeLabel(mode)}</span>
       </footer>
     </section>
@@ -189,8 +190,8 @@ function ModeButton({ mode, selected, disabled, onSelect }: { mode: LaunchMode; 
   return <button type="button" role="radio" aria-checked={selected} title={modeDescription(mode)} className={selected ? `selected ${mode}` : ''} disabled={disabled} onClick={onSelect}><Icon size={14} /><span>{modeLabel(mode)}</span></button>
 }
 
-function Metric({ value, best, tone }: { value: string; best: boolean; tone: string }) {
-  return <td><span className={best ? `radar-best ${tone}` : ''}>{value}{best && <b aria-label="最佳指标">★</b>}</span></td>
+function Metric({ value, best, tone, title }: { value: string; best: boolean; tone: string; title?: string }) {
+  return <td><span title={title} className={best ? `radar-best ${tone}` : ''}>{value}{best && <b aria-label="最佳指标">★</b>}</span></td>
 }
 
 export function modePatch(mode: LaunchMode): Partial<ThreadCodexSettings> {
@@ -210,24 +211,17 @@ export function selectedRadarRow(rows: PickerRow[], settings: Pick<ThreadCodexSe
 }
 
 export function defaultRadarRow(rows: PickerRow[]): PickerRow | null {
-  const ranked = rows.filter((row) => (row.group === 'reference' || row.group === 'agi') && row.iq !== null && Number.isFinite(row.iq))
-    .sort((left, right) => right.iq! - left.iq! || (left.price ?? Infinity) - (right.price ?? Infinity))
+  const ranked = rows.filter((row) => (row.group === 'reference' || row.group === 'agi') && row.coverage !== null && row.coverage > 40 && row.score !== null && Number.isFinite(row.score))
+    .sort((left, right) => right.score! - left.score! || (left.price ?? Infinity) - (right.price ?? Infinity))
   const [highest, second] = ranked
   if (!highest) return rows.find((row) => row.defaultCursor) ?? rows[0] ?? null
-  if (second && highest.iq! - second.iq! <= 2 && highest.price !== null && second.price !== null && second.price < highest.price) return second
+  if (second && highest.score! - second.score! <= 2 && highest.price !== null && second.price !== null && second.price < highest.price) return second
   return highest
 }
 
 export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel[], settings: ThreadCodexSettings): PickerRow[] {
   if (remoteRows === null) return []
-  const supported = remoteRows.map((row): PickerRow => {
-    if (row.group !== 'simple' || row.model !== 'gpt-5.6-luna' || row.effort !== 'max') return row
-    // Radar has no GPT-6 Luna measurements yet; never reuse GPT-5.6 metrics.
-    return {
-      ...row, model: 'gpt-6-luna', iq: null, price: null, minutes: null,
-      bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: false,
-    }
-  }).filter((row) => modelSupports(models, row.model, row.effort))
+  const supported = remoteRows.filter((row) => modelSupports(models, row.model, row.effort))
   if (supported.length > 0) return withAgiRows(supported, models)
   const preferred = models.find((model) => model.model === settings.model) ?? models.find((model) => model.isDefault) ?? models[0]
   if (!preferred) return []
@@ -235,8 +229,8 @@ export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel
     ? settings.effort
     : preferred.defaultReasoningEffort
   return withAgiRows([{
-    group: 'fallback', model: preferred.model, effort, iq: null, price: null, minutes: null,
-    bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: true,
+    group: 'fallback', model: preferred.model, effort, score: null, coverage: null, price: null, minutes: null,
+    bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: true,
   }], models)
 }
 
@@ -244,8 +238,8 @@ function withAgiRows(rows: PickerRow[], models: CodexModel[]): PickerRow[] {
   const agiRows: PickerRow[] = ['low', 'medium']
     .filter((effort) => modelSupports(models, 'gpt-6-astra', effort))
     .map((effort) => ({
-      model: 'gpt-6-astra', effort, iq: null, price: null, minutes: null,
-      bestIq: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: false,
+      model: 'gpt-6-astra', effort, score: null, coverage: null, price: null, minutes: null,
+      bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: false,
       ...rows.find((row) => row.model === 'gpt-6-astra' && row.effort === effort),
       group: 'agi',
     }))
@@ -285,6 +279,8 @@ function groupLabel(group: PickerRow['group']): string {
 }
 
 function modelLabel(model: string): string {
+  if (model === 'gpt-6.1-sol') return '6.1 Sol'
+  if (model === 'gpt-6-sol') return '6 Sol'
   if (model === 'gpt-6-astra') return '6 Astra'
   if (model === 'gpt-6-luna') return '6 Luna'
   if (model === 'gpt-5.6-sol') return '5.6 Sol'
