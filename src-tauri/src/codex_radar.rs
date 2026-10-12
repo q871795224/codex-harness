@@ -257,7 +257,11 @@ fn build_model_table(
         } else if hard < 2 && row.score.is_some() && row.coverage > MIN_RANKING_COVERAGE {
             hard += 1;
             "hard"
-        } else if references < 3 && row.score.is_some() && row.coverage > MIN_RANKING_COVERAGE {
+        } else if references < 3
+            && supported_reference(&row)
+            && row.score.is_some()
+            && row.coverage > MIN_RANKING_COVERAGE
+        {
             references += 1;
             "reference"
         } else {
@@ -295,6 +299,15 @@ fn build_model_table(
         rows: candidates,
         fetched_at,
     })
+}
+
+fn supported_reference(row: &RadarModelRow) -> bool {
+    matches!(
+        (row.model.as_str(), row.effort.as_str()),
+        ("gpt-6.1-sol" | "gpt-5.6-sol", "high" | "medium")
+            | ("gpt-5.6-terra", "high" | "xhigh" | "max")
+            | ("gpt-5.6-luna", "xhigh")
+    )
 }
 
 fn unix_seconds() -> u64 {
@@ -495,5 +508,81 @@ mod tests {
                 .model,
             "gpt-6.1-sol"
         );
+    }
+
+    #[test]
+    fn keeps_sol_references_when_other_astra_efforts_score_higher() {
+        let table = build_model_table(
+            vec![
+                row("gpt-6-astra", "xhigh", 121.1),
+                row("gpt-6.1-sol", "max", 114.1),
+                row("gpt-6-astra", "max", 113.7),
+                row("gpt-6-astra", "high", 112.0),
+                row("gpt-6-astra", "ultra", 111.6),
+                row("gpt-6.1-sol", "high", 104.6),
+                row("gpt-6-astra", "low", 99.9),
+                row("gpt-6.1-sol", "medium", 96.0),
+                row("gpt-5.6-sol", "high", 95.0),
+                row("gpt-5.6-luna", "xhigh", 90.0),
+                row("gpt-6-astra", "medium", 90.1),
+                row("gpt-6-luna", "max", 56.3),
+            ],
+            42,
+        )
+        .unwrap();
+        let selections = |group: &str| {
+            table
+                .rows
+                .iter()
+                .filter(|row| row.group == group)
+                .map(|row| (row.model.as_str(), row.effort.as_str()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            selections("hard"),
+            vec![("gpt-6-astra", "xhigh"), ("gpt-6.1-sol", "max")]
+        );
+        assert_eq!(
+            selections("reference"),
+            vec![
+                ("gpt-6.1-sol", "high"),
+                ("gpt-6.1-sol", "medium"),
+                ("gpt-5.6-sol", "high")
+            ]
+        );
+        assert_eq!(
+            selections("agi"),
+            vec![("gpt-6-astra", "low"), ("gpt-6-astra", "medium")]
+        );
+        let default = table.rows.iter().find(|row| row.default_cursor).unwrap();
+        assert_eq!(
+            (default.model.as_str(), default.effort.as_str()),
+            ("gpt-6.1-sol", "high")
+        );
+        assert_eq!(default.score, Some(104.6));
+    }
+
+    #[test]
+    fn does_not_include_sol_references_with_insufficient_coverage() {
+        let mut sparse = row("gpt-6.1-sol", "high", 110.0);
+        sparse.coverage = MIN_RANKING_COVERAGE;
+        let table = build_model_table(
+            vec![
+                row("gpt-6-astra", "xhigh", 121.1),
+                row("gpt-6.1-sol", "max", 114.1),
+                sparse,
+                row("gpt-6.1-sol", "medium", 96.0),
+            ],
+            42,
+        )
+        .unwrap();
+        assert!(!table
+            .rows
+            .iter()
+            .any(|row| row.model == "gpt-6.1-sol" && row.effort == "high"));
+        assert!(table
+            .rows
+            .iter()
+            .any(|row| row.group == "reference" && row.effort == "medium"));
     }
 }
