@@ -14,6 +14,14 @@
 
 完整发布顺序和发布授权边界在 `.agents/skills/harness-release/SKILL.md`。普通开发任务不执行 release commit、tag、稳定版安装、上传或 GitHub Release。
 
+## Radar 诊断
+
+Radar 使用同一份轮转诊断日志，`area` 为 `codex-radar`。`selection.failed` 记录模型、推理强度、请求阶段、错误原因与耗时；`selection.classified` 记录进入分组或因覆盖不足、缺少分数、选择规则而被排除的原因。通过 `fetchId` 关联同批模型请求和最终结果，`cache.hit` / `cache.stale` 区分直接命中缓存和更新失败后返回旧缓存。日志不保存接口响应正文。
+
+```bash
+rg --no-filename '"area":"codex-radar"' ~/.codex-harness/logs/harness-*.jsonl | tail -50
+```
+
 ## Codex 输入黑箱对照
 
 Harness 与 CLI 的核对要区分两个层次：

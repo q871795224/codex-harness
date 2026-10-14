@@ -283,8 +283,8 @@ async fn jev_evaluate(
 }
 
 #[tauri::command]
-async fn codex_radar_model_table(state: State<'_, AppState>) -> Result<RadarModelTable, String> {
-    state.codex_radar.model_table().await
+async fn codex_radar_model_table(state: State<'_, AppState>, force: Option<bool>) -> Result<RadarModelTable, String> {
+    state.codex_radar.model_table(force.unwrap_or(false)).await
 }
 
 #[tauri::command]
@@ -1294,9 +1294,9 @@ pub fn run() {
             app.manage(AppState {
                 app_server: manager,
                 claude_runtime,
-                diagnostics,
+                diagnostics: diagnostics.clone(),
                 local_connector: LocalConnector::new(),
-                codex_radar: CodexRadarClient::new(),
+                codex_radar: CodexRadarClient::new(diagnostics.clone()),
                 jev: jev::JevClient::new()?,
                 codex_analytics: analytics,
                 store,

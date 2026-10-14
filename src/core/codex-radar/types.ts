@@ -16,8 +16,9 @@ export interface RadarModelRow {
 export interface RadarModelTable {
   rows: RadarModelRow[]
   fetchedAt: number
+  warnings?: string[]
 }
 
 export interface CodexRadarService {
-  modelTable(): Promise<RadarModelTable>
+  modelTable(force?: boolean): Promise<RadarModelTable>
 }

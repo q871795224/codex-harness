@@ -20,7 +20,7 @@
 - 用量页固定展示 Codex、Codex Personal、AIS 三个账号来源卡片，下方为总览、模型、工作区、Skill、MCP、AGENTS.md、会话。账号 Token 使用所选日期范围；账号剩余额度是当前窗口，AIS 是本月预算。三类资源以观测次数和使用工作区为主，Skill 选择与读取不相加。
 - 分析工作区按 thread 绑定的完整 cwd 归属，不按目录名合并。`analysis_workspaces` 保存绑定路径；历史归属与归档会话名称经 App Server `thread/read` 补查，名称只在内存缓存。查询使用已有核心连接，限制并发和超时，不启动 daemon 或模型轮次。
 - 官方费用通过 `account/usage/read({ threadId })` 查询会话累计估算。模型额度图仅在整个会话落入所选日期、各模型 Token 与采集账本一致时展示 credits；任一记录不可核对时显示不可用，不按 Token 比例分摊累计费用。会话详情可独立查看整个会话累计估算，美元金额允许缺失。
-- Codex Radar 请求由 Rust 固定域名客户端完成并缓存，内置会话启动器只能通过 `harness.codexRadar` 读取整理后的指标。
+- Codex Radar 请求由 Rust 固定域名客户端完成并缓存，内置会话启动器只能通过 `harness.codexRadar` 读取整理后的指标。自动加载使用 30 分钟缓存；手动刷新必须绕过缓存并重新请求，失败时明确提示，不能把旧缓存当作刷新成功。部分模型请求失败时保留成功结果并提示数据不完整。
 
 ## 成员与团队
 
