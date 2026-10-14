@@ -33,7 +33,7 @@ impl DiagnosticLog {
         Self::open_at(crate::store::harness_data_dir()?.join("logs"))
     }
 
-    fn open_at(directory: PathBuf) -> Result<Self, String> {
+    pub(crate) fn open_at(directory: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&directory).map_err(|error| {
             format!(
                 "无法创建 Codex Harness 日志目录 {}: {error}",

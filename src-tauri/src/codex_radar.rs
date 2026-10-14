@@ -1,7 +1,8 @@
+use crate::diagnostics::DiagnosticLog;
 use futures_util::{stream, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -36,6 +37,7 @@ pub struct RadarModelRow {
 pub struct RadarModelTable {
     pub rows: Vec<RadarModelRow>,
     pub fetched_at: u64,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -59,10 +61,11 @@ struct Binding {
 pub struct CodexRadarClient {
     client: Client,
     cache: Arc<Mutex<Option<RadarModelTable>>>,
+    diagnostics: Option<Arc<DiagnosticLog>>,
 }
 
 impl CodexRadarClient {
-    pub fn new() -> Self {
+    pub fn new(diagnostics: Arc<DiagnosticLog>) -> Self {
         Self {
             client: Client::builder()
                 .gzip(true)
@@ -71,27 +74,67 @@ impl CodexRadarClient {
                 .build()
                 .expect("无法初始化 Codex Radar HTTP 客户端"),
             cache: Arc::new(Mutex::new(None)),
+            diagnostics: Some(diagnostics),
         }
     }
 
-    pub async fn model_table(&self) -> Result<RadarModelTable, String> {
+    fn record(&self, level: &str, event: &str, fields: Value) {
+        if let Some(log) = &self.diagnostics {
+            log.record(level, "codex-radar", event, fields);
+        }
+    }
+
+    pub async fn model_table(&self, force: bool) -> Result<RadarModelTable, String> {
+        self.model_table_from(ORIGIN, force).await
+    }
+
+    async fn model_table_from(&self, origin: &str, force: bool) -> Result<RadarModelTable, String> {
         let mut cache = self.cache.lock().await;
         let now = unix_seconds();
-        if let Some(current) = cache.as_ref() {
-            if now.saturating_sub(current.fetched_at) < CACHE_TTL.as_secs() {
-                return Ok(current.clone());
+        if !force {
+            if let Some(current) = cache.as_ref() {
+                if now.saturating_sub(current.fetched_at) < CACHE_TTL.as_secs() {
+                    self.record("info", "cache.hit", json!({"fetchedAt":current.fetched_at,
+                        "ageSeconds":now.saturating_sub(current.fetched_at), "rows":current.rows.len()}));
+                    return Ok(current.clone());
+                }
             }
         }
-        match self.fetch_table(ORIGIN, now).await {
+        self.record(
+            "info",
+            "fetch.started",
+            json!({"force":force, "fetchedAt":now}),
+        );
+        match self.fetch_table(origin, now).await {
             Ok(table) => {
                 *cache = Some(table.clone());
                 Ok(table)
             }
-            Err(error) => cache
-                .as_ref()
-                .filter(|current| now.saturating_sub(current.fetched_at) < MAX_STALE.as_secs())
-                .cloned()
-                .ok_or(error),
+            Err(error) => {
+                self.record(
+                    "error",
+                    "fetch.failed",
+                    json!({"force":force, "error":error}),
+                );
+                if !force {
+                    if let Some(current) = cache.as_ref().filter(|current| {
+                        now.saturating_sub(current.fetched_at) < MAX_STALE.as_secs()
+                    }) {
+                        self.record(
+                            "warn",
+                            "cache.stale",
+                            json!({"fetchedAt":current.fetched_at,
+                            "ageSeconds":now.saturating_sub(current.fetched_at), "error":error}),
+                        );
+                        let mut table = current.clone();
+                        table
+                            .warnings
+                            .push(format!("Radar 更新失败，正在显示旧缓存：{error}"));
+                        return Ok(table);
+                    }
+                }
+                Err(error)
+            }
         }
     }
 
@@ -99,6 +142,7 @@ impl CodexRadarClient {
         let binding: Binding = self
             .client
             .get(format!("{origin}/data/radar-bench-binding.json"))
+            .header(reqwest::header::CACHE_CONTROL, "no-cache")
             .send()
             .await
             .map_err(|e| format!("无法获取 Radar Bench 模型列表: {e}"))?
@@ -117,42 +161,111 @@ impl CodexRadarClient {
         }
         // Each model/effort has an independent summary. One failed read must not
         // discard successful reads, and concurrency stays bounded like the site.
+        let fetch_id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            .to_string();
+        self.record(
+            "info",
+            "binding.loaded",
+            json!({"fetchId":fetch_id, "selections":binding.model_efforts.len()}),
+        );
+        let fetch_id = &fetch_id;
         let binding_ref = &binding;
         let client = &self.client;
         let results = stream::iter(binding.model_efforts.clone())
             .map(|selection| async move {
-                let mut url = reqwest::Url::parse(&format!("{origin}/api/radar-bench-score"))
-                    .map_err(|e| e.to_string())?;
-                url.query_pairs_mut().extend_pairs([
-                    ("model", selection.model.as_str()),
-                    ("effort", selection.effort.as_str()),
-                    ("view", "summary"),
-                    ("selection", "user-selected-v1"),
-                ]);
-                let response = client
-                    .get(url)
-                    .send()
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .error_for_status()
-                    .map_err(|e| e.to_string())?
-                    .json::<Value>()
-                    .await
-                    .map_err(|e| e.to_string())?;
-                parse_summary(&response, binding_ref, &selection)
+                let started = std::time::Instant::now();
+                let result = async {
+                    let mut url = reqwest::Url::parse(&format!("{origin}/api/radar-bench-score"))
+                        .map_err(|e| e.to_string())?;
+                    url.query_pairs_mut().extend_pairs([
+                        ("model", selection.model.as_str()),
+                        ("effort", selection.effort.as_str()),
+                        ("view", "summary"),
+                        ("selection", "user-selected-v1"),
+                    ]);
+                    let response = client
+                        .get(url)
+                        .header(reqwest::header::CACHE_CONTROL, "no-cache")
+                        .send()
+                        .await
+                        .map_err(|e| {
+                            format!(
+                                "transport ({}): {e}",
+                                if e.is_timeout() {
+                                    "timeout"
+                                } else if e.is_connect() {
+                                    "connect"
+                                } else {
+                                    "request"
+                                }
+                            )
+                        })?
+                        .error_for_status()
+                        .map_err(|e| format!("http: {e}"))?
+                        .json::<Value>()
+                        .await
+                        .map_err(|e| format!("decode: {e}"))?;
+                    parse_summary(&response, binding_ref, &selection)
+                }
+                .await;
+                match &result {
+                    Ok(row) => self.record(
+                        "info",
+                        "selection.loaded",
+                        json!({"fetchId":fetch_id,
+                        "model":selection.model,"effort":selection.effort,"coverage":row.coverage,
+                        "score":row.score,"elapsedMs":started.elapsed().as_millis()}),
+                    ),
+                    Err(error) => self.record(
+                        "warn",
+                        "selection.failed",
+                        json!({"fetchId":fetch_id,
+                        "model":selection.model,"effort":selection.effort,"error":error,
+                        "elapsedMs":started.elapsed().as_millis()}),
+                    ),
+                }
+                result
+                    .map_err(|error| format!("{} / {}: {error}", selection.model, selection.effort))
             })
             .buffer_unordered(4)
             .collect::<Vec<_>>()
             .await;
         let mut rows = Vec::new();
-        let mut last_error = "暂无有效雷达分".to_string();
+        let mut warnings = Vec::new();
         for result in results {
             match result {
                 Ok(row) => rows.push(row),
-                Err(error) => last_error = error,
+                Err(error) => warnings.push(error),
             }
         }
-        build_model_table(rows, now).map_err(|e| format!("{e}: {last_error}"))
+        let loaded_rows = rows.clone();
+        let mut table =
+            build_model_table(rows, now).map_err(|e| format!("{e}: {}", warnings.join("; ")))?;
+        for row in loaded_rows {
+            let selected = table
+                .rows
+                .iter()
+                .find(|candidate| candidate.model == row.model && candidate.effort == row.effort);
+            let reason = if selected.is_some() {
+                "included"
+            } else if row.score.is_none() {
+                "missing_score"
+            } else if row.coverage <= MIN_RANKING_COVERAGE {
+                "insufficient_coverage"
+            } else {
+                "outside_group_selection"
+            };
+            self.record("info", "selection.classified", json!({"fetchId":fetch_id,"model":row.model,
+                "effort":row.effort,"coverage":row.coverage,"reason":reason,"group":selected.map(|r| &r.group)}));
+        }
+        table.warnings = warnings;
+        self.record(if table.warnings.is_empty() { "info" } else { "warn" }, "fetch.completed",
+            json!({"fetchId":fetch_id,"fetchedAt":now,"rows":table.rows.len(),"failedSelections":table.warnings.len(),
+                "groups":table.rows.iter().map(|row| &row.group).collect::<Vec<_>>()}));
+        Ok(table)
     }
 }
 
@@ -167,22 +280,40 @@ fn parse_summary(
             selection.model, selection.effort
         )
     };
-    if value["schema"] != "radar-bench-public-summary-v5-150-daily-graded-count"
-        || value["score_version"] != SCORE_VERSION
-        || value["score_max"] != 150
-        || value["required_tasks"] != 64
-        || value["benchmark"] != binding.benchmark
-        || value["catalog_version"] != binding.catalog_version
-        || value["task_set_sha256"] != binding.task_set_sha256
-        || value["model"] != selection.model
-        || value["effort"] != selection.effort
-    {
-        return Err(invalid());
+    let mismatches: Vec<&str> = [
+        (
+            "schema",
+            value["schema"] != "radar-bench-public-summary-v5-150-daily-graded-count",
+        ),
+        ("score_version", value["score_version"] != SCORE_VERSION),
+        ("score_max", value["score_max"] != 150),
+        ("required_tasks", value["required_tasks"] != 64),
+        ("benchmark", value["benchmark"] != binding.benchmark),
+        (
+            "catalog_version",
+            value["catalog_version"] != binding.catalog_version,
+        ),
+        (
+            "task_set_sha256",
+            value["task_set_sha256"] != binding.task_set_sha256,
+        ),
+        ("model", value["model"] != selection.model),
+        ("effort", value["effort"] != selection.effort),
+    ]
+    .into_iter()
+    .filter_map(|(key, mismatch)| mismatch.then_some(key))
+    .collect();
+    if !mismatches.is_empty() {
+        return Err(format!(
+            "{}: mismatched {}",
+            invalid(),
+            mismatches.join(", ")
+        ));
     }
     let coverage = value["coverage"]
         .as_u64()
         .filter(|v| *v <= 64)
-        .ok_or_else(invalid)?;
+        .ok_or_else(|| format!("{}: invalid coverage", invalid()))?;
     let score = nonnegative_number(&value["score"]);
     let expected_status = if coverage == 0 {
         "missing_current_result"
@@ -195,7 +326,7 @@ fn parse_summary(
         || (coverage == 0 && !value["score"].is_null())
         || (coverage > 0 && !score.is_some_and(|v| v <= 150.0))
     {
-        return Err(invalid());
+        return Err(format!("{}: invalid score or score_status", invalid()));
     }
     let metric = |key: &str| {
         if value["statistics_state"] != "available" {
@@ -298,6 +429,7 @@ fn build_model_table(
     Ok(RadarModelTable {
         rows: candidates,
         fetched_at,
+        warnings: Vec::new(),
     })
 }
 
@@ -389,20 +521,110 @@ mod tests {
                 write!(socket, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             }
         });
+        let log_dir = tempfile::tempdir().unwrap();
         let radar = CodexRadarClient {
             client: Client::builder()
                 .no_proxy()
                 .timeout(Duration::from_secs(5))
                 .build()
                 .unwrap(),
-            cache: Arc::new(Mutex::new(None)),
+            cache: Arc::new(Mutex::new(Some(
+                build_model_table(vec![row("gpt-6-luna", "max", 1.0)], unix_seconds()).unwrap(),
+            ))),
+            diagnostics: Some(Arc::new(
+                DiagnosticLog::open_at(log_dir.path().into()).unwrap(),
+            )),
         };
-        let table = radar.fetch_table(&origin, 42).await.unwrap();
+        let table = radar.model_table_from(&origin, true).await.unwrap();
         server.join().unwrap();
         assert_eq!(table.rows.len(), 1);
         assert_eq!(table.rows[0].model, "gpt-6.1-sol");
         assert_eq!(table.rows[0].score, Some(104.6));
-        assert_eq!(table.fetched_at, 42);
+        assert!(unix_seconds().saturating_sub(table.fetched_at) < 5);
+        let cached = radar.model_table_from(&origin, false).await.unwrap();
+        assert_eq!(cached.rows[0].score, Some(104.6));
+        assert_eq!(cached.fetched_at, table.fetched_at);
+        assert_eq!(table.warnings.len(), 1);
+        assert!(table.warnings[0].contains("gpt-6-astra / medium: http:"));
+        let entries: Vec<Value> = std::fs::read_dir(log_dir.path())
+            .unwrap()
+            .flat_map(|entry| {
+                std::fs::read_to_string(entry.unwrap().path())
+                    .unwrap()
+                    .lines()
+                    .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let failure = entries
+            .iter()
+            .find(|entry| entry["event"] == "selection.failed")
+            .unwrap();
+        assert_eq!(failure["fields"]["model"], "gpt-6-astra");
+        assert_eq!(failure["fields"]["effort"], "medium");
+        assert!(failure["fields"]["error"].as_str().unwrap().contains("502"));
+        let completed = entries
+            .iter()
+            .find(|entry| entry["event"] == "fetch.completed")
+            .unwrap();
+        assert_eq!(completed["fields"]["failedSelections"], 1);
+        assert_eq!(completed["fields"]["fetchId"], failure["fields"]["fetchId"]);
+    }
+
+    #[tokio::test]
+    async fn forced_refresh_bypasses_cache_and_never_masks_failure_with_stale_data() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            // Only forced refresh and the expired-cache retry should reach the server.
+            for _ in 0..2 {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut buf = [0; 4096];
+                let count = socket.read(&mut buf).unwrap();
+                let request = String::from_utf8_lossy(&buf[..count]);
+                assert!(request.starts_with("GET /data/radar-bench-binding.json "));
+                assert!(request.to_lowercase().contains("cache-control: no-cache"));
+                write!(
+                    socket,
+                    "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                .unwrap();
+            }
+        });
+        let cached =
+            build_model_table(vec![row("gpt-6-luna", "max", 52.9)], unix_seconds()).unwrap();
+        let radar = CodexRadarClient {
+            client: Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            cache: Arc::new(Mutex::new(Some(cached.clone()))),
+            diagnostics: None,
+        };
+        assert_eq!(
+            radar
+                .model_table_from(&origin, false)
+                .await
+                .unwrap()
+                .fetched_at,
+            cached.fetched_at
+        );
+        let error = radar.model_table_from(&origin, true).await.unwrap_err();
+        assert!(error.contains("502"));
+        assert_eq!(
+            radar.cache.lock().await.as_ref().unwrap().fetched_at,
+            cached.fetched_at
+        );
+        radar.cache.lock().await.as_mut().unwrap().fetched_at -= CACHE_TTL.as_secs();
+        let stale = radar.model_table_from(&origin, false).await.unwrap();
+        assert_eq!(stale.rows[0].model, "gpt-6-luna");
+        assert!(stale.warnings[0].contains("旧缓存"));
+        server.join().unwrap();
     }
 
     #[test]

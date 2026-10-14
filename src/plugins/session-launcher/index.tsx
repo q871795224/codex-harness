@@ -63,6 +63,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
   const [remoteRows, setRemoteRows] = useState<PickerRow[] | null>(null)
   const [fetchedAt, setFetchedAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -72,15 +73,16 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
   const defaultRow = useMemo(() => defaultRadarRow(rows), [rows])
   const mode = threadId && !yoloInitializedThreads.has(threadId) ? 'yolo' : launchMode(settings)
 
-  const load = async () => {
+  const load = async (force = false) => {
     setLoading(true)
     setError(null)
     try {
-      const table = await radar.modelTable()
+      const table = await radar.modelTable(force)
       setRemoteRows(table.rows)
       setFetchedAt(table.fetchedAt)
+      setWarnings(table.warnings ?? [])
     } catch (nextError) {
-      setRemoteRows([])
+      if (!force) setRemoteRows([])
       setError(messageOf(nextError))
     } finally {
       setLoading(false)
@@ -145,7 +147,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
     <section className="session-launcher" aria-label="Codex Radar 会话配置">
       <header className="session-launcher-head">
         <span><Sparkles size={14} /> CODEX RADAR{fetchedAt ? ` · cache ${cacheMinutes(fetchedAt)}m` : ''}</span>
-        <button type="button" onClick={() => void load()} disabled={loading} title="刷新 Radar 数据" aria-label="刷新 Radar 数据">
+        <button type="button" onClick={() => void load(true)} disabled={loading} title="刷新 Radar 数据" aria-label="刷新 Radar 数据">
           <RefreshCw className={loading ? 'spin' : ''} size={14} />
         </button>
       </header>
@@ -178,7 +180,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
         {loading && <div className="radar-table-state"><LoaderCircle className="spin" size={15} />正在加载 Radar 指标…</div>}
       </div>
       <footer className="session-launcher-foot">
-        <span title={error ?? undefined} className={settingsError ? 'error' : ''}>{settingsError ?? (error ? 'Radar 暂不可用，已显示 App Server 模型。' : '雷达 Bench · 满分 150 · COST 为 API 等价费用 · ★ 最佳指标')}</span>
+        <span title={error ?? warnings.join('\n')} className={settingsError || error || warnings.length ? 'error' : ''}>{settingsError ?? (error ? (remoteRows?.length ? 'Radar 更新失败，保留上次数据。' : 'Radar 暂不可用，已显示 App Server 模型。') : warnings.length ? `Radar 数据不完整：${warnings.length} 项获取失败，详情见日志。` : '雷达 Bench · 满分 150 · COST 为 API 等价费用 · ★ 最佳指标')}</span>
         <span className={`launch-mode-summary ${mode}`}><Gauge size={13} />{modeLabel(mode)}</span>
       </footer>
     </section>

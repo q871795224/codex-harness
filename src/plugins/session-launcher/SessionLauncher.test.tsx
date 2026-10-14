@@ -53,6 +53,8 @@ it.each(['async', 'sync'] as const)('stops after %s initialization failure acros
   first.rerender(<Host />)
   fireEvent.click(screen.getByRole('button', { name: '刷新 Radar 数据' }))
   await waitFor(() => expect(radar.modelTable).toHaveBeenCalledTimes(2))
+  expect(radar.modelTable).toHaveBeenNthCalledWith(1, false)
+  expect(radar.modelTable).toHaveBeenNthCalledWith(2, true)
   first.unmount()
   render(<Host />)
   await waitFor(() => expect(radar.modelTable).toHaveBeenCalledTimes(3))
@@ -75,4 +77,29 @@ it('renders Bench scores and coverage while leaving unavailable metrics blank', 
   expect(screen.getByTitle('覆盖 50/64 道题').textContent).toBe('104.6')
   expect(screen.getAllByText('—')).toHaveLength(2)
   expect(screen.getByText(/COST 为 API 等价费用/)).toBeTruthy()
+})
+
+
+it('shows incomplete refresh results, preserves the table on failure, and clears the warning on recovery', async () => {
+  const model = 'gpt-6-luna'
+  const models: CodexModel[] = [{ id: model, model, displayName: model, description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'max', description: '' }], defaultReasoningEffort: 'max', inputModalities: ['text'], isDefault: true }]
+  const row = { group: 'simple' as const, model, effort: 'max', score: 53, coverage: 58, price: 1, minutes: 2, bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: false }
+  const radar = { modelTable: vi.fn()
+    .mockResolvedValueOnce({ fetchedAt: 1, rows: [row] })
+    .mockResolvedValueOnce({ fetchedAt: 2, rows: [{ ...row, score: 55 }], warnings: ['gpt-6.1-sol / high: http: 502'] })
+    .mockRejectedValueOnce(new Error('binding HTTP 502'))
+    .mockResolvedValueOnce({ fetchedAt: 3, rows: [{ ...row, score: 56 }], warnings: [] }) }
+  render(<SessionLauncher radar={radar} storage={{ get: async () => null, set: async () => {} }} notifications={{ publish: vi.fn() }} threadId={null} threadCwd={null} workspaceRoot={null} isNewThread models={models} settings={{ model, effort: 'max', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null }} disabled={false} onSettingsChange={vi.fn()} />)
+  await screen.findByText('53.0')
+  const refresh = screen.getByRole('button', { name: '刷新 Radar 数据' })
+  fireEvent.click(refresh)
+  await screen.findByText('55.0')
+  expect(screen.getByText(/Radar 数据不完整/).getAttribute('title')).toBe('gpt-6.1-sol / high: http: 502')
+  fireEvent.click(refresh)
+  await screen.findByText('Radar 更新失败，保留上次数据。')
+  expect(screen.getByText('55.0')).toBeTruthy()
+  fireEvent.click(refresh)
+  await screen.findByText('56.0')
+  expect(screen.queryByText(/Radar 数据不完整|Radar 更新失败/)).toBeNull()
+  expect(radar.modelTable.mock.calls.map(([force]) => force)).toEqual([false, true, true, true])
 })

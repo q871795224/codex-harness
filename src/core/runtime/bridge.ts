@@ -622,8 +622,8 @@ export const runtime = {
     return invoke<JevResponse>('jev_evaluate', { input })
   },
 
-  codexRadarModelTable(): Promise<RadarModelTable> {
-    return invoke<RadarModelTable>('codex_radar_model_table')
+  codexRadarModelTable(force = false): Promise<RadarModelTable> {
+    return invoke<RadarModelTable>('codex_radar_model_table', { force })
   },
 
   usageCachedSnapshot(since: string, until: string): Promise<UsageSnapshot | null> {
