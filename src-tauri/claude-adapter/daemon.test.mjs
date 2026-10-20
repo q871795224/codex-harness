@@ -21,6 +21,7 @@ export function query({ options }) {
       yield { type: 'result', subtype: 'success', session_id: 'fixture-session', result: snapshot }
     },
     async initializationResult() { return { models: [{ value: 'fixture', description: snapshot }] } },
+    async supportedCommands() { return [{ name: 'fixture-skill', description: 'Fixture skill', argumentHint: 'file' }] },
     async getContextUsage() { return { model: snapshot } },
   }
 }
@@ -109,6 +110,13 @@ test('passes explicitly configured values to Claude subprocesses after startup f
     LANG: 'fixture-lang',
     CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness',
   })
+})
+
+test('lists the SDK command surface without submitting a model prompt', async (t) => {
+  const daemon = await fixture(t)
+  const result = await daemon.request('provider/skills', { cwd: '/fixture' })
+  assert.equal(result.complete, false)
+  assert.deepEqual(result.data, [{ name: 'fixture-skill', description: 'Fixture skill', argumentHint: 'file' }])
 })
 
 test('reloads edits, empty values, and removals without restarting the daemon', async (t) => {

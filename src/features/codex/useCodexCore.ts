@@ -162,7 +162,7 @@ export function useCodexCore() {
     return update ? { ...server, runtimeStatus: update.runtimeStatus, startupError: update.error } : server
   }), [mcpServers, mcpStartupUpdates])
 
-  return { models, config, defaults, loading, error, reload, settingsForThread, syncThreadSettings, updateThreadSettings, updateDefault, mcpServers: displayedMcpServers, mcpLoading, mcpError, reloadMcp }
+  return { models, config, defaults, loading, error, reload, settingsForThread, syncThreadSettings, updateThreadSettings, updateDefault, mcpServers: displayedMcpServers, mcpLoading, mcpError, reloadMcp, refreshMcp }
 }
 
 function resolveDefaults(models: CodexModel[], config: CodexConfig): ThreadCodexSettings {

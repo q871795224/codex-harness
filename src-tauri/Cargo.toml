@@ -1,6 +1,6 @@
 [package]
 name = "codex-harness"
-version = "0.10.12"
+version = "0.10.13"
 description = "A local rich client for Codex App Server"
 authors = ["Codex Harness"]
 edition = "2021"
@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 arboard = "3"
 futures-util = "0.3"
+getrandom = "0.3"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 libc = "0.2"
 portable-pty = "0.9"

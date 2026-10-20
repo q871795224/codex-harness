@@ -13,6 +13,7 @@
 
 use crate::project_doc_proposals::{self, ProposalQueue};
 use crate::project_doc_store::{ProjectDocStore, WriteOutcome};
+use crate::management::{Management, ManagementRequest};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{path::{Path, PathBuf}, sync::Arc};
@@ -125,6 +126,7 @@ pub struct ProjectDocServer {
     port: u16,
     task: tokio::task::JoinHandle<()>,
     _endpoint: EndpointRegistration,
+    _management_endpoint: Option<EndpointRegistration>,
 }
 
 impl ProjectDocServer {
@@ -150,11 +152,15 @@ struct EndpointRegistration {
 
 impl EndpointRegistration {
     fn publish(dir: &Path, port: u16) -> Result<Self, String> {
-        let path = dir.join(ENDPOINT_STATE_FILE);
-        let body = serde_json::to_string_pretty(&json!({
+        Self::publish_value(dir, ENDPOINT_STATE_FILE, json!({
             "baseUrl": format!("http://127.0.0.1:{port}"),
             "pid": std::process::id(),
-        })).map_err(|e| e.to_string())?;
+        }))
+    }
+
+    fn publish_value(dir: &Path, filename: &str, value: Value) -> Result<Self, String> {
+        let path = dir.join(filename);
+        let body = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
         let registration = Self { path, body };
         let _lock = registration.lock()?;
         // Rename in the same directory: CLI readers never see partial JSON.
@@ -188,11 +194,30 @@ pub async fn serve(
     lookup: ThreadProjectLookup,
     endpoint_dir: &Path,
 ) -> Result<ProjectDocServer, String> {
+    serve_with_management(store, proposals, lookup, endpoint_dir, None).await
+}
+
+pub async fn serve_with_management(
+    store: ProjectDocStore,
+    proposals: ProposalQueue,
+    lookup: ThreadProjectLookup,
+    endpoint_dir: &Path,
+    management: Option<Arc<Management>>,
+) -> Result<ProjectDocServer, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| format!("无法绑定本地项目文档服务: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let endpoint = EndpointRegistration::publish(endpoint_dir, port)?;
+    let management_endpoint = management.as_ref().map(|manager| EndpointRegistration::publish_value(
+        endpoint_dir, "management-server.json", json!({
+            "baseUrl": format!("http://127.0.0.1:{port}"),
+            "token": manager.token,
+            "pid": std::process::id(),
+            "protocolVersion": 1,
+            "harnessVersion": env!("CARGO_PKG_VERSION"),
+        }),
+    )).transpose()?;
     let store = Arc::new(store);
     let proposals = Arc::new(proposals);
     let task = tokio::spawn(async move {
@@ -202,8 +227,10 @@ pub async fn serve(
                     let store = store.clone();
                     let proposals = proposals.clone();
                     let lookup = lookup.clone();
+                    let management = management.clone();
                     tokio::spawn(async move {
-                        let _ = handle_connection(stream, store, proposals, lookup).await;
+                        let _ = tokio::time::timeout(std::time::Duration::from_secs(75),
+                            handle_connection(stream, store, proposals, lookup, management)).await;
                     });
                 }
                 Err(error) => {
@@ -213,7 +240,7 @@ pub async fn serve(
             }
         }
     });
-    Ok(ProjectDocServer { port, task, _endpoint: endpoint })
+    Ok(ProjectDocServer { port, task, _endpoint: endpoint, _management_endpoint: management_endpoint })
 }
 
 /// 处理单个连接：解析请求行 + 头 + 体，路由到 handler，写响应。
@@ -222,6 +249,7 @@ async fn handle_connection(
     store: Arc<ProjectDocStore>,
     proposals: Arc<ProposalQueue>,
     lookup: ThreadProjectLookup,
+    management: Option<Arc<Management>>,
 ) -> Result<(), String> {
     let mut buffer = Vec::with_capacity(8 * 1024);
     let mut chunk = [0_u8; 8 * 1024];
@@ -251,11 +279,15 @@ async fn handle_connection(
     let raw_path = parts.next().unwrap_or("").to_string();
 
     let mut content_length = 0_usize;
+    let mut authorization = String::new();
+    let mut has_origin = false;
     for line in lines {
         if let Some((name, value)) = line.split_once(':') {
             if name.trim().eq_ignore_ascii_case("content-length") {
                 content_length = value.trim().parse().unwrap_or(0);
             }
+            if name.trim().eq_ignore_ascii_case("authorization") { authorization = value.trim().to_string(); }
+            if name.trim().eq_ignore_ascii_case("origin") { has_origin = true; }
         }
     }
     if content_length > MAX_BODY_BYTES {
@@ -279,6 +311,18 @@ async fn handle_connection(
     // 路由。
     let (path, query) = split_query(&raw_path);
     let (status, payload) = match (method.as_str(), path.as_str()) {
+        ("POST", "/management/call") => {
+            match management {
+                Some(manager) if !has_origin && authorization == format!("Bearer {}", manager.token) => {
+                    match serde_json::from_slice::<ManagementRequest>(body) {
+                        Ok(request) => manager.call(request).await,
+                        Err(error) => (400, json!({"error": format!("管理请求无效: {error}")})),
+                    }
+                }
+                Some(_) => (403, json!({"error": "管理入口认证失败"})),
+                None => (404, json!({"error": "本实例不支持管理入口"})),
+            }
+        }
         ("POST", "/propose") => match serde_json::from_slice::<ProposeRequest>(body) {
             Ok(req) => handle_propose(&store, &proposals, &lookup, &req),
             Err(e) => (400, json!({ "error": format!("请求体不是合法 JSON: {e}") })),
@@ -311,6 +355,8 @@ async fn write_response(
         404 => "Not Found",
         409 => "Conflict",
         413 => "Payload Too Large",
+        503 => "Service Unavailable",
+        504 => "Gateway Timeout",
         _ => "Internal Server Error",
     };
     let response = format!(
@@ -394,6 +440,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn management_requires_token_and_dispatches_to_application_services() {
+        let (dir, store, proposals) = stores();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let manager = Arc::new(Management::new(Arc::new(move |request| {
+            sender.send(request.clone()).map_err(|e| e.to_string())
+        })).unwrap());
+        manager.set_ready(true).unwrap();
+        let server = serve_with_management(store, proposals, lookup_binding(&[]), dir.path(), Some(manager.clone())).await.unwrap();
+        let endpoint_path = dir.path().join("management-server.json");
+        let endpoint: Value = serde_json::from_str(&std::fs::read_to_string(&endpoint_path).unwrap()).unwrap();
+        assert_eq!(endpoint["token"], manager.token);
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&endpoint_path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        let url = format!("http://127.0.0.1:{}/management/call", server.port().unwrap());
+        let client = reqwest::Client::new();
+        let request = json!({"requestId": "fixture", "method": "plugins.setEnabled", "params": {"enabled": false}});
+        assert_eq!(client.post(&url).json(&request).send().await.unwrap().status(), 403);
+        assert_eq!(client.post(&url).bearer_auth(&manager.token).header("Origin", "http://example.com")
+            .json(&request).send().await.unwrap().status(), 403);
+        assert!(receiver.try_recv().is_err());
+        let response = client.post(&url).bearer_auth(&manager.token).json(&request).send();
+        let executor = async {
+            let event = receiver.recv().await.unwrap();
+            assert_eq!(event.method, "plugins.setEnabled");
+            manager.respond(&event.request_id, Some(json!({"enabled": false})), None).unwrap();
+        };
+        let (response, _) = tokio::join!(response, executor);
+        assert_eq!(response.unwrap().json::<Value>().await.unwrap()["result"]["enabled"], false);
+        drop(server);
+        assert!(!endpoint_path.exists());
+    }
+
+    #[tokio::test]
     async fn startup_replaces_stale_endpoint_and_serves_without_a_thread_binding() {
         let (dir, store, proposals) = stores();
         store.create_project("p1", "Demo").unwrap();
@@ -429,6 +510,21 @@ mod tests {
         drop(first);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), current);
         assert!(tokio::net::TcpStream::connect(("127.0.0.1", second.port().unwrap())).await.is_ok());
+        drop(second);
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn older_instance_cannot_remove_new_management_endpoint() {
+        let (dir, store, proposals) = stores();
+        let manager = || Arc::new(Management::new(Arc::new(|_| Ok(()))).unwrap());
+        let first = serve_with_management(store, proposals, lookup_binding(&[]), dir.path(), Some(manager())).await.unwrap();
+        let (_other_dir, store, proposals) = stores();
+        let second = serve_with_management(store, proposals, lookup_binding(&[]), dir.path(), Some(manager())).await.unwrap();
+        let path = dir.path().join("management-server.json");
+        let current = std::fs::read_to_string(&path).unwrap();
+        drop(first);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), current);
         drop(second);
         assert!(!path.exists());
     }

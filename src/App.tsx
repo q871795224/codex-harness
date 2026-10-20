@@ -1,4 +1,5 @@
 import { useInterfaceMode } from './features/interface/useInterfaceMode'
+import { useManagement } from './core/management/react'
 import type { TeamsService } from './core/teams/types'
 import { useTeamsService } from './core/teams/react'
 import { MemoryButton } from './features/memory/MemoryButton'
@@ -196,6 +197,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const plugins = usePluginHost()
   const codexUpdate = useCodexUpdate(harness.selectedProvider === 'codex' ? harness.selectedThreadId : null, codex.reload)
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
+  useManagement({ harness, codex, plugins, flavor })
   const [tab, setTab] = useState('chat')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [selectedNotificationId, setSelectedNotificationId] = useState<string | undefined>()

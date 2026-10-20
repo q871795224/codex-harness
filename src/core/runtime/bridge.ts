@@ -38,6 +38,7 @@ import type { ProjectDocSnapshot, ProjectDocWriteOutcome, ProjectMeta, ProjectVe
 import type { ProjectDocProposal } from '../project-docs/types'
 import type { SectionKey } from '../../features/project-doc/document'
 import { createThreadPermissionRequest } from './threadPermissions'
+import type { ManagementRequest } from '../management/types'
 
 const requestWithThreadPermissions = createThreadPermissionRequest({
   request: (method, params) => invoke('app_server_request', { method, params }),
@@ -105,6 +106,18 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
 }
 
 export const runtime = {
+  listenManagementRequests(handler: (request: ManagementRequest) => void): Promise<() => void> {
+    return listen<ManagementRequest>('management:request', (event) => handler(event.payload))
+  },
+  managementReady(ready: boolean): Promise<void> {
+    return invoke<void>('management_ready', { ready })
+  },
+  managementRespond(requestId: string, result?: unknown, error?: string): Promise<void> {
+    return invoke<void>('management_respond', { requestId, result: result ?? null, error: error ?? null })
+  },
+  registerWorkspace(path: string): Promise<Workspace> {
+    return invoke<Workspace>('register_workspace', { path })
+  },
   teamReadDocument(key: string): Promise<TeamDocument> {
     return invoke<TeamDocument>('team_read_document', { key })
   },
