@@ -115,4 +115,15 @@ describe('management controls the real plugin host', () => {
     expect(context.plugins.instances).toHaveLength(0)
     await host.dispose()
   })
+
+  it('resolves plugin context from the selected conversation rather than a stale workspace selection', async () => {
+    const { context, call, host } = await pluginsFixture()
+    context.harness.selectedThreadId = 'claude:one'
+    context.harness.selectedWorkspaceRoot = '/workspace/9'
+    context.harness.threadRoots = { 'claude:one': '/workspace/0' }
+    context.harness.threads = [{ id: 'claude:one', cwd: '/workspace/0' }] as never
+    expect(await call('plugins.list')).toMatchObject({ context: { provider: 'claude', threadId: 'claude:one', workspaceRoot: '/workspace/0' } })
+    expect(await call('plugins.list', { workspaceRoot: '/workspace/1' })).toMatchObject({ context: { threadId: null, threadCwd: null, workspaceRoot: '/workspace/1' } })
+    await host.dispose()
+  })
 })

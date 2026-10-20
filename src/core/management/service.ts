@@ -156,10 +156,13 @@ export function createManagementHandler(get: () => ManagementContext) {
         return { id, archived: false }
       }
       case 'plugins.list': {
-        const context: PluginViewContext = { provider: p.provider === undefined ? h.selectedProvider : provider(p),
-          threadId: typeof p.threadId === 'string' ? p.threadId : h.selectedThreadId,
-          threadCwd: typeof p.cwd === 'string' ? p.cwd : h.currentThread?.cwd ?? null,
-          workspaceRoot: typeof p.workspaceRoot === 'string' ? p.workspaceRoot : h.selectedWorkspaceRoot }
+        const threadId = typeof p.threadId === 'string' ? p.threadId : p.workspaceRoot === undefined ? h.selectedThreadId : null
+        const thread = h.threads.find((candidate) => candidate.id === threadId)
+        const context: PluginViewContext = { provider: p.provider === undefined
+          ? threadId ? threadId.startsWith('claude:') ? 'claude' : 'codex' : h.selectedProvider : provider(p),
+          threadId, threadCwd: typeof p.cwd === 'string' ? p.cwd : thread?.cwd ?? null,
+          workspaceRoot: typeof p.workspaceRoot === 'string' ? p.workspaceRoot
+            : h.workspaces.find((workspace) => workspace.root === (threadId ? h.threadRoots[threadId] : null))?.root ?? null }
         const entries = { tabs: plugins.resolvedTabs(context), headerActions: plugins.resolvedThreadHeaderActions(context),
           newThreadPanels: plugins.resolvedNewThreadPanels(context), composerActions: plugins.resolvedComposerActions(context),
           turnActions: plugins.resolvedTurnActions(context), completions: plugins.resolvedComposerCompletions(context),
