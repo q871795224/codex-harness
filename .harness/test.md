@@ -3,6 +3,7 @@
 ## 常规命令
 
 - 前端单元测试：`pnpm test`
+- `pnpm test` 同时运行 Claude daemon 的 Node 集成测试；使用临时 HOME、socket 和假 SDK，验证配置变量到子进程的传递及修改/删除生效，不调用真实模型或读取本机凭据。
 - 前端构建：`pnpm build`
 - Rust 单元测试：`(cd src-tauri && cargo test)`
 - 稳定版开发构建：`pnpm tauri dev`
