@@ -2,7 +2,7 @@ import net from 'node:net'
 import { createInterface } from 'node:readline'
 import { chmod, mkdir, open, readFile, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import process from 'node:process'
 
 const ALLOWED_ENVIRONMENT = new Set([
@@ -28,6 +28,29 @@ const ALLOWED_ENVIRONMENT = new Set([
 ])
 for (const key of Object.keys(process.env)) {
   if (!ALLOWED_ENVIRONMENT.has(key)) delete process.env[key]
+}
+
+async function queryEnvironment() {
+  const configured = Object.create(null)
+  if (process.env.HOME) {
+    let content
+    try {
+      content = await readFile(join(process.env.HOME, '.codex-harness', 'secrets'), 'utf8')
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw new Error('无法读取 ~/.codex-harness/secrets')
+    }
+    // Match the Codex loader's plain KEY=value format; do not execute shell code.
+    for (const rawLine of (content ?? '').split('\n')) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('#')) continue
+      const separator = line.indexOf('=')
+      if (separator < 1) continue
+      const key = line.slice(0, separator).trim()
+      if (key) configured[key] = line.slice(separator + 1).trim()
+    }
+  }
+  // Keep explicit values local to this query so edits and removals take effect next time.
+  return { ...configured, ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness' }
 }
 
 let sdk
@@ -365,7 +388,7 @@ async function startTurn(params) {
         maxTurns: params.maxTurns ?? DEFAULT_MAX_TURNS,
         includePartialMessages: true,
         abortController,
-        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness' },
+        env: await queryEnvironment(),
       },
     })) {
       if (sdkMessage.session_id && sdkMessage.session_id !== providerSessionId) {
@@ -425,7 +448,7 @@ async function* waitForInput() {
   await new Promise(() => {})
 }
 
-function queryOptions(params, abortController) {
+async function queryOptions(params, abortController) {
   const permissionMode = params.permissionMode ?? 'default'
   return {
     cwd: params.cwd,
@@ -439,7 +462,7 @@ function queryOptions(params, abortController) {
     maxTurns: params.maxTurns ?? DEFAULT_MAX_TURNS,
     includePartialMessages: false,
     abortController,
-    env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness' },
+    env: await queryEnvironment(),
   }
 }
 
@@ -449,7 +472,7 @@ async function listModels(params) {
   if (cached && cached.expiresAt > Date.now()) return { models: cached.models }
   const abortController = new AbortController()
   try {
-    const modelQuery = query({ prompt: waitForInput(), options: queryOptions({ cwd }, abortController) })
+    const modelQuery = query({ prompt: waitForInput(), options: await queryOptions({ cwd }, abortController) })
     const initialization = await modelQuery.initializationResult()
     const models = (initialization.models ?? []).map(modelInfo).filter(Boolean)
     const result = models.length > 0 ? models : FALLBACK_MODELS
@@ -477,7 +500,7 @@ async function readContext(params) {
   try {
     const contextQuery = query({
       prompt: waitForInput(),
-      options: queryOptions({
+      options: await queryOptions({
         cwd: params.cwd ?? state.cwd,
         providerSessionId: params.providerSessionId ?? state.providerSessionId,
         model: state.model,
