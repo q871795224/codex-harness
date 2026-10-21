@@ -16,6 +16,7 @@ vi.mock('../../core/runtime/bridge', () => ({
   runtime: {
     recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
     chooseWorkspace: vi.fn(),
+    registerWorkspace: vi.fn(),
     listWorkspaces: vi.fn().mockResolvedValue([]),
     listThreadStates: vi.fn().mockResolvedValue([]),
     getAppState: vi.fn().mockResolvedValue(null),
@@ -65,6 +66,26 @@ afterEach(cleanup)
 const workspace = { root: '/repo', checkoutRoot: '/repo', name: 'repo', branch: null, sha: null, createdAt: 1, lastOpenedAt: 1 }
 
 describe('workspace settings', () => {
+  it('adds an explicit path without opening the native directory picker', async () => {
+    vi.mocked(runtime.listWorkspaces).mockResolvedValue([])
+    vi.mocked(runtime.registerWorkspace).mockResolvedValue(workspace)
+    const { result } = await ready()
+    await act(async () => { await result.current.chooseWorkspace('/repo') })
+    expect(runtime.registerWorkspace).toHaveBeenCalledWith('/repo')
+    expect(runtime.chooseWorkspace).not.toHaveBeenCalled()
+    expect(result.current.workspaces.map((entry) => entry.root)).toContain('/repo')
+  })
+
+  it('creates in the explicit checkout even when another session is selected', async () => {
+    vi.mocked(runtime.listWorkspaces).mockResolvedValue([workspace])
+    const { result } = await ready()
+    await act(async () => { await result.current.selectThread('active') })
+    vi.mocked(appServer.startThread).mockResolvedValue({ ...resumeResponse('new'), thread: { ...thread('new'), cwd: '/explicit' } })
+    await act(async () => { await result.current.createThread('/explicit') })
+    expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/explicit', runtimeWorkspaceRoots: ['/explicit'] }))
+    expect(result.current.currentThread?.cwd).toBe('/explicit')
+  })
+
   it('keeps a removed workspace hidden after rediscovery and restart, and restores it on explicit add', async () => {
     vi.mocked(runtime.listWorkspaces).mockResolvedValue([workspace])
     vi.mocked(runtime.mapThreadWorkspaces).mockResolvedValue({ '/repo': workspace })

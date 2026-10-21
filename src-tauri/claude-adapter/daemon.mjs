@@ -525,6 +525,20 @@ async function readContext(params) {
   }
 }
 
+async function listSkills(params) {
+  if (typeof params.cwd !== 'string' || !params.cwd) throw new Error('读取 Claude Skills 缺少 cwd')
+  const abortController = new AbortController()
+  try {
+    const skillsQuery = query({ prompt: waitForInput(), options: await queryOptions({ cwd: params.cwd }, abortController) })
+    const commands = await skillsQuery.supportedCommands()
+    return { source: 'Claude Agent SDK supportedCommands',
+      coverage: 'user-invocable command surface; includes commands, omits user-invocable:false skills', complete: false,
+      data: commands.map(({ name, description, argumentHint }) => ({ name, description, argumentHint })) }
+  } finally {
+    abortController.abort()
+  }
+}
+
 async function readHistory(params) {
   const providerSessionId = typeof params.providerSessionId === 'string'
     ? params.providerSessionId.trim()
@@ -595,6 +609,10 @@ async function handle(client, request) {
   }
   if (method === 'provider/models') {
     respond(client, id, await listModels(params))
+    return
+  }
+  if (method === 'provider/skills') {
+    respond(client, id, await listSkills(params))
     return
   }
   if (method === 'session/history') {

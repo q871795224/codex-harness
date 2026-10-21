@@ -13,6 +13,7 @@ mod harness_files;
 mod jev;
 mod local_connector;
 mod markdown_image;
+mod management;
 mod project_doc_proposals;
 mod project_doc_server;
 mod project_doc_store;
@@ -41,7 +42,7 @@ use store::{
     ClaudeSession, ClaudeSessionInput, ComposerDraftInput, ComposerDraftRecord, HarnessStore,
     PluginInstance, PluginInstanceInput, PluginRun, PluginRunInput, ThreadUiState, Workspace,
 };
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 struct AppState {
     app_server: Arc<AppServerManager>,
@@ -55,12 +56,23 @@ struct AppState {
     project_docs: Mutex<Option<project_doc_store::ProjectDocStore>>,
     project_doc_proposals: Mutex<Option<project_doc_proposals::ProposalQueue>>,
     project_doc_server: Mutex<Option<project_doc_server::ProjectDocServer>>,
+    management: Arc<management::Management>,
     terminal: Arc<terminal::TerminalManager>,
     api_workbench: api_workbench::ApiWorkbenchStore,
     codex_update: tokio::sync::Mutex<()>,
     release_start: tokio::sync::Mutex<()>,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
+}
+
+#[tauri::command]
+fn management_ready(state: State<'_, AppState>, ready: bool) -> Result<(), String> {
+    state.management.set_ready(ready)
+}
+
+#[tauri::command]
+fn management_respond(state: State<'_, AppState>, request_id: String, result: Option<Value>, error: Option<String>) -> Result<(), String> {
+    state.management.respond(&request_id, result, error)
 }
 
 #[tauri::command]
@@ -1273,6 +1285,10 @@ pub fn run() {
             ));
             let terminal = Arc::new(terminal::TerminalManager::new(diagnostics.clone()));
             let store = Arc::new(store);
+            let management_app = app.handle().clone();
+            let management = Arc::new(management::Management::new(Arc::new(move |request| {
+                management_app.emit("management:request", request).map_err(|e| e.to_string())
+            }))?);
             let app_state = store.clone();
             let lookup: project_doc_server::ThreadProjectLookup = Arc::new(move |thread_id| {
                 thread_project_lookup(&app_state, thread_id)
@@ -1285,7 +1301,7 @@ pub fn run() {
                 let connection = rusqlite::Connection::open(dir.join("projects/project_docs.sqlite"))
                     .map_err(|e| e.to_string())?;
                 let proposals = project_doc_proposals::ProposalQueue::open_at(connection)?;
-                project_doc_server::serve(docs, proposals, lookup, &dir).await
+                project_doc_server::serve_with_management(docs, proposals, lookup, &dir, Some(management.clone())).await
             }).map_err(|error: String| {
                 diagnostics.record("error", "project-doc", "server.start_failed",
                     json!({ "errorCode": "initialization_failed" }));
@@ -1303,6 +1319,7 @@ pub fn run() {
                 project_docs: Mutex::new(None),
                 project_doc_proposals: Mutex::new(None),
                 project_doc_server: Mutex::new(Some(project_doc_server)),
+                management,
                 terminal,
                 api_workbench,
                 codex_update: tokio::sync::Mutex::new(()),
@@ -1313,6 +1330,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            management_ready,
+            management_respond,
             team_read_document,
             team_write_document,
             memory_domain_settings,

@@ -62,6 +62,8 @@
 
 ## 运行时约定
 
+- 全局 `codex-harness` Skill 经 `harnessctl` 调用本机管理入口。原生层复用项目文档 listener，单独发布带认证的 `management-server.json`；`management.rs` 负责请求关联和去重，`core/management` 调用挂载的界面服务，工作区和插件查询不从数据库重建最终列表。管理协议、覆盖范围、写入及 fallback 见 `docs/management.md`。
+
 - 项目文档 HTTP 服务由 Harness Rust setup 启动，退出时停止，不依赖当前会话或项目绑定。启动失败必须报错；地址文件通过原子替换发布，异常退出的旧地址在下次启动覆盖。稳定版与开发版同时运行时，CLI 使用最后启动实例的地址；实例退出只删除自己发布且仍持有的地址，不能删除其他实例的记录。
 
 - MCP 是共享 App Server daemon 的全局配置：核心启动时加载一次，仅在用户手动 reload 时刷新。读取 `config/read`、`mcpServerStatus/list`，并结合 `mcpServer/startupStatus/updated` 区分配置启用、实际运行、启动失败和认证异常；打开设置页不能重复请求。

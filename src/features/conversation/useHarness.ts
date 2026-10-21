@@ -945,9 +945,9 @@ export function useHarness() {
     }
   }, [busy.olderTurns, details, notify, updateDetail])
 
-  const chooseWorkspace = useCallback(async () => {
+  const chooseWorkspace = useCallback(async (path?: string) => {
     try {
-      const workspace = await runtime.chooseWorkspace()
+      const workspace = path ? await runtime.registerWorkspace(path) : await runtime.chooseWorkspace()
       if (!workspace) return null
       setWorkspaces((current) => [workspace, ...current.filter((item) => item.root !== workspace.root)])
       updateNavigation((current) => ({ ...current, hiddenWorkspaceRoots: current.hiddenWorkspaceRoots.filter((root) => root !== workspace.root) }))
@@ -992,8 +992,8 @@ export function useHarness() {
     })
   }, [rememberNextThreadCwd, workspaces])
 
-  const startNewThread = useCallback(async (sessionStartSource: 'clear' | undefined, operation: '创建' | '重置') => {
-    const workspaceRoot = resolveNewThreadWorkspaceRoot(
+  const startNewThread = useCallback(async (sessionStartSource: 'clear' | undefined, operation: '创建' | '重置', explicitCwd?: string) => {
+    const workspaceRoot = explicitCwd ?? resolveNewThreadWorkspaceRoot(
       selectedThreadIdRef.current,
       threadsRef.current,
       nextThreadCwdRef.current ?? resolveDefaultWorkspaceCwd(workspaces, selectedWorkspaceRoot),
@@ -1063,8 +1063,8 @@ export function useHarness() {
     }
   }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, selectedWorkspaceRoot, setViewMode, upsertThread, workspaces])
 
-  const createThread = useCallback(async () => {
-    return startNewThread(undefined, '创建')
+  const createThread = useCallback(async (cwd?: string) => {
+    return startNewThread(undefined, '创建', cwd)
   }, [startNewThread])
 
   const resetThread = useCallback(async () => {
@@ -2371,6 +2371,7 @@ export function useHarness() {
     bootError,
     threads,
     workspaces,
+    allWorkspaces: workspaceCatalog,
     threadRoots,
     threadGitCwds,
     threadStates,

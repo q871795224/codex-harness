@@ -249,12 +249,12 @@ export function useUnifiedHarness() {
 
   const openThread = useCallback((threadId: string) => selectThread(threadId, 'open-thread'), [selectThread])
 
-  const createThread = useCallback(async (provider: ConversationProvider = 'codex') => {
+  const createThread = useCallback(async (provider: ConversationProvider = 'codex', explicitCwd?: string) => {
     const requestId = ++selectionRequestRef.current
     if (provider === 'codex') {
-      return codex.createThread()
+      return codex.createThread(explicitCwd)
     }
-    let cwd: string | undefined = currentThread?.cwd
+    let cwd: string | undefined = explicitCwd ?? currentThread?.cwd
       ?? codex.workspaces.find((workspace) => workspace.root === codex.selectedWorkspaceRoot)?.checkoutRoot
       ?? codex.workspaces[0]?.checkoutRoot
     if (!cwd) cwd = (await codex.chooseWorkspace())?.checkoutRoot
