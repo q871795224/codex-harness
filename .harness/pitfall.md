@@ -84,6 +84,12 @@
 - **正确做法**：`install_runtime_file` 返回内容是否变更，`ensure_launch_agent` 在文件变更时用 `kickstart -k` 强制重启 daemon；手动修复可执行 `launchctl kickstart -k gui/$(id -u)/com.local.codex-harness.claude-provider`。
 - **适用范围**：Claude Provider 方法新增、daemon 升级和"未知方法"报错排查。
 
+## Claude 历史合并必须保留消息 UUID
+
+- **问题**：轮次完成后切回会话，实时消息与历史消息使用不同的 turn/item ID，导致同一份输入和答复各显示两次；仅对齐 active turn 无法覆盖已完成的轮次。
+- **正确做法**：daemon 为 SDK 用户输入显式设置 UUID，并通过 `message/user.providerMessageId` 传给前端。历史合并按同一 UUID 对齐轮次及输入、答复 ID，保留最新实时状态；不能按文字去重，否则会误合并用户真正重复发送的消息。图片历史只保留占位文本，同样依赖 UUID 对齐。
+- **适用范围**：Claude 历史恢复、事件重放和切换会话。
+
 ## macOS 发布必须用稳定签名身份
 
 - **问题**：ad-hoc 签名（`signingIdentity: "-"`）的应用每次重新构建 cdhash 都会变化，macOS TCC 把每个新构建当成新应用，屏幕录制等权限授权不跨版本保留，用户每次安装新版都会重新看到权限弹窗。

@@ -238,7 +238,7 @@ function imageMediaType(path) {
   throw new Error(`不支持的 Claude 图片格式: ${path}`)
 }
 
-async function userMessage(input) {
+async function userMessage(input, uuid) {
   const content = []
   for (const item of input ?? []) {
     if (item?.type === 'text' && typeof item.text === 'string') {
@@ -259,6 +259,7 @@ async function userMessage(input) {
   if (content.length === 0) throw new Error('Claude turn 输入不能为空')
   return {
     type: 'user',
+    uuid,
     message: { role: 'user', content: content.length === 1 && content[0].type === 'text' ? content[0].text : content },
     parent_tool_use_id: null,
   }
@@ -365,13 +366,14 @@ async function startTurn(params) {
   state.permissionMode = params.permissionMode ?? state.permissionMode
   state.effort = params.effort ?? state.effort
   state.lastStatus = 'inProgress'
+  const providerMessageId = randomUUID()
   emit('turn/started', { sessionId, turnId })
-  emit('message/user', { sessionId, turnId, itemId: `${turnId}:user`, content: params.input ?? [] })
+  emit('message/user', { sessionId, turnId, itemId: `${turnId}:user`, providerMessageId, content: params.input ?? [] })
 
   let providerSessionId = params.providerSessionId ?? null
   const permissionMode = params.permissionMode ?? 'default'
   try {
-    const message = await userMessage(params.input)
+    const message = await userMessage(params.input, providerMessageId)
     for await (const sdkMessage of query({
       prompt: singleMessage(message),
       options: {

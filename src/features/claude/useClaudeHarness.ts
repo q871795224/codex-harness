@@ -30,7 +30,6 @@ export function useClaudeHarness() {
   const [sessionSettings, setSessionSettings] = useState<Record<string, ClaudeSessionSettings>>({})
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const sessionsRef = useRef<ClaudeSessionRecord[]>([])
-  const detailsRef = useRef<Record<string, ThreadDetail>>({})
   const activeTurnIdsRef = useRef<Record<string, string>>({})
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
   const queuesRef = useRef<Record<string, QueuedSubmission[]>>({})
@@ -45,7 +44,6 @@ export function useClaudeHarness() {
   const historyLoadsRef = useRef(new Map<string, Promise<void>>())
 
   useEffect(() => { sessionsRef.current = sessions }, [sessions])
-  useEffect(() => { detailsRef.current = details }, [details])
   useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => { queuesRef.current = queues }, [queues])
@@ -159,14 +157,10 @@ export function useClaudeHarness() {
       return
     }
 
-    const activeTurnId = activeTurnIdsRef.current[sessionId] ?? null
-    const activeUserInput = activeTurnId
-      ? detailsRef.current[sessionId]?.items.find((entry) => entry.turnId === activeTurnId && entry.item.type === 'userMessage')?.item.content ?? null
-      : null
     const request = (async () => {
       try {
         const history = await runtime.readClaudeHistory(sessionId, session.cwd, session.providerSessionId!)
-        const hydrated = hydrateClaudeHistory(history.messages, { activeTurnId, activeUserInput })
+        const hydrated = hydrateClaudeHistory(history.messages)
         setDetails((current) => {
           const latestSession = sessionsRef.current.find((candidate) => candidate.id === sessionId)
           if (!latestSession) return current

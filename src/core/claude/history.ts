@@ -1,26 +1,14 @@
 import { textInput, type JsonObject, type ThreadDetail, type ThreadItem, type ThreadItemEntry, type Turn, type UserInput } from '../domain/codex'
 import type { ClaudeSessionMessage } from './types'
 
-export interface ClaudeHistoryOptions {
-  activeTurnId?: string | null
-  activeUserInput?: UserInput[] | null
-}
-
 export interface ClaudeHistoryDetail {
   turns: Turn[]
   items: ThreadItemEntry[]
-  activeTurnId: string | null
 }
 
 export function hydrateClaudeHistory(
   messages: ClaudeSessionMessage[],
-  options: ClaudeHistoryOptions = {},
 ): ClaudeHistoryDetail {
-  const activeTurnId = options.activeTurnId ?? null
-  const activePromptUuid = activeTurnId && options.activeUserInput
-    ? [...messages].reverse().find((message) => isUserPrompt(message)
-      && inputsMatch(userInputs(message), options.activeUserInput ?? []))?.uuid ?? null
-    : null
   const turns: Turn[] = []
   let currentTurn: Turn | null = null
 
@@ -29,13 +17,13 @@ export function hydrateClaudeHistory(
       const content = userInputs(message)
       if (content.length > 0) {
         const messageId = messageUuid(message, index)
-        const isActive = activePromptUuid === message.uuid
-        const turnId = isActive && activeTurnId ? activeTurnId : `claude-history:${messageId}`
-        currentTurn = createTurn(turnId, message.timestamp, isActive)
+        const turnId = `claude-history:${messageId}`
+        currentTurn = createTurn(turnId, message.timestamp)
         turns.push(currentTurn)
         addTurnItem(currentTurn, {
           id: `${turnId}:user`,
           type: 'userMessage',
+          providerMessageId: message.uuid || null,
           content,
         })
       } else if (currentTurn) {
@@ -51,18 +39,17 @@ export function hydrateClaudeHistory(
   })
 
   for (const turn of turns) {
-    if (turn.id === activeTurnId) continue
     turn.items = turn.items.map((item) => item.status === 'inProgress' ? { ...item, status: 'completed' } : item)
   }
 
   return {
     turns,
     items: turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item }))),
-    activeTurnId: activePromptUuid && activeTurnId ? activeTurnId : null,
   }
 }
 
 export function mergeClaudeHistory(detail: ThreadDetail, history: ClaudeHistoryDetail): ThreadDetail {
+  history = alignHistoryTurns(detail, history)
   const items: ThreadItemEntry[] = []
   for (const entry of history.items) upsertEntry(items, entry)
   for (const turn of history.turns) {
@@ -97,28 +84,54 @@ export function mergeClaudeHistory(detail: ThreadDetail, history: ClaudeHistoryD
     ...turn,
     items: itemsByTurn.get(turn.id) ?? turn.items,
   }))
-  const hydratedActiveTurnId = history.activeTurnId
-    && nextTurns.some((turn) => turn.id === history.activeTurnId && turn.status === 'inProgress')
-    ? history.activeTurnId
-    : null
-
   return {
     ...detail,
     turns: nextTurns,
     items,
-    activeTurnId: detail.activeTurnId ?? hydratedActiveTurnId,
   }
 }
 
-function createTurn(id: string, timestamp: string | null, active: boolean): Turn {
+function alignHistoryTurns(detail: ThreadDetail, history: ClaudeHistoryDetail): ClaudeHistoryDetail {
+  // SDK UUIDs survive transcript reloads; prompt text and local turn IDs do not identify a submission.
+  const liveTurnIds = new Map<string, string>()
+  for (const entry of [...detail.items, ...detail.turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item })))]) {
+    if (entry.item.type === 'userMessage' && typeof entry.item.providerMessageId === 'string') {
+      liveTurnIds.set(entry.item.providerMessageId, entry.turnId)
+    }
+  }
+  const turnIds = new Map<string, string>()
+  for (const turn of history.turns) {
+    const user = turn.items.find((item) => item.type === 'userMessage')
+    const liveTurnId = typeof user?.providerMessageId === 'string' ? liveTurnIds.get(user.providerMessageId) : null
+    if (liveTurnId) turnIds.set(turn.id, liveTurnId)
+  }
+  const alignEntry = (entry: ThreadItemEntry): ThreadItemEntry => {
+    const turnId = turnIds.get(entry.turnId)
+    if (!turnId) return entry
+    const item = entry.item
+    const id = item.id === `${entry.turnId}:user` ? `${turnId}:user`
+      : item.id === `${entry.turnId}:assistant` ? `${turnId}:assistant` : item.id
+    return { ...entry, turnId, item: { ...item, id } }
+  }
+  return {
+    turns: history.turns.map((turn) => ({
+      ...turn,
+      id: turnIds.get(turn.id) ?? turn.id,
+      items: turn.items.map((item) => alignEntry({ turnId: turn.id, item }).item),
+    })),
+    items: history.items.map(alignEntry),
+  }
+}
+
+function createTurn(id: string, timestamp: string | null): Turn {
   const time = parseTimestamp(timestamp)
   return {
     id,
     items: [],
-    status: active ? 'inProgress' : 'completed',
+    status: 'completed',
     error: null,
     startedAt: time,
-    completedAt: active ? null : time,
+    completedAt: time,
     durationMs: null,
   }
 }
@@ -239,10 +252,6 @@ function userInputs(message: ClaudeSessionMessage): UserInput[] {
   return inputs
 }
 
-function isUserPrompt(message: ClaudeSessionMessage): boolean {
-  return message.type === 'user' && userInputs(message).length > 0
-}
-
 function messageContent(message: ClaudeSessionMessage): unknown {
   if (typeof message.message === 'string' || Array.isArray(message.message)) return message.message
   if (!isRecord(message.message)) return null
@@ -257,19 +266,6 @@ function parseTimestamp(timestamp: string | null): number | null {
   if (!timestamp) return null
   const parsed = Date.parse(timestamp)
   return Number.isFinite(parsed) ? parsed : null
-}
-
-function inputsMatch(left: UserInput[], right: UserInput[]): boolean {
-  if (left.length !== right.length) return false
-  return left.every((input, index) => inputKey(input) === inputKey(right[index]))
-}
-
-function inputKey(input: UserInput): string {
-  if (input.type === 'text') return `text:${input.text}`
-  if (input.type === 'localImage') return `localImage:${input.path}`
-  if (input.type === 'image') return `image:${input.url}`
-  if (input.type === 'skill') return `skill:${input.name}:${input.path}`
-  return `mention:${input.name}:${input.path}`
 }
 
 function isRecord(value: unknown): value is JsonObject {

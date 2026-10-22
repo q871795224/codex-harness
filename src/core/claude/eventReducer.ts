@@ -20,7 +20,7 @@ export function reduceClaudeEvent(detail: ThreadDetail, event: ClaudeAdapterEven
     return reduceThreadDetailEvent(detail, {
       type: 'itemUpserted',
       turnId,
-      item: { id: itemId, type: 'userMessage', content: params.content as UserInput[] },
+      item: { id: itemId, type: 'userMessage', content: params.content as UserInput[], providerMessageId: stringParam(params, 'providerMessageId') },
     })
   }
   if (event.method === 'message/delta') {
