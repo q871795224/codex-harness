@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { emptyThreadDetail, textInput, type Thread } from '../domain/codex'
+import { emptyThreadDetail, textInput, type Thread, type ThreadDetail, type UserInput } from '../domain/codex'
 import type { ClaudeSessionMessage } from './types'
 import { hydrateClaudeHistory, mergeClaudeHistory } from './history'
+import { reduceClaudeEvent } from './eventReducer'
 
 const thread: Thread = {
   id: 'claude:1',
@@ -26,6 +27,19 @@ function message(type: ClaudeSessionMessage['type'], uuid: string, content: unkn
     parentToolUseId: null,
     timestamp,
   }
+}
+
+function liveTurn(detail: ThreadDetail, turnId: string, providerMessageId: string, input: UserInput[], completed = true): ThreadDetail {
+  detail = reduceClaudeEvent(detail, { method: 'turn/started', params: { turnId } })
+  detail = reduceClaudeEvent(detail, {
+    method: 'message/user',
+    params: { turnId, itemId: `${turnId}:user`, providerMessageId, content: input },
+  })
+  detail = reduceClaudeEvent(detail, {
+    method: 'message/completed',
+    params: { turnId, itemId: `${turnId}:assistant`, text: '实时答复' },
+  })
+  return completed ? reduceClaudeEvent(detail, { method: 'turn/completed', params: { turnId } }) : detail
 }
 
 describe('Claude history hydration', () => {
@@ -70,44 +84,29 @@ describe('Claude history hydration', () => {
     })
   })
 
-  it('reuses the live turn id when the transcript contains its user prompt', () => {
+  it.each([true, false])('merges the live prompt and answer by provider UUID (completed=%s)', (completed) => {
     const history = hydrateClaudeHistory([
       message('user', 'user-1', '继续执行', '2026-09-07T01:00:00.000Z'),
       message('assistant', 'assistant-1', [{ type: 'text', text: '处理中' }], '2026-09-07T01:00:01.000Z'),
-    ], {
-      activeTurnId: 'claude-turn:live',
-      activeUserInput: [textInput('继续执行')],
-    })
+    ])
+    const live = liveTurn(emptyThreadDetail(thread), 'claude-turn:live', 'user-1', [textInput('继续执行')], completed)
+    const merged = mergeClaudeHistory(live, history)
 
-    expect(history.activeTurnId).toBe('claude-turn:live')
-    expect(history.turns[0].id).toBe('claude-turn:live')
-    expect(history.turns[0].status).toBe('inProgress')
-    expect(history.items.map((entry) => entry.item.id)).toEqual(['claude-turn:live:user', 'claude-turn:live:assistant'])
+    expect(merged.turns).toHaveLength(1)
+    expect(merged.turns[0]).toMatchObject({ id: 'claude-turn:live', status: completed ? 'completed' : 'inProgress' })
+    expect(merged.activeTurnId).toBe(completed ? null : 'claude-turn:live')
+    expect(merged.items.map((entry) => entry.item.id)).toEqual(['claude-turn:live:user', 'claude-turn:live:assistant'])
+    expect(merged.items.find((entry) => entry.item.type === 'agentMessage')?.item.text).toBe('实时答复')
+    expect(mergeClaudeHistory(merged, history)).toEqual(merged)
   })
 
-  it('merges hydrated items with live detail without duplicating stable ids', () => {
+  it('preserves completion when history requested during a turn returns after completion', () => {
     const history = hydrateClaudeHistory([
       message('user', 'user-1', '继续执行', '2026-09-07T01:00:00.000Z'),
       message('assistant', 'assistant-1', [{ type: 'text', text: '历史中的完整答复' }], '2026-09-07T01:00:01.000Z'),
-    ], {
-      activeTurnId: 'claude-turn:live',
-      activeUserInput: [textInput('继续执行')],
-    })
-    const live = emptyThreadDetail(thread)
-    live.activeTurnId = 'claude-turn:live'
-    live.turns = [{
-      id: 'claude-turn:live',
-      items: [],
-      status: 'inProgress',
-      error: null,
-      startedAt: Date.parse('2026-09-07T01:00:00.000Z'),
-      completedAt: null,
-      durationMs: null,
-    }]
-    live.items = [
-      { turnId: 'claude-turn:live', item: { id: 'claude-turn:live:user', type: 'userMessage', content: [textInput('继续执行')] } },
-      { turnId: 'claude-turn:live', item: { id: 'claude-turn:live:assistant', type: 'agentMessage', text: '实时答复', phase: 'final_answer' } },
-    ]
+    ])
+    let live = liveTurn(emptyThreadDetail(thread), 'claude-turn:live', 'user-1', [textInput('继续执行')], false)
+    live = reduceClaudeEvent(live, { method: 'turn/completed', params: { turnId: 'claude-turn:live' } })
 
     const merged = mergeClaudeHistory(live, history)
 
@@ -115,6 +114,51 @@ describe('Claude history hydration', () => {
     expect(merged.items.find((entry) => entry.item.id === 'claude-turn:live:assistant')?.item.text).toBe('实时答复')
     expect(merged.turns).toHaveLength(1)
     expect(merged.turns[0].items).toHaveLength(2)
-    expect(merged.activeTurnId).toBe('claude-turn:live')
+    expect(merged.activeTurnId).toBeNull()
+    expect(merged.turns[0].status).toBe('completed')
+  })
+
+  it('keeps genuinely repeated prompts as separate turns and matches only their UUIDs', () => {
+    const history = hydrateClaudeHistory([
+      message('user', 'user-1', '继续执行', '2026-09-07T01:00:00.000Z'),
+      message('assistant', 'assistant-1', '第一轮答复', '2026-09-07T01:00:01.000Z'),
+      message('user', 'user-2', '继续执行', '2026-09-07T01:01:00.000Z'),
+      message('assistant', 'assistant-2', '第二轮答复', '2026-09-07T01:01:01.000Z'),
+    ])
+    let live = liveTurn(emptyThreadDetail(thread), 'live-1', 'user-1', [textInput('继续执行')])
+    live = liveTurn(live, 'live-2', 'user-2', [textInput('继续执行')])
+    // A new identical submission may not have reached the transcript yet.
+    live = liveTurn(live, 'live-3', 'user-3', [textInput('继续执行')], false)
+    const merged = mergeClaudeHistory(live, history)
+
+    expect(merged.turns.map((turn) => turn.id)).toEqual(['live-1', 'live-2', 'live-3'])
+    expect(merged.items.filter((entry) => entry.item.type === 'userMessage')).toHaveLength(3)
+    expect(merged.items.filter((entry) => entry.item.type === 'agentMessage')).toHaveLength(3)
+    expect(merged.activeTurnId).toBe('live-3')
+  })
+
+  it('matches image prompts by UUID while retaining local attachment paths and tool IDs', () => {
+    const history = hydrateClaudeHistory([
+      message('user', 'user-image', [{ type: 'image' }], '2026-09-07T01:00:00.000Z'),
+      message('assistant', 'assistant-1', [{ type: 'tool_use', id: 'bash-1', name: 'Bash', input: { command: 'pwd' } }], '2026-09-07T01:00:01.000Z'),
+      message('user', 'result-1', [{ type: 'tool_result', tool_use_id: 'bash-1', content: '/workspace' }], '2026-09-07T01:00:02.000Z'),
+    ])
+    const input: UserInput[] = [{ type: 'localImage', path: '/tmp/fixture.png' }]
+    const live = liveTurn(emptyThreadDetail(thread), 'live-image', 'user-image', input)
+    const merged = mergeClaudeHistory(live, history)
+
+    expect(merged.turns).toHaveLength(1)
+    expect(merged.items.filter((entry) => entry.item.type === 'userMessage')).toEqual([
+      expect.objectContaining({ turnId: 'live-image', item: expect.objectContaining({ content: input }) }),
+    ])
+    expect(merged.items.find((entry) => entry.item.id === 'bash-1')).toMatchObject({
+      turnId: 'live-image', item: { status: 'completed', command: 'pwd' },
+    })
+  })
+
+  it('does not merge unrelated prompts with equal text but different UUIDs', () => {
+    const history = hydrateClaudeHistory([message('user', 'old-user', '继续执行', '2026-09-07T01:00:00.000Z')])
+    const live = liveTurn(emptyThreadDetail(thread), 'new-turn', 'new-user', [textInput('继续执行')])
+    expect(mergeClaudeHistory(live, history).turns).toHaveLength(2)
   })
 })

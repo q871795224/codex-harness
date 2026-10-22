@@ -12,12 +12,15 @@ import { setTimeout } from 'node:timers/promises'
 // The copied daemon falls back to this SDK fixture, never the real SDK or a model.
 const sdkFixture = `
 import { execFileSync } from 'node:child_process'
-export function query({ options }) {
+const history = []
+export async function getSessionMessages() { return history }
+export function query({ prompt, options }) {
   const snapshot = execFileSync(process.execPath, ['-e',
     'console.log(JSON.stringify(Object.fromEntries(["DB_PASSWORD", "ENV", "UNCONFIGURED_SECRET", "LANG", "CLAUDE_AGENT_SDK_CLIENT_APP"].map(key => [key, process.env[key] ?? null]))))'
   ], { env: options.env, encoding: 'utf8' }).trim()
   return {
     async *[Symbol.asyncIterator]() {
+      for await (const message of prompt) history.push({ ...message, session_id: 'fixture-session' })
       yield { type: 'result', subtype: 'success', session_id: 'fixture-session', result: snapshot }
     },
     async initializationResult() { return { models: [{ value: 'fixture', description: snapshot }] } },
@@ -85,6 +88,7 @@ async function fixture(t) {
   return {
     secrets,
     request,
+    messages,
     async turn() {
       const turnId = `turn-${nextId}`
       await request('turn/start', { sessionId: 'session', turnId, cwd: home, input: [{ type: 'text', text: 'fixture' }] })
@@ -110,6 +114,19 @@ test('passes explicitly configured values to Claude subprocesses after startup f
     LANG: 'fixture-lang',
     CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness',
   })
+})
+
+test('uses the same unique prompt UUID for live events and SDK history, including repeated input', async (t) => {
+  const daemon = await fixture(t)
+  await daemon.turn()
+  await daemon.turn()
+  const events = daemon.messages.filter((message) => message.method === 'message/user')
+  const history = await daemon.request('session/history', { providerSessionId: 'fixture-session' })
+  assert.equal(events.length, 2)
+  assert.equal(history.messages.length, 2)
+  assert.deepEqual(history.messages.map((message) => message.uuid), events.map((event) => event.params.providerMessageId))
+  assert.notEqual(history.messages[0].uuid, history.messages[1].uuid)
+  assert.match(history.messages[0].uuid, /^[0-9a-f-]{36}$/)
 })
 
 test('lists the SDK command surface without submitting a model prompt', async (t) => {

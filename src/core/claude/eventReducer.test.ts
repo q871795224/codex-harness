@@ -26,6 +26,7 @@ describe('Claude event reducer', () => {
         sessionId: thread.id,
         turnId: 'turn-1',
         itemId: 'turn-1:user',
+        providerMessageId: 'provider-message-1',
         content: [{ type: 'text', text: '继续执行' }],
       },
     })
@@ -34,6 +35,7 @@ describe('Claude event reducer', () => {
     expect(detail.items[0].item).toMatchObject({
       id: 'turn-1:user',
       type: 'userMessage',
+      providerMessageId: 'provider-message-1',
       content: [{ type: 'text', text: '继续执行' }],
     })
   })
