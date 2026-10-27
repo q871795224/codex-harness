@@ -58,6 +58,7 @@ interface SidebarProps {
   threadRoots: Record<string, string | null>
   threadStates: Record<string, ThreadUiState>
   workingThreadIds: Record<string, boolean>
+  waitingThreadIds?: Record<string, boolean>
   selectedThreadId: string | null
   viewMode: 'active' | 'archived'
   navigationLayout: NavigationLayout
@@ -106,6 +107,7 @@ export function Sidebar({
   threadRoots,
   threadStates,
   workingThreadIds,
+  waitingThreadIds = {},
   selectedThreadId,
   viewMode,
   navigationLayout,
@@ -427,6 +429,7 @@ export function Sidebar({
       threads={items}
       states={threadStates}
       workingThreadIds={workingThreadIds}
+      waitingThreadIds={waitingThreadIds}
       selectedThreadId={selectedThreadId}
       onSelect={onSelectThread}
       groupKey={groupKey}
@@ -744,6 +747,7 @@ function ThreadList({
   threads,
   states,
   workingThreadIds,
+  waitingThreadIds,
   selectedThreadId,
   onSelect,
   groupKey,
@@ -765,6 +769,7 @@ function ThreadList({
   threads: Thread[]
   states: Record<string, ThreadUiState>
   workingThreadIds: Record<string, boolean>
+  waitingThreadIds: Record<string, boolean>
   selectedThreadId: string | null
   onSelect: (threadId: string) => void
   groupKey: string
@@ -788,7 +793,7 @@ function ThreadList({
   return (
     <div className="thread-list" data-workspace-group={groupKey}>
       {shownThreads.map((thread) => {
-        const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null, workingThreadIds[thread.id] === true)
+        const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null, workingThreadIds[thread.id] === true, waitingThreadIds[thread.id] === true)
         const pinned = pinnedThreadIds.includes(thread.id)
         const numberHint = threadNumberById.get(thread.id)
         return (
@@ -811,7 +816,7 @@ function ThreadList({
               <StatusDot badge={badge} />
               <NumberBadge number={numberHint ?? 0} visible={showNumberHint && numberHint !== undefined} />
               <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
-              <time>{workingThreadIds[thread.id] || isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
+              <time>{badge === 'approval' ? '等待处理' : workingThreadIds[thread.id] || isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
             </button>
             <SidebarPinButton
               pinned={pinned}
@@ -869,5 +874,5 @@ export function reorderThreadIds(ids: string[], draggedId: string, targetId: str
 export function StatusDot({ badge }: { badge: Badge }) {
   if (!badge) return <span className="status-dot empty" aria-hidden />
   if (badge === 'working') return <LoaderCircle className="status-dot working" size={12} aria-label="运行中" />
-  return <span className={`status-dot ${badge}`} aria-label={badge === 'approval' ? '等待审批' : badge === 'error' ? '发生错误' : '有新回复'} />
+  return <span className={`status-dot ${badge}`} aria-label={badge === 'approval' ? '等待审批或回答' : badge === 'error' ? '发生错误' : '有新回复'} />
 }

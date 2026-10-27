@@ -5,6 +5,7 @@ import { recordWorkspaceContextDiagnostic, runtime } from '../../core/runtime/br
 import { DEFAULT_CLAUDE_SESSION_TITLE, useClaudeHarness } from '../claude/useClaudeHarness'
 import { useHarness, type ThreadSelectionSource } from './useHarness'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
+import { hasUnansweredAsyncInput } from './asyncUserInput'
 
 export type ConversationProvider = 'codex' | 'claude'
 const SELECTED_CONVERSATION_KEY = 'selectedConversationId'
@@ -206,6 +207,16 @@ export function useUnifiedHarness() {
     for (const threadId of Object.keys(codex.startingThreadIds)) next[threadId] = true
     return next
   }, [activeTurnIds, codex.startingThreadIds])
+  const waitingThreadIds = useMemo(() => {
+    const next: Record<string, boolean> = {}
+    for (const [threadId, requests] of Object.entries(approvals)) {
+      if (requests.length > 0) next[threadId] = true
+    }
+    for (const [threadId, detail] of Object.entries(codex.details)) {
+      if (hasUnansweredAsyncInput(threadId, detail, codex.activeTurnIds[threadId], codex.pendingSteers[threadId])) next[threadId] = true
+    }
+    return next
+  }, [approvals, codex.details, codex.activeTurnIds, codex.pendingSteers])
 
   const selectThread = useCallback(async (threadId: string, selectionSource: ThreadSelectionSource = 'unknown') => {
     const requestId = ++selectionRequestRef.current
@@ -370,6 +381,7 @@ export function useUnifiedHarness() {
     approvals,
     activeTurnIds,
     workingThreadIds,
+    waitingThreadIds,
     threadRoots,
     threadGitCwds,
     selectedThreadId,

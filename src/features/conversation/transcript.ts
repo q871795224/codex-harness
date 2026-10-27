@@ -77,8 +77,9 @@ export function groupTranscriptTurns(
 
   for (const turn of turns) {
     const rows = byId.get(turn.turnId) ?? []
-    turn.userRows = rows.filter((row) => row.entry.item.type === 'userMessage')
-    const assistantRows = rows.filter((row) => row.entry.item.type !== 'userMessage')
+    turn.userRows = rows[0]?.entry.item.type === 'userMessage' ? rows.slice(0, 1) : []
+    // Interjections and question answers belong where they occurred in the process.
+    const assistantRows = rows.slice(turn.userRows.length)
     turn.finalRows = assistantRows.filter((row) => row.phase === 'final_answer')
 
     if (turn.finalRows.length === 0 && canUseLegacyFinalFallback(turn.status)) {

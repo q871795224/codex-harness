@@ -414,8 +414,8 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .mermaid-modal { position: relative; display: flex; width: min(1080px, 100%); max-height: 100%; overflow: hidden; border: 1px solid #dde1e8; border-radius: 12px; background: #fff; box-shadow: 0 18px 48px rgba(15, 23, 42, .18); }
 .mermaid-modal-body { overflow: auto; padding: 28px; }
 .mermaid-modal-body svg { display: block; margin: 0 auto; max-width: none !important; height: auto; }
-.mermaid-modal-close { position: absolute; z-index: 1; top: 8px; right: 8px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #d9dee7; border-radius: 6px; background: rgba(255, 255, 255, .92); color: #737b87; cursor: pointer; }
-.mermaid-modal-close:hover { border-color: #bfc7d5; color: #3f4f6f; }
+.mermaid-modal-close { position: absolute; z-index: 1; top: 8px; left: 8px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #c64646; border-radius: 6px; background: #c64646; color: #fff; cursor: pointer; }
+.mermaid-modal-close:hover { border-color: #a83232; background: #a83232; color: #fff; }
 .markdown-image-block { display: block; overflow: hidden; }
 .markdown-image-toolbar > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #737b87; font-size: 12px; }
 .markdown-image-toolbar > svg { color: #737b87; flex: 0 0 auto; }
@@ -1454,8 +1454,8 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .app-shell[data-theme='dark'] .mermaid-block-loading { color: #aab1bc; }
 .app-shell[data-theme='dark'] .mermaid-modal-backdrop { background: rgba(5, 7, 10, .58); }
 .app-shell[data-theme='dark'] .mermaid-modal { border-color: #353941; background: #202227; box-shadow: 0 18px 48px rgba(0, 0, 0, .5); }
-.app-shell[data-theme='dark'] .mermaid-modal-close { border-color: #414751; background: rgba(31, 34, 39, .92); color: #aab1bc; }
-.app-shell[data-theme='dark'] .mermaid-modal-close:hover { border-color: #596273; color: #e0e3e8; }
+.app-shell[data-theme='dark'] .mermaid-modal-close { border-color: #c64646; background: #c64646; color: #fff; }
+.app-shell[data-theme='dark'] .mermaid-modal-close:hover { border-color: #a83232; background: #a83232; color: #fff; }
 .app-shell[data-theme='dark'] .markdown-body blockquote { border-color: #527c65; color: #83c49d; }
 .app-shell[data-theme='dark'] .markdown-body hr { background: #353941; }
 .app-shell[data-theme='dark'] .markdown-body th,
