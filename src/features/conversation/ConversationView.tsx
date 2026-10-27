@@ -309,8 +309,13 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
     const request = asyncUserInputRequest(threadId, entry.item)
     return request ? [{ request, turnId: entry.turnId, answered: asyncUserInputAnswered(request, items.slice(index + 1), pendingSteers.map((steer) => steer.text)) }] : []
   }) : []
-  const asyncIds = new Set(asyncRequests.map(({ request }) => request.id))
-  const transcriptItems = items.filter(({ item }) => !asyncIds.has(item.id ?? ''))
+  const asyncById = new Map(asyncRequests.map(({ request, answered }) => [request.id, answered]))
+  const transcriptItems = items.flatMap((entry) => {
+    const answered = asyncById.get(entry.item.id ?? '')
+    if (answered === undefined) return [entry]
+    // Keep answered questions at their original position as process history.
+    return answered ? [{ ...entry, item: { ...entry.item, phase: 'commentary' as const } }] : []
+  })
   const rawTranscriptRows = transcriptItems.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
   const agentLabel = provider === 'claude' ? 'Claude' : 'Codex'
   const turnDetails = turns.map((turn) => ({ id: turn.id, status: turn.status, error: turn.error, itemsView: turn.itemsView }))

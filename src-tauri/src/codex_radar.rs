@@ -283,7 +283,13 @@ fn parse_summary(
     let mismatches: Vec<&str> = [
         (
             "schema",
-            value["schema"] != "radar-bench-public-summary-v5-150-daily-graded-count",
+            !matches!(
+                value["schema"].as_str(),
+                Some(
+                    "radar-bench-public-summary-v5-150-daily-graded-count"
+                        | "radar-bench-public-summary-v6-150-details"
+                )
+            ),
         ),
         ("score_version", value["score_version"] != SCORE_VERSION),
         ("score_max", value["score_max"] != 150),
@@ -657,10 +663,27 @@ mod tests {
     }
 
     #[test]
+    fn accepts_v6_details_without_changing_score_or_metric_meaning() {
+        let binding = binding();
+        let selection = &binding.model_efforts[0];
+        let mut value = summary(&selection.model, &selection.effort, json!(98.2927307067932));
+        value["schema"] = json!("radar-bench-public-summary-v6-150-details");
+        value["coverage"] = json!(64);
+        value["score_status"] = json!("complete");
+        value["detail_metrics"] = json!({"valid_grade_events":137});
+        let row = parse_summary(&value, &binding, selection).unwrap();
+        assert_eq!(row.score, Some(98.2927307067932));
+        assert_eq!(row.coverage, 64);
+        assert_eq!(row.price, Some(0.48260188));
+        assert_eq!(row.minutes, Some(1050708.24 / 60_000.0));
+    }
+
+    #[test]
     fn rejects_other_benchmarks_selections_and_invalid_scores() {
         let binding = binding();
         let selection = &binding.model_efforts[0];
         for (key, bad) in [
+            ("schema", json!("radar-bench-public-summary-v99")),
             ("score_version", json!("legacy")),
             ("model", json!("other")),
             ("task_set_sha256", json!("other")),

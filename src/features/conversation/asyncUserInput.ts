@@ -1,8 +1,17 @@
-import type { ApprovalRequest, ThreadItem, ThreadItemEntry } from '../../core/domain/codex'
+import type { ApprovalRequest, PendingSteer, ThreadDetail, ThreadItem, ThreadItemEntry } from '../../core/domain/codex'
 import { itemText } from '../../core/domain/codex'
 import { parseUserInputQuestions, type UserInputResponse } from './userInputRequest'
 
 export const ASYNC_USER_INPUT_METHOD = 'harness/asyncUserInput'
+
+export function hasUnansweredAsyncInput(threadId: string, detail: ThreadDetail, activeTurnId: string | undefined, pending: PendingSteer[] = []): boolean {
+  if (!activeTurnId || detail.turns.some((turn) => turn.id === activeTurnId && turn.status !== 'inProgress')) return false
+  return detail.items.some((entry, index) => {
+    if (entry.turnId !== activeTurnId) return false
+    const request = asyncUserInputRequest(threadId, entry.item)
+    return request !== null && !asyncUserInputAnswered(request, detail.items.slice(index + 1), pending.map((steer) => steer.text))
+  })
+}
 
 export function asyncUserInputRequest(threadId: string, item: ThreadItem): ApprovalRequest | null {
   if (item.type !== 'agentMessage' || item.delivery !== 'async' || !item.id || !Array.isArray(item.questions)) return null

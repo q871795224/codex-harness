@@ -39,6 +39,30 @@ describe('groupTranscriptItems', () => {
 })
 
 describe('groupTranscriptTurns', () => {
+  it('keeps additional user messages in the process even when summary history omits earlier tools', () => {
+    const [turn] = groupTranscriptTurns([
+      entry('turn-1', 'userMessage', '开始'),
+      entry('turn-1', 'userMessage', '中途回答'),
+      entry('turn-1', 'agentMessage', '完成', 'final_answer'),
+    ], [{ id: 'turn-1', status: 'completed', error: null, itemsView: 'summary' }])
+    expect(turn.userRows.map((row) => row.entry.item.text)).toEqual(['开始'])
+    expect(turn.processRows.map((row) => row.entry.item.text)).toEqual(['中途回答'])
+  })
+  it('keeps mid-turn answers and interjections between the process events they followed', () => {
+    const [turn] = groupTranscriptTurns([
+      entry('turn-1', 'userMessage', '开始'),
+      entry('turn-1', 'agentMessage', '需要确认', 'commentary'),
+      entry('turn-1', 'userMessage', '问题：名称？\n回答：使用这个名称'),
+      entry('turn-1', 'commandExecution'),
+      entry('turn-1', 'userMessage', '再检查一次'),
+      entry('turn-1', 'agentMessage', '完成', 'final_answer'),
+    ])
+    expect(turn.userRows.map((row) => row.entry.item.text)).toEqual(['开始'])
+    expect(turn.processRows.map((row) => row.entry.item.text ?? row.entry.item.type)).toEqual([
+      '需要确认', '问题：名称？\n回答：使用这个名称', 'commandExecution', '再检查一次',
+    ])
+    expect(turn.finalRows.map((row) => row.agentText)).toEqual(['完成'])
+  })
   it('separates user input, execution process and explicit final answer', () => {
     const turns = groupTranscriptTurns([
       entry('turn-1', 'userMessage', '修复问题'),

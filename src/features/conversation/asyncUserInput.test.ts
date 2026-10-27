@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ThreadItemEntry } from '../../core/domain/codex'
-import { textInput } from '../../core/domain/codex'
-import { asyncUserInputAnswer, asyncUserInputAnswered, asyncUserInputRequest } from './asyncUserInput'
+import { emptyThreadDetail, textInput, type Thread } from '../../core/domain/codex'
+import { asyncUserInputAnswer, asyncUserInputAnswered, asyncUserInputRequest, hasUnansweredAsyncInput } from './asyncUserInput'
 import { parseUserInputQuestions } from './userInputRequest'
 
 const item = {
@@ -10,6 +10,20 @@ const item = {
 }
 
 describe('async Codex questions', () => {
+  it('keeps the waiting indicator only for unanswered questions in a live turn', () => {
+    const detail = emptyThreadDetail({ id: 'thread-1' } as Thread)
+    detail.items = [{ turnId: 'turn-1', item }]
+    expect(hasUnansweredAsyncInput('thread-1', detail, 'turn-1')).toBe(true)
+    expect(hasUnansweredAsyncInput('thread-1', detail, 'turn-2')).toBe(false)
+    expect(hasUnansweredAsyncInput('thread-1', detail, undefined)).toBe(false)
+    const answer = asyncUserInputAnswer(asyncUserInputRequest('thread-1', item)!, { answers: {} })
+    expect(hasUnansweredAsyncInput('thread-1', detail, 'turn-1', [{ clientUserMessageId: 'answer', text: answer, input: [textInput(answer)], createdAt: 1 }])).toBe(false)
+    detail.items.push({ turnId: 'turn-1', item: { type: 'userMessage', content: [textInput(answer)] } })
+    expect(hasUnansweredAsyncInput('thread-1', detail, 'turn-1')).toBe(false)
+    detail.items.pop()
+    detail.turns = [{ id: 'turn-1', status: 'completed', items: [item], error: null, startedAt: null, completedAt: null, durationMs: null }]
+    expect(hasUnansweredAsyncInput('thread-1', detail, 'turn-1')).toBe(false)
+  })
   it('adapts the protocol questions, including freeform questions, without selecting an answer', () => {
     const request = asyncUserInputRequest('thread-1', item)!
     expect(parseUserInputQuestions(request.params)).toMatchObject([

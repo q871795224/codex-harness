@@ -7,6 +7,13 @@ function thread(status: Thread['status']): Thread {
 }
 
 describe('resolveThreadBadge', () => {
+  it('shows questions and approvals ahead of running status until they are handled', () => {
+    const active = thread({ type: 'active', activeFlags: [] })
+    expect(resolveThreadBadge(active, null, true, true)).toBe('approval')
+    expect(resolveThreadBadge(thread({ type: 'idle' }), null, false, true)).toBe('approval')
+    expect(resolveThreadBadge(active, 'approval', true, false)).toBe('working')
+    expect(resolveThreadBadge(thread({ type: 'active', activeFlags: ['waitingOnUserInput'] }), null)).toBe('approval')
+  })
   it('uses the live active status instead of a persisted unread badge', () => {
     expect(resolveThreadBadge(thread({ type: 'active', activeFlags: [] }), 'success')).toBe('working')
     expect(resolveThreadBadge(thread({ type: 'active', activeFlags: ['waitingOnApproval'] }), 'working')).toBe('approval')

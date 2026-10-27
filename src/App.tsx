@@ -687,6 +687,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
         threadRoots={harness.threadRoots}
         threadStates={harness.threadStates}
         workingThreadIds={harness.workingThreadIds}
+        waitingThreadIds={harness.waitingThreadIds}
         selectedThreadId={harness.selectedThreadId}
         viewMode={harness.viewMode}
         navigationLayout={harness.navigation.layout}

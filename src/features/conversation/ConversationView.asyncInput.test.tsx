@@ -25,6 +25,25 @@ function props(): ComponentProps<typeof ConversationView> {
 }
 
 describe('async question cards in the conversation', () => {
+  it('renders a submitted same-turn answer inside the process after its question', () => {
+    const options = props()
+    const answer = asyncUserInputAnswer(asyncUserInputRequest('thread-1', question)!, { answers: {} })
+    options.items.unshift({ turnId: 'turn-1', item: { type: 'userMessage', content: [textInput('开始检查')] } })
+    options.items.push(
+      { turnId: 'turn-1', item: { type: 'userMessage', content: [textInput(answer)] } },
+      { turnId: 'turn-1', item: { type: 'agentMessage', id: 'final', phase: 'final_answer', text: '检查完成' } },
+    )
+    options.turns[0] = { ...options.turns[0], status: 'completed' }
+    const { container } = render(<ConversationView {...options} working={false} workingTurnId={null} />)
+    expect(container.querySelectorAll('.conversation-turn > .user-message')).toHaveLength(1)
+    expect(container.querySelector('.conversation-turn > .user-message')?.textContent).toContain('开始检查')
+    fireEvent.click(screen.getByRole('button', { name: /执行过程/ }))
+    const process = container.querySelector('.process-group-body')!
+    expect(process.querySelector('.agent-message')?.textContent).toContain('如何分发？')
+    expect(process.querySelector('.user-message')?.textContent).toContain('回答：跳过，请继续。')
+    expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull()
+    expect(container.querySelector('.final-answer')?.textContent).toContain('检查完成')
+  })
   it.each([false, true])('renders an actionable card in raw mode %s without a final-answer label', async (rawMode) => {
     const options = { ...props(), rawMode }
     render(<ConversationView {...options} />)
