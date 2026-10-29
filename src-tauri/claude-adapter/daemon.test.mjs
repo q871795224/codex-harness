@@ -401,3 +401,76 @@ test('rejects a concurrent start without enqueueing a second input', async t => 
   await writeFile(join(daemon.home, 'release-idle'), '')
   await terminalEvent(daemon, 'first')
 })
+
+// Some CLI versions keep the stream open without session lifecycle notifications.
+test('result without lifecycle notifications releases the turn and retains the query', async t => {
+  const source = liveSdkFixture.replaceAll("push({ type: 'system', subtype: 'session_state_changed'", "false && push({ type: 'system', subtype: 'session_state_changed'")
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first')
+  assert.equal((await terminalEvent(daemon, 'first')).method, 'turn/completed')
+  await startLiveTurn(daemon, 'second')
+  assert.equal(JSON.parse((await terminalEvent(daemon, 'second')).params.result).queryId, 1)
+})
+
+test('stop closes only the stuck query when interrupt acknowledges without ending the turn', async t => {
+  const source = liveSdkFixture.replace('async interrupt() { interrupted = true }', 'async interrupt() {}')
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first', 'wait')
+  await daemon.request('turn/interrupt', { sessionId: 'session' })
+  assert.equal((await terminalEvent(daemon, 'first')).method, 'turn/interrupted')
+  assert.deepEqual((await daemon.request('runtime/status')).activeTurns, [])
+  await startLiveTurn(daemon, 'second')
+  assert.equal(JSON.parse((await terminalEvent(daemon, 'second')).params.result).queryId, 2)
+})
+
+test('forced stop leaves another session running', async t => {
+  const source = liveSdkFixture.replace('async interrupt() { interrupted = true }', 'async interrupt() {}')
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first', 'wait')
+  await startLiveTurn(daemon, 'other-turn', 'wait', { sessionId: 'other-session' })
+  await daemon.request('turn/interrupt', { sessionId: 'session' })
+  await terminalEvent(daemon, 'first')
+  assert.deepEqual((await daemon.request('runtime/status')).activeTurns,
+    [{ sessionId: 'other-session', turnId: 'other-turn' }])
+})
+
+test('stop also recovers when the SDK interrupt control request never responds', async t => {
+  const source = liveSdkFixture.replace('async interrupt() { interrupted = true }', 'async interrupt() { await new Promise(() => {}) }')
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first', 'wait')
+  await daemon.request('turn/interrupt', { sessionId: 'session' })
+  assert.equal((await terminalEvent(daemon, 'first')).method, 'turn/interrupted')
+})
+
+test('idle arriving before result still completes the owned turn', async t => {
+  const source = liveSdkFixture.replace("if (text !== 'wait') push({ type: 'result'", "push({ type: 'system', subtype: 'session_state_changed', state: 'idle' }); if (text !== 'wait') push({ type: 'result'")
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first')
+  assert.equal((await terminalEvent(daemon, 'first')).method, 'turn/completed')
+})
+
+test('official SDK closes a stuck CLI even when interrupt has no control response', async t => {
+  const sdkSource = `export * from ${JSON.stringify(import.meta.resolve('@anthropic-ai/claude-agent-sdk'))}`
+  const cliSource = String.raw`#!/usr/bin/env node
+import { createInterface } from 'node:readline'
+const send = message => process.stdout.write(JSON.stringify(message) + '\n')
+const lines = createInterface({ input: process.stdin })
+lines.on('close', () => process.exit(0))
+lines.on('line', line => {
+  const message = JSON.parse(line)
+  if (message.type === 'control_request' && message.request.subtype !== 'interrupt') {
+    send({ type: 'control_response', response: { subtype: 'success', request_id: message.request_id,
+      response: { models: [], commands: [], account: {} } } })
+  } else if (message.type === 'user' && message.message.content !== 'wait') {
+    send({ type: 'result', subtype: 'success', session_id: 'fixture-session', user_message_uuid: message.uuid,
+      result: 'ok', usage: {}, modelUsage: {}, total_cost_usd: 1 })
+  }
+})
+`
+  const daemon = await fixture(t, sdkSource, cliSource)
+  await startLiveTurn(daemon, 'first', 'wait')
+  await daemon.request('turn/interrupt', { sessionId: 'session' })
+  assert.equal((await terminalEvent(daemon, 'first')).method, 'turn/interrupted')
+  await startLiveTurn(daemon, 'second')
+  assert.equal((await terminalEvent(daemon, 'second')).method, 'turn/completed')
+})
