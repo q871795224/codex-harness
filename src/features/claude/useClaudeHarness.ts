@@ -456,12 +456,12 @@ export function useClaudeHarness() {
         if (eventSeq !== null) approvalResolvedSeqRef.current[requestId] = eventSeq
         delete approvalEventSeqRef.current[requestId]
       }
-      setActiveTurnIds((current) => {
-        const next = { ...current }
-        delete next[sessionId]
-        activeTurnIdsRef.current = next
-        return next
-      })
+      // Queue draining runs immediately below; React may defer a state updater.
+      // Release the ref first so interjected input can start in the same event.
+      const nextActive = { ...activeTurnIdsRef.current }
+      delete nextActive[sessionId]
+      activeTurnIdsRef.current = nextActive
+      setActiveTurnIds(nextActive)
       replaceApprovals({ ...approvalsRef.current, [sessionId]: [] })
       if (event.method === 'turn/failed') notify('Claude 执行失败，请查看详情后重试。', 'error', params.message)
       if (event.method === 'turn/completed') {

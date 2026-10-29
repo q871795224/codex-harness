@@ -75,6 +75,8 @@ const daemonInstanceId = randomUUID()
 const activeTurns = new Map()
 const sessionQueries = new Map()
 const QUERY_IDLE_MS = 5 * 60_000
+const LEGACY_RESULT_GRACE_MS = 1_000
+const INTERRUPT_GRACE_MS = 1_000
 const pendingApprovals = new Map()
 const sessionStates = new Map()
 const modelCache = new Map()
@@ -375,6 +377,8 @@ function inputQueue() {
 function finishTurn(runtime, status, message) {
   const active = activeTurns.get(runtime.sessionId)
   if (!active || active.runtime !== runtime) return
+  clearTimeout(active.resultTimer)
+  clearTimeout(active.interruptTimer)
   const result = active.result
   const state = sessionState(runtime.sessionId)
   for (const pending of pendingApprovals.values()) {
@@ -427,6 +431,7 @@ async function consumeSessionQuery(runtime) {
         scheduleQueryCleanup(runtime)
       }
       if (message.type === 'system' && message.subtype === 'session_state_changed') {
+        runtime.hasLifecycleEvents = true
         runtime.busy = message.state !== 'idle'
         scheduleQueryCleanup(runtime)
       }
@@ -449,6 +454,21 @@ async function consumeSessionQuery(runtime) {
         owned.result = message
         state.lastUsage = normalizeTurnUsage(message.usage, message.modelUsage, state)
         if (message.subtype === 'success') state.lastResult = message.result ?? ''
+        if (runtime.busy === false) {
+          finishTurn(runtime, owned.interrupted ? 'interrupted'
+            : message.subtype === 'success' ? 'completed' : 'failed')
+        } else if (!runtime.hasLifecycleEvents) {
+          // Older CLIs can report a final result without lifecycle notifications.
+          // Keep their query open for background work, but release the logical turn.
+          clearTimeout(owned.resultTimer)
+          owned.resultTimer = setTimeout(() => {
+            if (activeTurns.get(sessionId) !== owned || runtime.hasLifecycleEvents) return
+            runtime.busy = false
+            finishTurn(runtime, owned.interrupted ? 'interrupted'
+              : owned.result.subtype === 'success' ? 'completed' : 'failed')
+          }, LEGACY_RESULT_GRACE_MS)
+          owned.resultTimer.unref()
+        }
       } else if (message.type === 'system' && message.subtype === 'session_state_changed' && message.state === 'idle') {
         if (owned && (owned.result || owned.interrupted)) finishTurn(runtime, owned.interrupted ? 'interrupted'
           : owned.result?.subtype === 'success' ? 'completed' : 'failed')
@@ -734,11 +754,27 @@ async function handle(client, request) {
     if (!active) throw new Error('Claude 会话当前没有运行中的 turn')
     if (!active.runtime) throw new Error('Claude turn 正在准备，请稍后重试停止。')
     active.interrupted = true
+    // Control ACK is not a terminal event. If idle never follows (or the control
+    // request hangs), close this session's query and let its consumer finish it.
+    active.interruptTimer ??= setTimeout(() => {
+      if (activeTurns.get(params.sessionId) !== active) return
+      void closeSessionQuery(active.runtime).catch(() => undefined)
+    }, INTERRUPT_GRACE_MS)
+    active.interruptTimer.unref()
     try {
-      await active.runtime.query.interrupt()
+      await Promise.race([active.runtime.query.interrupt(), active.runtime.done])
     } catch (error) {
-      if (activeTurns.get(params.sessionId) === active) active.interrupted = false
-      throw error
+      // Closing the SDK rejects outstanding control requests before its consumer
+      // has emitted the terminal event. That is expected during forced stop.
+      if (active.runtime.closing) await active.runtime.done
+      else {
+        if (activeTurns.get(params.sessionId) === active) {
+          clearTimeout(active.interruptTimer)
+          active.interruptTimer = undefined
+          active.interrupted = false
+        }
+        throw error
+      }
     }
     respond(client, id, {})
     return
