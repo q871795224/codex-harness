@@ -87,6 +87,7 @@
 - 用量分析的新 `analysis_*` 表永久保存在 `state.sqlite`，不自动过期；旧 `codex_analytics_*` 表保留但不混入新口径。每日统计按事件时间与本机时区分桶；会话/轮次列表分页，汇总覆盖完整筛选范围。只保存 thread/turn ID、低基数标签、细分计数和官方数值 usage。Skill 文件路径和待分词正文只在后台计数期间短暂存在，Skill/MCP/Prompt/Response 正文均不落库。官方计数模式从进程环境读取 `OPENAI_API_KEY`，插件配置和数据库均不得保存密钥。
 - API Workbench 使用独立的 `~/.codex-harness/api-workbench.sqlite`；Secret 变量只保存在 macOS Keychain。
 - Claude Provider 由 `src-tauri/claude-adapter/daemon.mjs` 常驻进程承载，通过 `~/.codex-harness/claude-provider.sock` 通信。首次运行要把 daemon/SDK 安装到 `~/.codex-harness/claude-provider/`，注册 `com.local.codex-harness.claude-provider` LaunchAgent，并把 `available`、`managed`、`running` 分开显示。关闭 Harness 不停止 daemon 或 active turn；transport 断开时收口 active turn 并自动重连，只有 LaunchAgent 不可用时才按需启动。`adapter.mjs` 只能作为实验参考，不能作为生产入口。除非任务明确涉及 Claude，不要把 Claude 路径混入 Codex 改动。
+- Claude 对话 query 按会话复用开放的流式输入；`result` 只暂存结果，收到 SDK `session_state_changed: idle` 后才释放当前 turn 并发出一次终态，不能等整个 query 退出或在第一个 result 强制关闭 query。停止通过 SDK `interrupt()`，异常流退出必须收口所属 turn；上下文查询复用已有 query。空闲且没有后台任务的 query 在 5 分钟后回收；模型、权限、cwd 或环境变更在安全空闲时重建，后台任务仍运行时拒绝配置切换，避免中断工作。
 - Claude 每次创建 Agent SDK query（对话、模型发现、上下文查询）时读取 `~/.codex-harness/secrets`，在启动环境白名单清理之后，把显式配置传给子进程；不修改 daemon 自身环境，文件修改或删除在下次 query 生效。文件为明文 `KEY=value`，忽略空行和 `#` 开头的注释，按首个 `=` 分割并去除两端空白，不执行 shell 展开或去除引号。白名单保留的进程变量优先于文件，`CLAUDE_AGENT_SDK_CLIENT_APP` 固定为 `codex-harness`；文件缺失允许继续，其他读取错误报错，值不进入 Harness 状态库或诊断日志。Codex 仍只在 daemon 启动时读取该文件。
 
 ## Agent Job

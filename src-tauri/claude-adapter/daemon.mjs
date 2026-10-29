@@ -1,7 +1,7 @@
 import net from 'node:net'
 import { createInterface } from 'node:readline'
 import { chmod, mkdir, open, readFile, rm } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 
@@ -30,6 +30,10 @@ for (const key of Object.keys(process.env)) {
   if (!ALLOWED_ENVIRONMENT.has(key)) delete process.env[key]
 }
 
+// The SDK adds its own variables to process.env when creating a query. Keep
+// those mutations out of both the launch allowlist and reuse comparisons.
+const inheritedEnvironment = { ...process.env }
+
 async function queryEnvironment() {
   const configured = Object.create(null)
   if (process.env.HOME) {
@@ -50,7 +54,7 @@ async function queryEnvironment() {
     }
   }
   // Keep explicit values local to this query so edits and removals take effect next time.
-  return { ...configured, ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness' }
+  return { ...configured, ...inheritedEnvironment, CLAUDE_AGENT_SDK_CLIENT_APP: 'codex-harness' }
 }
 
 let sdk
@@ -69,6 +73,8 @@ const lockPath = `${socketPath}.lock`
 const claudePath = process.env.CODEX_HARNESS_CLAUDE_PATH || undefined
 const daemonInstanceId = randomUUID()
 const activeTurns = new Map()
+const sessionQueries = new Map()
+const QUERY_IDLE_MS = 5 * 60_000
 const pendingApprovals = new Map()
 const sessionStates = new Map()
 const modelCache = new Map()
@@ -265,10 +271,6 @@ async function userMessage(input, uuid) {
   }
 }
 
-async function* singleMessage(message) {
-  yield message
-}
-
 function approvalRequest(sessionId, turnId, toolName, input, context) {
   const requestId = randomUUID()
   let resolveApproval
@@ -352,97 +354,182 @@ function userBlocks(message, sessionId, turnId) {
   }
 }
 
-async function startTurn(params) {
-  const sessionId = params.sessionId
-  const turnId = params.turnId
-  if (!sessionId || !turnId || !params.cwd) throw new Error('Claude turn 缺少 sessionId、turnId 或 cwd')
-  if (activeTurns.has(sessionId)) throw new Error('该 Claude 会话已有运行中的 turn')
-
-  const abortController = new AbortController()
-  activeTurns.set(sessionId, { turnId, abortController })
-  const state = sessionState(sessionId, params.cwd)
-  state.providerSessionId = params.providerSessionId ?? state.providerSessionId
-  state.model = params.model ?? state.model
-  state.permissionMode = params.permissionMode ?? state.permissionMode
-  state.effort = params.effort ?? state.effort
-  state.lastStatus = 'inProgress'
-  const providerMessageId = randomUUID()
-  emit('turn/started', { sessionId, turnId })
-  emit('message/user', { sessionId, turnId, itemId: `${turnId}:user`, providerMessageId, content: params.input ?? [] })
-
-  let providerSessionId = params.providerSessionId ?? null
-  const permissionMode = params.permissionMode ?? 'default'
-  try {
-    const message = await userMessage(params.input, providerMessageId)
-    for await (const sdkMessage of query({
-      prompt: singleMessage(message),
-      options: {
-        cwd: params.cwd,
-        ...(providerSessionId ? { resume: providerSessionId } : {}),
-        ...(params.model ? { model: params.model } : {}),
-        ...(params.effort ? { effort: params.effort } : {}),
-        ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-        settingSources: ['user', 'project', 'local'],
-        permissionMode,
-        ...(permissionMode === 'bypassPermissions'
-          ? { allowDangerouslySkipPermissions: true }
-          : { canUseTool: (toolName, input, context) => approvalRequest(sessionId, turnId, toolName, input, context) }),
-        maxTurns: params.maxTurns ?? DEFAULT_MAX_TURNS,
-        includePartialMessages: true,
-        abortController,
-        env: await queryEnvironment(),
-      },
-    })) {
-      if (sdkMessage.session_id && sdkMessage.session_id !== providerSessionId) {
-        providerSessionId = sdkMessage.session_id
-        state.providerSessionId = providerSessionId
-        emit('session/started', { sessionId, providerSessionId })
+// Input stays open across turns so SDK control responses and background work
+// retain their channel. A result is not EOF: SDK idle is the turn-over signal.
+function inputQueue() {
+  const messages = []
+  let wake
+  let ended = false
+  return {
+    push(message) { messages.push(message); wake?.(); wake = undefined },
+    end() { ended = true; wake?.(); wake = undefined },
+    async *[Symbol.asyncIterator]() {
+      while (!ended) {
+        if (messages.length) yield messages.shift()
+        else await new Promise(resolve => { wake = resolve })
       }
-      if (typeof sdkMessage.model === 'string' && sdkMessage.model) state.model = sdkMessage.model
-      if (sdkMessage.type === 'stream_event') streamDelta(sdkMessage, sessionId, turnId)
-      else if (sdkMessage.type === 'assistant') assistantBlocks(sdkMessage, sessionId, turnId)
-      else if (sdkMessage.type === 'user') userBlocks(sdkMessage, sessionId, turnId)
-      else if (sdkMessage.type === 'result') {
-        if (sdkMessage.subtype === 'success') {
-          const turnCostUsd = number(sdkMessage.total_cost_usd)
-          emit('turn/completed', {
-            sessionId,
-            turnId,
-            providerSessionId,
-            result: sdkMessage.result ?? '',
-            usage: normalizeTurnUsage(sdkMessage.usage, sdkMessage.modelUsage, state),
-            totalCostUsd: state.totalCostUsd + turnCostUsd,
-            model: state.model,
-            queuedTurnCount: number(sdkMessage.queued_turn_count),
-          })
-          state.lastResult = sdkMessage.result ?? ''
-          state.lastStatus = 'completed'
-          state.totalCostUsd += turnCostUsd
-        } else {
-          emit('turn/failed', {
-            sessionId,
-            turnId,
-            providerSessionId,
-            code: sdkMessage.subtype,
-            message: sdkMessage.errors?.join('\n') || sdkMessage.subtype,
-          })
-          state.lastStatus = 'failed'
-        }
+    },
+  }
+}
+
+function finishTurn(runtime, status, message) {
+  const active = activeTurns.get(runtime.sessionId)
+  if (!active || active.runtime !== runtime) return
+  const result = active.result
+  const state = sessionState(runtime.sessionId)
+  for (const pending of pendingApprovals.values()) {
+    if (pending.sessionId === runtime.sessionId && pending.turnId === active.turnId) pending.expire('turn-ended')
+  }
+  // Release ownership BEFORE notifying the UI (which can immediately drain a queue).
+  activeTurns.delete(runtime.sessionId)
+  state.lastStatus = status
+  emit(`turn/${status}`, {
+    sessionId: runtime.sessionId, turnId: active.turnId,
+    providerSessionId: state.providerSessionId,
+    ...(status === 'completed' ? {
+      result: result?.result ?? '', usage: state.lastUsage,
+      totalCostUsd: state.totalCostUsd, model: state.model,
+      queuedTurnCount: number(result?.queued_turn_count),
+    } : { code: result?.subtype, message: message ?? (result?.errors?.join('\n') || result?.subtype || 'Claude turn 已中断') }),
+  })
+  scheduleQueryCleanup(runtime)
+}
+
+function scheduleQueryCleanup(runtime) {
+  clearTimeout(runtime.idleTimer)
+  if (activeTurns.has(runtime.sessionId) || runtime.busy || runtime.backgroundTasks.size > 0 || runtime.closing) return
+  runtime.idleTimer = setTimeout(() => void closeSessionQuery(runtime), QUERY_IDLE_MS)
+  runtime.idleTimer.unref()
+}
+
+async function closeSessionQuery(runtime) {
+  runtime.closing = true
+  clearTimeout(runtime.idleTimer)
+  runtime.input.end()
+  runtime.query.close?.()
+  runtime.abortController.abort()
+  await runtime.done
+}
+
+async function consumeSessionQuery(runtime) {
+  const { sessionId } = runtime
+  const state = sessionState(sessionId)
+  let failure
+  try {
+    for await (const message of runtime.query) {
+      if (message.session_id && message.session_id !== state.providerSessionId) {
+        state.providerSessionId = message.session_id
+        emit('session/started', { sessionId, providerSessionId: message.session_id })
+      }
+      if (typeof message.model === 'string' && message.model) state.model = message.model
+      if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
+        runtime.backgroundTasks = new Set((message.tasks ?? []).map(task => task.task_id))
+        scheduleQueryCleanup(runtime)
+      }
+      if (message.type === 'system' && message.subtype === 'session_state_changed') {
+        runtime.busy = message.state !== 'idle'
+        scheduleQueryCleanup(runtime)
+      }
+      const active = activeTurns.get(sessionId)
+      const owned = active?.runtime === runtime ? active : null
+      const turnId = owned?.turnId ?? runtime.lastTurnId
+      if (message.type === 'stream_event') streamDelta(message, sessionId, turnId)
+      else if (message.type === 'assistant') assistantBlocks(message, sessionId, turnId)
+      else if (message.type === 'user') userBlocks(message, sessionId, turnId)
+      else if (message.type === 'result') {
+        // The SDK reports a running query total, including background results.
+        runtime.queryCost = Math.max(runtime.queryCost ?? 0, number(message.total_cost_usd))
+        state.totalCostUsd = runtime.costBase + runtime.queryCost
+        // A delayed background result for a previous input cannot finish a new send.
+        if (message.user_message_uuid) {
+          runtime.resultIds = true
+          if (message.user_message_uuid !== owned?.providerMessageId) continue
+        } else if (runtime.resultIds && !owned?.result) continue
+        if (!owned) continue
+        owned.result = message
+        state.lastUsage = normalizeTurnUsage(message.usage, message.modelUsage, state)
+        if (message.subtype === 'success') state.lastResult = message.result ?? ''
+      } else if (message.type === 'system' && message.subtype === 'session_state_changed' && message.state === 'idle') {
+        if (owned && (owned.result || owned.interrupted)) finishTurn(runtime, owned.interrupted ? 'interrupted'
+          : owned.result?.subtype === 'success' ? 'completed' : 'failed')
       }
     }
   } catch (error) {
-    state.lastStatus = abortController.signal.aborted ? 'interrupted' : 'failed'
-    emit(abortController.signal.aborted ? 'turn/interrupted' : 'turn/failed', {
-      sessionId,
-      turnId,
-      providerSessionId,
-      message: errorMessage(error),
-    })
+    failure = errorMessage(error)
   } finally {
-    for (const pending of pendingApprovals.values()) {
-      if (pending.sessionId === sessionId && pending.turnId === turnId) pending.expire('turn-ended')
+    runtime.closing = true
+    clearTimeout(runtime.idleTimer)
+    runtime.input.end()
+    // Query.return() awaits the SDK's transport cleanup. Do not resume the same
+    // provider session in a replacement CLI while that cleanup is still pending.
+    try { await runtime.query.return?.() } catch (error) { failure ??= errorMessage(error) }
+    if (sessionQueries.get(sessionId) === runtime) sessionQueries.delete(sessionId)
+    const active = activeTurns.get(sessionId)
+    if (active?.runtime === runtime) {
+      // Older CLIs can end the stream without emitting session_state_changed.
+      finishTurn(runtime, active.interrupted ? 'interrupted'
+        : !failure && active.result?.subtype === 'success' ? 'completed' : 'failed',
+      failure ?? (active.result ? undefined : 'Claude 消息流在回合完成前结束'))
     }
-    activeTurns.delete(sessionId)
+  }
+}
+
+async function startTurn(params) {
+  const { sessionId, turnId } = params
+  if (!sessionId || !turnId || !params.cwd) throw new Error('Claude turn 缺少 sessionId、turnId 或 cwd')
+  if (activeTurns.has(sessionId)) throw new Error('该 Claude 会话已有运行中的 turn')
+  const active = { turnId, providerMessageId: randomUUID(), runtime: null, result: null, interrupted: false }
+  activeTurns.set(sessionId, active)
+  try {
+    const message = await userMessage(params.input, active.providerMessageId)
+    const env = await queryEnvironment()
+    const permissionMode = params.permissionMode ?? 'default'
+    const settings = { cwd: params.cwd, model: params.model ?? null, effort: params.effort ?? null,
+      permissionMode, maxTurns: params.maxTurns ?? DEFAULT_MAX_TURNS }
+    const key = createHash('sha256').update(JSON.stringify([settings,
+      Object.keys(env).sort().map(key => [key, env[key]])])).digest('hex')
+    let runtime = sessionQueries.get(sessionId)
+    if (runtime && (runtime.key !== key || runtime.closing)) {
+      if (runtime.busy || runtime.backgroundTasks.size > 0) throw new Error('Claude 后台任务仍在运行，请结束后台任务后再更改模型、权限或环境配置。')
+      await closeSessionQuery(runtime)
+      runtime = null
+    }
+    const state = sessionState(sessionId, params.cwd)
+    state.providerSessionId = params.providerSessionId ?? state.providerSessionId
+    state.model = params.model ?? state.model
+    state.permissionMode = permissionMode
+    state.effort = params.effort ?? state.effort
+    state.lastStatus = 'inProgress'
+    if (!runtime) {
+      const abortController = new AbortController()
+      runtime = { sessionId, key, input: inputQueue(), abortController,
+        backgroundTasks: new Set(), costBase: state.totalCostUsd, closing: false }
+      runtime.query = query({ prompt: runtime.input, options: {
+        cwd: params.cwd,
+        ...(state.providerSessionId ? { resume: state.providerSessionId } : {}),
+        ...(params.model ? { model: params.model } : {}),
+        ...(params.effort ? { effort: params.effort } : {}),
+        ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+        settingSources: ['user', 'project', 'local'], permissionMode,
+        ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true }
+          : { canUseTool: (toolName, input, context) => approvalRequest(sessionId,
+            activeTurns.get(sessionId)?.turnId ?? runtime.lastTurnId, toolName, input, context) }),
+        maxTurns: settings.maxTurns, includePartialMessages: true, abortController, env,
+      } })
+      sessionQueries.set(sessionId, runtime)
+      active.runtime = runtime
+      runtime.done = consumeSessionQuery(runtime)
+    }
+    clearTimeout(runtime.idleTimer)
+    runtime.lastTurnId = turnId
+    runtime.busy = true
+    active.runtime = runtime
+    emit('turn/started', { sessionId, turnId })
+    emit('message/user', { sessionId, turnId, itemId: `${turnId}:user`, providerMessageId: active.providerMessageId, content: params.input ?? [] })
+    runtime.input.push(message)
+  } catch (error) {
+    if (activeTurns.get(sessionId) === active) activeTurns.delete(sessionId)
+    throw error
   }
 }
 
@@ -498,9 +585,10 @@ async function readContext(params) {
     if (state.lastUsage) return contextFromUsage(state.lastUsage, state.model)
     return null
   }
+  const owner = sessionQueries.get(sessionId)
   const abortController = new AbortController()
   try {
-    const contextQuery = query({
+    const contextQuery = owner?.query ?? query({
       prompt: waitForInput(),
       options: await queryOptions({
         cwd: params.cwd ?? state.cwd,
@@ -637,14 +725,21 @@ async function handle(client, request) {
   }
   if (method === 'turn/start') {
     if (activeTurns.has(params.sessionId)) throw new Error('该 Claude 会话已有运行中的 turn')
+    await startTurn(params)
     respond(client, id, { accepted: true })
-    void startTurn(params)
     return
   }
   if (method === 'turn/interrupt') {
     const active = activeTurns.get(params.sessionId)
     if (!active) throw new Error('Claude 会话当前没有运行中的 turn')
-    active.abortController.abort()
+    if (!active.runtime) throw new Error('Claude turn 正在准备，请稍后重试停止。')
+    active.interrupted = true
+    try {
+      await active.runtime.query.interrupt()
+    } catch (error) {
+      if (activeTurns.get(params.sessionId) === active) active.interrupted = false
+      throw error
+    }
     respond(client, id, {})
     return
   }
@@ -733,7 +828,7 @@ const server = net.createServer((client) => {
 async function stopDaemon() {
   if (stopping) return
   stopping = true
-  for (const active of activeTurns.values()) active.abortController.abort()
+  await Promise.allSettled([...sessionQueries.values()].map(closeSessionQuery))
   for (const client of clients) client.end()
   server.close()
 }
