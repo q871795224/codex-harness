@@ -15,6 +15,7 @@ vi.mock('../../core/runtime/bridge', () => ({
   diagnosticErrorCode: vi.fn(), recordWorkspaceContextDiagnostic: vi.fn(),
   runtime: {
     respond: vi.fn().mockResolvedValue(undefined),
+    takeOverCodexThread: vi.fn(),
     recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
     listWorkspaces: vi.fn().mockResolvedValue([]),
     listThreadStates: vi.fn().mockResolvedValue([]),
@@ -30,6 +31,7 @@ vi.mock('../../core/runtime/appServerClient', () => ({
   appServer: {
     listThreads: vi.fn(), archiveThread: vi.fn().mockResolvedValue(undefined),
     steerTurn: vi.fn().mockResolvedValue(undefined), startTurn: vi.fn(), updateThreadSettings: vi.fn().mockResolvedValue(undefined),
+    interruptTurn: vi.fn().mockResolvedValue(undefined),
     updateThreadMetadata: vi.fn().mockResolvedValue(undefined),
     startThread: vi.fn(), deleteThread: vi.fn().mockResolvedValue(undefined),
     resumeThread: vi.fn(), forkThread: vi.fn(), listQueue: vi.fn().mockResolvedValue({ data: [] }),
@@ -66,6 +68,50 @@ const request = asyncUserInputRequest('active', {
 const response = { answers: { 'question-0': { answers: ['安装包'] } } }
 
 describe('async question submission', () => {
+  const activeResponse = (owned: boolean) => ({
+    ...resumeResponse('active'),
+    initialTurnsPage: { data: [{ id: 'working-turn', status: 'inProgress' as const, items: [], error: null, startedAt: null, completedAt: null, durationMs: null }], nextCursor: null },
+    harnessOwnership: { turnId: 'working-turn', owned, canTakeOver: !owned },
+  })
+
+  it('can answer an async question after a fresh mount recovers its running turn', async () => {
+    vi.mocked(appServer.resumeThread).mockResolvedValue(activeResponse(true))
+    const { result } = await ready()
+    await act(async () => { await result.current.selectThread('active') })
+    expect(result.current.currentForeignActive).toBe(false)
+    await act(async () => { await result.current.answerApproval(request, response) })
+    expect(appServer.steerTurn).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'active', expectedTurnId: 'working-turn' }))
+    expect(appServer.startTurn).not.toHaveBeenCalled()
+    await act(async () => { await result.current.stopTurn() })
+    expect(appServer.interruptTurn).toHaveBeenCalledWith('active', 'working-turn')
+  })
+
+  it('keeps a live other instance read-only until explicit takeover', async () => {
+    vi.mocked(appServer.resumeThread).mockResolvedValue(activeResponse(false))
+    vi.mocked(runtime.takeOverCodexThread).mockResolvedValue(activeResponse(true))
+    const { result } = await ready()
+    await act(async () => { await result.current.selectThread('active') })
+    expect(result.current.currentForeignActive).toBe(true)
+    expect(result.current.canTakeOverCurrentThread).toBe(true)
+    await act(async () => { await expect(result.current.answerApproval(request, response)).rejects.toThrow('其他客户端') })
+    await act(async () => { await result.current.takeOverThread() })
+    expect(runtime.takeOverCodexThread).toHaveBeenCalledWith('active', 'working-turn')
+    expect(result.current.currentForeignActive).toBe(false)
+    expect(result.current.canTakeOverCurrentThread).toBe(false)
+    await act(async () => { await result.current.answerApproval(request, response) })
+    expect(appServer.steerTurn).toHaveBeenCalledOnce()
+  })
+
+  it('deduplicates daemon-replayed requests and removes them when resolved', async () => {
+    const { result } = await ready()
+    const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
+    const event = { id: 'q1', method: 'item/tool/requestUserInput', params: { threadId: 'active', turnId: 'working-turn' } }
+    await act(async () => { listener(event); listener(event) })
+    expect(result.current.approvals.active).toHaveLength(1)
+    await act(async () => { listener({ method: 'serverRequest/resolved', params: { threadId: 'active', requestId: 'q1' } }) })
+    expect(result.current.approvals.active).toEqual([])
+  })
+
   it.each(['completed', 'interrupted', 'failed'])('clears synchronous questions for a %s turn without a resolved notification', async (status) => {
     const { result } = await ready()
     const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
@@ -133,7 +179,9 @@ describe('async question submission', () => {
   it('preserves the synchronous server-request response path', async () => {
     const { result } = await ready()
     await act(async () => { await result.current.answerApproval({ ...request, method: 'item/tool/requestUserInput' }, response) })
-    expect(runtime.respond).toHaveBeenCalledWith(request.id, response)
+    expect(runtime.respond).toHaveBeenCalledWith(request.id, response, {
+      threadId: 'active', turnId: undefined, method: 'item/tool/requestUserInput',
+    })
     expect(appServer.startTurn).not.toHaveBeenCalled()
   })
 })

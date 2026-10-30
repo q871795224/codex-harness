@@ -49,6 +49,8 @@ interface ComposerProps {
   disabled: boolean
   working: boolean
   foreignActive: boolean
+  onTakeOver?: () => void
+  takingOver?: boolean
   busy: boolean
   contextUsage: ThreadTokenUsage | null
   workspaceRoot: string | null
@@ -110,7 +112,7 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ provider = 'codex', initialDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ provider = 'codex', initialDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const busy = externallyBusy || submitting
@@ -560,7 +562,12 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
 
   return (
     <div className="composer-zone">
-      {foreignActive && <div className="foreign-active-note">此会话由其他 Codex 客户端运行，当前只读。</div>}
+      {foreignActive && <div className="foreign-active-note">
+        此会话由其他客户端运行，当前只读。
+        {onTakeOver && <button type="button" disabled={takingOver} onClick={onTakeOver}>
+          {takingOver ? '接管中…' : '接管会话'}
+        </button>}
+      </div>}
       <div className={`composer-card ${disabled ? 'disabled' : ''}`} data-composer-card>
         {visibleAttachments.length > 0 && (
           <div className="composer-attachments">

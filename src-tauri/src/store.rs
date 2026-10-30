@@ -1,4 +1,5 @@
 mod teams;
+mod turn_ownership;
 pub use teams::TeamDocument;
 mod memory;
 pub use memory::{MemoryCatalog, MemoryDomainSettings, MemorySaveInput, SavedMemory};
@@ -144,7 +145,7 @@ impl HarnessStore {
         Self::open_at(harness_data_dir()?)
     }
 
-    fn open_at(root: PathBuf) -> Result<Self, String> {
+    pub(crate) fn open_at(root: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&root).map_err(|error| {
             format!(
                 "无法创建 Codex Harness 数据目录 {}: {error}",
@@ -244,6 +245,7 @@ impl HarnessStore {
 
         memory::initialize(&connection)?;
         teams::initialize(&mut connection)?;
+        turn_ownership::initialize(&connection)?;
         Ok(Self {
             root,
             connection: Mutex::new(connection),

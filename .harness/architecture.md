@@ -50,6 +50,9 @@
 ## Codex 运行时
 
 - Harness 启动时复用或启动共享 `codex app-server daemon`，初始化一次连接并转发事件。关闭 Harness 不停止 daemon。
+- Codex 活跃轮次归属由原生层写入 `state.sqlite.active_turn_owners`，只保存 thread、turn 和随机运行实例 ID；`instances/` 下的 OS 文件锁随进程退出释放，用于区分旧实例退出与稳定版/开发版同时运行。`thread/resume` 按 daemon 返回的活跃轮次在 SQLite 写事务中恢复归属，原生层通过 `harnessOwnership` 元数据告知前端；不根据会话 originator 或旧内存布尔值自动认领未知轮次。
+- 旧实例仍存活时保持只读；用户可通过原生 `app_server_take_over` 显式接管，先核对 daemon 当前轮次与 expected turn ID，再转交归属。未知归属的升级前轮次也需显式接管。原实例后续插话、停止与审批响应由原生层检查归属并拒绝；此约束只协调 Harness 实例，不能撤销 CLI 等外部客户端的权限。团队调度恢复规则不受会话操作权恢复影响。
+- 待处理 server request 不落库，由 App Server 在 `thread/resume` 后重放；前端按请求 ID 去重，原生层仅允许响应当前连接实际收到且尚未 resolved/完成的请求，断线后重新获取，不重试磁盘上的旧请求 ID。实例锁文件保留以避免 unlink 后出现不同 inode 的锁竞争。
 - 普通对话经 `useHarness` 调用 `thread/start`、`turn/start`、`turn/steer` 等方法；Quick Agent 经 `harness.agentRuns` 创建独立 child thread。
 - App Server 当前协议的 `UserInput` 支持 `text`、`localImage`、`skill` 和 `mention`；`turn/start` 还支持可选的 `turnTrigger` 来源标识。协议字段必须以当前 CLI 生成的 schema 和实际运行版本为准。
 - Composer 通过 `+`、`@` 或剪贴板添加 PNG、JPEG、GIF、WebP 图片，发送前统一构造成 `localImage`。剪贴板图片由 Rust 原生层读取并转换成系统临时目录下的 PNG，前端草稿只保留路径，不保存 base64；临时文件不在发送后立即删除，以免破坏排队和重试。

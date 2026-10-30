@@ -27,6 +27,8 @@ export interface ThreadSettingsResponse {
 }
 
 export interface ResumeThreadResponse extends ThreadSettingsResponse {
+  /** Added by Harness's native layer, never sent to the App Server. */
+  harnessOwnership?: { turnId: string; owned: boolean; canTakeOver: boolean } | null
   /** Effective runtime cwd; older servers may only provide thread.cwd. */
   cwd?: string
   thread: Thread

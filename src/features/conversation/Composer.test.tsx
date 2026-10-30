@@ -22,6 +22,18 @@ it('keeps an actionable stop button for a working Claude session', () => {
   rerender(<Composer {...props} provider="claude" working={false} onStop={onStop} />)
   expect(screen.queryByRole('button', { name: '停止当前回合' })).toBeNull()
 })
+
+it('offers explicit takeover only when provided and disables it during transfer', () => {
+  const onTakeOver = vi.fn()
+  const { rerender } = render(<Composer {...props} disabled foreignActive working onTakeOver={onTakeOver} />)
+  fireEvent.click(screen.getByRole('button', { name: '接管会话' }))
+  expect(onTakeOver).toHaveBeenCalledOnce()
+  expect((screen.getByRole('button', { name: '停止当前回合' }) as HTMLButtonElement).disabled).toBe(true)
+  rerender(<Composer {...props} foreignActive working onTakeOver={onTakeOver} takingOver />)
+  expect((screen.getByRole('button', { name: '接管中…' }) as HTMLButtonElement).disabled).toBe(true)
+  rerender(<Composer {...props} foreignActive working />)
+  expect(screen.queryByRole('button', { name: '接管会话' })).toBeNull()
+})
 it('highlights the project label, separates the prompt and positions the caret without duplicating newlines on refresh', () => {
   let draft: ComposerDraft | undefined
   const card = { projectId: 'one', name: '项目', seq: 1, content: '背景正文' }

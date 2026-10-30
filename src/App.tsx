@@ -960,6 +960,8 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                   disabled={codexUpdate.updating || harness.currentForeignActive || Boolean(harness.busy.composer)}
                   working={harness.isCurrentWorking}
                   foreignActive={harness.currentForeignActive}
+                  onTakeOver={harness.canTakeOverCurrentThread ? () => void harness.takeOverThread() : undefined}
+                  takingOver={harness.busy.takeover}
                   busy={codexUpdate.updating || Boolean(harness.busy.composer || harness.busy.stop)}
                   contextUsage={harness.currentTokenUsage}
                   workspaceRoot={harness.currentThread?.cwd ?? workspace?.root ?? null}

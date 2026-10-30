@@ -12,6 +12,23 @@ import {
 const emptyOwnership = (): ActiveTurnOwnership => ({ activeTurnIds: {}, ownedActiveThreads: {} })
 
 describe('turn ownership', () => {
+  it('restores ownership verified by the native layer after a fresh frontend starts', () => {
+    const restored = syncResumedTurn(emptyOwnership(), 'thread-1', 'turn-1', { turnId: 'turn-1', owned: true })
+    expect(restored.ownedActiveThreads['thread-1']).toBe(true)
+    expect(deriveForeignActive('turn-1', restored.ownedActiveThreads['thread-1'])).toBe(false)
+  })
+
+  it('does not reuse ownership for a different or completed turn', () => {
+    const recovered = { turnId: 'turn-old', owned: true }
+    expect(syncResumedTurn(emptyOwnership(), 'thread-1', 'turn-new', recovered).ownedActiveThreads['thread-1']).toBe(false)
+    expect(syncResumedTurn(emptyOwnership(), 'thread-1', null, recovered)).toEqual(emptyOwnership())
+  })
+
+  it('honors native revocation even if the frontend previously owned the turn', () => {
+    const active = activateTurn(emptyOwnership(), 'thread-1', 'turn-1', true)
+    expect(syncResumedTurn(active, 'thread-1', 'turn-1', { turnId: 'turn-1', owned: false }).ownedActiveThreads['thread-1']).toBe(false)
+    expect(syncResumedTurn(active, 'thread-1', 'turn-1', null).ownedActiveThreads['thread-1']).toBe(false)
+  })
   it('keeps a local turn owned when turn/started arrives after turn/start returns', () => {
     const afterResponse = activateTurn(emptyOwnership(), 'thread-1', 'turn-1', true)
 
