@@ -6,6 +6,7 @@ import { DEFAULT_CLAUDE_SESSION_TITLE, useClaudeHarness } from '../claude/useCla
 import { useHarness, type ThreadSelectionSource } from './useHarness'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
 import { hasUnansweredAsyncInput } from './asyncUserInput'
+import { isClaudeSessionWorking } from '../../core/claude/types'
 
 export type ConversationProvider = 'codex' | 'claude'
 const SELECTED_CONVERSATION_KEY = 'selectedConversationId'
@@ -205,18 +206,24 @@ export function useUnifiedHarness() {
     const next: Record<string, boolean> = {}
     for (const threadId of Object.keys(activeTurnIds)) next[threadId] = true
     for (const threadId of Object.keys(codex.startingThreadIds)) next[threadId] = true
+    for (const [threadId, activity] of Object.entries(claude.sessionActivities)) {
+      if (isClaudeSessionWorking(activity)) next[threadId] = true
+    }
     return next
-  }, [activeTurnIds, codex.startingThreadIds])
+  }, [activeTurnIds, claude.sessionActivities, codex.startingThreadIds])
   const waitingThreadIds = useMemo(() => {
     const next: Record<string, boolean> = {}
     for (const [threadId, requests] of Object.entries(approvals)) {
       if (requests.length > 0) next[threadId] = true
     }
+    for (const [threadId, activity] of Object.entries(claude.sessionActivities)) {
+      if (activity.state === 'requires_action') next[threadId] = true
+    }
     for (const [threadId, detail] of Object.entries(codex.details)) {
       if (hasUnansweredAsyncInput(threadId, detail, codex.activeTurnIds[threadId], codex.pendingSteers[threadId])) next[threadId] = true
     }
     return next
-  }, [approvals, codex.details, codex.activeTurnIds, codex.pendingSteers])
+  }, [approvals, claude.sessionActivities, codex.details, codex.activeTurnIds, codex.pendingSteers])
 
   const selectThread = useCallback(async (threadId: string, selectionSource: ThreadSelectionSource = 'unknown') => {
     const requestId = ++selectionRequestRef.current
@@ -398,7 +405,9 @@ export function useUnifiedHarness() {
     currentCostUsd: selectedProvider === 'claude' ? currentDetail?.costUsd ?? null : null,
     currentTaskPlan: selectedProvider === 'claude' ? null : codex.currentTaskPlan,
     currentForeignActive: selectedProvider === 'claude' ? false : codex.currentForeignActive,
-    isCurrentWorking: Boolean(activeTurnId || (selectedThreadId && codex.startingThreadIds[selectedThreadId])),
+    isCurrentWorking: Boolean(activeTurnId || (selectedThreadId && workingThreadIds[selectedThreadId])),
+    isCurrentBackgroundWorking: selectedProvider === 'claude' && !activeTurnId
+      && isClaudeSessionWorking(claude.sessionActivities[selectedThreadId ?? '']),
     busy: selectedProvider === 'claude' ? { ...codex.busy, ...claude.busy } : codex.busy,
     queues: selectedProvider === 'claude' ? claude.queues : codex.queues,
     pendingSteers: selectedProvider === 'claude' && selectedThreadId ? { ...codex.pendingSteers, [selectedThreadId]: [] } : codex.pendingSteers,

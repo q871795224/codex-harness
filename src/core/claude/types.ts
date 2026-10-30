@@ -32,7 +32,18 @@ export interface ClaudeProviderSnapshot {
   latestEventSeq: number
   snapshotSeq: number
   activeTurns: Array<{ sessionId: string, turnId: string }>
+  sessionActivities?: ClaudeSessionActivity[]
   pendingApprovals: ClaudePendingApproval[]
+}
+
+export interface ClaudeSessionActivity {
+  sessionId: string
+  state: 'idle' | 'running' | 'requires_action'
+  backgroundTaskCount: number
+}
+
+export function isClaudeSessionWorking(activity: ClaudeSessionActivity | undefined): boolean {
+  return Boolean(activity && (activity.state !== 'idle' || activity.backgroundTaskCount > 0))
 }
 
 export interface ClaudeSessionRecord {

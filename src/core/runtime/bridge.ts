@@ -215,6 +215,10 @@ export const runtime = {
     return this.claudeRequest<void>('turn/interrupt', { sessionId })
   },
 
+  stopClaudeSession(sessionId: string): Promise<void> {
+    return this.claudeRequest<void>('session/stop', { sessionId })
+  },
+
   answerClaudeApproval(requestId: string, allow: boolean, updatedInput?: Record<string, unknown>): Promise<{ resolvedSeq?: number }> {
     return this.claudeRequest<{ resolvedSeq?: number }>('approval/respond', { requestId, allow, ...(updatedInput ? { updatedInput } : {}) })
   },

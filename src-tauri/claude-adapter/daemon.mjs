@@ -141,6 +141,7 @@ function runtimeSnapshot() {
     latestEventSeq: snapshotSeq,
     snapshotSeq,
     activeTurns: activeTurnSnapshot(),
+    sessionActivities: [...sessionQueries.values()].map(sessionActivity),
     pendingApprovals: approvalSnapshot(),
   }
 }
@@ -386,6 +387,7 @@ function finishTurn(runtime, status, message) {
   }
   // Release ownership BEFORE notifying the UI (which can immediately drain a queue).
   activeTurns.delete(runtime.sessionId)
+  publishSessionActivity(runtime)
   state.lastStatus = status
   emit(`turn/${status}`, {
     sessionId: runtime.sessionId, turnId: active.turnId,
@@ -399,6 +401,60 @@ function finishTurn(runtime, status, message) {
   scheduleQueryCleanup(runtime)
 }
 
+function userBackgroundTasks(runtime) {
+  return [...runtime.backgroundTasks.values()].filter(task => !task.ambient)
+}
+
+function sessionActivity(runtime) {
+  return {
+    sessionId: runtime.sessionId,
+    state: !runtime.busy ? 'idle' : runtime.sessionState ?? 'running',
+    backgroundTaskCount: userBackgroundTasks(runtime).length,
+  }
+}
+
+function publishSessionActivity(runtime) {
+  const activity = sessionActivity(runtime)
+  const signature = JSON.stringify(activity)
+  if (signature !== runtime.lastActivity) {
+    runtime.lastActivity = signature
+    emit('session/activity', activity)
+  }
+  if (runtime.stopping && !runtime.busy && userBackgroundTasks(runtime).length === 0
+    && !activeTurns.has(runtime.sessionId)) {
+    clearTimeout(runtime.stopTimer)
+    runtime.stopping = false
+  }
+}
+
+async function stopSession(sessionId) {
+  const active = activeTurns.get(sessionId)
+  if (active && !active.runtime) throw new Error('Claude turn 正在准备，请稍后重试停止。')
+  const runtime = sessionQueries.get(sessionId)
+  if (!runtime) {
+    return
+  }
+  if (runtime.stopping) return
+  if (!active && !runtime.busy && userBackgroundTasks(runtime).length === 0) return
+  runtime.stopping = true
+  if (active) active.interrupted = true
+  // ACKs do not prove work has stopped. Keep reporting activity until the SDK
+  // confirms idle + no user tasks, or this session's transport has closed.
+  runtime.stopTimer = setTimeout(() => {
+    void closeSessionQuery(runtime).catch(() => undefined)
+  }, INTERRUPT_GRACE_MS)
+  runtime.stopTimer.unref()
+  try {
+    const controls = userBackgroundTasks(runtime).map(task => runtime.query.stopTask(task.task_id))
+    if (active || runtime.busy) controls.push(runtime.query.interrupt())
+    await Promise.race([Promise.all(controls), runtime.done])
+  } catch {
+    // An older CLI or a failed task-control call can still be stopped by closing
+    // just this query. The shared daemon and other sessions remain untouched.
+    await closeSessionQuery(runtime)
+  }
+}
+
 function scheduleQueryCleanup(runtime) {
   clearTimeout(runtime.idleTimer)
   if (activeTurns.has(runtime.sessionId) || runtime.busy || runtime.backgroundTasks.size > 0 || runtime.closing) return
@@ -409,6 +465,7 @@ function scheduleQueryCleanup(runtime) {
 async function closeSessionQuery(runtime) {
   runtime.closing = true
   clearTimeout(runtime.idleTimer)
+  clearTimeout(runtime.stopTimer)
   runtime.input.end()
   runtime.query.close?.()
   runtime.abortController.abort()
@@ -427,12 +484,15 @@ async function consumeSessionQuery(runtime) {
       }
       if (typeof message.model === 'string' && message.model) state.model = message.model
       if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
-        runtime.backgroundTasks = new Set((message.tasks ?? []).map(task => task.task_id))
+        runtime.backgroundTasks = new Map((message.tasks ?? []).map(task => [task.task_id, task]))
+        publishSessionActivity(runtime)
         scheduleQueryCleanup(runtime)
       }
       if (message.type === 'system' && message.subtype === 'session_state_changed') {
         runtime.hasLifecycleEvents = true
+        runtime.sessionState = message.state
         runtime.busy = message.state !== 'idle'
+        publishSessionActivity(runtime)
         scheduleQueryCleanup(runtime)
       }
       const active = activeTurns.get(sessionId)
@@ -479,11 +539,18 @@ async function consumeSessionQuery(runtime) {
   } finally {
     runtime.closing = true
     clearTimeout(runtime.idleTimer)
+    clearTimeout(runtime.stopTimer)
     runtime.input.end()
     // Query.return() awaits the SDK's transport cleanup. Do not resume the same
     // provider session in a replacement CLI while that cleanup is still pending.
     try { await runtime.query.return?.() } catch (error) { failure ??= errorMessage(error) }
+    runtime.busy = false
+    runtime.backgroundTasks.clear()
     if (sessionQueries.get(sessionId) === runtime) sessionQueries.delete(sessionId)
+    for (const pending of pendingApprovals.values()) {
+      if (pending.sessionId === sessionId) pending.expire('query-ended')
+    }
+    publishSessionActivity(runtime)
     const active = activeTurns.get(sessionId)
     if (active?.runtime === runtime) {
       // Older CLIs can end the stream without emitting session_state_changed.
@@ -509,6 +576,7 @@ async function startTurn(params) {
     const key = createHash('sha256').update(JSON.stringify([settings,
       Object.keys(env).sort().map(key => [key, env[key]])])).digest('hex')
     let runtime = sessionQueries.get(sessionId)
+    if (runtime?.stopping) throw new Error('Claude 会话正在停止，请稍后重试。')
     if (runtime && (runtime.key !== key || runtime.closing)) {
       if (runtime.busy || runtime.backgroundTasks.size > 0) throw new Error('Claude 后台任务仍在运行，请结束后台任务后再更改模型、权限或环境配置。')
       await closeSessionQuery(runtime)
@@ -523,7 +591,7 @@ async function startTurn(params) {
     if (!runtime) {
       const abortController = new AbortController()
       runtime = { sessionId, key, input: inputQueue(), abortController,
-        backgroundTasks: new Set(), costBase: state.totalCostUsd, closing: false }
+        backgroundTasks: new Map(), costBase: state.totalCostUsd, closing: false }
       runtime.query = query({ prompt: runtime.input, options: {
         cwd: params.cwd,
         ...(state.providerSessionId ? { resume: state.providerSessionId } : {}),
@@ -543,7 +611,9 @@ async function startTurn(params) {
     clearTimeout(runtime.idleTimer)
     runtime.lastTurnId = turnId
     runtime.busy = true
+    runtime.sessionState = 'running'
     active.runtime = runtime
+    publishSessionActivity(runtime)
     emit('turn/started', { sessionId, turnId })
     emit('message/user', { sessionId, turnId, itemId: `${turnId}:user`, providerMessageId: active.providerMessageId, content: params.input ?? [] })
     runtime.input.push(message)
@@ -776,6 +846,11 @@ async function handle(client, request) {
         throw error
       }
     }
+    respond(client, id, {})
+    return
+  }
+  if (method === 'session/stop') {
+    await stopSession(params.sessionId)
     respond(client, id, {})
     return
   }
