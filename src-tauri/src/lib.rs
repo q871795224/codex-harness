@@ -1,6 +1,7 @@
 mod api_workbench;
 mod app_launcher;
 mod app_server;
+mod turn_ownership;
 mod claude_runtime;
 mod clipboard_image;
 mod codex_analytics;
@@ -516,8 +517,20 @@ async fn app_server_respond(
     state: State<'_, AppState>,
     id: Value,
     result: Value,
+    thread_id: String,
+    turn_id: Option<String>,
+    method: String,
 ) -> Result<(), String> {
-    state.app_server.respond(id, result).await
+    state.app_server.respond(id, result, &thread_id, turn_id.as_deref(), &method).await
+}
+
+#[tauri::command]
+async fn app_server_take_over(
+    state: State<'_, AppState>,
+    thread_id: String,
+    expected_turn_id: String,
+) -> Result<Value, String> {
+    state.app_server.take_over(&thread_id, &expected_turn_id).await
 }
 
 #[tauri::command]
@@ -1271,10 +1284,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             system_notification::install(app.handle());
+            let store = Arc::new(store);
+            let ownership = Arc::new(turn_ownership::TurnOwnership::new(store.clone())?);
             let manager = Arc::new(AppServerManager::new(
                 app.handle().clone(),
                 diagnostics.clone(),
                 analytics.clone(),
+                ownership,
                 app_server::history_response_limit(
                     store.get_app_state("conversationHistoryPreferences")?.as_deref(),
                 ),
@@ -1284,7 +1300,6 @@ pub fn run() {
                 diagnostics.clone(),
             ));
             let terminal = Arc::new(terminal::TerminalManager::new(diagnostics.clone()));
-            let store = Arc::new(store);
             let management_app = app.handle().clone();
             let management = Arc::new(management::Management::new(Arc::new(move |request| {
                 management_app.emit("management:request", request).map_err(|e| e.to_string())
@@ -1342,6 +1357,7 @@ pub fn run() {
             memory_save,
             app_server_request,
             app_server_respond,
+            app_server_take_over,
             claude_runtime_status,
             claude_runtime_request,
             list_claude_sessions,

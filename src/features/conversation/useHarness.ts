@@ -197,6 +197,7 @@ export function useHarness() {
   const [activeTurnIds, setActiveTurnIds] = useState<Record<string, string>>({})
   const [startingThreadIds, setStartingThreadIds] = useState<Record<string, boolean>>({})
   const [ownedActiveThreads, setOwnedActiveThreads] = useState<Record<string, boolean>>({})
+  const [takeoverTurnIds, setTakeoverTurnIds] = useState<Record<string, string | undefined>>({})
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const [workspaceSelection, setSelectedWorkspaceRoot] = useState<string | null>(null)
   const selectedWorkspaceRoot = workspaceSelection && navigation.hiddenWorkspaceRoots.includes(workspaceSelection)
@@ -708,8 +709,12 @@ export function useHarness() {
     const ownership = syncResumedTurn({
       activeTurnIds: activeTurnIdsRef.current,
       ownedActiveThreads: ownedActiveThreadsRef.current,
-    }, threadId, activeTurnId)
+    }, threadId, activeTurnId, response.harnessOwnership)
     commitTurnOwnership(ownership)
+    setTakeoverTurnIds((current) => ({
+      ...current,
+      [threadId]: response.harnessOwnership?.canTakeOver ? response.harnessOwnership.turnId : undefined,
+    }))
     const owned = ownership.ownedActiveThreads[threadId] === true
     setDetails((current) => ({
       ...current,
@@ -722,6 +727,22 @@ export function useHarness() {
     void mapThreadRoots([resumedDetail.thread])
     if (loadQueueAfter) await loadQueue(threadId)
   }, [commitTurnOwnership, loadQueue, mapThreadRoots, updateThread])
+
+  const takeOverThread = useCallback(async () => {
+    const threadId = selectedThreadIdRef.current
+    if (!threadId) return
+    const turnId = activeTurnIdsRef.current[threadId]
+    if (!turnId) return
+    setBusy((current) => ({ ...current, takeover: true }))
+    try {
+      const response = await runtime.takeOverCodexThread(threadId, turnId)
+      await applyResumedThread(threadId, response)
+    } catch (error) {
+      notify('无法接管会话', 'error', error, { threadId })
+    } finally {
+      setBusy((current) => ({ ...current, takeover: false }))
+    }
+  }, [applyResumedThread, notify])
 
   // Archived threads cannot be resumed; load them read-only through
   // `thread/read` + `thread/turns/list` so their history stays viewable.
@@ -1932,7 +1953,11 @@ export function useHarness() {
         }
         return
       }
-      await runtime.respond(request.id, serverRequestResponse(request.method, decision))
+      await runtime.respond(request.id, serverRequestResponse(request.method, decision), {
+        threadId: request.threadId,
+        turnId: typeof request.params.turnId === 'string' ? request.params.turnId : undefined,
+        method: request.method,
+      })
       setApprovals((current) => ({
         ...current,
         [request.threadId]: (current[request.threadId] ?? []).filter((item) => item.id !== request.id),
@@ -2021,7 +2046,9 @@ export function useHarness() {
       const threadId = eventThreadId(params)
       if (threadId) {
         const request: ApprovalRequest = { id: event.id, method, params, threadId }
-        setApprovals((current) => ({ ...current, [threadId]: [...(current[threadId] ?? []), request] }))
+        setApprovals((current) => ({ ...current, [threadId]: [
+          ...(current[threadId] ?? []).filter((item) => item.id !== request.id), request,
+        ] }))
         persistBadge(threadId, 'approval')
       }
       return
@@ -2402,6 +2429,8 @@ export function useHarness() {
     activeTurnId,
     activeTurnIds,
     currentForeignActive,
+    canTakeOverCurrentThread: currentForeignActive && takeoverTurnIds[selectedThreadId ?? ''] === activeTurnId,
+    takeOverThread,
     isCurrentWorking: Boolean(activeTurnId),
     selectThread,
     openThread,

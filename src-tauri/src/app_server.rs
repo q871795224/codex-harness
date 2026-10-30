@@ -1,6 +1,7 @@
 use crate::{
     codex_analytics::CodexAnalytics,
     diagnostics::{error_code, DiagnosticLog},
+    turn_ownership::TurnOwnership,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -96,6 +97,7 @@ struct Connection {
     pending: Arc<Mutex<HashMap<u64, PendingRequest>>>,
     alive: Arc<AtomicBool>,
     intentional_disconnect: Arc<AtomicBool>,
+    server_requests: Arc<Mutex<HashMap<String, Value>>>,
 }
 
 struct PendingRequest {
@@ -108,6 +110,7 @@ pub struct AppServerManager {
     app: AppHandle,
     diagnostics: Arc<DiagnosticLog>,
     analytics: CodexAnalytics,
+    ownership: Arc<TurnOwnership>,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
     max_response_bytes: usize,
@@ -119,12 +122,14 @@ impl AppServerManager {
         app: AppHandle,
         diagnostics: Arc<DiagnosticLog>,
         analytics: CodexAnalytics,
+        ownership: Arc<TurnOwnership>,
         max_response_bytes: usize,
     ) -> Self {
         Self {
             app,
             diagnostics,
             analytics,
+            ownership,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
             max_response_bytes,
@@ -201,6 +206,28 @@ impl AppServerManager {
     }
 
     pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
+        if matches!(
+            method.as_str(),
+            "thread/queue/add"
+                | "thread/queue/update"
+                | "thread/queue/delete"
+                | "thread/queue/start"
+        ) {
+            if let Some(thread) = params["threadId"].as_str() {
+                self.ownership.check_thread(thread)?;
+            }
+        }
+        if matches!(method.as_str(), "turn/steer" | "turn/interrupt") {
+            if let (Some(thread), Some(turn)) = (
+                params["threadId"].as_str(),
+                params
+                    .get("expectedTurnId")
+                    .or_else(|| params.get("turnId"))
+                    .and_then(Value::as_str),
+            ) {
+                self.ownership.check(thread, turn)?;
+            }
+        }
         let started = Instant::now();
         let request_context = request_context(&params);
         let pending_turn = match method.as_str() {
@@ -215,10 +242,15 @@ impl AppServerManager {
             "request.started",
             json!({ "method": &method, "requestMeta": request_context.clone() }),
         );
-        let result = match self.connection().await {
+        let mut result = match self.connection().await {
             Ok(connection) => self.send_request(&connection, method.clone(), params).await,
             Err(error) => Err(error),
         };
+        if method == "thread/resume" {
+            if let Ok(response) = &mut result {
+                self.ownership.annotate_resume(response, None)?;
+            }
+        }
         let duration_ms = started.elapsed().as_millis() as u64;
         if let Some(pending_turn) = pending_turn {
             match &result {
@@ -260,10 +292,46 @@ impl AppServerManager {
         result
     }
 
-    pub async fn respond(&self, id: Value, result: Value) -> Result<(), String> {
+    pub async fn respond(
+        &self,
+        id: Value,
+        result: Value,
+        thread: &str,
+        turn: Option<&str>,
+        method: &str,
+    ) -> Result<(), String> {
         let connection = self.connection().await?;
+        let requests = connection.server_requests.lock().await;
+        let request = requests
+            .get(&id.to_string())
+            .ok_or("该请求已失效，请重新打开会话以获取待处理请求。")?;
+        if !matches_server_request(request, thread, turn, method) {
+            return Err("该请求已失效，请重新打开会话以获取待处理请求。".into());
+        }
+        if let (Some(thread), Some(turn)) = (
+            request.pointer("/params/threadId").and_then(Value::as_str),
+            request.pointer("/params/turnId").and_then(Value::as_str),
+        ) {
+            self.ownership.check(thread, turn)?;
+        } else {
+            self.ownership.check_thread(thread)?;
+        }
         self.send_frame(&connection, json!({ "id": id, "result": result }))
             .await
+    }
+
+    pub async fn take_over(&self, thread: &str, turn: &str) -> Result<Value, String> {
+        // Resume against the daemon before transferring: never trust a UI's old turn ID.
+        let connection = self.connection().await?;
+        let mut response = self.send_request(&connection, "thread/resume".into(), json!({
+            "threadId": thread, "excludeTurns": true,
+            "initialTurnsPage": { "limit": 5, "sortDirection": "desc", "itemsView": "summary" }
+        })).await?;
+        self.ownership.annotate_resume(&mut response, Some(turn))?;
+        if response.pointer("/harnessOwnership/owned") != Some(&Value::Bool(true)) {
+            return Err("此轮次没有可接管的 Harness 归属记录。".into());
+        }
+        Ok(response)
     }
 
     pub(crate) async fn restart_after_update(&self) -> Result<(), String> {
@@ -378,6 +446,9 @@ impl AppServerManager {
         let writer_diagnostics = self.diagnostics.clone();
         let reader_diagnostics = self.diagnostics.clone();
         let reader_analytics = self.analytics.clone();
+        let reader_ownership = self.ownership.clone();
+        let server_requests = Arc::new(Mutex::new(HashMap::<String, Value>::new()));
+        let reader_server_requests = server_requests.clone();
 
         tauri::async_runtime::spawn(async move {
             while let Some(frame) = outbound.recv().await {
@@ -424,15 +495,62 @@ impl AppServerManager {
                                     } else {
                                         Ok(payload.get("result").cloned().unwrap_or(Value::Null))
                                     };
+                                    if matches!(
+                                        pending.method.as_str(),
+                                        "turn/start" | "thread/queue/start"
+                                    ) {
+                                        if let (Some(thread), Some(turn)) = (
+                                            pending
+                                                .context
+                                                .as_ref()
+                                                .and_then(|c| c["threadId"].as_str()),
+                                            response
+                                                .as_ref()
+                                                .ok()
+                                                .and_then(|r| r.pointer("/turn/id"))
+                                                .and_then(Value::as_str),
+                                        ) {
+                                            if let Err(error) =
+                                                reader_ownership.record(thread, turn)
+                                            {
+                                                reader_diagnostics.record(
+                                                    "error",
+                                                    "app-server",
+                                                    "ownership.persist-failed",
+                                                    json!({ "reason": error }),
+                                                );
+                                            }
+                                        }
+                                    }
                                     let _ = pending.sender.send(response);
                                 }
                             } else {
                                 let method = payload.get("method").and_then(Value::as_str);
                                 let params = payload.get("params").unwrap_or(&Value::Null);
+                                {
+                                    let mut requests = reader_server_requests.lock().await;
+                                    track_server_request(&mut requests, &payload);
+                                }
                                 let thread_id = params
                                     .as_object()
                                     .and_then(|params| params.get("threadId"))
                                     .and_then(Value::as_str);
+                                if method == Some("turn/completed") {
+                                    if let (Some(thread), Some(turn)) = (
+                                        thread_id,
+                                        params.pointer("/turn/id").and_then(Value::as_str),
+                                    ) {
+                                        if let Err(error) = reader_ownership.complete(thread, turn)
+                                        {
+                                            reader_diagnostics.record(
+                                                "error",
+                                                "app-server",
+                                                "ownership.complete-failed",
+                                                json!({ "reason": error }),
+                                            );
+                                        }
+                                    }
+                                }
                                 reader_analytics.record_notification(method, params);
                                 if method == Some("thread/tokenUsage/updated") {
                                     if let Some(usage) =
@@ -522,6 +640,7 @@ impl AppServerManager {
             pending,
             alive,
             intentional_disconnect,
+            server_requests,
         }
     }
 
@@ -1247,9 +1366,91 @@ fn should_persist_notification(method: Option<&str>) -> bool {
     )
 }
 
+// Requests are valid only on the connection where the daemon sent/replayed
+// them. Never persist these IDs or their contents across connections.
+fn track_server_request(requests: &mut HashMap<String, Value>, payload: &Value) {
+    let method = payload["method"].as_str().unwrap_or_default();
+    if let Some(id) = payload.get("id") {
+        requests.insert(id.to_string(), payload.clone());
+    } else if method == "serverRequest/resolved" {
+        requests.remove(&payload["params"]["requestId"].to_string());
+    } else if method == "turn/completed" {
+        let params = &payload["params"];
+        requests.retain(|_, request| {
+            request["params"]["threadId"] != params["threadId"]
+                || request["params"]["turnId"] != params["turn"]["id"]
+        });
+    }
+}
+
+fn matches_server_request(request: &Value, thread: &str, turn: Option<&str>, method: &str) -> bool {
+    request["method"].as_str() == Some(method)
+        && request["params"]
+            .get("threadId")
+            .or_else(|| request["params"].get("conversationId"))
+            .and_then(Value::as_str)
+            == Some(thread)
+        && request["params"]["turnId"].as_str() == turn
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tracks_only_live_connection_requests_and_deduplicates_replays() {
+        let mut requests = HashMap::new();
+        let request = json!({"id": 7, "method": "item/tool/requestUserInput", "params": {"threadId":"thread", "turnId":"turn"}});
+        track_server_request(&mut requests, &request);
+        track_server_request(&mut requests, &request);
+        assert_eq!(requests.len(), 1);
+        assert!(matches_server_request(
+            &request,
+            "thread",
+            Some("turn"),
+            "item/tool/requestUserInput"
+        ));
+        assert!(!matches_server_request(
+            &request,
+            "thread",
+            Some("old-turn"),
+            "item/tool/requestUserInput"
+        ));
+        assert!(!matches_server_request(
+            &request,
+            "old-thread",
+            Some("turn"),
+            "item/tool/requestUserInput"
+        ));
+        assert!(!matches_server_request(
+            &request,
+            "thread",
+            Some("turn"),
+            "item/commandExecution/requestApproval"
+        ));
+        assert!(matches_server_request(
+            &json!({"method":"execCommandApproval", "params":{"conversationId":"thread"}}),
+            "thread",
+            None,
+            "execCommandApproval"
+        ));
+        track_server_request(
+            &mut requests,
+            &json!({"method":"serverRequest/resolved","params":{"threadId":"thread","requestId":7}}),
+        );
+        assert!(requests.is_empty());
+        track_server_request(&mut requests, &request);
+        track_server_request(
+            &mut requests,
+            &json!({"method":"turn/completed","params":{"threadId":"other","turn":{"id":"turn"}}}),
+        );
+        assert_eq!(requests.len(), 1);
+        track_server_request(
+            &mut requests,
+            &json!({"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"turn"}}}),
+        );
+        assert!(requests.is_empty());
+    }
 
     #[tokio::test]
     async fn configurable_limit_accepts_large_frames_and_stops_retrying_over_limit() {

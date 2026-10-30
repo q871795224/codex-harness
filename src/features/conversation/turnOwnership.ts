@@ -19,10 +19,12 @@ export function syncResumedTurn(
   current: ActiveTurnOwnership,
   threadId: string,
   activeTurnId: string | null,
+  recovered?: { turnId: string; owned: boolean } | null,
 ): ActiveTurnOwnership {
   if (activeTurnId) {
-    const owned = current.activeTurnIds[threadId] === activeTurnId
-      && current.ownedActiveThreads[threadId] === true
+    const owned = recovered !== undefined
+      ? recovered?.turnId === activeTurnId && recovered.owned
+      : current.activeTurnIds[threadId] === activeTurnId && current.ownedActiveThreads[threadId] === true
     return activateTurn(current, threadId, activeTurnId, owned)
   }
   const activeTurnIds = { ...current.activeTurnIds }

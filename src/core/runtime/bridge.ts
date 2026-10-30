@@ -1,4 +1,5 @@
 import type { TeamDocument } from '../teams/types'
+import type { ResumeThreadResponse as CodexResumeThreadResponse } from './appServerClient'
 import type { MemoryCatalog, MemorySaveInput, SavedMemory, MemoryDomainSettings } from '../memory/types'
 import type { ThreadProjectBinding } from '../project-docs/types'
 import { invoke } from '@tauri-apps/api/core'
@@ -236,8 +237,12 @@ export const runtime = {
     return parseThreadCreditUsage(response)
   },
 
-  respond(id: string | number, result: JsonObject): Promise<void> {
-    return invoke<void>('app_server_respond', { id, result })
+  respond(id: string | number, result: JsonObject, request: { threadId: string; turnId?: string; method: string }): Promise<void> {
+    return invoke<void>('app_server_respond', { id, result, ...request, turnId: request.turnId ?? null })
+  },
+
+  takeOverCodexThread(threadId: string, expectedTurnId: string): Promise<CodexResumeThreadResponse> {
+    return invoke<CodexResumeThreadResponse>('app_server_take_over', { threadId, expectedTurnId })
   },
 
   getRuntimeVersions(): Promise<RuntimeVersions> {
