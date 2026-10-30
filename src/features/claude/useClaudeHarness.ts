@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { emptyThreadDetail, textInput, type ApprovalRequest, type QueuedSubmission, type Thread, type ThreadDetail, type Turn, type UserInput } from '../../core/domain/codex'
 import { runtime } from '../../core/runtime/bridge'
 import { approvalRequestFromEvent, reconcileClaudeApprovalSnapshot } from '../../core/claude/approvalState'
-import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeProviderSnapshot, ClaudeRuntimeStatus, ClaudeSessionRecord, ClaudeSessionSettings, ClaudeTransportEvent } from '../../core/claude/types'
-import { DEFAULT_CLAUDE_SESSION_SETTINGS } from '../../core/claude/types'
+import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeProviderSnapshot, ClaudeRuntimeStatus, ClaudeSessionActivity, ClaudeSessionRecord, ClaudeSessionSettings, ClaudeTransportEvent } from '../../core/claude/types'
+import { DEFAULT_CLAUDE_SESSION_SETTINGS, isClaudeSessionWorking } from '../../core/claude/types'
 import { initialClaudeSessionSettings } from './initialClaudeSessionSettings'
 import { reduceClaudeEvent } from '../../core/claude/eventReducer'
 import { hydrateClaudeHistory, mergeClaudeHistory } from '../../core/claude/history'
@@ -24,6 +24,7 @@ export function useClaudeHarness() {
   const sessionListRequestRef = useRef(0)
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
   const [activeTurnIds, setActiveTurnIds] = useState<Record<string, string>>({})
+  const [sessionActivities, setSessionActivities] = useState<Record<string, ClaudeSessionActivity>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
   const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
   const [models, setModels] = useState<ClaudeModel[]>([])
@@ -31,6 +32,9 @@ export function useClaudeHarness() {
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const sessionsRef = useRef<ClaudeSessionRecord[]>([])
   const activeTurnIdsRef = useRef<Record<string, string>>({})
+  const sessionActivitiesRef = useRef<Record<string, ClaudeSessionActivity>>({})
+  const activitySeqRef = useRef<Record<string, number>>({})
+  const activitySnapshotSeqRef = useRef(-1)
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
   const queuesRef = useRef<Record<string, QueuedSubmission[]>>({})
   const settingsRef = useRef<Record<string, ClaudeSessionSettings>>({})
@@ -378,10 +382,28 @@ export function useClaudeHarness() {
     activeTurnIdsRef.current = active
     setActiveTurnIds(active)
 
-    if (!Array.isArray(provider.pendingApprovals)) return
     const snapshotSeq = Number.isSafeInteger(provider.snapshotSeq)
       ? provider.snapshotSeq
       : Number.isSafeInteger(provider.latestEventSeq) ? provider.latestEventSeq : null
+    const activities = Object.fromEntries((provider.sessionActivities ?? []).map(activity => [activity.sessionId, activity]))
+    const nextActivitySeq: Record<string, number> = {}
+    for (const sessionId of Object.keys(activities)) {
+      if (snapshotSeq !== null) nextActivitySeq[sessionId] = snapshotSeq
+    }
+    if (!daemonChanged && snapshotSeq !== null) {
+      for (const [sessionId, activity] of Object.entries(sessionActivitiesRef.current)) {
+        if ((activitySeqRef.current[sessionId] ?? -1) > snapshotSeq) {
+          activities[sessionId] = activity
+          nextActivitySeq[sessionId] = activitySeqRef.current[sessionId]
+        }
+      }
+    }
+    activitySeqRef.current = nextActivitySeq
+    activitySnapshotSeqRef.current = snapshotSeq ?? -1
+    sessionActivitiesRef.current = activities
+    setSessionActivities(activities)
+
+    if (!Array.isArray(provider.pendingApprovals)) return
     const sequenceState = daemonChanged
       ? { eventSeqById: {}, resolvedSeqById: {} }
       : { eventSeqById: approvalEventSeqRef.current, resolvedSeqById: approvalResolvedSeqRef.current }
@@ -402,6 +424,18 @@ export function useClaudeHarness() {
     const params = event.params ?? {}
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null
     if (!sessionId) return
+    if (event.method === 'session/activity') {
+      if (event.replayed) return // Reconnect uses the authoritative runtime snapshot.
+      const seq = eventSequence(event)
+      if (seq !== null && seq <= Math.max(activitySnapshotSeqRef.current, activitySeqRef.current[sessionId] ?? -1)) return
+      if (params.state !== 'idle' && params.state !== 'running' && params.state !== 'requires_action') return
+      if (typeof params.backgroundTaskCount !== 'number' || !Number.isSafeInteger(params.backgroundTaskCount) || params.backgroundTaskCount < 0) return
+      const activity: ClaudeSessionActivity = { sessionId, state: params.state, backgroundTaskCount: params.backgroundTaskCount }
+      if (seq !== null) activitySeqRef.current[sessionId] = seq
+      sessionActivitiesRef.current = { ...sessionActivitiesRef.current, [sessionId]: activity }
+      setSessionActivities(sessionActivitiesRef.current)
+      return
+    }
     if (event.method === 'session/started' && typeof params.providerSessionId === 'string') {
       void persistProviderSession(sessionId, params.providerSessionId).catch((error) => notify('操作未完成，请查看详情后重试。', 'error', error))
       return
@@ -499,6 +533,10 @@ export function useClaudeHarness() {
         return
       }
       setStatus((current) => current ? { ...current, running: false } : current)
+      sessionActivitiesRef.current = {}
+      activitySeqRef.current = {}
+      activitySnapshotSeqRef.current = -1
+      setSessionActivities({})
       const interrupted = activeTurnIdsRef.current
       if (Object.keys(interrupted).length > 0) {
         setDetails((current) => {
@@ -576,8 +614,8 @@ export function useClaudeHarness() {
   }, [applyProviderSnapshot, handleEvent, refresh])
 
   const threads = useMemo(
-    () => sessions.map((session) => sessionThread(session, Boolean(activeTurnIds[session.id]))),
-    [activeTurnIds, sessions],
+    () => sessions.map((session) => sessionThread(session, Boolean(activeTurnIds[session.id]) || isClaudeSessionWorking(sessionActivities[session.id]))),
+    [activeTurnIds, sessionActivities, sessions],
   )
 
   const selectSession = useCallback((sessionId: string) => {
@@ -624,11 +662,11 @@ export function useClaudeHarness() {
   }, [notify])
 
   const stopTurn = useCallback(async (sessionId: string) => {
-    if (!activeTurnIdsRef.current[sessionId]) return
-    manualStopRef.current.add(sessionId)
+    if (!activeTurnIdsRef.current[sessionId] && !isClaudeSessionWorking(sessionActivitiesRef.current[sessionId])) return
+    if (activeTurnIdsRef.current[sessionId]) manualStopRef.current.add(sessionId)
     setBusy((current) => ({ ...current, stop: true }))
     try {
-      await runtime.interruptClaudeTurn(sessionId)
+      await runtime.stopClaudeSession(sessionId)
     } catch (error) {
       manualStopRef.current.delete(sessionId)
       notify(`无法停止 Claude turn`, 'error', error)
@@ -690,7 +728,7 @@ export function useClaudeHarness() {
   const changeSessionWorkspace = useCallback(async (sessionId: string, workspaceRoot: string) => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!workspaceRoot || !session) return
-    if (activeTurnIdsRef.current[sessionId]) {
+    if (activeTurnIdsRef.current[sessionId] || isClaudeSessionWorking(sessionActivitiesRef.current[sessionId])) {
       notify('请先停止或等待当前轮完成，再切换工作目录。', 'warning')
       return
     }
@@ -745,6 +783,7 @@ export function useClaudeHarness() {
     threads,
     details,
     activeTurnIds,
+    sessionActivities,
     approvals,
     queues,
     models,

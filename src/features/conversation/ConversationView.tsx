@@ -211,6 +211,7 @@ interface ConversationViewProps {
   recap?: { text: string; createdAt: number } | null
   rawMode: boolean
   working: boolean
+  backgroundWorking?: boolean
   workingTurnId: string | null
   workingStartedAt: number | null
   onRawModeToggle: () => void
@@ -227,7 +228,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
+export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -448,7 +449,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
           {working && (rawMode ? workingMessageIndex < 0 : !activeTurnHasContent) && (
             <article className="message agent-message working-message">
               <div className="message-label"><Bot size={15} />{agentLabel}</div>
-              <WorkingStatus key={workingTurnId} startedAt={workingStartedAt} />
+              <WorkingStatus key={workingTurnId} startedAt={workingStartedAt} background={backgroundWorking} />
             </article>
           )}
           {recap && (

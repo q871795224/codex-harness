@@ -319,6 +319,75 @@ test('preserves background work and refuses configuration changes until it finis
   assert.equal(JSON.parse((await terminalEvent(daemon, 'second')).params.result).queryId, 1)
 })
 
+test('reports background activity after turn completion, including reconnect snapshots', async t => {
+  const daemon = await fixture(t, liveSdkFixture)
+  await startLiveTurn(daemon, 'first', 'background')
+  await terminalEvent(daemon, 'first')
+  const activity = { sessionId: 'session', state: 'idle', backgroundTaskCount: 1 }
+  assert.deepEqual((await daemon.request('runtime/status')).sessionActivities, [activity])
+  assert.deepEqual((await daemon.request('initialize')).sessionActivities, [activity])
+  assert.ok(daemon.messages.some(message => message.method === 'session/activity'
+    && message.params.backgroundTaskCount === 1))
+})
+
+test('excludes ambient tasks from user activity and replaces the background task list', async t => {
+  const source = liveSdkFixture.replace("tasks: [{ task_id: 'task' }]", "tasks: [{ task_id: 'watcher', ambient: true }]")
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first', 'background')
+  await terminalEvent(daemon, 'first')
+  assert.deepEqual((await daemon.request('runtime/status')).sessionActivities,
+    [{ sessionId: 'session', state: 'idle', backgroundTaskCount: 0 }])
+})
+
+test('stops background work without an active turn and leaves another session running', async t => {
+  const source = liveSdkFixture.replace('    async interrupt()', `
+    async stopTask(taskId) {
+      if (taskId !== 'task') throw new Error('wrong task')
+      push({ type: 'system', subtype: 'background_tasks_changed', tasks: [] })
+    },
+    async interrupt()`)
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first', 'background')
+  await terminalEvent(daemon, 'first')
+  await startLiveTurn(daemon, 'other', 'wait', { sessionId: 'other-session' })
+  await daemon.request('session/stop', { sessionId: 'session' })
+  await waitFor(() => daemon.messages.find(message => message.method === 'session/activity'
+    && message.params.sessionId === 'session' && message.params.backgroundTaskCount === 0
+    && message.params.state === 'idle'))
+  const snapshot = await daemon.request('runtime/status')
+  assert.deepEqual(snapshot.activeTurns, [{ sessionId: 'other-session', turnId: 'other' }])
+  assert.deepEqual(snapshot.sessionActivities.find(activity => activity.sessionId === 'session'),
+    { sessionId: 'session', state: 'idle', backgroundTaskCount: 0 })
+  await startLiveTurn(daemon, 'second')
+  assert.equal(JSON.parse((await terminalEvent(daemon, 'second')).params.result).queryId, 1)
+})
+
+test('session stop recovers when a background task stop never responds', async t => {
+  const source = liveSdkFixture.replace('    async interrupt()', '    async stopTask() { await new Promise(() => {}) },\n    async interrupt()')
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first', 'background')
+  await terminalEvent(daemon, 'first')
+  await daemon.request('session/stop', { sessionId: 'session' })
+  assert.deepEqual((await daemon.request('runtime/status')).sessionActivities, [])
+  await startLiveTurn(daemon, 'second')
+  assert.equal(JSON.parse((await terminalEvent(daemon, 'second')).params.result).queryId, 2)
+})
+
+test('reports SDK work resuming after a completed turn and clears activity on stream exit', async t => {
+  const source = liveSdkFixture.replace('            interrupted = false', `
+            if (text === 'background') {
+              push({ type: 'system', subtype: 'session_state_changed', state: 'running' })
+            }
+            interrupted = false`)
+  const daemon = await fixture(t, source)
+  await startLiveTurn(daemon, 'first', 'background')
+  await terminalEvent(daemon, 'first')
+  assert.deepEqual((await daemon.request('runtime/status')).sessionActivities,
+    [{ sessionId: 'session', state: 'running', backgroundTaskCount: 1 }])
+  await daemon.request('session/stop', { sessionId: 'session' })
+  await waitFor(async () => (await daemon.request('runtime/status')).sessionActivities?.length === 0)
+})
+
 test('an SDK error result ends once at idle and the next turn can still run', async t => {
   const daemon = await fixture(t, liveSdkFixture)
   await startLiveTurn(daemon, 'first', 'error')

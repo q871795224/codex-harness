@@ -11,6 +11,17 @@ const props = {
   settings: { model: 'test', effort: 'high', serviceTier: null, approvalPolicy: 'never' as const, approvalsReviewer: 'user' as const, sandboxMode: 'danger-full-access' as const },
   rawMode: false, followUpMode: 'queue' as const, onSettingsChange: vi.fn(), onFollowUpModeChange: vi.fn(), onSend: vi.fn(), onCommand: vi.fn(), onStop: vi.fn(),
 }
+
+it('keeps an actionable stop button for a working Claude session', () => {
+  const onStop = vi.fn()
+  const { rerender } = render(<Composer {...props} provider="claude" working onStop={onStop} />)
+  const stop = screen.getByRole('button', { name: '停止当前回合' }) as HTMLButtonElement
+  expect(stop.disabled).toBe(false)
+  fireEvent.click(stop)
+  expect(onStop).toHaveBeenCalledTimes(1)
+  rerender(<Composer {...props} provider="claude" working={false} onStop={onStop} />)
+  expect(screen.queryByRole('button', { name: '停止当前回合' })).toBeNull()
+})
 it('highlights the project label, separates the prompt and positions the caret without duplicating newlines on refresh', () => {
   let draft: ComposerDraft | undefined
   const card = { projectId: 'one', name: '项目', seq: 1, content: '背景正文' }

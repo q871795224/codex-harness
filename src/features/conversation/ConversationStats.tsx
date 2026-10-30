@@ -8,7 +8,7 @@ interface ConversationStatsProps extends ConversationStatsData {
   emptyLabel?: string
 }
 
-export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
+export function WorkingStatus({ startedAt, background = false }: { startedAt: number | null; background?: boolean }) {
   const [fallbackStartedAt] = useState(Date.now)
   const [now, setNow] = useState(Date.now)
   const elapsed = workingElapsedMilliseconds(now, startedAt, fallbackStartedAt)
@@ -20,9 +20,9 @@ export function WorkingStatus({ startedAt }: { startedAt: number | null }) {
   }, [])
 
   return (
-    <div className="working-status" aria-label={`会话正在工作，已运行 ${elapsedLabel}`}>
+    <div className="working-status" aria-label={`${background ? '会话后台执行中' : '会话正在工作'}，已运行 ${elapsedLabel}`}>
       <LoaderCircle className="working-status-loader spin" size={12} strokeWidth={2.4} aria-hidden="true" />
-      <span className="working-status-label">Working</span>
+      <span className="working-status-label">{background ? '后台执行中' : 'Working'}</span>
       <span>({elapsedLabel})</span>
     </div>
   )

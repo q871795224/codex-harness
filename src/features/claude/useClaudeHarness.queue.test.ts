@@ -16,6 +16,7 @@ vi.mock('../../core/runtime/bridge', () => ({ runtime: {
   readClaudeContext: vi.fn().mockResolvedValue(null),
   startClaudeTurn: vi.fn().mockResolvedValue(undefined),
   interruptClaudeTurn: vi.fn().mockResolvedValue(undefined),
+  stopClaudeSession: vi.fn().mockResolvedValue(undefined),
 } }))
 const session: ClaudeSessionRecord = {
   id: 'claude:fixture', providerSessionId: 'provider-session', archived: false,

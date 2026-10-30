@@ -873,6 +873,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 onRawOverrideToggle={toggleRawOverride}
                 working={harness.isCurrentWorking}
                 workingTurnId={currentActiveTurn?.id ?? null}
+                backgroundWorking={harness.isCurrentBackgroundWorking}
                 pendingSteers={currentSteers}
                 workingStartedAt={turnStartedAtMilliseconds(harness.selectedProvider, currentActiveTurn?.startedAt ?? null)}
                 recap={codexConversation ? harness.currentRecap : null}

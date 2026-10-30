@@ -26,6 +26,8 @@ vi.mock('../../core/runtime/bridge', () => ({
     mapThreadWorkspaces: vi.fn().mockResolvedValue({}),
     listenEvents: vi.fn().mockResolvedValue(() => {}),
     listenTransport: vi.fn().mockResolvedValue(() => {}),
+    stopClaudeSession: vi.fn().mockResolvedValue(undefined),
+    readClaudeContext: vi.fn().mockResolvedValue(null),
   },
 }))
 vi.mock('../../core/runtime/appServerClient', () => ({
@@ -69,6 +71,50 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('waiting indicators', () => {
+  it('keeps Claude sidebar and stop controls active after the foreground turn ends', async () => {
+    const { result } = await ready()
+    await act(async () => { await result.current.selectThread('claude:active') })
+    const listener = vi.mocked(runtime.listenClaudeEvents).mock.calls.at(-1)![0]
+    await act(async () => {
+      listener({ method: 'turn/started', params: { sessionId: 'claude:active', turnId: 'first' } })
+      listener({ method: 'session/activity', seq: 10, params: { sessionId: 'claude:active', state: 'idle', backgroundTaskCount: 2 } })
+      listener({ method: 'turn/completed', params: { sessionId: 'claude:active', turnId: 'first' } })
+    })
+    expect(result.current.activeTurnId).toBeNull()
+    expect(result.current.currentDetail?.turns[0].status).toBe('completed')
+    expect(result.current.workingThreadIds['claude:active']).toBe(true)
+    expect(result.current.isCurrentWorking).toBe(true)
+    expect(result.current.isCurrentBackgroundWorking).toBe(true)
+    await act(async () => { await result.current.stopTurn() })
+    expect(runtime.stopClaudeSession).toHaveBeenCalledExactlyOnceWith('claude:active')
+    expect(result.current.isCurrentWorking).toBe(true) // A control ACK is not a stop confirmation.
+    await act(async () => {
+      listener({ method: 'session/activity', seq: 11, params: { sessionId: 'claude:active', state: 'idle', backgroundTaskCount: 0 } })
+    })
+    expect(result.current.workingThreadIds['claude:active']).toBeUndefined()
+    expect(result.current.isCurrentWorking).toBe(false)
+  })
+
+  it('tracks SDK work and action requests that resume without a new user turn', async () => {
+    const { result } = await ready()
+    await act(async () => { await result.current.selectThread('claude:active') })
+    const listener = vi.mocked(runtime.listenClaudeEvents).mock.calls.at(-1)![0]
+    await act(async () => {
+      listener({ method: 'session/activity', seq: 10, params: { sessionId: 'claude:active', state: 'running', backgroundTaskCount: 0 } })
+    })
+    expect(result.current.activeTurnId).toBeNull()
+    expect(result.current.isCurrentWorking).toBe(true)
+    await act(async () => {
+      listener({ method: 'session/activity', seq: 11, params: { sessionId: 'claude:active', state: 'requires_action', backgroundTaskCount: 0 } })
+    })
+    expect(result.current.waitingThreadIds['claude:active']).toBe(true)
+    await act(async () => {
+      listener({ method: 'session/activity', seq: 12, params: { sessionId: 'claude:active', state: 'idle', backgroundTaskCount: 0 } })
+    })
+    expect(result.current.isCurrentWorking).toBe(false)
+    expect(result.current.waitingThreadIds['claude:active']).toBeUndefined()
+  })
+
   it.each(['item/commandExecution/requestApproval', 'item/tool/requestUserInput'])('tracks %s independently of thread selection until resolved', async (method) => {
     const { result } = await ready()
     const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
