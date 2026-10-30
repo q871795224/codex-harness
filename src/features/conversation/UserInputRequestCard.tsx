@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
 import { ChevronLeft, ChevronRight, CircleHelp, LockKeyhole } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { MarkdownLink } from '../markdown/MarkdownLink'
+import { remarkRepairCjkAutolink } from '../markdown/remarkRepairCjkAutolink'
 import type { SendShortcut } from '../../core/domain/codex'
 import type { ApprovalRequest } from '../../core/domain/codex'
 import { matchesSendShortcut, type ComposerKeyEvent } from './composerInput'
@@ -159,7 +163,15 @@ export function UserInputRequestCard({ request, sendShortcut, onAnswer }: UserIn
                   <span>{question.header}</span>
                   {question.isSecret && <span className="user-input-secret"><LockKeyhole size={11} />敏感回答</span>}
                 </div>
-                <h3>{question.question}</h3>
+                <h3>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkRepairCjkAutolink]}
+                    allowedElements={['a']}
+                    unwrapDisallowed
+                    skipHtml
+                    components={{ a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink> }}
+                  >{question.question}</ReactMarkdown>
+                </h3>
               </div>
               <div className="user-input-question-nav" aria-label="问题导航">
                 <button type="button" aria-label="上一题" title="上一题（←）" disabled={index === 0 || submitting} onClick={() => setCurrentIndex(index - 1)}>

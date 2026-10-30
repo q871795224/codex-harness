@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalRequest } from '../../core/domain/codex'
 import { UserInputRequestCard } from './UserInputRequestCard'
 
-afterEach(cleanup)
+const runtime = vi.hoisted(() => ({ openExternalUrl: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../../core/runtime/bridge', () => ({ runtime }))
+
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
 
 function request(params: Record<string, unknown> = {}): ApprovalRequest {
   return {
@@ -35,6 +41,32 @@ function card() {
 }
 
 describe('UserInputRequestCard', () => {
+  it('opens bare URLs and Markdown links externally without answering the question', () => {
+    const onAnswer = vi.fn()
+    render(<UserInputRequestCard request={request({ questions: [{
+      id: 'approval', header: '审批',
+      question: '请审批：https://example.com/tickets/123。 也可查看[审批说明](https://example.com/help)。',
+    }] })} sendShortcut="mod-enter" onAnswer={onAnswer} />)
+
+    const url = screen.getByRole('link', { name: 'https://example.com/tickets/123' })
+    expect(url.getAttribute('href')).toBe('https://example.com/tickets/123')
+    expect(fireEvent.click(url)).toBe(false)
+    fireEvent.click(screen.getByRole('link', { name: '审批说明' }))
+    expect(runtime.openExternalUrl.mock.calls).toEqual([
+      ['https://example.com/tickets/123'], ['https://example.com/help'],
+    ])
+    expect(onAnswer).not.toHaveBeenCalled()
+  })
+
+  it('does not turn unsafe links or raw HTML into navigation', () => {
+    render(<UserInputRequestCard request={request({ questions: [{
+      id: 'unsafe', header: '安全',
+      question: '[危险链接](javascript:alert%281%29) <a href="https://example.com">HTML</a>',
+    }] })} sendShortcut="mod-enter" onAnswer={vi.fn()} />)
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(runtime.openExternalUrl).not.toHaveBeenCalled()
+  })
+
   it('shows one question at a time and navigates with buttons and arrow keys', () => {
     render(<UserInputRequestCard request={request()} sendShortcut="mod-enter" onAnswer={vi.fn()} />)
 
