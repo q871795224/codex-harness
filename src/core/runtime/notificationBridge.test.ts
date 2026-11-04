@@ -9,3 +9,10 @@ it('opens the historical release log requested by a notification and preserves n
   vi.mocked(invoke).mockRejectedValueOnce(new Error('日志不存在'))
   await expect(runtime.openReleaseLog('/repo', '123-456')).rejects.toThrow('日志不存在')
 })
+
+it('dismisses only the requested conversation and preserves native failures', async () => {
+  await runtime.dismissThreadSystemNotifications('fork:child')
+  expect(invoke).toHaveBeenLastCalledWith('dismiss_thread_system_notifications', { threadId: 'fork:child' })
+  vi.mocked(invoke).mockRejectedValueOnce(new Error('clear failed'))
+  await expect(runtime.dismissThreadSystemNotifications('parent')).rejects.toThrow('clear failed')
+})

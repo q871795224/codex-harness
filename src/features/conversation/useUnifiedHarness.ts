@@ -58,6 +58,14 @@ export function useUnifiedHarness() {
   const codex = useHarness()
   const claude = useClaudeHarness()
   const previousViewMode = useRef(codex.viewMode)
+  const messageSubmittedListeners = useRef(new Set<(threadId: string) => void>())
+  const onMessageSubmitted = useCallback((listener: (threadId: string) => void) => {
+    messageSubmittedListeners.current.add(listener)
+    return () => { messageSubmittedListeners.current.delete(listener) }
+  }, [])
+  const noteMessageSubmitted = useCallback((threadId: string) => {
+    for (const listener of messageSubmittedListeners.current) listener(threadId)
+  }, [])
 
   useEffect(() => {
     // Codex can also change the view internally when restoring/opening a thread.
@@ -293,6 +301,7 @@ export function useUnifiedHarness() {
   }, [claude, codex, currentThread?.cwd])
 
   const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = []) => {
+    if (selectedThreadId) noteMessageSubmitted(selectedThreadId)
     recordWorkspaceContextDiagnostic({
       level: 'info',
       event: 'conversation.message.dispatch',
@@ -325,7 +334,7 @@ export function useUnifiedHarness() {
       return
     }
     return codex.sendMessage(input, mode, references)
-  }, [claude, codex, selectedProvider, selectedThreadId])
+  }, [claude, codex, noteMessageSubmitted, selectedProvider, selectedThreadId])
 
   const stopTurn = useCallback(() => {
     if (selectedProvider === 'claude' && selectedThreadId) return claude.stopTurn(selectedThreadId)
@@ -397,6 +406,7 @@ export function useUnifiedHarness() {
     activeTurnId,
     selectedProvider,
     onTurnCompleted,
+    onMessageSubmitted,
     newThreadProvider,
     toggleNewThreadProvider,
     capabilities,

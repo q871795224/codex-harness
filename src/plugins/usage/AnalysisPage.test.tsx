@@ -16,7 +16,7 @@ export const snapshot: CodexAnalyticsSnapshot = {
   turns: [{ turnId: 'turn-fixture', startedAt: 1, model: 'fixture-model', source: 'conversation', status: 'completed', actual: tokens, incomplete: false, rerouted: false, content: [] }], totalSessions: 1, totalTurns: 1,
 }
 const usage = { cachedSnapshot: vi.fn(async () => null), refreshSnapshot: vi.fn(async () => ({ fetchedAt: 0, since: '', until: '', providers: [] })) }
-const conversations = { openThread: vi.fn(async () => undefined), onTurnCompleted: () => () => undefined }
+const conversations = { openThread: vi.fn(async () => undefined), onMessageSubmitted: () => () => undefined, onTurnCompleted: () => () => undefined }
 function mount(overrides: Partial<CodexAnalyticsService> = {}) {
   const service: CodexAnalyticsService = { configure: vi.fn(), costs: vi.fn(async () => ({ models: [], message: '暂不可用' })), snapshot: vi.fn(async () => snapshot), refreshMetadata: vi.fn(async () => 0), threadUsage: vi.fn(async () => null), ...overrides }
   render(<AnalysisPage service={service} usage={usage} conversations={conversations} threads={[]} />)
