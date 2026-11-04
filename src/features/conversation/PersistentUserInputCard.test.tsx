@@ -47,3 +47,15 @@ it('restores unsent question answers after changing conversations',async()=>{
  await waitFor(()=>expect((screen.getByLabelText('方案的其他回答') as HTMLTextAreaElement).value).toBe('未发送修改'))
  expect(onAnswer).not.toHaveBeenCalled()
 })
+
+it('applies a clicked option only once when the conversation is remounted', async () => {
+ const r=request('remount-link');runtime.pendingUserInput.mockResolvedValue(r)
+ const target=navigation('remount-link');const onAnswer=vi.fn()
+ const view=render(<PersistentUserInputCard request={r} navigation={target} sendShortcut="mod-enter" onAnswer={onAnswer}/>)
+ await waitFor(()=>expect((screen.getByLabelText('方案的其他回答') as HTMLTextAreaElement).value).toBe('已有草稿\nB'))
+ view.unmount()
+ render(<PersistentUserInputCard request={r} navigation={target} sendShortcut="mod-enter" onAnswer={onAnswer}/>)
+ await waitFor(()=>expect((screen.getByLabelText('方案的其他回答') as HTMLTextAreaElement).value).toBe('已有草稿\nB'))
+ expect(runtime.pendingUserInput).toHaveBeenCalledOnce()
+ expect(onAnswer).not.toHaveBeenCalled()
+})

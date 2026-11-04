@@ -8,6 +8,7 @@ export function createQuestionDrafts(storage: Storage) {
   const answers = new Map<string, QuestionAnswers>()
   const loads = new Map<string, Promise<void>>()
   const writes = new Map<string, Promise<void>>()
+  const appliedNavigations = new Map<string, Set<number>>()
   const listeners = new Set<() => void>()
   const emit = () => { for (const listener of listeners) listener() }
   const persist = (key: string, secrets: Set<string>) => {
@@ -17,6 +18,11 @@ export function createQuestionDrafts(storage: Storage) {
     return next
   }
   return {
+    navigationApplied: (key: string, sequence: number) => appliedNavigations.get(key)?.has(sequence) === true,
+    markNavigationApplied(key: string, sequence: number) {
+      const applied = appliedNavigations.get(key) ?? new Set<number>()
+      applied.add(sequence); appliedNavigations.set(key, applied)
+    },
     snapshot: (key: string) => answers.get(key) ?? EMPTY,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     load(key: string, secrets: Set<string>): Promise<void> {

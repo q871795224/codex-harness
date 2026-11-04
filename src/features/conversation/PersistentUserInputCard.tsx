@@ -1,5 +1,5 @@
 import { questionRequestIdentity } from '../../core/questions/identity'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ApprovalRequest, SendShortcut } from '../../core/domain/codex'
 import { parseUserInputQuestions, type UserInputResponse } from './userInputRequest'
 import { questionDraftKey, questionDrafts } from './questionDraftStore'
@@ -24,7 +24,6 @@ export function PersistentUserInputCard({ request, navigation, sendShortcut, onA
   const answers = useSyncExternalStore(questionDrafts.subscribe, () => questionDrafts.snapshot(key))
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const [message, setMessage] = useState('')
-  const applied = useRef<number | null>(null)
   const questions = parseUserInputQuestions(request.params)
   const secrets = new Set(questions.filter(q => q.isSecret).map(q => q.id))
   const targeted = matchesQuestionNavigation(request, navigation) ? navigation : null
@@ -35,7 +34,7 @@ export function PersistentUserInputCard({ request, navigation, sendShortcut, onA
     return () => { cancelled = true }
   }, [key])
   useEffect(() => {
-    if (loadedKey !== key || !targeted || applied.current === targeted.sequence) return
+    if (loadedKey !== key || !targeted || questionDrafts.navigationApplied(key, targeted.sequence)) return
     let cancelled = false
     void (async () => {
       const target = targeted.locator
@@ -48,18 +47,21 @@ export function PersistentUserInputCard({ request, navigation, sendShortcut, onA
       }
       const question = latestQuestions.find(q => q.id === target.question)
       if (!question || await questionRevision(question) !== target.revision) {
-        if (!cancelled) { setMessage('问题或选项已更新，请在当前表单重新选择。'); applied.current = targeted.sequence }
+        if (!cancelled) { setMessage('问题或选项已更新，请在当前表单重新选择。'); questionDrafts.markNavigationApplied(key, targeted.sequence) }
         return
       }
       if (cancelled) return
       if (target.option !== undefined) {
         const option = question.options[target.option]
-        if (!option || question.isSecret) { setMessage('这个选项当前不可用，请在表单内填写。'); applied.current = targeted.sequence; return }
+        if (!option || question.isSecret) { setMessage('这个选项当前不可用，请在表单内填写。'); questionDrafts.markNavigationApplied(key, targeted.sequence); return }
+        // Claim before emitting the draft change: remounting the conversation
+        // must not append the same clicked answer again.
+        questionDrafts.markNavigationApplied(key, targeted.sequence)
         await questionDrafts.append(key, question.id, option.label, secrets)
         if (cancelled) return
         setMessage('答案已填入问题表单，请检查后手动提交。')
       } else setMessage('已定位问题，请在表单内回答。')
-      applied.current = targeted.sequence
+      questionDrafts.markNavigationApplied(key, targeted.sequence)
     })().catch(() => { if (!cancelled) setMessage('暂时无法核对问题，请在会话内查看。') })
     return () => { cancelled = true }
   }, [loadedKey, key, targeted, paramsSignature])
