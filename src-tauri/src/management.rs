@@ -10,7 +10,7 @@ type Outcome = Result<Value, String>;
 type Emitter = Arc<dyn Fn(&ManagementRequest) -> Result<(), String> + Send + Sync>;
 
 fn is_read(method: &str) -> bool {
-    matches!(method, "status" | "capabilities" | "config.read" | "workspaces.list" | "sessions.list" | "plugins.list" | "skills.list" | "mcp.list")
+    matches!(method, "asyncWaits.list" | "status" | "capabilities" | "config.read" | "workspaces.list" | "sessions.list" | "plugins.list" | "skills.list" | "mcp.list")
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

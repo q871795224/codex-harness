@@ -98,3 +98,10 @@
 - Quick Action 通过声明式 `quickActions` slot 显示，调用 `harness.agentRuns` 创建独立会话；Run 记录 parent thread、child thread、turn 和 provider。
 - Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery`。共享写任务使用同一 checkout 时互斥；隔离交付 worktree 固定创建在 `~/.codex-harness/agent-worktrees/<run-id>` 并保留给用户检查。
 - `return-to-parent` 是一次性的用户手动操作，父会话 active 时不得自动回传或重试。
+
+## 异步等待
+
+- `src-tauri/src/async_waits/` 管理一次性外部等待、Python 检查器和原生后台调度；`src/core/async-waits/` 提供任务卡片，Agent 经管理入口 `asyncWaits.*` 创建和控制。准确参数及检查器契约见 `docs/management.md`。
+- 任务正文与摘要位于 `~/.codex-harness/async-waits/` 文件，原子替换和版本比较协调更新；OS 文件锁协调稳定版/开发版执行者，不删除锁文件。关闭应用或休眠后恢复补查，不承诺离线监控。
+- 条件满足后默认自动继续来源 Codex 会话，忙时保留待处理结果，空闲后合并续跑；此授权来自创建等待时指定的后续动作，区别于现有普通 Agent 委派的人工回传。续跑不扩大外部操作授权，沿用正常中间提问；SeaTalk 通知独立实现。
+- 仅 `app_server.rs` 封装来源校验、恢复和启动协议。续跑前写发送意图；结果未知保留待核对，不自动重发。用户停止或归档来源会话时暂停等待。检查脚本只读且不调用模型，以当前用户权限运行，具有固定超时和输出上限。

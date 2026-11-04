@@ -1,3 +1,4 @@
+import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
 import { useInterfaceMode } from './features/interface/useInterfaceMode'
 import { useManagement } from './core/management/react'
 import type { TeamsService } from './core/teams/types'
@@ -826,6 +827,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
             <div className="notification-anchor"><NotificationViewport store={notifications} onOpen={openNotifications} /></div>
             {tab === 'chat' ? (
               <ConversationView
+                asyncWaitPanel={codexConversation ? <AsyncWaitPanel threadId={harness.currentThread.id} onOpenThread={(id) => { void harness.selectThread(id) }} /> : undefined}
                 threadId={harness.currentThread.id}
                 provider={harness.selectedProvider}
                 items={harness.currentDetail?.items ?? []}

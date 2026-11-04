@@ -1,3 +1,4 @@
+import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
 import type { TeamDocument } from '../teams/types'
 import type { ResumeThreadResponse as CodexResumeThreadResponse } from './appServerClient'
 import type { MemoryCatalog, MemorySaveInput, SavedMemory, MemoryDomainSettings } from '../memory/types'
@@ -107,6 +108,11 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
 }
 
 export const runtime = {
+  listAsyncWaits: () => invoke<AsyncWaitSnapshot>('async_wait_list'),
+  createAsyncWait: (input: CreateAsyncWait) => invoke<AsyncWaitTask>('async_wait_create', { input }),
+  asyncWaitAction: (id: string, action: AsyncWaitAction) => invoke<AsyncWaitTask>('async_wait_action', { id, action }),
+  listenAsyncWaits: (handler: () => void) => listen('async-waits:changed', handler),
+  listenAsyncWaitStarted: (handler: (event: { threadId: string; turnId: string }) => void) => listen<{ threadId: string; turnId: string }>('async-waits:started', (event) => handler(event.payload)),
   listenManagementRequests(handler: (request: ManagementRequest) => void): Promise<() => void> {
     return listen<ManagementRequest>('management:request', (event) => handler(event.payload))
   },

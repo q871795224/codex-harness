@@ -2373,6 +2373,18 @@ export function useHarness() {
     }
   }, [handleEvent, handleTransportDisconnect, notify, refreshThreads, scheduleTransportRecovery, selectThread])
 
+  useEffect(() => {
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    if (!runtime.listenAsyncWaitStarted) return
+    void runtime.listenAsyncWaitStarted(({ threadId }) => {
+      void appServer.resumeThread(resumeThreadRequest(threadId)).then(async (response) => {
+        if (!disposed) { await applyResumedThread(threadId, response); await refreshThreads('active') }
+      }).catch((error) => notify('异步任务已续跑，会话状态暂未刷新', 'warning', error, { threadId }))
+    }).then((stop) => { if (disposed) stop(); else unlisten = stop })
+    return () => { disposed = true; unlisten?.() }
+  }, [applyResumedThread, notify, refreshThreads])
+
   // Switching threads cancels any pending recap so the banner always matches
   // the thread the user is viewing.
   useEffect(() => {

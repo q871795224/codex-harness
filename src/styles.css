@@ -1951,3 +1951,11 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .team-mode-nav .thread-row { gap: 7px; font-size: calc(13px + var(--h-navigation-font-offset)); }
 .team-mode-nav .thread-row b { margin-left: auto; font-size: 10px; font-weight: 400; color: #737a86; }
 .app-shell[data-theme='dark'] .team-mode-nav .thread-row b { color: #929dab; }
+
+.async-wait-panel { margin: 0 0 18px; padding: 12px 16px; border: 1px solid var(--border-color, #8885); border-radius: 10px; font-size: 13px; }
+.async-wait-panel summary { cursor: pointer; }
+.async-wait-panel > p, .async-wait-panel small { opacity: .75; }
+.async-wait-panel article { padding: 12px 0; border-top: 1px solid #8883; margin-top: 10px; }
+.async-wait-panel article > span { margin-left: 12px; opacity: .75; }
+.async-wait-panel article p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.async-wait-panel article button { margin: 8px 8px 0 0; }
