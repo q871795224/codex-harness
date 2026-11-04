@@ -1,3 +1,4 @@
+mod async_waits;
 mod api_workbench;
 mod app_launcher;
 mod app_server;
@@ -48,6 +49,7 @@ use tauri::{Emitter, Manager, State};
 
 struct AppState {
     app_server: Arc<AppServerManager>,
+    async_waits: Arc<async_waits::AsyncWaits>,
     claude_runtime: Arc<ClaudeRuntime>,
     diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
@@ -66,6 +68,26 @@ struct AppState {
     release_start: tokio::sync::Mutex<()>,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
+}
+
+#[tauri::command]
+fn async_wait_list(state: State<'_, AppState>) -> Result<async_waits::WaitSnapshot, String> {
+    state.async_waits.list()
+}
+#[tauri::command]
+async fn async_wait_create(
+    state: State<'_, AppState>,
+    input: async_waits::CreateWait,
+) -> Result<async_waits::WaitTask, String> {
+    state.async_waits.create(input).await
+}
+#[tauri::command]
+async fn async_wait_action(
+    state: State<'_, AppState>,
+    id: String,
+    action: String,
+) -> Result<async_waits::WaitTask, String> {
+    state.async_waits.action(&id, &action).await
 }
 
 #[tauri::command]
@@ -546,6 +568,11 @@ async fn app_server_request(
     method: String,
     params: Value,
 ) -> Result<Value, String> {
+    if matches!(method.as_str(), "turn/interrupt" | "thread/archive" | "thread/delete") {
+        let _gate = state.async_waits.gate.lock().await;
+        if let Some(thread) = params.get("threadId").and_then(Value::as_str) { state.async_waits.pause_thread(thread)?; }
+        return state.app_server.request(method, params).await;
+    }
     state.app_server.request(method, params).await
 }
 
@@ -1359,8 +1386,14 @@ pub fn run() {
                     json!({ "errorCode": "initialization_failed" }));
                 std::io::Error::other(format!("无法启动项目文档服务: {error}"))
             })?;
+            let async_waits = async_waits::AsyncWaits::new(
+                store::harness_data_dir()?.join("async-waits"), store.clone(),
+                manager.clone(), app.handle().clone(),
+            )?;
+            async_waits.spawn();
             app.manage(AppState {
                 app_server: manager,
+                async_waits,
                 claude_runtime,
                 diagnostics: diagnostics.clone(),
                 local_connector: LocalConnector::new(),
@@ -1383,6 +1416,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            async_wait_list,
+            async_wait_create,
+            async_wait_action,
             management_ready,
             management_respond,
             team_read_document,

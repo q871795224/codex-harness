@@ -7,6 +7,9 @@ export interface ManagementRequest {
 export const managementMethods = {
   status: false,
   capabilities: false,
+  'asyncWaits.list': false,
+  'asyncWaits.create': true,
+  'asyncWaits.action': true,
   'workspaces.list': false,
   'workspaces.add': true,
   'workspaces.hide': true,
