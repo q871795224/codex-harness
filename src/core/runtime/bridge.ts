@@ -1,3 +1,5 @@
+import type { ApprovalRequest } from '../domain/codex'
+import type { QuestionLocator, QuestionNotification } from '../questions/types'
 import type { TeamDocument } from '../teams/types'
 import type { ResumeThreadResponse as CodexResumeThreadResponse } from './appServerClient'
 import type { MemoryCatalog, MemorySaveInput, SavedMemory, MemoryDomainSettings } from '../memory/types'
@@ -622,6 +624,17 @@ export const runtime = {
         workspaceRemovedAt: run.workspaceRemovedAt,
       },
     })
+  },
+
+  drainQuestionLinks(): Promise<string[]> { return invoke('drain_question_links') },
+  async listenQuestionLinks(handler: () => void): Promise<() => void> {
+    return listen('questions:links-available', handler)
+  },
+  pendingUserInput(locator: QuestionLocator): Promise<ApprovalRequest | null> {
+    return invoke('pending_user_input', { threadId: locator.thread, turnId: locator.turn, requestId: locator.request })
+  },
+  sendQuestionNotification(baseUrl: string, account: string, targetId: string, input: QuestionNotification): Promise<void> {
+    return invoke('send_question_notification', { baseUrl, account, targetId, input })
   },
 
   localConnectorHealth(baseUrl: string): Promise<LocalConnectorHealth> {

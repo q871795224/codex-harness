@@ -108,13 +108,13 @@ describe('UserInputRequestCard', () => {
     }))
   })
 
-  it('uses a text input for a custom answer and keeps secret answers masked', async () => {
+  it('uses a multiline field for a custom answer and keeps secret answers masked', async () => {
     const serverRequest = request()
     const onAnswer = vi.fn()
     render(<UserInputRequestCard request={serverRequest} sendShortcut="mod-enter" onAnswer={onAnswer} />)
 
-    const custom = screen.getByLabelText('方案的其他回答') as HTMLInputElement
-    expect(custom.tagName).toBe('INPUT')
+    const custom = screen.getByLabelText('方案的其他回答') as HTMLTextAreaElement
+    expect(custom.tagName).toBe('TEXTAREA')
     fireEvent.change(custom, { target: { value: '保留现有接口' } })
     fireEvent.click(screen.getByRole('button', { name: '下一题' }))
     const secret = screen.getByLabelText('凭据回答') as HTMLInputElement

@@ -292,6 +292,16 @@ impl AppServerManager {
         result
     }
 
+    pub async fn pending_user_input(&self, thread: &str, turn: &str, request_id: &str) -> Result<Option<Value>, String> {
+        let connection = self.connection().await?;
+        let requests = connection.server_requests.lock().await;
+        Ok(requests.values().find(|request| {
+            let id = request.get("id").map(|id| id.as_str().map(str::to_owned).unwrap_or_else(|| id.to_string()));
+            let identity = request.pointer("/params/itemId").and_then(Value::as_str).filter(|id| !id.is_empty());
+            identity.or(id.as_deref()) == Some(request_id) && matches_server_request(request, thread, Some(turn), "item/tool/requestUserInput")
+        }).map(|request| json!({"id":request["id"],"method":request["method"],"params":request["params"],"threadId":thread})))
+    }
+
     pub async fn respond(
         &self,
         id: Value,

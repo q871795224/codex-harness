@@ -83,6 +83,15 @@
 - 历史通过现有 appState 接口写入 `state.sqlite` 的 `notifications.history`，永久保留，不做自动过期或脱敏。存储通知说明、原始错误和关联标识，不复制会话正文、归档草稿或完整日志。
 - 发布和项目归档按一次任务更新同一条通知；发布跨会话继续跟踪，历史日志按 run ID 打开。系统通知插件仍独立负责 macOS 回复完成提醒。
 
+## SeaTalk 中间提问通知
+
+- 独立插件 `builtin.question-notifications` 默认开启，通过核心 `harness.conversations.onUserInputRequested` 消费 `item/tool/requestUserInput` 和 `agentMessage.delivery=async`；不依赖 SeaTalk 草稿插件或异步等待任务。
+- 每题一张交互卡片。原生层按 thread、turn、提问类型、稳定 item 标识和 question ID 在 SQLite 原子登记一次发送尝试，更新、重放、重启和多实例不重复发；发送失败保留登记，不自动重试，也不影响提问本身。标记为敏感的问题只发送提醒，不发送题目和选项。
+- 桌面链路为 `SeaTalk 卡片 → 本机 Bridge /local/open/harness → codex-harness://question → Harness`。Bridge 固定用 bundle ID `com.local.codex-harness` 打开稳定版，不依赖两个 flavor 对同一协议的系统优先级；不提供开发版入口。手机端不配置跳转，不远程唤醒电脑。
+- 默认 Bridge account 为 `harness-notify`，接收者 `self` 由该账号的 `notificationTargetEmployeeCode` 显式解析；未配置则发送失败。Bot 凭据继续由 Bridge 环境文件管理，Harness 插件配置只含本机地址、账号名和接收者标识。
+- 链接只含 thread、turn、稳定请求标识、题号、题目版本摘要和可选的选项下标。Rust 暂存冷启动及运行中收到的链接，WebView 就绪后订阅并一次性取走；打开会话后重新核对当前请求和题目版本。已处理或更新的问题显示当前状态，不提交旧请求。
+- 链接选择预填现有逐题表单；已有答案换行追加，普通聊天草稿不变。未发送的问题答案保存在独立草稿键中，敏感答案只留内存；原有回答通道提交成功后清除。打开链接与预填均不发送回答或创建 turn。
+
 ## 状态与 Provider
 
 - UI 状态、插件实例、插件 Run、输入区未发送草稿和用量快照保存在 `~/.codex-harness/state.sqlite`；草稿只保存文本、折叠粘贴和附件路径，成功发送后清除。已发送的会话正文、凭据和模型 response 不写入 Harness 状态库。
