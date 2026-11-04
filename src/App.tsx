@@ -1,4 +1,6 @@
 import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
+import { useQuestionLinks } from './features/conversation/useQuestionLinks'
+import type { QuestionNotificationService } from './core/questions/types'
 import { useInterfaceMode } from './features/interface/useInterfaceMode'
 import { useManagement } from './core/management/react'
 import type { TeamsService } from './core/teams/types'
@@ -106,7 +108,9 @@ export default function App() {
     'harness.quickCommands': {
       run: runtime.runQuickCommand,
     } satisfies QuickCommandService,
+    'harness.questionNotifications': { send: runtime.sendQuestionNotification } satisfies QuestionNotificationService,
     'harness.conversations': {
+      onUserInputRequested: harness.onUserInputRequested,
       onTurnCompleted: harness.onTurnCompleted,
       onMessageSubmitted: harness.onMessageSubmitted,
       openThread: (threadId) => harness.selectThread(threadId, 'notification'),
@@ -165,7 +169,7 @@ export default function App() {
       deliveryContext: runtime.workspaceDeliveryContext,
       openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
-  }), [teams, agentRuns, harness.onTurnCompleted, harness.onMessageSubmitted, harness.selectThread])
+  }), [teams, agentRuns, harness.onTurnCompleted, harness.onMessageSubmitted, harness.onUserInputRequested, harness.selectThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {
@@ -217,6 +221,21 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const suppressTabClickRef = useRef(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pluginsOpen, setPluginsOpen] = useState(false)
+  const questionNavigation = useQuestionLinks(
+    harness.phase === 'ready',
+    async (id) => {
+      harness.setViewMode('active')
+      await harness.selectThread(id, 'notification')
+    },
+    () => {
+      selectMode('conversation')
+      setTab('chat')
+      setFocusedTab(null)
+      setNotificationsOpen(false)
+      setSettingsOpen(false)
+      setPluginsOpen(false)
+    },
+  )
   const [rawMode, setRawMode] = useState(false)
   const [rawOverrides, setRawOverrides] = useState<ReadonlySet<string>>(new Set())
   const toggleRawOverride = (messageKey: string) => setRawOverrides((current) => {
@@ -835,6 +854,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 turns={harness.currentDetail?.turns ?? []}
                 cwd={harness.currentThread.cwd}
                 approvals={currentApprovals}
+                questionNavigation={questionNavigation}
                 sendShortcut={harness.keyboard.sendShortcut}
                 workspace={workspace}
                 workspaces={harness.workspaces}

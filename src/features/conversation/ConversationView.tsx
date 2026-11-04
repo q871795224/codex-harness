@@ -5,7 +5,8 @@ import { SkillCatalogContext, useSkillCatalog } from './SkillCatalog'
 import { ToolCallDetails } from './ItemDetails'
 import { inspectItem } from './itemInspection'
 import { UserMessageContent } from './UserMessageContent'
-import { UserInputRequestCard } from './UserInputRequestCard'
+import { PersistentUserInputCard, matchesQuestionNavigation } from './PersistentUserInputCard'
+import type { QuestionNavigation } from '../../core/questions/types'
 import { asyncUserInputAnswered, asyncUserInputRequest } from './asyncUserInput'
 import { memo, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
@@ -184,6 +185,7 @@ interface ConversationViewProps {
   items: ThreadItemEntry[]
   turns: Turn[]
   cwd: string
+  questionNavigation?: QuestionNavigation | null
   approvals: ApprovalRequest[]
   pendingSteers?: PendingSteer[]
   sendShortcut?: SendShortcut
@@ -229,7 +231,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex', items, turns, cwd, approvals, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
+export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -308,7 +310,7 @@ export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex',
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
   const asyncRequests = provider === 'codex' && threadId ? items.flatMap((entry, index) => {
-    const request = asyncUserInputRequest(threadId, entry.item)
+    const request = asyncUserInputRequest(threadId, entry.item, entry.turnId)
     return request ? [{ request, turnId: entry.turnId, answered: asyncUserInputAnswered(request, items.slice(index + 1), pendingSteers.map((steer) => steer.text)) }] : []
   }) : []
   const asyncById = new Map(asyncRequests.map(({ request, answered }) => [request.id, answered]))
@@ -463,14 +465,19 @@ export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex',
               </div>
             </div>
           )}
+          {questionNavigation?.locator.thread === threadId
+            && !approvals.some(request => matchesQuestionNavigation(request, questionNavigation))
+            && !asyncRequests.some(({ request, answered, turnId }) => !answered && working && turnId === workingTurnId
+              && !turns.some(turn => turn.id === turnId && turn.status !== 'inProgress') && matchesQuestionNavigation(request, questionNavigation))
+            && <p role="status">当前没有这个待回答的问题，请查看会话中的实际状态。</p>}
           {approvals.map((request) => (
             request.method === 'item/tool/requestUserInput'
-              ? <UserInputRequestCard key={String(request.id)} request={request} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
+              ? <PersistentUserInputCard key={String(request.id)} request={request} navigation={questionNavigation} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
               : <ApprovalCard key={String(request.id)} request={request} onAnswer={onAnswerApproval} />
           ))}
           {asyncRequests.filter(({ turnId }) => turnId === workingTurnId && working
             && !turns.some((turn) => turn.id === turnId && turn.status !== 'inProgress')).map(({ request, answered }) => (
-            <AsyncUserInputCard key={`${request.threadId}:${request.id}`} request={request} answered={answered} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
+            <AsyncUserInputCard navigation={questionNavigation} key={`${request.threadId}:${request.id}`} request={request} answered={answered} sendShortcut={sendShortcut} onAnswer={onAnswerApproval} />
           ))}
         </div>
       </div>
@@ -482,27 +489,19 @@ export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex',
   )
 }
 
-function AsyncUserInputCard({ request, answered, sendShortcut, onAnswer }: {
+function AsyncUserInputCard({ request, answered, sendShortcut, onAnswer, navigation }: {
+  navigation?: QuestionNavigation | null
   request: ApprovalRequest
   answered: boolean
   sendShortcut: SendShortcut
   onAnswer: (request: ApprovalRequest, decision: unknown) => void | Promise<void>
 }) {
   const [submitted, setSubmitted] = useState(false)
-  const [error, setError] = useState(false)
   if (answered || submitted) return null
-  return <>
-    <UserInputRequestCard request={request} sendShortcut={sendShortcut} onAnswer={async (request, response) => {
-      setError(false)
-      try {
-        await onAnswer(request, response)
-        setSubmitted(true)
-      } catch {
-        setError(true)
-      }
-    }} />
-    {error && <p role="alert">回答未发送，请重试。</p>}
-  </>
+  return <PersistentUserInputCard request={request} navigation={navigation} sendShortcut={sendShortcut} onAnswer={async (request, response) => {
+    await onAnswer(request, response)
+    setSubmitted(true)
+  }} />
 }
 
 function AgentActivitySummary({ activities, activeTurnIds, onOpenThread, onInterrupt }: {

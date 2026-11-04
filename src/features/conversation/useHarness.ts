@@ -1,6 +1,8 @@
+import { questionRequestIdentity } from '../../core/questions/identity'
+import type { QuestionEvent } from '../../core/questions/types'
 import type { MessageReference } from '../../core/domain/codex'
 import { restartedMessageReferences, saveMessageReferences } from './messageReferences'
-import { ASYNC_USER_INPUT_METHOD, asyncUserInputAnswer } from './asyncUserInput'
+import { ASYNC_USER_INPUT_METHOD, asyncUserInputAnswer, asyncUserInputRequest } from './asyncUserInput'
 import type { UserInputResponse } from './userInputRequest'
 import { notifications } from '../../core/notifications/service'
 import { errorDetails, type NotificationLevel } from '../../core/notifications/store'
@@ -242,6 +244,12 @@ export function useHarness() {
   const recapLastRecappedCountRef = useRef<number | null>(null)
   const recapTimerRef = useRef<number | null>(null)
   const recapInFlightThreadRef = useRef<string | null>(null)
+  const questionListenersRef = useRef(new Set<(event: QuestionEvent) => void>())
+  const onUserInputRequested = useCallback((listener: (event: QuestionEvent) => void) => {
+    questionListenersRef.current.add(listener)
+    return () => { questionListenersRef.current.delete(listener) }
+  }, [])
+
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
   const transportRecoveryTimerRef = useRef<number | null>(null)
 
@@ -1966,7 +1974,7 @@ export function useHarness() {
       if (remaining.length === 0 && activeTurnIdsRef.current[request.threadId]) persistBadge(request.threadId, 'working')
     } catch (error) {
       notify(request.method === 'item/tool/requestUserInput' || request.method === ASYNC_USER_INPUT_METHOD ? '无法提交回答' : '无法提交审批结果', 'error', error, { threadId: request.threadId })
-      if (request.method === ASYNC_USER_INPUT_METHOD) throw error
+      if (request.method === ASYNC_USER_INPUT_METHOD || request.method === 'item/tool/requestUserInput') throw error
     }
   }, [notify, persistBadge, startTurn])
 
@@ -2042,14 +2050,23 @@ export function useHarness() {
     if (handleTitleGeneratorEvent(method, params)) return
     if (handleRecapGeneratorEvent(method, params)) return
 
+    const emitQuestion = (request: ApprovalRequest) => {
+      const thread = threadsRef.current.find((thread) => thread.id === request.threadId) ?? detailsRef.current[request.threadId]?.thread
+      for (const listener of questionListenersRef.current) listener({ request, title: thread ? threadTitle(thread) : 'Codex 会话' })
+    }
+
     if (event.id !== undefined && isServerRequestMethod(method)) {
       const threadId = eventThreadId(params)
       if (threadId) {
         const request: ApprovalRequest = { id: event.id, method, params, threadId }
         setApprovals((current) => ({ ...current, [threadId]: [
-          ...(current[threadId] ?? []).filter((item) => item.id !== request.id), request,
+          ...(current[threadId] ?? []).filter((item) => item.id !== request.id && !(
+            method === 'item/tool/requestUserInput' && item.method === method
+            && item.params.turnId === request.params.turnId && questionRequestIdentity(item) === questionRequestIdentity(request)
+          )), request,
         ] }))
         persistBadge(threadId, 'approval')
+        if (method === 'item/tool/requestUserInput') emitQuestion(request)
       }
       return
     }
@@ -2175,6 +2192,8 @@ export function useHarness() {
       const turnId = typeof params.turnId === 'string' ? params.turnId : null
       const item = eventThreadItem(params.item)
       if (threadId && turnId && item) {
+        const questionRequest = asyncUserInputRequest(threadId, item, turnId)
+        if (questionRequest) emitQuestion(questionRequest)
         const observedAt = Date.now()
         updateDetail(threadId, (detail) => reduceThreadDetailEvent(detail, { type: 'itemUpserted', turnId, item, observedAt, phase: method === 'item/started' ? 'started' : 'completed' }))
         if (item.type === 'userMessage') {
@@ -2448,6 +2467,7 @@ export function useHarness() {
     openThread,
     forkThreadAtTurn,
     onTurnCompleted,
+    onUserInputRequested,
     notify,
     loadOlderTurns,
     chooseWorkspace,

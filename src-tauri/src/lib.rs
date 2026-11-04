@@ -14,6 +14,7 @@ mod handover_store;
 mod harness_files;
 mod jev;
 mod local_connector;
+mod question_links;
 mod markdown_image;
 mod management;
 mod project_doc_proposals;
@@ -52,6 +53,7 @@ struct AppState {
     claude_runtime: Arc<ClaudeRuntime>,
     diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
+    question_links: question_links::QuestionLinkInbox,
     codex_radar: CodexRadarClient,
     jev: jev::JevClient,
     codex_analytics: CodexAnalytics,
@@ -297,6 +299,36 @@ async fn local_connector_send_message(
     input: SendMessageInput,
 ) -> Result<SendMessageResult, String> {
     state.local_connector.send_message(&base_url, input).await
+}
+
+#[tauri::command]
+fn drain_question_links(state: State<'_, AppState>) -> Vec<String> {
+    state.question_links.drain()
+}
+
+#[tauri::command]
+async fn send_question_notification(
+    state: State<'_, AppState>,
+    base_url: String,
+    account: String,
+    target_id: String,
+    input: question_links::QuestionNotification,
+) -> Result<(), String> {
+    let payload = question_links::card_payload(&base_url, &account, &target_id, &input)?;
+    if !state.store.claim_question_notification(&input.locator.notification_key())? {
+        return Ok(());
+    }
+    state.local_connector.send_question(&base_url, payload).await
+}
+
+#[tauri::command]
+async fn pending_user_input(
+    state: State<'_, AppState>,
+    thread_id: String,
+    turn_id: String,
+    request_id: String,
+) -> Result<Option<Value>, String> {
+    state.app_server.pending_user_input(&thread_id, &turn_id, &request_id).await
 }
 
 #[tauri::command]
@@ -1365,6 +1397,7 @@ pub fn run() {
                 claude_runtime,
                 diagnostics: diagnostics.clone(),
                 local_connector: LocalConnector::new(),
+                question_links: question_links::QuestionLinkInbox::default(),
                 codex_radar: CodexRadarClient::new(diagnostics.clone()),
                 jev: jev::JevClient::new()?,
                 codex_analytics: analytics,
@@ -1460,6 +1493,9 @@ pub fn run() {
             remove_harness_path,
             list_plugin_runs,
             upsert_plugin_run,
+            drain_question_links,
+            send_question_notification,
+            pending_user_input,
             local_connector_health,
             local_connector_list_messages,
             local_connector_send_message,
@@ -1500,6 +1536,19 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                for url in urls {
+                    if app.state::<AppState>().question_links.push(url.as_str()) {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                        let _ = app.emit("questions:links-available", ());
+                    }
+                }
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Ok(mut server) = app.state::<AppState>().project_doc_server.lock() {
                     server.take();
