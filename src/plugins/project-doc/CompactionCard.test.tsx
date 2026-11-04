@@ -59,7 +59,7 @@ it('confirmation runs once and saves without a second content-approval step', as
 it('completed-turn reminders use the resolved banner settings and deduplicate event delivery', async()=>{
   const { watchCompaction, CompactionBanner }=await import('./CompactionCard')
   let handler!: (e:any)=>void
-  const stop=watchCompaction({onTurnCompleted:(h)=>{handler=h;return ()=>{}},onMessageSubmitted:()=>()=>{},openThread:vi.fn()})
+  const stop=watchCompaction({onUserInputRequested:()=>()=>{},onTurnCompleted:(h)=>{handler=h;return ()=>{}},onMessageSubmitted:()=>()=>{},openThread:vi.fn()})
   const docs={threadProject:vi.fn(async()=> 'scoped-'+crypto.randomUUID()),measure:vi.fn(async()=>({seq:1,tokens:12300}))}
   const deps={docs,runs:{},config:{compactionThreshold:15000},instanceId:'scoped',storage:{get:async()=>null,set:async()=>{}}} as any
   render(<CompactionBanner deps={deps} props={{threadId:'scope-thread',threadCwd:'/w',workspaceRoot:'/w',checkoutRoot:'/w'}} />)

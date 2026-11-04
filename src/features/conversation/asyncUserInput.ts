@@ -13,7 +13,7 @@ export function hasUnansweredAsyncInput(threadId: string, detail: ThreadDetail, 
   })
 }
 
-export function asyncUserInputRequest(threadId: string, item: ThreadItem): ApprovalRequest | null {
+export function asyncUserInputRequest(threadId: string, item: ThreadItem, turnId?: string): ApprovalRequest | null {
   if (item.type !== 'agentMessage' || item.delivery !== 'async' || !item.id || !Array.isArray(item.questions)) return null
   const questions = item.questions.flatMap((question, index) => {
     if (!question || typeof question.title !== 'string' || !question.title.trim()) return []
@@ -26,7 +26,7 @@ export function asyncUserInputRequest(threadId: string, item: ThreadItem): Appro
       isOther: true,
     }]
   })
-  return questions.length ? { id: item.id, threadId, method: ASYNC_USER_INPUT_METHOD, params: { questions } } : null
+  return questions.length ? { id: item.id, threadId, method: ASYNC_USER_INPUT_METHOD, params: { questions, ...(turnId ? { turnId } : {}) } } : null
 }
 
 export function asyncUserInputAnswer(request: ApprovalRequest, response: UserInputResponse): string {

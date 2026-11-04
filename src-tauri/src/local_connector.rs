@@ -193,6 +193,16 @@ impl LocalConnector {
         })
     }
 
+    pub async fn send_question(&self, base_url: &str, payload: Value) -> Result<(), String> {
+        let response = self.client.post(endpoint(base_url, "v1/messages")?).json(&payload).send().await
+            .map_err(|_| "无法连接本机 Bridge，提问仍可在 Harness 内回答。".to_string())?;
+        // Upstream errors can echo private card text. Do not return their body.
+        if !response.status().is_success() { return Err("Bridge 未能发送提问通知。".into()); }
+        let response: SendMessageResponse = response.json().await.map_err(|_| "Bridge 通知回执无效".to_string())?;
+        if !response.ok { return Err("Bridge 未能发送提问通知。".into()); }
+        Ok(())
+    }
+
     async fn get_json<T: serde::de::DeserializeOwned>(&self, url: Url) -> Result<T, String> {
         let response = self
             .client
@@ -227,7 +237,7 @@ fn endpoint(base_url: &str, path: &str) -> Result<Url, String> {
     Ok(url)
 }
 
-fn validate_base_url(base_url: &str) -> Result<Url, String> {
+pub(crate) fn validate_base_url(base_url: &str) -> Result<Url, String> {
     let url = Url::parse(base_url.trim()).map_err(|error| format!("bridge 地址无效: {error}"))?;
     if url.scheme() != "http" {
         return Err("bridge 只允许使用 http loopback 地址".to_string());

@@ -1960,3 +1960,6 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .project-compaction-actions button.primary { background: var(--h-accent, #4059b9); border-color: transparent; color: white; }
 .project-compaction-close { display: flex; border: 0; padding: 3px; background: transparent; color: inherit; cursor: pointer; }
 .project-history-preview { max-height: 380px; overflow: auto; }
+
+/* Question answer links append multiline drafts without touching the chat composer. */
+textarea.user-input-freeform, textarea.user-input-other-field { min-height: 52px; height: auto; resize: vertical; }

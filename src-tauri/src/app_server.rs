@@ -117,6 +117,29 @@ pub struct AppServerManager {
     analytics_requests: tokio::sync::Semaphore,
 }
 
+pub(crate) enum WaitThreadState {
+    Busy,
+    Unavailable,
+    Ready(Value),
+}
+fn wait_thread_unavailable(value: &Value) -> bool {
+    value.pointer("/thread/ephemeral") == Some(&Value::Bool(true))
+        || value
+            .pointer("/thread/path")
+            .and_then(Value::as_str)
+            .is_some_and(|p| {
+                std::path::Path::new(p)
+                    .components()
+                    .any(|c| c.as_os_str() == "archived_sessions")
+            })
+}
+fn wait_thread_idle(value: &Value) -> bool {
+    matches!(
+        value.pointer("/thread/status/type").and_then(Value::as_str),
+        Some("idle" | "notLoaded")
+    )
+}
+
 impl AppServerManager {
     pub fn new(
         app: AppHandle,
@@ -205,6 +228,105 @@ impl AppServerManager {
             .transpose()
     }
 
+    pub async fn wait_thread_cwd(&self, thread: &str) -> Result<String, String> {
+        if thread.is_empty() || thread.starts_with("claude:") {
+            return Err("异步等待目前支持 Codex 会话".into());
+        }
+        let result = self
+            .request(
+                "thread/read".into(),
+                json!({"threadId":thread,"includeTurns":false}),
+            )
+            .await?;
+        if wait_thread_unavailable(&result) {
+            return Err("来源会话已归档或不可继续".into());
+        }
+        result
+            .pointer("/thread/cwd")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .ok_or("来源会话缺少工作目录".into())
+    }
+
+    pub async fn prepare_wait_continuation(
+        &self,
+        thread: &str,
+        preferences: Option<&str>,
+    ) -> Result<WaitThreadState, String> {
+        let result = match self
+            .request(
+                "thread/read".into(),
+                json!({"threadId":thread,"includeTurns":false}),
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(error) if error.to_lowercase().contains("no rollout found") => {
+                return Ok(WaitThreadState::Unavailable)
+            }
+            Err(error) => return Err(error),
+        };
+        if wait_thread_unavailable(&result) {
+            return Ok(WaitThreadState::Unavailable);
+        }
+        if !wait_thread_idle(&result) {
+            return Ok(WaitThreadState::Busy);
+        }
+        let mut params = json!({"threadId":thread,"excludeTurns":true});
+        if let Some(saved) = preferences.and_then(|s| serde_json::from_str::<Value>(s).ok()) {
+            for key in ["approvalPolicy", "approvalsReviewer", "sandbox"] {
+                if let Some(value) = saved.get(key) {
+                    params[key] = value.clone();
+                }
+            }
+        }
+        let resumed = self.request("thread/resume".into(), params).await?;
+        if !wait_thread_idle(&resumed) {
+            return Ok(WaitThreadState::Busy);
+        }
+        let mut context = json!({});
+        for (source, target) in [
+            ("cwd", "cwd"),
+            ("model", "model"),
+            ("reasoningEffort", "effort"),
+            ("approvalPolicy", "approvalPolicy"),
+            ("approvalsReviewer", "approvalsReviewer"),
+            ("sandbox", "sandboxPolicy"),
+            ("runtimeWorkspaceRoots", "runtimeWorkspaceRoots"),
+        ] {
+            if let Some(value) = resumed.get(source) {
+                context[target] = value.clone();
+            }
+        }
+        Ok(WaitThreadState::Ready(context))
+    }
+
+    pub async fn start_wait_continuation(
+        &self,
+        thread: &str,
+        client_id: &str,
+        message: &str,
+        mut context: Value,
+    ) -> Result<String, String> {
+        context["threadId"] = json!(thread);
+        context["clientUserMessageId"] = json!(client_id);
+        context["input"] = json!([{"type":"text","text":message,"text_elements":[]}]);
+        context["turnTrigger"] = json!("async-wait");
+        let response = self.request("turn/start".into(), context).await?;
+        let turn = response
+            .pointer("/turn/id")
+            .and_then(Value::as_str)
+            .ok_or("续跑未返回轮次 ID")?
+            .to_owned();
+        // This start originated in the native worker, rather than the Composer.
+        // Reuse the ownership-aware resume path in the frontend; never infer ownership there.
+        let _ = self.app.emit(
+            "async-waits:started",
+            json!({"threadId":thread,"turnId":turn}),
+        );
+        Ok(turn)
+    }
     pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
         if matches!(
             method.as_str(),
@@ -290,6 +412,16 @@ impl AppServerManager {
             ),
         }
         result
+    }
+
+    pub async fn pending_user_input(&self, thread: &str, turn: &str, request_id: &str) -> Result<Option<Value>, String> {
+        let connection = self.connection().await?;
+        let requests = connection.server_requests.lock().await;
+        Ok(requests.values().find(|request| {
+            let id = request.get("id").map(|id| id.as_str().map(str::to_owned).unwrap_or_else(|| id.to_string()));
+            let identity = request.pointer("/params/itemId").and_then(Value::as_str).filter(|id| !id.is_empty());
+            identity.or(id.as_deref()) == Some(request_id) && matches_server_request(request, thread, Some(turn), "item/tool/requestUserInput")
+        }).map(|request| json!({"id":request["id"],"method":request["method"],"params":request["params"],"threadId":thread})))
     }
 
     pub async fn respond(

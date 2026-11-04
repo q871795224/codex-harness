@@ -22,7 +22,7 @@ describe('notifications plugin', () => {
         listeners.completed = listener
         return () => { delete listeners.completed }
       },
-      onMessageSubmitted: () => () => undefined,
+      onUserInputRequested: () => () => undefined, onMessageSubmitted: () => () => undefined,
       openThread,
     }
     const notifications: SystemNotificationService = {
@@ -70,7 +70,7 @@ describe('notifications plugin', () => {
     const host = new PluginHost([notificationsPlugin], {
       storage: () => storage,
       services: {
-        'harness.conversations': { onMessageSubmitted: () => () => undefined, onTurnCompleted: () => () => undefined, openThread: async () => undefined } satisfies ConversationService,
+        'harness.conversations': { onUserInputRequested: () => () => undefined, onMessageSubmitted: () => () => undefined, onTurnCompleted: () => () => undefined, openThread: async () => undefined } satisfies ConversationService,
         'harness.systemNotifications': {
           requestPermission: async () => false,
           dismissThread: async () => undefined,
@@ -97,7 +97,7 @@ describe('notifications plugin', () => {
             completed = listener
             return () => { completed = undefined }
           },
-          onMessageSubmitted: () => () => undefined,
+          onUserInputRequested: () => () => undefined, onMessageSubmitted: () => () => undefined,
           openThread: async () => undefined,
         } satisfies ConversationService,
         'harness.systemNotifications': {
@@ -134,7 +134,8 @@ describe('notifications plugin', () => {
       services: {
         'harness.conversations': {
           onTurnCompleted(listener) { completed = listener; return () => {} },
-          onMessageSubmitted(listener) { activity = listener; return () => {} },
+          onUserInputRequested: () => () => undefined,
+      onMessageSubmitted(listener) { activity = listener; return () => {} },
           openThread,
         } satisfies ConversationService,
         'harness.systemNotifications': {

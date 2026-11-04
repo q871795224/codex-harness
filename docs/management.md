@@ -48,10 +48,63 @@ scope 为 `{kind:"global"}`、`{kind:"workspace",workspaceRoot}` 或 `{kind:"thr
 
 ## 能力边界与源码 fallback
 
-Harness 插件、Codex 插件、Claude Code 插件分别管理。此入口管理 Harness 实例，不代理所有插件的业务动作，不执行任意 shell，不提供通用 App Server RPC、审批放行或数据库写入入口。
+Harness 插件、Codex 插件、Claude Code 插件分别管理。此入口管理 Harness 实例，不代理所有插件的业务动作；异步等待只执行显式登记的检查脚本，不提供临时 shell 入口，不提供通用 App Server RPC、审批放行或数据库写入入口。
 
 客户端用 `harnessctl source` 定位仓库。读取 `AGENTS.md` 和 `.harness/README.md` 后沿 `src/core/management/service.ts`、`src/core/plugins/`、目标 `src/plugins/<name>/`、`bridge.ts`、Rust 实现核对能力。旧版本没有管理端点时明确报告不支持，源码存在接口不等于当前运行应用已具备。
 
 ## 验证
 
 Rust 测试验证端点认证、Origin 拒绝、权限和注册归属，以及写请求去重；前端测试使用真实 PluginHost 的 lifecycle 验证启停和贡献变化，覆盖显式登记与发现工作区的数量差异。Claude daemon 用注入 SDK 测试命令查询，不发送真实模型请求。客户端用本地 fixture 服务验证请求、错误和重定向边界。所有测试使用临时目录或注入依赖。
+
+## 异步等待（Codex）
+
+Agent 创建等待，Harness 原生后台执行检查并在原会话自动续跑。用户不配置调度参数，不保持模型轮次等待。第一版使用本机 Python 检查器；应用关闭、关机、休眠期间不检查，应用恢复后补查。检查器必须只做只读观察，不提交工单、发送消息、操作审批或调用 LLM。它以当前用户权限运行，不承诺沙箱隔离。脚本和配置不得包含凭据；每次从原有安全入口读取当前登录态。
+
+| method | params | 行为 |
+| --- | --- | --- |
+| `asyncWaits.create` | `{id,threadId,title,checkerPath,continuation}` | 验证来源为可继续的 Codex 会话，自动绑定其 cwd；复制检查脚本并持久化。相同 ID、参数及脚本重复创建返回原任务，不重启已结束任务 |
+| `asyncWaits.list` | `{}` | 返回 `{data,schedulerError}`，含所有任务状态、最后检查、摘要、后续动作及续跑轮次；正文存于任务文件，不写入 SQLite |
+| `asyncWaits.action` | `{id,action}` | `check`（事件提示后提前核查）、`pause`、`resume`（重新检查并延长7天）、`cancel`、`acknowledge`（用户核对未知发送后结束记录） |
+
+Agent 工作流：准备可独立运行的只读 Python 3 检查脚本，用真实来源 thread ID（不能用当前选中会话代替）创建一次等待，告诉用户已移交 Harness，然后结束当前轮。需要保存外部工单号、Bot 话题/任务 ID、预期提交等关联信息时写在检查脚本内；后续动作写 `continuation`，例如“核对证书和 CORS 后准备 ALB 变更，仍走原审批流程”。标题应说明等待目标，不放敏感数据。ID 由 Agent 生成并在重试时保持相同。
+
+```sh
+harnessctl call asyncWaits.create --params-file /tmp/certificate-wait.json
+harnessctl call asyncWaits.list
+```
+
+`/tmp/certificate-wait.json` 示例（来源 ID 和脚本由 Agent 填入）：
+
+```json
+{
+  "id": "healthcheck-cert-843",
+  "threadId": "actual-origin-thread-id",
+  "title": "等待 Health Check 证书与 CORS 就绪",
+  "checkerPath": "/absolute/path/check_healthcheck.py",
+  "continuation": "核对证书和 CORS 的最新状态，准备 ALB 443 变更；沿用原任务授权。"
+}
+```
+
+常见等待的就绪条件由 Agent 在检查器中明确，不能只匹配一句“已完成”：
+
+| 目标 | 检查依据 | 后续动作示例 |
+| --- | --- | --- |
+| 工单 | 对应工单完成审批或执行，并按后续需要核对配置生效 | 检查实际配置，准备下一步 |
+| 前端 Bot | 对应话题和任务的交付回复，并核对 MR / 提交等产物 | review 实际提交，报告问题 |
+| 证书 | 证书正常、已上传、未过期、SAN 覆盖目标域名，必要时与 CORS 等条件合取 | 核对最新状态，准备 ALB 变更 |
+
+检查器无参数，以来源 cwd 运行，使用 Python `-I` 隔离模式。脚本首用时复制到 `~/.codex-harness/async-waits/<id>.py`，后续不依赖临时源文件；脚本需要的其他文件应使用稳定绝对路径。stdout 必须只输出一个 JSON 对象，最多8KiB：
+
+```json
+{"status":"waiting","summary":"CORS 已生效，证书尚未上传"}
+```
+
+`status` 为 `waiting`、`ready`、`needsAttention` 或 `failed`，`summary` 为非空、最多4000字节的事实摘要；不要输出凭据、完整响应或指令。`needsAttention`（如登录失效）和 `failed`（业务拒绝等终态）暂停任务，等待用户处理。非零退出、超时、无效 JSON 属于检查异常，按2/4/8/16/30分钟退避，连续5次后暂停。正常每5分钟检查，单次最多30秒，超时终止整个进程组。默认等待7天，同时最多64个活跃等待。
+
+事件来源可调用 `asyncWaits.action` 的 `check` 提前触发检查；它不直接把任务标为成功，仍由检查器核对实际状态。没有事件时轮询兜底，第一版不额外架设 webhook 服务。
+
+就绪结果在会话忙时保留为 `ready`，空闲后自动合并同会话结果继续；超过60秒的观察在发送前重新检查。停止、归档、删除来源会话时暂停自动继续；发送前还会重新核对来源是否可用、工作目录是否一致，已有草稿不被修改。续跑沿用会话设置和授权，需要决策时走正常中间提问。SeaTalk 通知和深链跳转属于独立功能。
+
+任务定义、检查摘要和发送意图保存在原子替换的任务文件中；SQLite 不保存这些正文。稳定版/开发版通过 OS 文件锁共用一个检查执行者。会话续跑先持久化 `dispatching`，再发送带 `clientUserMessageId` 和 `turnTrigger: async-wait` 的新轮次；成功保存为 `delivered`。提交断线、响应丢失或崩溃后的 `dispatching` / `uncertain` 不自动重发。用户先打开原会话核对，再通过 `acknowledge` 结束记录；确需重新执行时由用户明确决定，不能自动换 ID 重试。
+
+实现与验证：[原生执行与恢复](../src-tauri/src/async_waits/mod.rs)、[原子存储与操作状态](../src-tauri/src/async_waits/store.rs)、[任务卡片](../src/core/async-waits/AsyncWaitPanel.tsx)、[管理入口契约测试](../src/core/management/service.test.ts)。

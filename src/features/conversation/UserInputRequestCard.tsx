@@ -1,3 +1,5 @@
+import type { DraftAnswer, QuestionAnswers } from '../../core/questions/drafts'
+import type { QuestionNavigation } from '../../core/questions/types'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
 import { ChevronLeft, ChevronRight, CircleHelp, LockKeyhole } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -17,26 +19,34 @@ import {
 
 interface UserInputRequestCardProps {
   request: ApprovalRequest
+  draftAnswers?: QuestionAnswers
+  onDraftAnswer?: (id: string, answer: DraftAnswer) => void
+  navigation?: QuestionNavigation | null
   sendShortcut: SendShortcut
   onAnswer: (request: ApprovalRequest, response: UserInputResponse) => void | Promise<void>
 }
 
-interface DraftAnswer {
-  value: string
-  other: boolean
-}
-
-export function UserInputRequestCard({ request, sendShortcut, onAnswer }: UserInputRequestCardProps) {
+export function UserInputRequestCard({ request, sendShortcut, onAnswer, draftAnswers, onDraftAnswer, navigation }: UserInputRequestCardProps) {
   const questions = parseUserInputQuestions(request.params)
-  const [answers, setAnswers] = useState<Record<string, DraftAnswer>>({})
+  const [localAnswers, setAnswers] = useState<Record<string, DraftAnswer>>({})
+  const answers = draftAnswers ?? localAnswers
+  const [submitError, setSubmitError] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const cardRef = useRef<HTMLElement>(null)
-  const otherInputRef = useRef<HTMLInputElement>(null)
+  const otherInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
   const previousIndex = useRef(currentIndex)
   const firstRender = useRef(true)
   const index = Math.min(currentIndex, Math.max(questions.length - 1, 0))
   const question = questions[index]
+
+  useEffect(() => {
+    if (!navigation) return
+    const index = questions.findIndex(q => q.id === navigation.locator.question)
+    if (index >= 0) setCurrentIndex(index)
+    cardRef.current?.scrollIntoView?.({ block: 'center' })
+    cardRef.current?.focus({ preventScroll: true })
+  }, [navigation?.sequence])
 
   useEffect(() => {
     if (firstRender.current || previousIndex.current !== currentIndex) cardRef.current?.focus({ preventScroll: true })
@@ -59,8 +69,11 @@ export function UserInputRequestCard({ request, sendShortcut, onAnswer }: UserIn
   const send = async (result: UserInputResponse) => {
     if (submitting) return
     setSubmitting(true)
+    setSubmitError(false)
     try {
       await onAnswer(request, result)
+    } catch {
+      setSubmitError(true)
     } finally {
       setSubmitting(false)
     }
@@ -72,7 +85,8 @@ export function UserInputRequestCard({ request, sendShortcut, onAnswer }: UserIn
   }
 
   const updateAnswer = (questionId: string, answer: DraftAnswer) => {
-    setAnswers((current) => ({ ...current, [questionId]: answer }))
+    if (onDraftAnswer) onDraftAnswer(questionId, answer)
+    else setAnswers((current) => ({ ...current, [questionId]: answer }))
   }
 
   const chooseOption = (selectedQuestion: UserInputQuestion, optionIndex: number) => {
@@ -183,9 +197,10 @@ export function UserInputRequestCard({ request, sendShortcut, onAnswer }: UserIn
                 </button>
               </div>
             </div>
+            {submitError && <p role="alert">回答未发送，请重试。</p>}
             <form onSubmit={submit}>
               <QuestionField
-                question={question}
+                question={{ ...question, isOther: question.isOther || Boolean(answers[question.id]?.other) }}
                 index={index}
                 answer={answers[question.id]}
                 disabled={submitting}
@@ -223,7 +238,7 @@ function QuestionField({
   index: number
   answer?: DraftAnswer
   disabled: boolean
-  otherInputRef: RefObject<HTMLInputElement>
+  otherInputRef: RefObject<HTMLInputElement | HTMLTextAreaElement>
   onChange: (answer: DraftAnswer) => void
   onChooseOption: (optionIndex: number) => void
   onChooseOther: () => void
@@ -235,16 +250,9 @@ function QuestionField({
     <fieldset className="user-input-question">
       <legend className="user-input-field-legend">{question.header}回答</legend>
       {freeformOnly ? (
-        <input
-          id={fieldId}
-          className="user-input-freeform"
-          type={question.isSecret ? 'password' : 'text'}
-          autoComplete={question.isSecret ? 'new-password' : 'off'}
-          aria-label={`${question.header}回答`}
-          value={answer?.value ?? ''}
-          disabled={disabled}
-          onChange={(event) => onChange({ value: event.target.value, other: true })}
-        />
+        <AnswerField secret={question.isSecret} id={fieldId} className="user-input-freeform"
+          aria-label={`${question.header}回答`} value={answer?.value ?? ''} disabled={disabled}
+          onChange={(value) => onChange({ value, other: true })} />
       ) : (
         <div className="user-input-options" role="group" aria-label={`${question.header}选项`}>
           {question.options.map((option, optionIndex) => (
@@ -267,19 +275,10 @@ function QuestionField({
             <div className={`user-input-option user-input-other${answer?.other ? ' selected' : ''}`}>
               <span className="user-input-option-number" aria-hidden="true">{question.options.length < 9 ? question.options.length + 1 : ''}</span>
               <label className="user-input-other-label" htmlFor={`${fieldId}-other`}>其他</label>
-              <input
-                ref={otherInputRef}
-                id={`${fieldId}-other`}
-                className="user-input-other-field"
-                type={question.isSecret ? 'password' : 'text'}
-                autoComplete={question.isSecret ? 'new-password' : 'off'}
-                aria-label={`${question.header}的其他回答`}
-                placeholder="填写自己的答案"
-                value={answer?.other ? answer.value : ''}
-                disabled={disabled}
-                onFocus={onChooseOther}
-                onChange={(event) => onChange({ value: event.target.value, other: true })}
-              />
+              <AnswerField secret={question.isSecret} inputRef={otherInputRef} id={`${fieldId}-other`}
+                className="user-input-other-field" aria-label={`${question.header}的其他回答`}
+                placeholder="填写自己的答案" value={answer?.other ? answer.value : ''} disabled={disabled}
+                onFocus={onChooseOther} onChange={(value) => onChange({ value, other: true })} />
             </div>
           )}
         </div>
@@ -294,7 +293,24 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
 }
 
 function isInputAtArrowBoundary(target: EventTarget | null, key: 'ArrowLeft' | 'ArrowRight'): boolean {
-  if (!(target instanceof HTMLInputElement)) return false
+  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return false
   if (key === 'ArrowLeft') return target.selectionStart === 0 && target.selectionEnd === 0
   return target.selectionStart === target.value.length && target.selectionEnd === target.value.length
+}
+
+function AnswerField({ secret, inputRef, onChange, ...props }: {
+  secret: boolean
+  inputRef?: RefObject<HTMLInputElement | HTMLTextAreaElement>
+  id: string
+  className: string
+  'aria-label': string
+  placeholder?: string
+  value: string
+  disabled: boolean
+  onFocus?: () => void
+  onChange: (value: string) => void
+}) {
+  return secret
+    ? <input {...props} ref={inputRef as RefObject<HTMLInputElement>} type="password" autoComplete="new-password" onChange={event => onChange(event.target.value)} />
+    : <textarea {...props} ref={inputRef as RefObject<HTMLTextAreaElement>} rows={2} autoComplete="off" onChange={event => onChange(event.target.value)} />
 }

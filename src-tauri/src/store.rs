@@ -431,6 +431,15 @@ impl HarnessStore {
         Ok(())
     }
 
+    pub fn claim_question_notification(&self, key: &str) -> Result<bool, String> {
+        let connection = self.connection.lock().map_err(|_| "本地状态库锁不可用".to_string())?;
+        let changed = connection.execute(
+            "INSERT OR IGNORE INTO app_state (state_key, state_value, updated_at) VALUES (?1, 'attempted', ?2)",
+            params![key, now_ms()],
+        ).map_err(|_| "无法记录提问通知去重状态".to_string())?;
+        Ok(changed == 1)
+    }
+
     pub fn set_app_state(&self, key: &str, value: &str) -> Result<(), String> {
         let connection = self
             .connection

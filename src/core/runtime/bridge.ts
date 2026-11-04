@@ -1,3 +1,6 @@
+import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
+import type { ApprovalRequest } from '../domain/codex'
+import type { QuestionLocator, QuestionNotification } from '../questions/types'
 import type { TeamDocument } from '../teams/types'
 import type { ResumeThreadResponse as CodexResumeThreadResponse } from './appServerClient'
 import type { MemoryCatalog, MemorySaveInput, SavedMemory, MemoryDomainSettings } from '../memory/types'
@@ -107,6 +110,11 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
 }
 
 export const runtime = {
+  listAsyncWaits: () => invoke<AsyncWaitSnapshot>('async_wait_list'),
+  createAsyncWait: (input: CreateAsyncWait) => invoke<AsyncWaitTask>('async_wait_create', { input }),
+  asyncWaitAction: (id: string, action: AsyncWaitAction) => invoke<AsyncWaitTask>('async_wait_action', { id, action }),
+  listenAsyncWaits: (handler: () => void) => listen('async-waits:changed', handler),
+  listenAsyncWaitStarted: (handler: (event: { threadId: string; turnId: string }) => void) => listen<{ threadId: string; turnId: string }>('async-waits:started', (event) => handler(event.payload)),
   listenManagementRequests(handler: (request: ManagementRequest) => void): Promise<() => void> {
     return listen<ManagementRequest>('management:request', (event) => handler(event.payload))
   },
@@ -640,6 +648,17 @@ export const runtime = {
         workspaceRemovedAt: run.workspaceRemovedAt,
       },
     })
+  },
+
+  drainQuestionLinks(): Promise<string[]> { return invoke('drain_question_links') },
+  async listenQuestionLinks(handler: () => void): Promise<() => void> {
+    return listen('questions:links-available', handler)
+  },
+  pendingUserInput(locator: QuestionLocator): Promise<ApprovalRequest | null> {
+    return invoke('pending_user_input', { threadId: locator.thread, turnId: locator.turn, requestId: locator.request })
+  },
+  sendQuestionNotification(baseUrl: string, account: string, targetId: string, input: QuestionNotification): Promise<void> {
+    return invoke('send_question_notification', { baseUrl, account, targetId, input })
   },
 
   localConnectorHealth(baseUrl: string): Promise<LocalConnectorHealth> {
