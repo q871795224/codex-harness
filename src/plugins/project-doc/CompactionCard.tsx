@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { FileArchive, LoaderCircle, X } from 'lucide-react'
 import type { ConversationService } from '../../core/conversations/types'
 import type { AgentRunService } from '../../core/agent-runs/types'
@@ -15,6 +15,7 @@ export interface CompactionState {
 }
 const listeners = new Set<() => void>()
 let cards: ReadonlyMap<string, CompactionState> = new Map()
+let completedTurns: ReadonlyMap<string, string> = new Map()
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }
 function publish(card: CompactionState) {
   cards = new Map(cards).set(card.projectId, card)
@@ -44,10 +45,13 @@ export async function requestCompaction(deps: CompactionDeps, threadId: string, 
   publish({ projectId, threadId, tokens: measure.tokens, threshold: deps.config.compactionThreshold, phase: 'confirm' })
   if (manual) archiveStore.requestSelect(projectId, 'chat')
 }
-export function watchCompaction(deps: CompactionDeps, conversations: ConversationService): () => void {
+// Events contain no workspace context. Only signal completion here; the resolved
+// banner (with the effective workspace/thread plugin settings) decides to prompt.
+export function watchCompaction(conversations: ConversationService): () => void {
   return conversations.onTurnCompleted((event) => {
-    if (event.status !== 'completed') return
-    void requestCompaction(deps, event.threadId, false).catch(() => undefined)
+    if (event.status !== 'completed' || completedTurns.get(event.threadId) === event.turnId) return
+    completedTurns = new Map(completedTurns).set(event.threadId, event.turnId)
+    listeners.forEach((listener) => listener())
   })
 }
 
@@ -79,6 +83,10 @@ export function CompactionCard({ state, onConfirm, onDismiss, onOpen }: {
 }
 export function CompactionBanner({ deps, props }: { deps: CompactionDeps; props: ConversationBannerProps }) {
   const current = useSyncExternalStore(subscribe, () => cards)
+  const completed = useSyncExternalStore(subscribe, () => completedTurns).get(props.threadId ?? '')
+  useEffect(() => {
+    if (completed && props.threadId) void requestCompaction(deps, props.threadId, false).catch(() => undefined)
+  }, [completed, props.threadId, deps])
   const state = [...current.values()].find((card) => card.threadId === props.threadId)
   if (!state) return null
   const dismiss = () => {

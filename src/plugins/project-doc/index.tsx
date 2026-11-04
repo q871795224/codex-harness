@@ -56,7 +56,7 @@ export const projectDocPlugin: HarnessPlugin = {
       config: readProjectDocConfig(ctx.config), instanceId: ctx.instanceId, storage: ctx.storage,
     }
     const conversations = ctx.services.optional<ConversationService>('harness.conversations')
-    if (conversations) ctx.effect(watchCompaction(compaction, conversations))
+    if (conversations) ctx.effect(watchCompaction(conversations))
     ctx.slots.conversationBanners.register({
       id: 'compaction', order: 10,
       render: (props) => <CompactionBanner deps={compaction} props={props} />,

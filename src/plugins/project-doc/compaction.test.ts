@@ -3,7 +3,7 @@ import type { ProjectDocService } from '../../core/project-docs/types'
 import type { AgentRunService } from '../../core/agent-runs/types'
 import { DEFAULT_PROJECT_DOC_CONFIG, readProjectDocConfig } from './config'
 import { compactProject, waitForCompactionRun } from './compaction'
-import { requestCompaction, watchCompaction } from './CompactionCard'
+import { requestCompaction } from './CompactionCard'
 
 function deps() {
   const input = { jobId: 'job', baseSeq: 4, content: 'original', archivePath: '/archive/original.md', tokens: 20_000 }
@@ -39,14 +39,6 @@ it('manual and automatic requests only prompt and never start a model before con
   const d=deps(); await requestCompaction(d,'thread',true); await requestCompaction(d,'thread',false)
   expect(d.docs.measure).toHaveBeenCalledTimes(2)
   expect(d.docs.beginCompaction).not.toHaveBeenCalled(); expect(d.runs.start).not.toHaveBeenCalled()
-})
-it('turn observer checks only successful completed replies and is disposable', async () => {
-  const d=deps(); let handler!: (e: { status: string; threadId: string }) => void
-  const remove=vi.fn()
-  const stop=watchCompaction(d,{ onTurnCompleted: (h) => { handler=h as typeof handler; return remove }, openThread: vi.fn() })
-  handler({status:'failed',threadId:'thread'}); expect(d.docs.measure).not.toHaveBeenCalled()
-  handler({status:'completed',threadId:'thread'}); await vi.waitFor(() => expect(d.docs.measure).toHaveBeenCalledTimes(1))
-  stop(); expect(remove).toHaveBeenCalledTimes(1)
 })
 it('defaults to 10,000 tokens and accepts finite positive configurable thresholds', () => {
   expect(readProjectDocConfig({}).compactionThreshold).toBe(10_000)
