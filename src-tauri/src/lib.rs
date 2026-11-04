@@ -474,6 +474,11 @@ async fn request_system_notification_permission(
 }
 
 #[tauri::command]
+async fn dismiss_thread_system_notifications(thread_id: String) -> Result<(), String> {
+    system_notification::dismiss_thread(thread_id).await
+}
+
+#[tauri::command]
 async fn send_system_notification(
     state: State<'_, AppState>,
     input: system_notification::SystemNotificationInput,
@@ -1484,6 +1489,7 @@ pub fn run() {
             open_workspace_path,
             request_system_notification_permission,
             send_system_notification,
+            dismiss_thread_system_notifications,
             api_workbench_load,
             api_workbench_save,
             api_workbench_send,

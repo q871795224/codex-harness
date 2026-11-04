@@ -79,6 +79,22 @@ describe('fork catalog retention', () => {
       await forking
     })
     expect(result.current.selectedThreadId).toBe('forked')
+    const completed = vi.fn()
+    const unsubscribe = result.current.onTurnCompleted(completed)
+    // Reading copied history must not produce completion notifications.
+    expect(completed).not.toHaveBeenCalled()
+    await act(async () => {
+      listener({ method: 'turn/completed', params: { threadId: 'forked', turn: {
+        id: 'fork-turn', status: 'completed', items: [], error: null,
+      } } })
+      listener({ method: 'turn/completed', params: { threadId: 'source', turn: {
+        id: 'source-turn', status: 'completed', items: [], error: null,
+      } } })
+    })
+    expect(completed.mock.calls.map(([event]) => [event.threadId, event.turnId, event.title])).toEqual([
+      ['forked', 'fork-turn', 'forked'], ['source', 'source-turn', 'source'],
+    ])
+    unsubscribe()
     expect(result.current.threads.map((item) => item.id)).toEqual(['forked', 'source'])
 
     // Later refreshes keep the fork locally until thread/list includes it.

@@ -723,6 +723,10 @@ export const runtime = {
     return invoke<void>('send_system_notification', { input })
   },
 
+  dismissThreadSystemNotifications(threadId: string): Promise<void> {
+    return invoke<void>('dismiss_thread_system_notifications', { threadId })
+  },
+
   async listenSystemNotificationClicks(handler: (event: SystemNotificationClick) => void): Promise<() => void> {
     return listen<SystemNotificationClick>('system-notification:clicked', (event) => handler(event.payload))
   },
