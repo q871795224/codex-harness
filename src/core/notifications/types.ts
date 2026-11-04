@@ -11,5 +11,6 @@ export interface SystemNotificationClick {
 export interface SystemNotificationService {
   requestPermission(): Promise<boolean>
   send(input: SystemNotificationInput): Promise<void>
+  dismissThread(threadId: string): Promise<void>
   onClick(listener: (event: SystemNotificationClick) => void): Promise<() => void>
 }

@@ -43,6 +43,10 @@ fn parse_notification_identifier(identifier: &str) -> Option<NotificationTarget>
     serde_json::from_str(identifier).ok()
 }
 
+fn notification_belongs_to_thread(identifier: &str, thread_id: &str) -> bool {
+    parse_notification_identifier(identifier).is_some_and(|target| target.thread_id == thread_id)
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::{
@@ -53,12 +57,13 @@ mod macos {
     use objc2::rc::Retained;
     use objc2::runtime::{Bool, ProtocolObject};
     use objc2::{define_class, msg_send, AnyThread};
-    use objc2_foundation::{NSError, NSObject, NSObjectProtocol, NSString};
+    use objc2_foundation::{NSArray, NSError, NSObject, NSObjectProtocol, NSString};
     use objc2_user_notifications::{
         UNAuthorizationOptions, UNMutableNotificationContent, UNNotification,
         UNNotificationPresentationOptions, UNNotificationRequest, UNNotificationResponse,
         UNUserNotificationCenter, UNUserNotificationCenterDelegate,
     };
+    use std::ptr::NonNull;
     use std::sync::{Arc, Mutex, OnceLock};
     use tauri::{Emitter, Manager};
 
@@ -174,6 +179,78 @@ mod macos {
             .map_err(|_| "macOS 通知权限请求未返回结果".to_string())?
     }
 
+    pub async fn dismiss_thread(thread_id: String) -> Result<(), String> {
+        if tauri::is_dev() {
+            return Err("macOS 系统通知只能在打包后的 App 中启用".to_string());
+        }
+        let receiver = {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            let sender = Mutex::new(Some(sender));
+            let thread_id = thread_id.clone();
+            let block = RcBlock::new(
+                move |notifications: NonNull<NSArray<UNNotificationRequest>>| {
+                    // SAFETY: The system supplies a valid array for this callback's lifetime.
+                    let notifications = unsafe { notifications.as_ref() };
+                    let identifiers: Vec<Retained<NSString>> = notifications
+                        .iter()
+                        .filter_map(|notification| {
+                            let identifier = notification.identifier();
+                            super::notification_belongs_to_thread(
+                                &identifier.to_string(),
+                                &thread_id,
+                            )
+                            .then_some(identifier)
+                        })
+                        .collect();
+                    let center = UNUserNotificationCenter::currentNotificationCenter();
+                    center.removePendingNotificationRequestsWithIdentifiers(
+                        &NSArray::from_retained_slice(&identifiers),
+                    );
+                    if let Some(sender) = sender.lock().unwrap_or_else(|p| p.into_inner()).take() {
+                        let _ = sender.send(());
+                    }
+                },
+            );
+            UNUserNotificationCenter::currentNotificationCenter()
+                .getPendingNotificationRequestsWithCompletionHandler(&block);
+            receiver
+        };
+        receiver
+            .await
+            .map_err(|_| "macOS 通知清除请求未返回结果".to_string())?;
+        let receiver = {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            let sender = Mutex::new(Some(sender));
+            let thread_id = thread_id.clone();
+            let block = RcBlock::new(move |notifications: NonNull<NSArray<UNNotification>>| {
+                // SAFETY: The system supplies a valid array for this callback's lifetime.
+                let notifications = unsafe { notifications.as_ref() };
+                let identifiers: Vec<Retained<NSString>> = notifications
+                    .iter()
+                    .filter_map(|notification| {
+                        let identifier = notification.request().identifier();
+                        super::notification_belongs_to_thread(&identifier.to_string(), &thread_id)
+                            .then_some(identifier)
+                    })
+                    .collect();
+                let center = UNUserNotificationCenter::currentNotificationCenter();
+                center.removeDeliveredNotificationsWithIdentifiers(&NSArray::from_retained_slice(
+                    &identifiers,
+                ));
+                if let Some(sender) = sender.lock().unwrap_or_else(|p| p.into_inner()).take() {
+                    let _ = sender.send(());
+                }
+            });
+            UNUserNotificationCenter::currentNotificationCenter()
+                .getDeliveredNotificationsWithCompletionHandler(&block);
+            receiver
+        };
+        receiver
+            .await
+            .map_err(|_| "macOS 通知清除请求未返回结果".to_string())?;
+        Ok(())
+    }
+
     pub async fn send(input: SystemNotificationInput) -> Result<(), String> {
         if tauri::is_dev() {
             return Err("macOS 系统通知只能在打包后的 App 中启用".to_string());
@@ -220,7 +297,7 @@ mod macos {
 }
 
 #[cfg(target_os = "macos")]
-pub use macos::{install, request_permission, send};
+pub use macos::{dismiss_thread, install, request_permission, send};
 
 #[cfg(not(target_os = "macos"))]
 pub fn install(_app: &tauri::AppHandle) {}
@@ -235,9 +312,29 @@ pub async fn send(_input: SystemNotificationInput) -> Result<(), String> {
     Err("系统通知插件目前只支持 macOS".to_string())
 }
 
+#[cfg(not(target_os = "macos"))]
+pub async fn dismiss_thread(_thread_id: String) -> Result<(), String> {
+    Err("系统通知插件目前只支持 macOS".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thread_matching_clears_all_turns_without_clearing_the_parent() {
+        for turn_id in ["first", "second"] {
+            let identifier = notification_identifier(&SystemNotificationInput {
+                thread_id: "fork".into(),
+                turn_id: turn_id.into(),
+                title: "same title".into(),
+            })
+            .unwrap();
+            assert!(notification_belongs_to_thread(&identifier, "fork"));
+            assert!(!notification_belongs_to_thread(&identifier, "parent"));
+        }
+        assert!(!notification_belongs_to_thread("unrelated", "fork"));
+    }
 
     #[test]
     fn notification_identifier_preserves_the_thread_target() {

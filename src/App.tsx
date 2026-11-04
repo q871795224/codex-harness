@@ -106,11 +106,13 @@ export default function App() {
     } satisfies QuickCommandService,
     'harness.conversations': {
       onTurnCompleted: harness.onTurnCompleted,
+      onMessageSubmitted: harness.onMessageSubmitted,
       openThread: (threadId) => harness.selectThread(threadId, 'notification'),
     } satisfies ConversationService,
     'harness.systemNotifications': {
       requestPermission: runtime.requestSystemNotificationPermission,
       send: runtime.sendSystemNotification,
+      dismissThread: runtime.dismissThreadSystemNotifications,
       onClick: runtime.listenSystemNotificationClicks,
     } satisfies SystemNotificationService,
     'harness.files': {
@@ -161,7 +163,7 @@ export default function App() {
       deliveryContext: runtime.workspaceDeliveryContext,
       openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
-  }), [teams, agentRuns, harness.onTurnCompleted, harness.selectThread])
+  }), [teams, agentRuns, harness.onTurnCompleted, harness.onMessageSubmitted, harness.selectThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {

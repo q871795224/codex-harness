@@ -71,6 +71,24 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('waiting indicators', () => {
+  it('emits message submission only when sending, not when switching conversations', async () => {
+    const { result } = await ready()
+    const activity = vi.fn()
+    const unsubscribe = result.current.onMessageSubmitted(activity)
+    await act(async () => { await result.current.selectThread('active') })
+    expect(activity).not.toHaveBeenCalled()
+    vi.mocked(appServer.startTurn).mockResolvedValueOnce({ turn: {
+      id: 'new-turn', status: 'inProgress', items: [], error: null,
+      startedAt: null, completedAt: null, durationMs: null,
+    } })
+    await act(async () => { await result.current.sendMessage([{ type: 'text', text: 'hello', text_elements: [] }], 'interject') })
+    expect(activity).toHaveBeenCalledWith('active')
+    await act(async () => { await result.current.selectThread('claude:active') })
+    expect(activity).toHaveBeenCalledTimes(1)
+    expect(activity).toHaveBeenLastCalledWith('active')
+    unsubscribe()
+  })
+
   it('keeps Claude sidebar and stop controls active after the foreground turn ends', async () => {
     const { result } = await ready()
     await act(async () => { await result.current.selectThread('claude:active') })
