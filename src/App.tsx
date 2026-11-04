@@ -10,7 +10,7 @@ import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter, NotificationViewport } from './features/notifications/Notifications'
 import { useReleaseNotifications } from './features/notifications/useReleaseNotifications'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, Clock3, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
@@ -59,6 +59,7 @@ import { archiveStore } from './plugins/project-doc/archiveStore'
 
 const TeamMode = lazy(() => import('./features/teams/TeamMode').then((module) => ({ default: module.TeamMode })))
 
+const ASYNC_WAIT_TAB_KEY = 'async-waits'
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 // 项目文档服务是无状态桥接封装，模块级单例即可（绑定走 appState，读写直连 Rust store）。
 const projectDocs = createProjectDocService()
@@ -395,18 +396,18 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const composerCollapsible = selectedPluginTab !== null
   const composerCollapseKey = `${harness.selectedThreadId ?? 'none'}:${tab}`
   const composerCollapsed = composerCollapsible && Boolean(collapsedComposerKeys[composerCollapseKey])
-  const composerVisible = harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
+  const composerVisible = harness.viewMode === 'active' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
   const quickPanelBottom = resolveQuickPanelAnchor(composerVisible, quickActionBottom)
   const quickPanelsVisible = shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
 
   useEffect(() => {
-    if (tab !== 'chat' && !selectedPluginTab) {
+    if (tab !== 'chat' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab) {
       setTab('chat')
       setFocusedTab(null)
     }
   }, [selectedPluginTab, tab])
   const orderedTabIds = orderConversationTabs(
-    ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
+    ['chat', ASYNC_WAIT_TAB_KEY, ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
   )
   const ctrlPressed = useModifierKey('Control')
@@ -465,7 +466,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   }, [])
 
   useEffect(() => {
-    if (tab !== 'chat' && !selectedPluginTab) setTab('chat')
+    if (tab !== 'chat' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab) setTab('chat')
   }, [selectedPluginTab, tab])
 
   useEffect(() => {
@@ -788,9 +789,9 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                   const entry = tabId === 'chat'
                     ? null
                     : pluginTabs.find((candidate) => pluginTabKey(candidate.pluginId, candidate.contribution.id) === tabId)
-                  if (tabId !== 'chat' && !entry) return null
-                  const label = entry?.contribution.label ?? '对话'
-                  const Icon = entry?.contribution.icon ?? MessageSquareText
+                  if (tabId !== 'chat' && tabId !== ASYNC_WAIT_TAB_KEY && !entry) return null
+                  const label = tabId === ASYNC_WAIT_TAB_KEY ? '异步任务' : entry?.contribution.label ?? '对话'
+                  const Icon = tabId === ASYNC_WAIT_TAB_KEY ? Clock3 : entry?.contribution.icon ?? MessageSquareText
                   return (
                     <button
                       key={tabId}
@@ -888,6 +889,13 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 renderTurnActions={renderTurnActions}
               />
             ) : null}
+            <RetainedTab active={tab === ASYNC_WAIT_TAB_KEY}>
+              <AsyncWaitPanel
+                threadId={harness.currentThread.id}
+                view="page"
+                onOpenThread={(id) => { setTab('chat'); void harness.selectThread(id) }}
+              />
+            </RetainedTab>
             {pluginTabs.map((entry) => (
               <RetainedTab key={`${entry.instanceId}:${entry.contribution.id}`} active={selectedPluginTab === entry}>
                 <PluginTabBoundary
