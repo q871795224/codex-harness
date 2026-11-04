@@ -108,6 +108,12 @@
 - Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery`。共享写任务使用同一 checkout 时互斥；隔离交付 worktree 固定创建在 `~/.codex-harness/agent-worktrees/<run-id>` 并保留给用户检查。
 - `return-to-parent` 是一次性的用户手动操作，父会话 active 时不得自动回传或重试。
 
+## 项目文档精简
+
+项目文档插件通过 `conversationBanners` slot 显示共用确认卡，手动入口保留在 Composer 右侧。会话结束只触发本地计数和提醒；用户确认后才启动只读 Codex detached run。默认门限10,000 tokens，按正文版本缓存 `o200k_base` 计数；配置位于插件设置。
+
+原文归档、追加合并、并发修改检查和恢复由 Rust `project_doc_store::compaction` 负责，模型只输出四分区 Markdown。普通写入与精简共用 SQLite immediate transaction，跨 UI/HTTP 连接串行。详见 [项目文档精简](../docs/project-doc-compaction.md)。
+
 ## 异步等待
 
 - `src-tauri/src/async_waits/` 管理一次性外部等待、Python 检查器和原生后台调度；`src/core/async-waits/` 提供会话任务卡片与原生“异步任务”tab（默认跨会话查看，支持状态筛选，隐藏聊天输入框），Agent 经管理入口 `asyncWaits.*` 创建和控制。准确参数及检查器契约见 `docs/management.md`。

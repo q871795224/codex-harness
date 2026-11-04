@@ -228,10 +228,11 @@ interface ConversationViewProps {
    * 追加渲染在 agent 最终回答操作行（copy/raw/fork）右侧的扩展操作（右对齐）。
    * 用于插件挂载「归档到项目」之类的 turn 级入口；返回 null 则不渲染。
    */
+  banners?: ReactNode
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions }: ConversationViewProps) {
+export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions, banners }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -456,6 +457,7 @@ export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex',
               <WorkingStatus key={workingTurnId} startedAt={workingStartedAt} background={backgroundWorking} />
             </article>
           )}
+          {banners}
           {recap && (
             <div className="recap-banner" role="status">
               <Sparkles size={14} aria-hidden />

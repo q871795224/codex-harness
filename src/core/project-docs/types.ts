@@ -5,6 +5,7 @@
 
 import type { SectionKey } from '../../features/project-doc/document'
 import type {
+  DocumentMeasure, CompactionInput, CompactionResult,
   ProjectDocSnapshot,
   ProjectDocWriteOutcome,
   ProjectMeta,
@@ -36,6 +37,12 @@ export interface ProjectDocProposal {
 }
 
 export interface ProjectDocService {
+  measure(projectId: string): Promise<DocumentMeasure>
+  beginCompaction(projectId: string): Promise<CompactionInput>
+  completeCompaction(projectId: string, jobId: string, content: string): Promise<CompactionResult>
+  cancelCompaction(projectId: string, jobId: string): Promise<void>
+  readVersion(projectId: string, seq: number): Promise<string>
+  restoreVersion(projectId: string, seq: number, baseSeq: number): Promise<ProjectDocWriteOutcome>
   create(projectId: string, name: string): Promise<ProjectMeta>
   list(): Promise<ProjectMeta[]>
   get(projectId: string): Promise<ProjectMeta>
