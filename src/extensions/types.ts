@@ -72,6 +72,13 @@ export interface ComposerActionProps extends PluginViewContext {
   insertSkillPrompt(skillName: string, prompt: string): Promise<boolean>
 }
 
+export interface ConversationBannerProps extends PluginViewContext { checkoutRoot: string | null }
+export interface ConversationBannerContribution {
+  id: string
+  order?: number
+  render(props: ConversationBannerProps): ReactNode
+}
+
 export interface ComposerActionContribution {
   id: string
   order?: number
@@ -196,6 +203,7 @@ export interface PluginSlotAccess {
   composerActions: {
     register(contribution: ComposerActionContribution): void
   }
+  conversationBanners: { register(contribution: ConversationBannerContribution): void }
   turnActions: {
     register(contribution: TurnActionContribution): void
   }

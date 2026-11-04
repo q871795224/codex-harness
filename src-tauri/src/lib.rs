@@ -1,3 +1,4 @@
+mod async_waits;
 mod api_workbench;
 mod app_launcher;
 mod app_server;
@@ -13,6 +14,7 @@ mod handover_store;
 mod harness_files;
 mod jev;
 mod local_connector;
+mod question_links;
 mod markdown_image;
 mod management;
 mod project_doc_proposals;
@@ -47,14 +49,16 @@ use tauri::{Emitter, Manager, State};
 
 struct AppState {
     app_server: Arc<AppServerManager>,
+    async_waits: Arc<async_waits::AsyncWaits>,
     claude_runtime: Arc<ClaudeRuntime>,
     diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
+    question_links: question_links::QuestionLinkInbox,
     codex_radar: CodexRadarClient,
     jev: jev::JevClient,
     codex_analytics: CodexAnalytics,
     store: Arc<HarnessStore>,
-    project_docs: Mutex<Option<project_doc_store::ProjectDocStore>>,
+    project_docs: Mutex<Option<Arc<project_doc_store::ProjectDocStore>>>,
     project_doc_proposals: Mutex<Option<project_doc_proposals::ProposalQueue>>,
     project_doc_server: Mutex<Option<project_doc_server::ProjectDocServer>>,
     management: Arc<management::Management>,
@@ -64,6 +68,26 @@ struct AppState {
     release_start: tokio::sync::Mutex<()>,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
+}
+
+#[tauri::command]
+fn async_wait_list(state: State<'_, AppState>) -> Result<async_waits::WaitSnapshot, String> {
+    state.async_waits.list()
+}
+#[tauri::command]
+async fn async_wait_create(
+    state: State<'_, AppState>,
+    input: async_waits::CreateWait,
+) -> Result<async_waits::WaitTask, String> {
+    state.async_waits.create(input).await
+}
+#[tauri::command]
+async fn async_wait_action(
+    state: State<'_, AppState>,
+    id: String,
+    action: String,
+) -> Result<async_waits::WaitTask, String> {
+    state.async_waits.action(&id, &action).await
 }
 
 #[tauri::command]
@@ -275,6 +299,36 @@ async fn local_connector_send_message(
     input: SendMessageInput,
 ) -> Result<SendMessageResult, String> {
     state.local_connector.send_message(&base_url, input).await
+}
+
+#[tauri::command]
+fn drain_question_links(state: State<'_, AppState>) -> Vec<String> {
+    state.question_links.drain()
+}
+
+#[tauri::command]
+async fn send_question_notification(
+    state: State<'_, AppState>,
+    base_url: String,
+    account: String,
+    target_id: String,
+    input: question_links::QuestionNotification,
+) -> Result<(), String> {
+    let payload = question_links::card_payload(&base_url, &account, &target_id, &input)?;
+    if !state.store.claim_question_notification(&input.locator.notification_key())? {
+        return Ok(());
+    }
+    state.local_connector.send_question(&base_url, payload).await
+}
+
+#[tauri::command]
+async fn pending_user_input(
+    state: State<'_, AppState>,
+    thread_id: String,
+    turn_id: String,
+    request_id: String,
+) -> Result<Option<Value>, String> {
+    state.app_server.pending_user_input(&thread_id, &turn_id, &request_id).await
 }
 
 #[tauri::command]
@@ -514,6 +568,11 @@ async fn app_server_request(
     method: String,
     params: Value,
 ) -> Result<Value, String> {
+    if matches!(method.as_str(), "turn/interrupt" | "thread/archive" | "thread/delete") {
+        let _gate = state.async_waits.gate.lock().await;
+        if let Some(thread) = params.get("threadId").and_then(Value::as_str) { state.async_waits.pause_thread(thread)?; }
+        return state.app_server.request(method, params).await;
+    }
     state.app_server.request(method, params).await
 }
 
@@ -668,13 +727,13 @@ fn read_handover_document(file_name: String) -> Result<String, String> {
 /// 惰性开启项目文档库：首次使用时初始化，避免拖累启动路径（项目文档是可选能力）。
 fn project_docs<'a>(
     state: &'a State<'a, AppState>,
-) -> Result<std::sync::MutexGuard<'a, Option<project_doc_store::ProjectDocStore>>, String> {
+) -> Result<std::sync::MutexGuard<'a, Option<Arc<project_doc_store::ProjectDocStore>>>, String> {
     let mut guard = state
         .project_docs
         .lock()
         .map_err(|_| "项目文档库锁不可用".to_string())?;
     if guard.is_none() {
-        *guard = Some(project_doc_store::ProjectDocStore::open()?);
+        *guard = Some(Arc::new(project_doc_store::ProjectDocStore::open()?));
     }
     Ok(guard)
 }
@@ -911,6 +970,37 @@ fn project_doc_write_document(
         .as_ref()
         .unwrap()
         .write_document(&project_id, base_seq, &content, &updated_by, &summary)
+}
+
+#[tauri::command]
+async fn project_doc_measure(state: State<'_, AppState>, project_id: String) -> Result<project_doc_store::DocumentMeasure, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.measure(&project_id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_begin_compaction(state: State<'_, AppState>, project_id: String) -> Result<project_doc_store::CompactionInput, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.begin_compaction(&project_id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_complete_compaction(state: State<'_, AppState>, project_id: String, job_id: String, content: String) -> Result<project_doc_store::CompactionResult, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.complete_compaction(&project_id, &job_id, &content)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_cancel_compaction(state: State<'_, AppState>, project_id: String, job_id: String) -> Result<(), String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.cancel_compaction(&project_id, &job_id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_read_version(state: State<'_, AppState>, project_id: String, seq: i64) -> Result<String, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.read_version(&project_id, seq)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_restore_version(state: State<'_, AppState>, project_id: String, seq: i64, base_seq: i64) -> Result<project_doc_store::WriteOutcome, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.restore_version(&project_id, seq, base_seq)).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1333,11 +1423,18 @@ pub fn run() {
                     json!({ "errorCode": "initialization_failed" }));
                 std::io::Error::other(format!("无法启动项目文档服务: {error}"))
             })?;
+            let async_waits = async_waits::AsyncWaits::new(
+                store::harness_data_dir()?.join("async-waits"), store.clone(),
+                manager.clone(), app.handle().clone(),
+            )?;
+            async_waits.spawn();
             app.manage(AppState {
                 app_server: manager,
+                async_waits,
                 claude_runtime,
                 diagnostics: diagnostics.clone(),
                 local_connector: LocalConnector::new(),
+                question_links: question_links::QuestionLinkInbox::default(),
                 codex_radar: CodexRadarClient::new(diagnostics.clone()),
                 jev: jev::JevClient::new()?,
                 codex_analytics: analytics,
@@ -1356,6 +1453,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            async_wait_list,
+            async_wait_create,
+            async_wait_action,
             management_ready,
             management_respond,
             team_read_document,
@@ -1404,6 +1504,12 @@ pub fn run() {
             project_doc_versions,
             project_doc_write_section,
             project_doc_write_document,
+            project_doc_measure,
+            project_doc_begin_compaction,
+            project_doc_complete_compaction,
+            project_doc_cancel_compaction,
+            project_doc_read_version,
+            project_doc_restore_version,
             project_doc_list_proposals,
             project_doc_approve_proposal,
             project_doc_reject_proposal,
@@ -1431,6 +1537,9 @@ pub fn run() {
             remove_harness_path,
             list_plugin_runs,
             upsert_plugin_run,
+            drain_question_links,
+            send_question_notification,
+            pending_user_input,
             local_connector_health,
             local_connector_list_messages,
             local_connector_send_message,
@@ -1471,6 +1580,19 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                for url in urls {
+                    if app.state::<AppState>().question_links.push(url.as_str()) {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                        let _ = app.emit("questions:links-available", ());
+                    }
+                }
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Ok(mut server) = app.state::<AppState>().project_doc_server.lock() {
                     server.take();

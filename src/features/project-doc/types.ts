@@ -20,6 +20,7 @@ export interface ProjectVersion {
   updatedAt: number
   summary: string
   contentHash: string
+  operation?: string
 }
 
 export interface ProjectDocSnapshot {
@@ -44,3 +45,7 @@ export interface ProjectDocWriteInput {
   updatedBy: string
   summary?: string
 }
+
+export interface DocumentMeasure { seq: number; tokens: number }
+export interface CompactionInput { jobId: string; baseSeq: number; content: string; archivePath: string; tokens: number }
+export interface CompactionResult { newSeq: number; beforeTokens: number; afterTokens: number; archivePath: string }

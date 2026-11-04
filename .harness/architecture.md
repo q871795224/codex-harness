@@ -88,6 +88,15 @@
 - 历史通过现有 appState 接口写入 `state.sqlite` 的 `notifications.history`，永久保留，不做自动过期或脱敏。存储通知说明、原始错误和关联标识，不复制会话正文、归档草稿或完整日志。
 - 发布和项目归档按一次任务更新同一条通知；发布跨会话继续跟踪，历史日志按 run ID 打开。系统通知插件仍独立负责 macOS 回复完成提醒。
 
+## SeaTalk 中间提问通知
+
+- 独立插件 `builtin.question-notifications` 默认开启，通过核心 `harness.conversations.onUserInputRequested` 消费 `item/tool/requestUserInput` 和 `agentMessage.delivery=async`；不依赖 SeaTalk 草稿插件或异步等待任务。
+- 每题一张交互卡片。原生层按 thread、turn、提问类型、稳定 item 标识和 question ID 在 SQLite 原子登记一次发送尝试，更新、重放、重启和多实例不重复发；发送失败保留登记，不自动重试，也不影响提问本身。标记为敏感的问题只发送提醒，不发送题目和选项。
+- 桌面链路为 `SeaTalk 卡片 → 本机 Bridge /local/open/harness → codex-harness://question → Harness`。Bridge 固定用 bundle ID `com.local.codex-harness` 打开稳定版，不依赖两个 flavor 对同一协议的系统优先级；不提供开发版入口。手机端不配置跳转，不远程唤醒电脑。
+- 默认 Bridge account 为 `harness-notify`，接收者 `self` 由该账号的 `notificationTargetEmployeeCode` 显式解析；未配置则发送失败。Bot 凭据继续由 Bridge 环境文件管理，Harness 插件配置只含本机地址、账号名和接收者标识。
+- 链接只含 thread、turn、稳定请求标识、题号、题目版本摘要和可选的选项下标。Rust 暂存冷启动及运行中收到的链接，WebView 就绪后订阅并一次性取走；打开会话后重新核对当前请求和题目版本。已处理或更新的问题显示当前状态，不提交旧请求。
+- 链接选择预填现有逐题表单；已有答案换行追加，普通聊天草稿不变。未发送的问题答案保存在独立草稿键中，敏感答案只留内存；原有回答通道提交成功后清除。打开链接与预填均不发送回答或创建 turn。
+
 ## 状态与 Provider
 
 - UI 状态、插件实例、插件 Run、输入区未发送草稿和用量快照保存在 `~/.codex-harness/state.sqlite`；草稿只保存文本、折叠粘贴和附件路径，成功发送后清除。已发送的会话正文、凭据和模型 response 不写入 Harness 状态库。
@@ -103,3 +112,16 @@
 - Quick Action 通过声明式 `quickActions` slot 显示，调用 `harness.agentRuns` 创建独立会话；Run 记录 parent thread、child thread、turn 和 provider。
 - Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery`。共享写任务使用同一 checkout 时互斥；隔离交付 worktree 固定创建在 `~/.codex-harness/agent-worktrees/<run-id>` 并保留给用户检查。
 - `return-to-parent` 是一次性的用户手动操作，父会话 active 时不得自动回传或重试。
+
+## 项目文档精简
+
+项目文档插件通过 `conversationBanners` slot 显示共用确认卡，手动入口保留在 Composer 右侧。会话结束只触发本地计数和提醒；用户确认后才启动只读 Codex detached run。默认门限10,000 tokens，按正文版本缓存 `o200k_base` 计数；配置位于插件设置。
+
+原文归档、追加合并、并发修改检查和恢复由 Rust `project_doc_store::compaction` 负责，模型只输出四分区 Markdown。普通写入与精简共用 SQLite immediate transaction，跨 UI/HTTP 连接串行。详见 [项目文档精简](../docs/project-doc-compaction.md)。
+
+## 异步等待
+
+- `src-tauri/src/async_waits/` 管理一次性外部等待、Python 检查器和原生后台调度；`src/core/async-waits/` 提供会话任务卡片与原生“异步任务”tab（默认跨会话查看，支持状态筛选，隐藏聊天输入框），Agent 经管理入口 `asyncWaits.*` 创建和控制。准确参数及检查器契约见 `docs/management.md`。
+- 任务正文与摘要位于 `~/.codex-harness/async-waits/` 文件，原子替换和版本比较协调更新；OS 文件锁协调稳定版/开发版执行者，不删除锁文件。关闭应用或休眠后恢复补查，不承诺离线监控。
+- 条件满足后默认自动继续来源 Codex 会话，忙时保留待处理结果，空闲后合并续跑；此授权来自创建等待时指定的后续动作，区别于现有普通 Agent 委派的人工回传。续跑不扩大外部操作授权，沿用正常中间提问；SeaTalk 通知独立实现。
+- 仅 `app_server.rs` 封装来源校验、恢复和启动协议。续跑前写发送意图；结果未知保留待核对，不自动重发。用户停止或归档来源会话时暂停等待。检查脚本只读且不调用模型，以当前用户权限运行，具有固定超时和输出上限。

@@ -1,3 +1,4 @@
+import { questionNotificationsPlugin, questionNotificationsDefaultInstance } from './question-notifications'
 import { teamsPlugin, teamsDefaultInstance } from './teams'
 import type { HarnessPlugin, PluginInstanceRecord } from '../extensions/types'
 import { trajectoryPlugin, defaultPluginInstances as trajectoryDefaults } from './trajectory'
@@ -16,5 +17,5 @@ import { appLauncherDefaultInstance, appLauncherPlugin } from './app-launcher'
 import { promptsDefaultInstance, promptsPlugin } from './prompts'
 import { projectDocDefaultInstance, projectDocPlugin } from './project-doc'
 
-export const builtInPlugins: HarnessPlugin[] = [teamsPlugin, sessionLauncherPlugin, tasksPlugin, usagePlugin, trajectoryPlugin, harnessFilesPlugin, apiWorkbenchPlugin, terminalPlugin, appLauncherPlugin, lunaPlugin, quickAgentPlugin, quickCommandPlugin, seaTalkPlugin, notificationsPlugin, promptsPlugin, projectDocPlugin]
-export const defaultPluginInstances: PluginInstanceRecord[] = [teamsDefaultInstance, sessionLauncherDefaultInstance, tasksDefaultInstance, usageDefaultInstance, ...trajectoryDefaults, harnessFilesDefaultInstance, apiWorkbenchDefaultInstance, terminalDefaultInstance, appLauncherDefaultInstance, lunaDefaultInstance, quickAgentDefaultInstance, ...quickCommandDefaultInstances, seaTalkDefaultInstance, notificationsDefaultInstance, promptsDefaultInstance, projectDocDefaultInstance]
+export const builtInPlugins: HarnessPlugin[] = [questionNotificationsPlugin, teamsPlugin, sessionLauncherPlugin, tasksPlugin, usagePlugin, trajectoryPlugin, harnessFilesPlugin, apiWorkbenchPlugin, terminalPlugin, appLauncherPlugin, lunaPlugin, quickAgentPlugin, quickCommandPlugin, seaTalkPlugin, notificationsPlugin, promptsPlugin, projectDocPlugin]
+export const defaultPluginInstances: PluginInstanceRecord[] = [questionNotificationsDefaultInstance, teamsDefaultInstance, sessionLauncherDefaultInstance, tasksDefaultInstance, usageDefaultInstance, ...trajectoryDefaults, harnessFilesDefaultInstance, apiWorkbenchDefaultInstance, terminalDefaultInstance, appLauncherDefaultInstance, lunaDefaultInstance, quickAgentDefaultInstance, ...quickCommandDefaultInstances, seaTalkDefaultInstance, notificationsDefaultInstance, promptsDefaultInstance, projectDocDefaultInstance]

@@ -8,6 +8,7 @@ import { DEFAULT_ARCHIVE_PROMPT_TEMPLATE } from '../../features/project-doc/arch
  */
 
 export interface ProjectDocConfig {
+  compactionThreshold: number
   /** 归档 run 的模型。 */
   archiveModel: string
   /** 归档 run 的推理强度。 */
@@ -19,6 +20,7 @@ export interface ProjectDocConfig {
 }
 
 export const DEFAULT_PROJECT_DOC_CONFIG: ProjectDocConfig = {
+  compactionThreshold: 10_000,
   archiveModel: DEFAULT_BACKGROUND_MODEL,
   archiveEffort: 'max',
   archiveTurns: 10,
@@ -27,6 +29,8 @@ export const DEFAULT_PROJECT_DOC_CONFIG: ProjectDocConfig = {
 
 export function readProjectDocConfig(value: Readonly<Record<string, unknown>>): ProjectDocConfig {
   return {
+    compactionThreshold: typeof value.compactionThreshold === 'number' && Number.isFinite(value.compactionThreshold) && value.compactionThreshold >= 1
+      ? Math.floor(value.compactionThreshold) : 10_000,
     archiveModel: typeof value.archiveModel === 'string' && value.archiveModel ? value.archiveModel : DEFAULT_PROJECT_DOC_CONFIG.archiveModel,
     archiveEffort: typeof value.archiveEffort === 'string' && value.archiveEffort ? value.archiveEffort : DEFAULT_PROJECT_DOC_CONFIG.archiveEffort,
     archiveTurns: typeof value.archiveTurns === 'number' && Number.isFinite(value.archiveTurns) && value.archiveTurns > 0

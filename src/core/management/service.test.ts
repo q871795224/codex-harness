@@ -5,7 +5,7 @@ import type { HarnessPlugin, PluginInstanceRecord } from '../../extensions/types
 import { runtime } from '../runtime/bridge'
 import { appServer } from '../runtime/appServerClient'
 
-vi.mock('../runtime/bridge', () => ({ runtime: { listWorkspaces: vi.fn(), mapThreadWorkspaces: vi.fn(), getRuntimeVersions: vi.fn(), claudeRequest: vi.fn() } }))
+vi.mock('../runtime/bridge', () => ({ runtime: { listWorkspaces: vi.fn(), mapThreadWorkspaces: vi.fn(), getRuntimeVersions: vi.fn(), claudeRequest: vi.fn(), listAsyncWaits: vi.fn(), createAsyncWait: vi.fn(), asyncWaitAction: vi.fn() } }))
 vi.mock('../runtime/appServerClient', () => ({ appServer: { readConfig: vi.fn(), writeConfigValue: vi.fn(), reloadMcpServers: vi.fn(),
   listMcpServers: vi.fn(), listSkills: vi.fn(), setSkillEnabled: vi.fn() } }))
 
@@ -83,7 +83,7 @@ describe('management controls the real plugin host', () => {
       config: { secret: 'private-value' }, createdAt: 1, updatedAt: 1 }
     context.plugins = { loading: false, error: null, definitions: [plugin], instances: [instance],
       status: (id) => host.status(id), resolvedTabs: (view) => host.resolvedTabs(view), resolvedThreadHeaderActions: () => [],
-      resolvedNewThreadPanels: () => [], resolvedComposerActions: () => [], resolvedTurnActions: () => [],
+      resolvedConversationBanners: () => [], resolvedNewThreadPanels: () => [], resolvedComposerActions: () => [], resolvedTurnActions: () => [],
       resolvedComposerCompletions: () => [], resolvedQuickActions: () => [], resolvedQuickCommands: () => [],
       upsertInstance: async (next) => {
         const saved = { ...next, config: Object.fromEntries(Object.entries(next.config).sort(([a], [b]) => a.localeCompare(b))) }
@@ -126,4 +126,15 @@ describe('management controls the real plugin host', () => {
     expect(await call('plugins.list', { workspaceRoot: '/workspace/1' })).toMatchObject({ context: { threadId: null, threadCwd: null, workspaceRoot: '/workspace/1' } })
     await host.dispose()
   })
+})
+
+it('creates waits against the supplied origin rather than the selected conversation', async () => {
+  const { context, call } = fixture()
+  context.harness.selectedThreadId = 'selected-unrelated'
+  const input = { id: 'cert-843', threadId: 'origin', title: 'Certificate', continuation: 'Review', checkerPath: '/tmp/check.py' }
+  vi.mocked(runtime.createAsyncWait).mockResolvedValue({ ...input, status: 'waiting' } as never)
+  await call('asyncWaits.create', input)
+  expect(runtime.createAsyncWait).toHaveBeenCalledWith(input)
+  await expect(call('asyncWaits.create', { ...input, threadId: '' })).rejects.toThrow('threadId')
+  await expect(call('asyncWaits.action', { id: input.id, action: 'turn/start' })).rejects.toThrow('无效')
 })

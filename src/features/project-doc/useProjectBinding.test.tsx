@@ -15,6 +15,7 @@ function makeService(initial: Record<string, ThreadProjectBinding> = {}) {
   const listeners = new Set<() => void>()
   const notify = () => { for (const l of [...listeners]) l() }
   const service: ProjectDocService = {
+    measure: vi.fn(), beginCompaction: vi.fn(), completeCompaction: vi.fn(), cancelCompaction: vi.fn(), readVersion: vi.fn(), restoreVersion: vi.fn(),
     create: vi.fn(async () => meta),
     list: vi.fn(async () => [meta]),
     get: vi.fn(async (projectId: string) => ({ ...meta, projectId })),

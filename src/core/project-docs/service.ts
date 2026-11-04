@@ -7,6 +7,12 @@ export function createProjectDocService(): ProjectDocService {
     for (const listener of [...bindingListeners]) listener()
   }
   return {
+    measure: (id) => runtime.projectDocMeasure(id),
+    beginCompaction: (id) => runtime.projectDocBeginCompaction(id),
+    completeCompaction: (id, job, content) => runtime.projectDocCompleteCompaction(id, job, content),
+    cancelCompaction: (id, job) => runtime.projectDocCancelCompaction(id, job),
+    readVersion: (id, seq) => runtime.projectDocReadVersion(id, seq),
+    restoreVersion: (id, seq, baseSeq) => runtime.projectDocRestoreVersion(id, seq, baseSeq),
     create: (projectId, name) => runtime.projectDocCreate(projectId, name),
     list: () => runtime.projectDocList(),
     get: (projectId) => runtime.projectDocGet(projectId),

@@ -1,3 +1,6 @@
+import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
+import { useQuestionLinks } from './features/conversation/useQuestionLinks'
+import type { QuestionNotificationService } from './core/questions/types'
 import { useInterfaceMode } from './features/interface/useInterfaceMode'
 import { useManagement } from './core/management/react'
 import type { TeamsService } from './core/teams/types'
@@ -9,7 +12,7 @@ import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter, NotificationViewport } from './features/notifications/Notifications'
 import { useReleaseNotifications } from './features/notifications/useReleaseNotifications'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, Clock3, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
@@ -19,7 +22,7 @@ import type { ConversationService } from './core/conversations/types'
 import type { SystemNotificationService } from './core/notifications/types'
 import type { QuickCommandService } from './core/quick-commands/types'
 import type { HarnessFilesService, HarnessInstructionConfig } from './core/harness-files/types'
-import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, PluginThreadHeaderAction, PluginTurnAction, usePluginHost } from './core/plugins/react'
+import { PluginConversationBanner, PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, PluginThreadHeaderAction, PluginTurnAction, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
 import { useWorkspaceRelease } from './core/release-command/useWorkspaceRelease'
@@ -58,6 +61,7 @@ import { archiveStore } from './plugins/project-doc/archiveStore'
 
 const TeamMode = lazy(() => import('./features/teams/TeamMode').then((module) => ({ default: module.TeamMode })))
 
+const ASYNC_WAIT_TAB_KEY = 'async-waits'
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 // 项目文档服务是无状态桥接封装，模块级单例即可（绑定走 appState，读写直连 Rust store）。
 const projectDocs = createProjectDocService()
@@ -104,7 +108,9 @@ export default function App() {
     'harness.quickCommands': {
       run: runtime.runQuickCommand,
     } satisfies QuickCommandService,
+    'harness.questionNotifications': { send: runtime.sendQuestionNotification } satisfies QuestionNotificationService,
     'harness.conversations': {
+      onUserInputRequested: harness.onUserInputRequested,
       onTurnCompleted: harness.onTurnCompleted,
       onMessageSubmitted: harness.onMessageSubmitted,
       openThread: (threadId) => harness.selectThread(threadId, 'notification'),
@@ -163,7 +169,7 @@ export default function App() {
       deliveryContext: runtime.workspaceDeliveryContext,
       openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
-  }), [teams, agentRuns, harness.onTurnCompleted, harness.onMessageSubmitted, harness.selectThread])
+  }), [teams, agentRuns, harness.onTurnCompleted, harness.onMessageSubmitted, harness.onUserInputRequested, harness.selectThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {
@@ -215,6 +221,21 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const suppressTabClickRef = useRef(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pluginsOpen, setPluginsOpen] = useState(false)
+  const questionNavigation = useQuestionLinks(
+    harness.phase === 'ready',
+    async (id) => {
+      harness.setViewMode('active')
+      await harness.selectThread(id, 'notification')
+    },
+    () => {
+      selectMode('conversation')
+      setTab('chat')
+      setFocusedTab(null)
+      setNotificationsOpen(false)
+      setSettingsOpen(false)
+      setPluginsOpen(false)
+    },
+  )
   const [rawMode, setRawMode] = useState(false)
   const [rawOverrides, setRawOverrides] = useState<ReadonlySet<string>>(new Set())
   const toggleRawOverride = (messageKey: string) => setRawOverrides((current) => {
@@ -363,6 +384,9 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  const conversationBanners = plugins.resolvedConversationBanners({
+    provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd, workspaceRoot: workspace?.root ?? null,
+  })
   const resolvedComposerCompletions = plugins.resolvedComposerCompletions({
     provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
@@ -381,6 +405,12 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  useEffect(() => {
+    return archiveStore.subscribe(() => {
+      const request = archiveStore.getState().selectRequest
+      if (request) setTab(request.view === 'chat' ? 'chat' : 'builtin.project-doc:projects')
+    })
+  }, [])
   const codexConversation = harness.selectedProvider === 'codex'
   const threadHeaderActions = resolvedThreadHeaderActions
   const pluginTabs = resolvedPluginTabs
@@ -394,18 +424,18 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const composerCollapsible = selectedPluginTab !== null
   const composerCollapseKey = `${harness.selectedThreadId ?? 'none'}:${tab}`
   const composerCollapsed = composerCollapsible && Boolean(collapsedComposerKeys[composerCollapseKey])
-  const composerVisible = harness.viewMode === 'active' && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
+  const composerVisible = harness.viewMode === 'active' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
   const quickPanelBottom = resolveQuickPanelAnchor(composerVisible, quickActionBottom)
   const quickPanelsVisible = shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
 
   useEffect(() => {
-    if (tab !== 'chat' && !selectedPluginTab) {
+    if (tab !== 'chat' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab) {
       setTab('chat')
       setFocusedTab(null)
     }
   }, [selectedPluginTab, tab])
   const orderedTabIds = orderConversationTabs(
-    ['chat', ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
+    ['chat', ASYNC_WAIT_TAB_KEY, ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
   )
   const ctrlPressed = useModifierKey('Control')
@@ -464,7 +494,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   }, [])
 
   useEffect(() => {
-    if (tab !== 'chat' && !selectedPluginTab) setTab('chat')
+    if (tab !== 'chat' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab) setTab('chat')
   }, [selectedPluginTab, tab])
 
   useEffect(() => {
@@ -787,9 +817,9 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                   const entry = tabId === 'chat'
                     ? null
                     : pluginTabs.find((candidate) => pluginTabKey(candidate.pluginId, candidate.contribution.id) === tabId)
-                  if (tabId !== 'chat' && !entry) return null
-                  const label = entry?.contribution.label ?? '对话'
-                  const Icon = entry?.contribution.icon ?? MessageSquareText
+                  if (tabId !== 'chat' && tabId !== ASYNC_WAIT_TAB_KEY && !entry) return null
+                  const label = tabId === ASYNC_WAIT_TAB_KEY ? '异步任务' : entry?.contribution.label ?? '对话'
+                  const Icon = tabId === ASYNC_WAIT_TAB_KEY ? Clock3 : entry?.contribution.icon ?? MessageSquareText
                   return (
                     <button
                       key={tabId}
@@ -826,12 +856,14 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
             <div className="notification-anchor"><NotificationViewport store={notifications} onOpen={openNotifications} /></div>
             {tab === 'chat' ? (
               <ConversationView
+                asyncWaitPanel={codexConversation ? <AsyncWaitPanel threadId={harness.currentThread.id} onOpenThread={(id) => { void harness.selectThread(id) }} /> : undefined}
                 threadId={harness.currentThread.id}
                 provider={harness.selectedProvider}
                 items={harness.currentDetail?.items ?? []}
                 turns={harness.currentDetail?.turns ?? []}
                 cwd={harness.currentThread.cwd}
                 approvals={currentApprovals}
+                questionNavigation={questionNavigation}
                 sendShortcut={harness.keyboard.sendShortcut}
                 workspace={workspace}
                 workspaces={harness.workspaces}
@@ -878,6 +910,10 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 backgroundWorking={harness.isCurrentBackgroundWorking}
                 pendingSteers={currentSteers}
                 workingStartedAt={turnStartedAtMilliseconds(harness.selectedProvider, currentActiveTurn?.startedAt ?? null)}
+                banners={conversationBanners.map((entry) => <PluginConversationBanner key={entry.instanceId + entry.contribution.id} entry={entry} props={{
+                  provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd,
+                  workspaceRoot: workspace?.root ?? null, checkoutRoot: harness.currentThread?.cwd ?? null,
+                }} />)}
                 recap={codexConversation ? harness.currentRecap : null}
                 onRawModeToggle={() => setRawMode((current) => !current)}
                 onContinueAfterFailure={codexConversation && canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
@@ -886,6 +922,13 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 renderTurnActions={renderTurnActions}
               />
             ) : null}
+            <RetainedTab active={tab === ASYNC_WAIT_TAB_KEY}>
+              <AsyncWaitPanel
+                threadId={harness.currentThread.id}
+                view="page"
+                onOpenThread={(id) => { setTab('chat'); void harness.selectThread(id) }}
+              />
+            </RetainedTab>
             {pluginTabs.map((entry) => (
               <RetainedTab key={`${entry.instanceId}:${entry.contribution.id}`} active={selectedPluginTab === entry}>
                 <PluginTabBoundary

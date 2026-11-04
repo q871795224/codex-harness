@@ -100,9 +100,10 @@ function ProjectMetaActions({ service, project, onChanged, onArchived }: {
  * 项目文档 tab：项目列表 → 详情（文档渲染、当前 seq、版本历史、编辑、冲突 diff）。
  * 编辑与 Agent 写入走同一条 `writeSection` 通道（updatedBy = 'user'），seq 校验在 Rust 强制。
  */
-export function ProjectTab({ service, selectedProjectId, conflictRequest, archiveRequest, onSelectProject, onConflictHandled, onArchiveHandled, workspaces }: {
+export function ProjectTab({ initialView = 'doc', service, selectedProjectId, conflictRequest, archiveRequest, onSelectProject, onConflictHandled, onArchiveHandled, workspaces }: {
   service: ProjectDocService
   selectedProjectId: string | null
+  initialView?: 'doc' | 'history'
   conflictRequest: ProjectTabConflictRequest | null
   archiveRequest?: ProjectTabArchiveRequest | null
   onSelectProject: (projectId: string | null) => void
@@ -134,6 +135,7 @@ export function ProjectTab({ service, selectedProjectId, conflictRequest, archiv
         service={service}
         projectId={selectedProjectId}
         conflictRequest={conflictRequest}
+        initialView={initialView}
         archiveRequest={archiveRequest ?? null}
         onBack={() => {
           onSelectProject(null)
@@ -267,9 +269,10 @@ function ProjectCreateRow({ service, onCreated }: {
   )
 }
 
-function ProjectDetail({ service, projectId, conflictRequest, archiveRequest, onBack, onConflictHandled, onArchiveHandled, onChanged }: {
+function ProjectDetail({ initialView = 'doc', service, projectId, conflictRequest, archiveRequest, onBack, onConflictHandled, onArchiveHandled, onChanged }: {
   service: ProjectDocService
   projectId: string
+  initialView?: 'doc' | 'history'
   conflictRequest: ProjectTabConflictRequest | null
   archiveRequest: ProjectTabArchiveRequest | null
   onBack: () => void
@@ -281,7 +284,7 @@ function ProjectDetail({ service, projectId, conflictRequest, archiveRequest, on
   const [snapshot, setSnapshot] = useState<ProjectDocSnapshot | null>(null)
   const [versions, setVersions] = useState<ProjectVersion[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [view, setView] = useState<DetailView>('doc')
+  const [view, setView] = useState<DetailView>(initialView)
 
   const reload = useCallback(async () => {
     try {
@@ -373,7 +376,7 @@ function ProjectDetail({ service, projectId, conflictRequest, archiveRequest, on
         />
       )}
       {view === 'history' && (
-        <ProjectHistory versions={versions} />
+        <ProjectHistory versions={versions} service={service} projectId={projectId} currentSeq={snapshot?.currentSeq ?? 0} onRestored={() => { void reload(); onChanged() }} />
       )}
       {view === 'diff' && conflictRequest && (
         <ProjectDiffPanel
@@ -603,20 +606,51 @@ function ProjectBoardView({ content }: { content: string }) {
   )
 }
 
-function ProjectHistory({ versions }: { versions: ProjectVersion[] | null }) {  if (versions === null) return <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
+export function ProjectHistory({ versions, service, projectId, currentSeq, onRestored }: {
+  versions: ProjectVersion[] | null; service: ProjectDocService; projectId: string; currentSeq: number; onRestored: () => void
+}) {
+  const [preview, setPreview] = useState<{ seq: number; content: string } | null>(null)
+  const [confirm, setConfirm] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const view = async (seq: number) => {
+    setBusy(true); setError('')
+    try { setPreview({ seq, content: await service.readVersion(projectId, seq) }) }
+    catch (error) { setError(messageOf(error)) }
+    finally { setBusy(false) }
+  }
+  const restore = async (seq: number) => {
+    setBusy(true); setError('')
+    try {
+      const result = await service.restoreVersion(projectId, seq, currentSeq)
+      if (result.kind === 'conflict') throw new Error('项目已有新版本，请刷新后再恢复。')
+      setConfirm(null); onRestored()
+    } catch (error) { setError(messageOf(error)) }
+    finally { setBusy(false) }
+  }
+  if (versions === null) return <p className="project-tab-empty">加载中…</p>
   if (versions.length === 0) return <p className="project-tab-empty">还没有版本记录。</p>
-  return (
+  const before = new Set(versions.flatMap((v) => v.operation?.startsWith('compaction:') ? [Number(v.operation.split(':')[1])] : []))
+  return <div>
+    {error && <p role="alert">{error}</p>}
+    {preview && <section><h3>v{preview.seq} <button onClick={() => setPreview(null)}>关闭预览</button></h3><div className="project-history-preview markdown-body"><Markdown text={preview.content} /></div></section>}
     <ol className="project-history">
-      {[...versions].reverse().map((version) => (
-        <li key={version.seq}>
-          <strong>v{version.seq}</strong>
-          <span>{version.updatedBy}</span>
-          <small>{formatTime(version.updatedAt)}</small>
-          {version.summary && <p>{version.summary}</p>}
-        </li>
-      ))}
+      {versions.map((version) => <li key={version.seq}>
+        <strong>v{version.seq}{version.operation?.startsWith('compaction:') ? ' · 整理生成' : before.has(version.seq) ? ' · 整理前备份' : ''}</strong>
+        <span>{version.updatedBy}</span><small>{formatTime(version.updatedAt)}</small>
+        {version.summary && <p>{version.summary}</p>}
+        <div className="project-compaction-actions">
+          <button disabled={busy} onClick={() => void view(version.seq)}>查看版本</button>
+          {version.seq !== currentSeq && <button disabled={busy} onClick={() => setConfirm(version.seq)}>恢复此版本</button>}
+        </div>
+        {confirm === version.seq && <div className="project-compaction-actions">
+          <span>将生成新版本，现有文档和历史仍保留。</span>
+          <button disabled={busy} onClick={() => void restore(version.seq)}>确认恢复</button>
+          <button disabled={busy} onClick={() => setConfirm(null)}>取消</button>
+        </div>}
+      </li>)}
     </ol>
-  )
+  </div>
 }
 
 function ProjectDiffPanel({ proposalContent, currentContent, currentSeq, section, onDone }: {

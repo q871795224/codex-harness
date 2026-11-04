@@ -1,3 +1,4 @@
+import type { AsyncWaitAction } from '../async-waits/types'
 import type { useUnifiedHarness } from '../../features/conversation/useUnifiedHarness'
 import type { useCodexCore } from '../../features/codex/useCodexCore'
 import type { usePluginHost } from '../plugins/react'
@@ -87,11 +88,20 @@ export function createManagementHandler(get: () => ManagementContext) {
     switch (method) {
       case 'capabilities':
         return { protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),
-          pluginSystem: 'Harness PluginHost（与 Codex/Claude 插件各自独立）', scope: '运行中的 Harness 实例；不启动模型轮次' }
+          pluginSystem: 'Harness PluginHost（与 Codex/Claude 插件各自独立）', scope: '运行中的 Harness 实例；异步等待就绪后按已登记动作启动原会话轮次' }
       case 'status':
         return { versions: await runtime.getRuntimeVersions(), flavor, phase: h.phase, selectedProvider: h.selectedProvider,
           selectedThreadId: h.selectedThreadId, claude: h.claudeStatus, plugins: { loading: plugins.loading, error: plugins.error },
           observedAt: new Date().toISOString(), source: 'mounted Harness services' }
+      case 'asyncWaits.list':
+        return runtime.listAsyncWaits()
+      case 'asyncWaits.create':
+        return runtime.createAsyncWait({ id: text(p, 'id'), threadId: text(p, 'threadId'), title: text(p, 'title'), continuation: text(p, 'continuation'), checkerPath: text(p, 'checkerPath') })
+      case 'asyncWaits.action': {
+        const action = text(p, 'action')
+        if (!['check', 'pause', 'resume', 'cancel', 'acknowledge'].includes(action)) throw new Error('异步任务操作无效')
+        return runtime.asyncWaitAction(text(p, 'id'), action as AsyncWaitAction)
+      }
       case 'workspaces.list': {
         const registered = new Set((await runtime.listWorkspaces()).map((workspace) => workspace.root))
         const visible = new Set(h.workspaces.map((workspace) => workspace.root))
@@ -164,7 +174,7 @@ export function createManagementHandler(get: () => ManagementContext) {
           workspaceRoot: typeof p.workspaceRoot === 'string' ? p.workspaceRoot
             : h.workspaces.find((workspace) => workspace.root === (threadId ? h.threadRoots[threadId] : null))?.root ?? null }
         const entries = { tabs: plugins.resolvedTabs(context), headerActions: plugins.resolvedThreadHeaderActions(context),
-          newThreadPanels: plugins.resolvedNewThreadPanels(context), composerActions: plugins.resolvedComposerActions(context),
+          conversationBanners: plugins.resolvedConversationBanners(context), newThreadPanels: plugins.resolvedNewThreadPanels(context), composerActions: plugins.resolvedComposerActions(context),
           turnActions: plugins.resolvedTurnActions(context), completions: plugins.resolvedComposerCompletions(context),
           quickActions: plugins.resolvedQuickActions(context), quickCommands: plugins.resolvedQuickCommands(context) }
         return { source: 'Harness PluginHost', context, definitions: plugins.definitions.map((definition) => definition.manifest),

@@ -51,6 +51,7 @@ function fakeContext(storage: PluginStorage) {
       threadHeaderActions: { register: noop },
       newThreadPanels: { register: noop },
       conversationTabs: { register: (contribution) => { tabs.push(contribution) } },
+      conversationBanners: { register: () => () => undefined },
       composerActions: { register: noop },
       turnActions: { register: noop },
       composerCompletions: { register: (contribution) => { completions.push(contribution) } },

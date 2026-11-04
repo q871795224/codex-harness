@@ -1,4 +1,5 @@
 import type {
+  ConversationBannerContribution,
   ComposerActionContribution,
   ComposerCompletionContribution,
   ConversationTabContribution,
@@ -151,6 +152,7 @@ export class PluginHost {
   private readonly tabs = new ContributionRegistry<ConversationTabContribution>()
   private readonly threadHeaderActions = new ContributionRegistry<ThreadHeaderActionContribution>()
   private readonly newThreadPanels = new ContributionRegistry<NewThreadPanelContribution>()
+  private readonly conversationBanners = new ContributionRegistry<ConversationBannerContribution>()
   private readonly composerActions = new ContributionRegistry<ComposerActionContribution>()
   private readonly turnActions = new ContributionRegistry<TurnActionContribution>()
   private readonly composerCompletions = new ContributionRegistry<ComposerCompletionContribution>()
@@ -190,6 +192,10 @@ export class PluginHost {
 
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[] {
     return this.filterProvider(resolveScopedContributions(this.composerActions.list(), context), context)
+  }
+
+  resolvedConversationBanners(context: PluginViewContext): ResolvedContribution<ConversationBannerContribution>[] {
+    return this.filterProvider(resolveScopedContributions(this.conversationBanners.list(), context), context)
   }
 
   resolvedTurnActions(context: PluginViewContext): ResolvedContribution<TurnActionContribution>[] {
@@ -317,6 +323,9 @@ export class PluginHost {
         },
         conversationTabs: {
           register: (contribution) => lifecycle.effect(this.tabs.register({ ...metadata, contribution })),
+        },
+        conversationBanners: {
+          register: (contribution) => lifecycle.effect(this.conversationBanners.register({ ...metadata, contribution })),
         },
         composerActions: {
           register: (contribution) => lifecycle.effect(this.composerActions.register({ ...metadata, contribution })),
