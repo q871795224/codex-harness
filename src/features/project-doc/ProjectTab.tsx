@@ -44,6 +44,8 @@ function ProjectMetaActions({ service, project, onChanged, onArchived }: {
 }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(project.name)
+  const [editingShortName, setEditingShortName] = useState(false)
+  const [shortName, setShortName] = useState(project.shortName ?? '')
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,7 +63,25 @@ function ProjectMetaActions({ service, project, onChanged, onArchived }: {
     } catch (err) { setError(messageOf(err)) }
     finally { setBusy(false) }
   }
+  const saveShortName = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await service.setShortName(project.projectId, shortName.trim(), false)
+      setEditingShortName(false)
+      onChanged()
+    } catch (err) { setError(messageOf(err)) }
+    finally { setBusy(false) }
+  }
   return <div className="project-meta-actions">
+    {editingShortName ? <>
+      <input aria-label="项目简称" value={shortName} placeholder="留空时下次命名自动生成" onChange={(event) => setShortName(event.target.value)} />
+      <button disabled={busy || [...shortName.trim()].length > 12 || /[\[\]【】\p{Cc}]/u.test(shortName)} onClick={() => void saveShortName()}>保存简称</button>
+      <button disabled={busy} onClick={() => setEditingShortName(false)}>取消</button>
+    </> : <button disabled={busy} onClick={() => { setShortName(project.shortName ?? ''); setEditingShortName(true) }}>
+      {project.shortName ? `简称：${project.shortName}` : '设置简称'}
+    </button>}
+
     {editing ? <>
       <input aria-label="项目名称" value={name} onChange={(event) => setName(event.target.value)} />
       <button disabled={busy || !name.trim()} onClick={() => void update(false)}>保存名称</button>

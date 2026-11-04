@@ -185,6 +185,11 @@ export function reconcilePasteEdit(pastes: CollapsedPaste[], editStart: number, 
   })
 }
 
+export function titleSourceText(text: string, pastes: CollapsedPaste[]): string {
+  return expandCollapsedPastes(text, pastes.map((paste) => paste.origin?.kind === 'project-doc'
+    ? { ...paste, content: '' } : paste)).trim()
+}
+
 export function expandCollapsedPastes(text: string, pastes: CollapsedPaste[]): string {
   if (pastes.length === 0) return text
   let cursor = 0

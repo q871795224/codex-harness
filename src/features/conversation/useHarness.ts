@@ -101,6 +101,8 @@ import {
 import { subscribeHarnessRuntime } from './harnessSubscriptions'
 import { archiveThreadsBefore, listThreadPage, type ThreadViewMode } from './threadCatalog'
 import { prependOlderTurns } from './threadHistory'
+import { createProjectDocService } from '../../core/project-docs/service'
+import { finishProjectTitle, projectTitleInstructions, readTitleProject } from './projectTitle'
 import { reduceTitleGeneratorEvent, type TitleGeneratorState } from './titleGenerator'
 import {
   recapHistoryText,
@@ -1184,7 +1186,9 @@ export function useHarness() {
   }, [commitTurnOwnership, persistBadge, setThreadStarting, updateDetail, updateThread])
 
   const generateConversationTitle = useCallback(async (threadId: string, cwd: string, userText: string): Promise<string | null> => {
-    const prompt = threadTitlePrompt(userText)
+    const projects = createProjectDocService()
+    const project = userText.trim() ? await readTitleProject(projects, threadId).catch(() => null) : null
+    const prompt = threadTitlePrompt(userText, project)
     if (!prompt) {
       recordTitleDiagnostic({
         level: 'info',
@@ -1234,7 +1238,7 @@ export function useHarness() {
         model: settings.model,
         approvalPolicy: 'never',
         sandbox: 'read-only',
-        developerInstructions: settings.prompt,
+        developerInstructions: projectTitleInstructions(settings.prompt, project),
         ephemeral: true,
         config: EPHEMERAL_THREAD_DISABLED_CONFIG,
       })
@@ -1244,6 +1248,7 @@ export function useHarness() {
       })
       titleGeneratorsRef.current.set(response.thread.id, {
         targetThreadId: threadId,
+        project,
         attemptId,
         text: '',
         startedAt,
@@ -1283,7 +1288,7 @@ export function useHarness() {
         model: settings.model,
         effort: settings.effort,
       })
-      return await result
+      return await finishProjectTitle(projects, project, await result)
     } catch (error) {
       if (generatorThreadId) {
         titleGeneratorsRef.current.delete(generatorThreadId)
@@ -1647,7 +1652,7 @@ export function useHarness() {
     }
   }, [notify, refreshThreads, setActiveTurn, setThreadStarting])
 
-  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = []) => {
+  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string) => {
     const threadId = selectedThreadIdRef.current
     if (!threadId || input.length === 0) return
     const text = input
@@ -1676,7 +1681,7 @@ export function useHarness() {
             thread: withInitialThreadPreview(detail.thread, text),
           }))
         }
-        if (shouldEvaluateTitle) void maybeGenerateThreadTitle(startedThreadId, text)
+        if (shouldEvaluateTitle) void maybeGenerateThreadTitle(startedThreadId, titleSource ?? text)
         return
       }
 
@@ -1996,7 +2001,7 @@ export function useHarness() {
       })
       titleGeneratorsRef.current.delete(generatorThreadId)
       generatingTitlesRef.current.delete(generator.targetThreadId)
-      titleGeneratorResolversRef.current.get(generatorThreadId)?.(title)
+      titleGeneratorResolversRef.current.get(generatorThreadId)?.(generatedText || null)
       titleGeneratorResolversRef.current.delete(generatorThreadId)
     }
     return true

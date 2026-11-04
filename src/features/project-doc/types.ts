@@ -8,6 +8,7 @@ import type { SectionKey } from './document'
 export interface ProjectMeta {
   projectId: string
   name: string
+  shortName?: string | null
   currentSeq: number
   createdAt: number
   updatedAt: number

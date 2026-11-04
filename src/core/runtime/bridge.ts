@@ -430,6 +430,10 @@ export const runtime = {
     return invoke<void>('project_doc_archive', { projectId })
   },
 
+  projectDocSetShortName(projectId: string, shortName: string, onlyIfEmpty: boolean): Promise<string | null> {
+    return invoke<string | null>('project_doc_set_short_name', { projectId, shortName, onlyIfEmpty })
+  },
+
   projectDocGet(projectId: string): Promise<ProjectMeta> {
     return invoke<ProjectMeta>('project_doc_get', { projectId })
   },

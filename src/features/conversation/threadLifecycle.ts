@@ -181,10 +181,10 @@ export function isFirstUserTurn(detail: ThreadDetail | undefined): boolean {
     && !detail.turns.some((turn) => turn.items.some((item) => item.type === 'userMessage'))
 }
 
-export function threadTitlePrompt(userText: string): string | null {
+export function threadTitlePrompt(userText: string, project?: { name: string; shortName?: string | null } | null): string | null {
   const text = userText.trim()
   if (!text) return null
-  return `Generate a title for this user's request:\n\nUser: ${text.slice(0, 8_000)}`
+  return `Generate a title for this user's request:\n${project ? `Project: ${JSON.stringify({ name: project.name, shortName: project.shortName ?? null })}\n` : ''}\nUser: ${text.slice(0, 8_000)}`
 }
 
 export function shouldDiscardDraftThread(unstarted: boolean, hasContent: boolean): boolean {

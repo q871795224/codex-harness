@@ -35,6 +35,7 @@ const APPEND_SECTIONS: &[&str] = &["log", "decisions", "openQuestions"];
 pub struct ProjectMeta {
     pub project_id: String,
     pub name: String,
+    pub short_name: Option<String>,
     pub current_seq: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -231,7 +232,7 @@ impl ProjectDocStore {
     pub(crate) fn open_at(root: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&root)
             .map_err(|e| format!("无法创建数据目录 {}: {e}", root.display()))?;
-        let connection =
+        let mut connection =
             Connection::open(root.join(DB_FILE)).map_err(|e| format!("无法打开项目文档库: {e}"))?;
         connection
             .execute_batch(
@@ -268,6 +269,16 @@ impl ProjectDocStore {
                 "#,
             )
             .map_err(|e| format!("无法初始化项目文档库: {e}"))?;
+        let migration = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| format!("无法开始项目元数据迁移: {e}"))?;
+        let has_short_name = migration.prepare("PRAGMA table_info(projects)")
+            .and_then(|mut stmt| stmt.query_map([], |row| row.get::<_, String>(1))?.collect::<Result<Vec<_>, _>>())
+            .map_err(|e| format!("无法读取项目字段: {e}"))?.iter().any(|name| name == "short_name");
+        if !has_short_name {
+            migration.execute("ALTER TABLE projects ADD COLUMN short_name TEXT", [])
+                .map_err(|e| format!("无法迁移项目简称: {e}"))?;
+        }
+        migration.commit().map_err(|e| format!("无法提交项目元数据迁移: {e}"))?;
         Ok(Self {
             connection: Mutex::new(connection),
             root,
@@ -313,12 +324,13 @@ impl ProjectDocStore {
         let connection = self.lock()?;
         connection
             .query_row(
-                "SELECT project_id, name, current_seq, created_at, updated_at FROM projects WHERE project_id = ?1",
+                "SELECT project_id, name, current_seq, created_at, updated_at, short_name FROM projects WHERE project_id = ?1",
                 params![id],
                 |row| {
                     Ok(ProjectMeta {
                         project_id: row.get(0)?,
                         name: row.get(1)?,
+                    short_name: row.get(5)?,
                         current_seq: row.get(2)?,
                         created_at: row.get(3)?,
                         updated_at: row.get(4)?,
@@ -332,7 +344,7 @@ impl ProjectDocStore {
         let connection = self.lock()?;
         let mut stmt = connection
             .prepare(
-                "SELECT project_id, name, current_seq, created_at, updated_at FROM projects WHERE project_id NOT IN (SELECT project_id FROM archived_projects) ORDER BY updated_at DESC",
+                "SELECT project_id, name, current_seq, created_at, updated_at, short_name FROM projects WHERE project_id NOT IN (SELECT project_id FROM archived_projects) ORDER BY updated_at DESC",
             )
             .map_err(|e| format!("无法查询项目列表: {e}"))?;
         let rows = stmt
@@ -340,6 +352,7 @@ impl ProjectDocStore {
                 Ok(ProjectMeta {
                     project_id: row.get(0)?,
                     name: row.get(1)?,
+                    short_name: row.get(5)?,
                     current_seq: row.get(2)?,
                     created_at: row.get(3)?,
                     updated_at: row.get(4)?,
@@ -370,6 +383,41 @@ impl ProjectDocStore {
             return Err("项目不存在".into());
         }
         Ok(())
+    }
+
+    /// Metadata only: do not create a document revision. Return the persisted winner.
+    pub fn set_short_name(
+        &self,
+        project_id: &str,
+        short_name: &str,
+        only_if_empty: bool,
+    ) -> Result<Option<String>, String> {
+        let id = validate_project_id(project_id)?;
+        let name = short_name.trim();
+        if name.chars().count() > 12 || name.chars().any(|c| c.is_control() || "[]【】".contains(c))
+        {
+            return Err("项目简称最多 12 个字符，不能包含换行或方括号".into());
+        }
+        if only_if_empty && name.is_empty() {
+            return Err("生成的项目简称不能为空".into());
+        }
+        let mut connection = self.lock()?;
+        let tx = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| format!("无法开始简称事务: {e}"))?;
+        tx.execute(
+            "UPDATE projects SET short_name = NULLIF(?2, ''), updated_at = ?3 WHERE project_id = ?1 AND (?4 = 0 OR short_name IS NULL OR short_name = '')",
+            params![id, name, now_ms(), only_if_empty],
+        ).map_err(|e| format!("无法保存项目简称: {e}"))?;
+        let saved = tx
+            .query_row(
+                "SELECT short_name FROM projects WHERE project_id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("项目不存在或读取失败: {e}"))?;
+        tx.commit().map_err(|e| format!("无法提交项目简称: {e}"))?;
+        Ok(saved)
     }
 
     pub fn archive_project(&self, project_id: &str) -> Result<(), String> {
@@ -817,5 +865,95 @@ mod tests {
         assert!(file.contains("seq: 1"), "got: {file}");
         assert!(file.contains("updated_by: user"), "got: {file}");
         assert!(!file.contains("attacker"), "got: {file}");
+    }
+}
+
+#[cfg(test)]
+mod short_name_tests {
+    use super::*;
+
+    #[test]
+    fn migrates_old_metadata_and_keeps_alias_out_of_document_revisions() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy = Connection::open(dir.path().join(DB_FILE)).unwrap();
+        legacy.execute_batch("CREATE TABLE projects (project_id TEXT PRIMARY KEY, name TEXT NOT NULL, current_seq INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); INSERT INTO projects VALUES ('demo', '完整项目名称', 0, 1, 1);").unwrap();
+        drop(legacy);
+        let store = ProjectDocStore::open_at(dir.path().into()).unwrap();
+        assert_eq!(store.get_project("demo").unwrap().short_name, None);
+        assert_eq!(
+            store
+                .set_short_name("demo", "DNS限速", true)
+                .unwrap()
+                .as_deref(),
+            Some("DNS限速")
+        );
+        store.rename_project("demo", "新的完整名称").unwrap();
+        assert_eq!(
+            store.list_projects().unwrap()[0].short_name.as_deref(),
+            Some("DNS限速")
+        );
+        assert_eq!(store.get_project("demo").unwrap().current_seq, 0);
+        assert!(store.list_versions("demo").unwrap().is_empty());
+        assert!(!dir
+            .path()
+            .join(PROJECTS_DIR)
+            .join("demo")
+            .join(CURRENT_FILE)
+            .exists());
+        drop(store);
+        let store = ProjectDocStore::open_at(dir.path().into()).unwrap();
+        assert_eq!(
+            store.get_project("demo").unwrap().short_name.as_deref(),
+            Some("DNS限速")
+        );
+        assert_eq!(
+            store
+                .set_short_name("demo", "手动简称", false)
+                .unwrap()
+                .as_deref(),
+            Some("手动简称")
+        );
+        assert_eq!(
+            store
+                .set_short_name("demo", "迟来的候选", true)
+                .unwrap()
+                .as_deref(),
+            Some("手动简称")
+        );
+        assert_eq!(store.set_short_name("demo", "", false).unwrap(), None);
+        assert!(store.set_short_name("demo", "", true).is_err());
+        for invalid in ["a".repeat(13), "DNS\n限速".into(), "[DNS]".into()] {
+            assert!(store.set_short_name("demo", &invalid, false).is_err());
+        }
+        assert!(store.set_short_name("missing", "简称", true).is_err());
+    }
+
+    #[test]
+    fn concurrent_instances_return_the_same_persisted_winner() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = ProjectDocStore::open_at(dir.path().into()).unwrap();
+        first.create_project("demo", "项目全名").unwrap();
+        let second = ProjectDocStore::open_at(dir.path().into()).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let b = barrier.clone();
+        let one = std::thread::spawn(move || {
+            b.wait();
+            first.set_short_name("demo", "简称甲", true).unwrap()
+        });
+        let two = std::thread::spawn(move || {
+            barrier.wait();
+            second.set_short_name("demo", "简称乙", true).unwrap()
+        });
+        let winner = one.join().unwrap();
+        assert!(winner.is_some());
+        assert_eq!(winner, two.join().unwrap());
+        assert_eq!(
+            ProjectDocStore::open_at(dir.path().into())
+                .unwrap()
+                .get_project("demo")
+                .unwrap()
+                .short_name,
+            winner
+        );
     }
 }

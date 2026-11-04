@@ -16,7 +16,7 @@ const meta = { projectId: 'demo', name: '示例项目', currentSeq: 2, createdAt
 function service(): ProjectDocService {
   return {
     create: vi.fn(async () => meta), list: vi.fn(async () => [meta]), get: vi.fn(async () => meta),
-    rename: vi.fn(async () => undefined), archive: vi.fn(async () => undefined),
+    setShortName: vi.fn(async () => null), rename: vi.fn(async () => undefined), archive: vi.fn(async () => undefined),
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: 2, content: '', contentHash: 'h', consistent: true })),
     versions: vi.fn(async () => []), workspaces: vi.fn(async () => []), bindWorkspace: vi.fn(),
     writeSection: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),

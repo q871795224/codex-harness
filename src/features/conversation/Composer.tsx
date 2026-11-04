@@ -24,6 +24,7 @@ import {
   shouldAttachSuggestion,
   shouldCollapsePaste,
   suggestionReplacement,
+  titleSourceText,
   type CollapsedPaste,
 } from './composerInput'
 import { findProjectCard, projectCardLabel } from '../project-doc/projectCard'
@@ -67,7 +68,7 @@ interface ComposerProps {
   onSettingsChange: (patch: Partial<ThreadCodexSettings>) => Promise<void> | void
   onClaudeSettingsChange?: (patch: Partial<ClaudeSessionSettings>) => Promise<void> | void
   onFollowUpModeChange: (mode: FollowUpMode) => void
-  onSend: (input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[]) => Promise<void> | void
+  onSend: (input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string) => Promise<void> | void
   onCommand: (command: ComposerCommand) => Promise<void> | void
   onStop: () => Promise<void> | void
   onDraftChange?: (draft: ComposerDraft, hasContent: boolean) => void
@@ -402,7 +403,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     }
     else {
       try {
-        await onSend(submission.input, followUpMode, submission.references)
+        await onSend(submission.input, followUpMode, submission.references, titleSourceText(text, collapsedPastes))
       } catch {
         return
       }

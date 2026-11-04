@@ -1,11 +1,14 @@
 import type { JsonObject, Turn } from '../../core/domain/codex'
-import { itemText, parseGeneratedThreadTitle } from '../../core/domain/codex'
+import { itemText } from '../../core/domain/codex'
+import { parseTitleResult } from './projectTitle'
+import type { ProjectMeta } from '../project-doc/types'
 import { eventThreadItem, eventTurn } from './conversationEventParser'
 
 export interface TitleGeneratorState {
   targetThreadId: string
   attemptId: string
   text: string
+  project?: ProjectMeta | null
   startedAt: number
 }
 
@@ -35,7 +38,7 @@ export function reduceTitleGeneratorEvent(
       state,
       turn,
       generatedText,
-      title: parseGeneratedThreadTitle(generatedText),
+      title: parseTitleResult(generatedText, state.project ?? null).title,
     }
   }
   return { kind: 'pending', state }

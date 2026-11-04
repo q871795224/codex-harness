@@ -702,6 +702,12 @@ fn project_doc_rename(state: State<'_, AppState>, project_id: String, name: Stri
 }
 
 #[tauri::command]
+fn project_doc_set_short_name(state: State<'_, AppState>, project_id: String, short_name: String, only_if_empty: bool) -> Result<Option<String>, String> {
+    let guard = project_docs(&state)?;
+    guard.as_ref().unwrap().set_short_name(&project_id, &short_name, only_if_empty)
+}
+
+#[tauri::command]
 fn project_doc_archive(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
     let guard = project_docs(&state)?;
     guard.as_ref().unwrap().archive_project(&project_id)
@@ -1389,6 +1395,7 @@ pub fn run() {
             project_doc_create,
             project_doc_list,
             project_doc_rename,
+            project_doc_set_short_name,
             project_doc_archive,
             project_doc_get,
             project_doc_bind_workspace,
