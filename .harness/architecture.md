@@ -113,7 +113,11 @@
 - Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery`。共享写任务使用同一 checkout 时互斥；隔离交付 worktree 固定创建在 `~/.codex-harness/agent-worktrees/<run-id>` 并保留给用户检查。
 - `return-to-parent` 是一次性的用户手动操作，父会话 active 时不得自动回传或重试。
 
-## 项目文档精简
+## 项目文档维护
+
+旧“归档到项目”功能已下线：不再注册输入框和回答操作行的触发入口，插件设置不再展示旧流程的轮数和 Prompt 模板。日常记录通过 Agent 的 `project-doc` Skill 追加，整文整理使用“精简项目文档”。旧归档编排、确认面板、配置字段和历史草稿处理暂留，后续可单独清理；不得因底层代码仍在就重新展示入口。
+
+### 项目文档精简
 
 项目文档插件通过 `conversationBanners` slot 显示共用确认卡，手动入口保留在 Composer 右侧。会话结束只触发本地计数和提醒；用户确认后才启动只读 Codex detached run。默认门限10,000 tokens，按正文版本缓存 `o200k_base` 计数；配置位于插件设置。
 

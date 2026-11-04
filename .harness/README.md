@@ -7,6 +7,7 @@
 | 了解模块边界、IPC、App Server、插件和 daemon | [architecture.md](architecture.md) | 改动跨层流程、运行时或插件宿主前 |
 | 从 Agent 查询或管理 Harness 本身 | [../docs/management.md](../docs/management.md) | 使用全局 codex-harness Skill、harnessctl 或维护本机管理入口时 |
 | 记录已经确认的长期决策和当前状态 | [memory.md](memory.md) | 需要延续历史决策，或任务完成后沉淀结论 |
+| 项目文档维护入口、旧归档下线与整文精简 | [architecture.md](architecture.md) 的“项目文档维护” | 修改项目文档插件前 |
 | 执行测试、构建、人工检查和黑箱对照 | [test.md](test.md) | 修改代码或验证行为前 |
 | 遇到已知的脆弱点、协议差异或数据安全问题 | [pitfall.md](pitfall.md) | 相关路径排查或修改前 |
 | 在固定 UI 区域（侧栏底部操作行、顶部主按钮、会话 tab 栏）新增或修改样式 | [frontend-style.md](frontend-style.md) | 改动这些区域的结构、共用选择器组或深色主题前 |

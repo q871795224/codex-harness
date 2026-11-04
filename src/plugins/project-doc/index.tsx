@@ -16,7 +16,6 @@ import type {
 import { ProjectTab } from '../../features/project-doc/ProjectTab'
 import { ProjectBindingPanel } from '../../features/project-doc/ProjectBindingPanel'
 import {
-  ARCHIVE_DRAFT_STORAGE_KEY,
   createProjectDocInstanceConfig,
   readProjectDocConfig,
   type ArchiveDraft,
@@ -29,10 +28,10 @@ import { startArchiveRun } from './archiveRun'
  *
  * - conversationTab「项目」：项目列表 → 详情（文档渲染、版本历史、编辑、冲突 diff）。
  * - newThreadPanels：会话 ↔ 项目绑定入口（方案乙：pending→locked，首轮注入项目背景卡）。
- * - composerActions「归档到项目」：起匿名 run 提炼会话进展进 Status，产出经人确认后落盘。
+ * - composerActions「精简项目文档」：归档并精简整文，保留历史恢复。
  *
  * 写入权始终在 Harness 核心（seq CAS 在 Rust 强制），插件只走 ProjectDocService。
- * Agent 主动写文档走 <project-doc-update> 审批卡（追加 Log）；归档按钮走编辑界面（覆盖 Status）。
+ * 日常记录由 Agent 经 project-doc Skill 追加；旧 Status 归档入口已下线，底层与历史草稿处理暂留。
  */
 export const PROJECT_DOC_TAB_KEY = 'builtin.project-doc:projects'
 
@@ -91,38 +90,7 @@ export const projectDocPlugin: HarnessPlugin = {
       ),
     })
 
-    ctx.slots.composerActions.register({
-      id: 'archive-to-project',
-      order: 10,
-      render: (props) => (
-        <ArchiveButton
-          props={props}
-          service={service}
-          notifications={ctx.services.get<NotificationService>('harness.notifications')}
-          agentRuns={ctx.services.get<AgentRunService>('harness.agentRuns')}
-          instanceId={ctx.instanceId}
-          config={readProjectDocConfig(ctx.config)}
-          persistDraft={(draft) => ctx.storage.set(ARCHIVE_DRAFT_STORAGE_KEY, draft)}
-        />
-      ),
-    })
-
-    // turn 级归档入口：渲染在某个 agent 最终回答的操作行右侧（copy/raw/fork 同行、右对齐）。
-    ctx.slots.turnActions.register({
-      id: 'archive-turn-to-project',
-      order: 10,
-      render: (props) => (
-        <ArchiveTurnButton
-          props={props}
-          service={service}
-          notifications={ctx.services.get<NotificationService>('harness.notifications')}
-          agentRuns={ctx.services.get<AgentRunService>('harness.agentRuns')}
-          instanceId={ctx.instanceId}
-          config={readProjectDocConfig(ctx.config)}
-          persistDraft={(draft) => ctx.storage.set(ARCHIVE_DRAFT_STORAGE_KEY, draft)}
-        />
-      ),
-    })
+    // 旧“归档到项目”的 composer / turn 入口已下线，保留下方实现供后续清理。
   },
 }
 
@@ -278,8 +246,6 @@ export function ProjectDocSettings({ instance, models, saveConfig }: PluginSetti
   const [model, setModel] = useState(config.archiveModel)
   const [effort, setEffort] = useState(config.archiveEffort)
   const [threshold, setThreshold] = useState(String(config.compactionThreshold))
-  const [turns, setTurns] = useState(String(config.archiveTurns))
-  const [template, setTemplate] = useState(config.archivePromptTemplate)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -291,13 +257,11 @@ export function ProjectDocSettings({ instance, models, saveConfig }: PluginSetti
     setSaving(true)
     setSaved(false)
     try {
-      const parsedTurns = Number.parseInt(turns, 10)
       await saveConfig({
+        ...instance.config,
         compactionThreshold: Number.isFinite(Number(threshold)) && Number(threshold) > 0 ? Math.floor(Number(threshold)) : config.compactionThreshold,
         archiveModel: model,
         archiveEffort: effort,
-        archiveTurns: Number.isFinite(parsedTurns) && parsedTurns > 0 ? parsedTurns : config.archiveTurns,
-        archivePromptTemplate: template,
       })
       setSaved(true)
     } finally {
@@ -313,7 +277,7 @@ export function ProjectDocSettings({ instance, models, saveConfig }: PluginSetti
         <small>本地计数，默认 10,000；会话结束后超出门限时提醒。</small>
       </label>
       <label>
-        归档 / 精简模型
+        精简模型
         <select value={model} onChange={(event) => setModel(event.target.value)}>
           {models.length === 0 && <option value={model}>{model}</option>}
           {models.map((candidate) => (
@@ -326,26 +290,6 @@ export function ProjectDocSettings({ instance, models, saveConfig }: PluginSetti
         <select value={effort} onChange={(event) => setEffort(event.target.value)}>
           {effortOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
-      </label>
-      <p className="project-edit-hint">模型与推理强度供归档和精简共用；下方轮数及模板仅用于“归档到项目”。</p>
-      <label>
-        取最近几轮
-        <input
-          type="number"
-          min={1}
-          value={turns}
-          onChange={(event) => setTurns(event.target.value)}
-        />
-      </label>
-      <label className="project-doc-settings-template">
-        归档 Prompt 模板
-        <textarea
-          rows={10}
-          value={template}
-          onChange={(event) => setTemplate(event.target.value)}
-          spellCheck={false}
-        />
-        <small>{'支持占位符 {{currentStatus}}（当前 Status 正文）与 {{transcript}}（最近会话转录）。'}</small>
       </label>
       <div className="project-doc-settings-actions">
         <button type="button" className="primary" disabled={saving} onClick={() => void save()}>
