@@ -316,6 +316,7 @@ impl AsyncWaits {
         let Some(_leader) = self.store.leader()? else {
             return Ok(());
         };
+        let mut due = Vec::new();
         for mut task in self.store.list()? {
             if !task.active() {
                 continue;
@@ -325,12 +326,24 @@ impl AsyncWaits {
                 task.status = "expired".into();
                 task.summary = "等待已满7天，请核对后继续".into();
                 task.updated_at = at;
+                if self.store.update(&task)? {
+                    self.changed();
+                }
             } else if task.next_check_at <= at {
+                due.push(task);
+            }
+        }
+        // Oldest due work first. A slow checker must not starve other waits or
+        // age every ready observation while a large queue is being scanned.
+        due.sort_by_key(|task| task.next_check_at);
+        let checked =
+            futures_util::future::join_all(due.into_iter().take(4).map(|mut task| async move {
                 let result = check(&self.store.checker(&task.id), &task.cwd).await;
                 apply_observation(&mut task, result, now());
-            } else {
-                continue;
-            }
+                task
+            }))
+            .await;
+        for task in checked {
             if self.store.update(&task)? {
                 self.changed();
             }
@@ -395,8 +408,10 @@ impl AsyncWaits {
         let mut fresh = Vec::new();
         for mut task in tasks {
             if now().saturating_sub(task.last_checked_at.unwrap_or(0)) > 60 {
-                let result = check(&self.store.checker(&task.id), &task.cwd).await;
-                apply_observation(&mut task, result, now());
+                task.status = "waiting".into();
+                task.next_check_at = now();
+                task.updated_at = now();
+                task.summary = "观察结果已过期，等待重新核对".into();
                 if self.store.update(&task)? {
                     self.changed();
                 }
@@ -828,6 +843,11 @@ mod tests {
         server.busy.store(false, Ordering::SeqCst);
         waits.tick().await.unwrap();
         assert_eq!(waits.list().unwrap().data[0].status, "waiting");
+        waits.tick().await.unwrap();
+        assert_eq!(
+            waits.list().unwrap().data[0].last_observation.as_deref(),
+            Some("result changed")
+        );
         assert!(server.calls.lock().unwrap().is_empty());
     }
     #[test]
