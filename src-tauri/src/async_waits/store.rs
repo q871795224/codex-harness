@@ -58,7 +58,7 @@ impl Drop for Lock {
         }
     }
 }
-fn lock(path: &Path) -> Result<Option<Lock>, String> {
+fn lock(path: &Path, nonblocking: bool) -> Result<Option<Lock>, String> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -66,7 +66,13 @@ fn lock(path: &Path) -> Result<Option<Lock>, String> {
         .truncate(false)
         .open(path)
         .map_err(|e| e.to_string())?;
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+    if unsafe {
+        libc::flock(
+            file.as_raw_fd(),
+            libc::LOCK_EX | if nonblocking { libc::LOCK_NB } else { 0 },
+        )
+    } == 0
+    {
         return Ok(Some(Lock(file)));
     }
     let error = std::io::Error::last_os_error();
@@ -105,11 +111,12 @@ impl WaitStore {
         fs::create_dir_all(&root).map_err(|e| e.to_string())?;
         Ok(Self { root })
     }
+    // Writers never hold this lock across an await. Brief contention must not lose a stop/pause.
     fn writer(&self) -> Result<Lock, String> {
-        lock(&self.root.join("writer.lock"))?.ok_or("异步任务正在更新，请重试".into())
+        lock(&self.root.join("writer.lock"), false)?.ok_or("异步任务正在更新，请重试".into())
     }
     pub fn leader(&self) -> Result<Option<Lock>, String> {
-        lock(&self.root.join("scheduler.lock"))
+        lock(&self.root.join("scheduler.lock"), true)
     }
     pub fn checker(&self, id: &str) -> PathBuf {
         self.root.join(format!("{id}.py"))

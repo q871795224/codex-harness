@@ -305,6 +305,9 @@ impl AsyncWaits {
                         this.changed();
                     }
                 }
+                // Another live Harness may be the scheduler leader and write shared files.
+                // Refresh this instance's view too; UI polling never owns execution.
+                this.changed();
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
         });
@@ -694,6 +697,45 @@ mod tests {
         );
         assert_eq!(task.status, "paused");
         assert_eq!(task.summary, "login expired");
+    }
+    #[test]
+    fn a_concurrent_writer_cannot_drop_a_pause_request() {
+        use std::os::fd::AsRawFd;
+        let (dir, waits, _) = fixture();
+        waits
+            .store
+            .create(
+                input(
+                    dir.path(),
+                    "one",
+                    r#"{"status":"waiting","summary":"pending"}"#,
+                ),
+                dir.path().to_string_lossy().into_owned(),
+                10,
+            )
+            .unwrap();
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(dir.path().join("waits/writer.lock"))
+            .unwrap();
+        assert_eq!(unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) }, 0);
+        let second = WaitStore::open(dir.path().join("waits")).unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            send.send(second.action("one", "pause", 20)).unwrap();
+        });
+        assert!(receive.recv_timeout(Duration::from_millis(30)).is_err());
+        drop(file);
+        assert_eq!(
+            receive
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap()
+                .status,
+            "paused"
+        );
+        worker.join().unwrap();
     }
     #[test]
     fn creation_is_durable_idempotent_and_checker_is_snapshotted() {
