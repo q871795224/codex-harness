@@ -19,7 +19,7 @@ import type { ConversationService } from './core/conversations/types'
 import type { SystemNotificationService } from './core/notifications/types'
 import type { QuickCommandService } from './core/quick-commands/types'
 import type { HarnessFilesService, HarnessInstructionConfig } from './core/harness-files/types'
-import { PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, PluginThreadHeaderAction, PluginTurnAction, usePluginHost } from './core/plugins/react'
+import { PluginConversationBanner, PluginComposerAction, PluginHostProvider, PluginNewThreadPanel, PluginTabBoundary, PluginThreadHeaderAction, PluginTurnAction, usePluginHost } from './core/plugins/react'
 import { QuickActionPanel } from './core/plugins/QuickActionPanel'
 import { QuickCommandPanel } from './core/plugins/QuickCommandPanel'
 import { useWorkspaceRelease } from './core/release-command/useWorkspaceRelease'
@@ -361,6 +361,9 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  const conversationBanners = plugins.resolvedConversationBanners({
+    provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd, workspaceRoot: workspace?.root ?? null,
+  })
   const resolvedComposerCompletions = plugins.resolvedComposerCompletions({
     provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
@@ -379,6 +382,12 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  useEffect(() => {
+    return archiveStore.subscribe(() => {
+      const request = archiveStore.getState().selectRequest
+      if (request) setTab(request.view === 'chat' ? 'chat' : 'builtin.project-doc:projects')
+    })
+  }, [])
   const codexConversation = harness.selectedProvider === 'codex'
   const threadHeaderActions = resolvedThreadHeaderActions
   const pluginTabs = resolvedPluginTabs
@@ -876,6 +885,10 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 backgroundWorking={harness.isCurrentBackgroundWorking}
                 pendingSteers={currentSteers}
                 workingStartedAt={turnStartedAtMilliseconds(harness.selectedProvider, currentActiveTurn?.startedAt ?? null)}
+                banners={conversationBanners.map((entry) => <PluginConversationBanner key={entry.instanceId + entry.contribution.id} entry={entry} props={{
+                  provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd,
+                  workspaceRoot: workspace?.root ?? null, checkoutRoot: harness.currentThread?.cwd ?? null,
+                }} />)}
                 recap={codexConversation ? harness.currentRecap : null}
                 onRawModeToggle={() => setRawMode((current) => !current)}
                 onContinueAfterFailure={codexConversation && canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}

@@ -24,6 +24,7 @@ const CURRENT_DOC = [
 
 function service(overrides: Partial<ProjectDocService> = {}, content = CURRENT_DOC, seq = 2): ProjectDocService {
   return {
+    measure: vi.fn(), beginCompaction: vi.fn(), completeCompaction: vi.fn(), cancelCompaction: vi.fn(), readVersion: vi.fn(), restoreVersion: vi.fn(),
     create: vi.fn(async () => meta), list: vi.fn(async () => [meta]), get: vi.fn(async () => ({ ...meta, currentSeq: seq })),
     rename: vi.fn(async () => undefined), archive: vi.fn(async () => undefined),
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: seq, content, contentHash: 'h', consistent: true })),

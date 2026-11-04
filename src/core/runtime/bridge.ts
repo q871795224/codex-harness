@@ -398,6 +398,24 @@ export const runtime = {
   },
 
   // 项目文档（活文档 / 共享白板）：seq 语义与落盘在 Rust `project_doc_store` 强制。
+  projectDocMeasure(projectId: string): Promise<import('../../features/project-doc/types').DocumentMeasure> {
+    return invoke('project_doc_measure', { projectId })
+  },
+  projectDocBeginCompaction(projectId: string): Promise<import('../../features/project-doc/types').CompactionInput> {
+    return invoke('project_doc_begin_compaction', { projectId })
+  },
+  projectDocCompleteCompaction(projectId: string, jobId: string, content: string): Promise<import('../../features/project-doc/types').CompactionResult> {
+    return invoke('project_doc_complete_compaction', { projectId, jobId, content })
+  },
+  projectDocCancelCompaction(projectId: string, jobId: string): Promise<void> {
+    return invoke('project_doc_cancel_compaction', { projectId, jobId })
+  },
+  projectDocReadVersion(projectId: string, seq: number): Promise<string> {
+    return invoke('project_doc_read_version', { projectId, seq })
+  },
+  projectDocRestoreVersion(projectId: string, seq: number, baseSeq: number): Promise<ProjectDocWriteOutcome> {
+    return invoke('project_doc_restore_version', { projectId, seq, baseSeq })
+  },
   projectDocThreadBinding(threadId: string): Promise<ThreadProjectBinding | null> {
     return invoke<ThreadProjectBinding | null>('project_doc_thread_binding', { threadId })
   },

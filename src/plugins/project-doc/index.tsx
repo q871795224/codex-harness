@@ -1,3 +1,5 @@
+import type { ConversationService } from '../../core/conversations/types'
+import { CompactionBanner, CompactionButton, watchCompaction, type CompactionDeps } from './CompactionCard'
 import type { NotificationService } from '../../core/notifications/store'
 import { Archive, LoaderCircle, NotebookPen } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
@@ -39,8 +41,8 @@ export const projectDocPlugin: HarnessPlugin = {
     schemaVersion: 1,
     id: 'builtin.project-doc',
     name: '项目文档',
-    description: '多 Agent 共享的活文档：首轮注入项目背景、审批卡写 Log、归档按钮提炼 Status。',
-    version: '0.2.0',
+    description: '共享项目背景、审批写入、文档精简归档与历史恢复。',
+    version: '0.3.0',
     engine: { codexHarness: '^0.1.0' },
     supportedScopes: ['global', 'workspace', 'thread'],
     supportedProviders: ['codex', 'claude'],
@@ -49,6 +51,20 @@ export const projectDocPlugin: HarnessPlugin = {
   settings: ProjectDocSettings,
   activate(ctx) {
     const service = ctx.services.get<ProjectDocService>('harness.projectDocs')
+    const compaction: CompactionDeps = {
+      docs: service, runs: ctx.services.get<AgentRunService>('harness.agentRuns'),
+      config: readProjectDocConfig(ctx.config), instanceId: ctx.instanceId, storage: ctx.storage,
+    }
+    const conversations = ctx.services.optional<ConversationService>('harness.conversations')
+    if (conversations) ctx.effect(watchCompaction(compaction, conversations))
+    ctx.slots.conversationBanners.register({
+      id: 'compaction', order: 10,
+      render: (props) => <CompactionBanner deps={compaction} props={props} />,
+    })
+    ctx.slots.composerActions.register({
+      id: 'compact-project', order: 11,
+      render: (props) => <CompactionButton deps={compaction} threadId={props.threadId} disabled={props.disabled || !props.checkoutRoot} />,
+    })
 
     ctx.slots.conversationTabs.register({
       id: 'projects',
@@ -257,10 +273,11 @@ function ArchiveTurnButton({ props, service, agentRuns, instanceId, config, pers
   )
 }
 
-function ProjectDocSettings({ instance, models, saveConfig }: PluginSettingsProps) {
+export function ProjectDocSettings({ instance, models, saveConfig }: PluginSettingsProps) {
   const config = readProjectDocConfig(instance.config)
   const [model, setModel] = useState(config.archiveModel)
   const [effort, setEffort] = useState(config.archiveEffort)
+  const [threshold, setThreshold] = useState(String(config.compactionThreshold))
   const [turns, setTurns] = useState(String(config.archiveTurns))
   const [template, setTemplate] = useState(config.archivePromptTemplate)
   const [saving, setSaving] = useState(false)
@@ -276,6 +293,7 @@ function ProjectDocSettings({ instance, models, saveConfig }: PluginSettingsProp
     try {
       const parsedTurns = Number.parseInt(turns, 10)
       await saveConfig({
+        compactionThreshold: Number.isFinite(Number(threshold)) && Number(threshold) > 0 ? Math.floor(Number(threshold)) : config.compactionThreshold,
         archiveModel: model,
         archiveEffort: effort,
         archiveTurns: Number.isFinite(parsedTurns) && parsedTurns > 0 ? parsedTurns : config.archiveTurns,
@@ -290,7 +308,12 @@ function ProjectDocSettings({ instance, models, saveConfig }: PluginSettingsProp
   return (
     <div className="project-doc-settings">
       <label>
-        归档模型
+        精简提醒门限（tokens）
+        <input aria-label="精简提醒门限（tokens）" type="number" min={1} step={1000} value={threshold} onChange={(event) => setThreshold(event.target.value)} />
+        <small>本地计数，默认 10,000；会话结束后超出门限时提醒。</small>
+      </label>
+      <label>
+        归档 / 精简模型
         <select value={model} onChange={(event) => setModel(event.target.value)}>
           {models.length === 0 && <option value={model}>{model}</option>}
           {models.map((candidate) => (
@@ -304,6 +327,7 @@ function ProjectDocSettings({ instance, models, saveConfig }: PluginSettingsProp
           {effortOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       </label>
+      <p className="project-edit-hint">模型与推理强度供归档和精简共用；下方轮数及模板仅用于“归档到项目”。</p>
       <label>
         取最近几轮
         <input
@@ -335,6 +359,8 @@ function ProjectDocSettings({ instance, models, saveConfig }: PluginSettingsProp
 
 export function ProjectTabHost({ service, workspaces }: { service: ProjectDocService; workspaces?: Workspace[] }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [detailRevision, setDetailRevision] = useState(0)
+  const [initialView, setInitialView] = useState<'doc' | 'history'>('doc')
   const archiveState = useSyncExternalStore(archiveStore.subscribe, archiveStore.getState)
   const openRequest = archiveState.openRequest
   const selectRequest = archiveState.selectRequest
@@ -347,7 +373,9 @@ export function ProjectTabHost({ service, workspaces }: { service: ProjectDocSer
   // 会话头部项目 chip：只选中项目，不进 archive 视图。
   useEffect(() => {
     if (!selectRequest) return
+    setInitialView(selectRequest.view === 'history' ? 'history' : 'doc')
     setSelectedProjectId(selectRequest.projectId)
+    setDetailRevision((revision) => revision + 1)
     archiveStore.clearSelect()
   }, [selectRequest])
 
@@ -361,6 +389,8 @@ export function ProjectTabHost({ service, workspaces }: { service: ProjectDocSer
 
   return (
     <ProjectTab
+      key={detailRevision}
+      initialView={initialView}
       service={service}
       selectedProjectId={selectedProjectId}
       conflictRequest={null}

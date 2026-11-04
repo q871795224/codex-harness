@@ -12,7 +12,10 @@
 //! 协议外修改防护：写入时记录内容 hash，读取/注入前可校验漂移（hash 不一致即文件被绕过协议改过）。
 
 use crate::store;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction, TransactionBehavior};
+
+mod compaction;
+pub use compaction::{CompactionInput, CompactionResult, DocumentMeasure};
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -48,6 +51,7 @@ pub struct ProjectVersion {
     pub updated_at: i64,
     pub summary: String,
     pub content_hash: String,
+    pub operation: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -64,13 +68,20 @@ pub struct ProjectDocSnapshot {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum WriteOutcome {
-    Applied { new_seq: i64, content_hash: String },
-    Conflict { current_seq: i64, base_seq: Option<i64> },
+    Applied {
+        new_seq: i64,
+        content_hash: String,
+    },
+    Conflict {
+        current_seq: i64,
+        base_seq: Option<i64>,
+    },
 }
 
 pub struct ProjectDocStore {
     connection: Mutex<Connection>,
     root: PathBuf,
+    token_counts: Mutex<std::collections::HashMap<String, (String, usize)>>,
 }
 
 fn now_ms() -> i64 {
@@ -171,7 +182,8 @@ fn apply_section_write(current: &str, section: &str, content: &str) -> Result<St
                 return Err(format!("文档缺少 `## {heading}` 分区，受控区无法写入"));
             }
             // 追加区：文档没有该 section 时在文末补建。
-            let mut result = String::with_capacity(current.len() + heading.len() + trimmed.len() + 8);
+            let mut result =
+                String::with_capacity(current.len() + heading.len() + trimmed.len() + 8);
             result.push_str(current);
             if !current.is_empty() && !current.ends_with('\n') {
                 result.push('\n');
@@ -234,6 +246,9 @@ impl ProjectDocStore {
         let connection =
             Connection::open(root.join(DB_FILE)).map_err(|e| format!("无法打开项目文档库: {e}"))?;
         connection
+            .busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| e.to_string())?;
+        connection
             .execute_batch(
                 r#"
                 PRAGMA journal_mode = WAL;
@@ -268,9 +283,21 @@ impl ProjectDocStore {
                 "#,
             )
             .map_err(|e| format!("无法初始化项目文档库: {e}"))?;
+        let has_operation: bool = connection
+            .prepare("PRAGMA table_info(project_versions)")
+            .map_err(|e| e.to_string())?
+            .query_map([], |r| r.get::<_, String>(1))
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .any(|name| name == "operation");
+        if !has_operation {
+            connection.execute_batch("ALTER TABLE project_versions ADD COLUMN operation TEXT NOT NULL DEFAULT 'edit'").map_err(|e| e.to_string())?;
+        }
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS project_compactions (project_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, base_seq INTEGER NOT NULL, archive_path TEXT NOT NULL, created_at INTEGER NOT NULL)").map_err(|e| e.to_string())?;
         Ok(Self {
             connection: Mutex::new(connection),
             root,
+            token_counts: Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -435,9 +462,9 @@ impl ProjectDocStore {
     /// 读取当前文档 + seq + hash 一致性（注入/展示前校验漂移）。
     pub fn read_doc(&self, project_id: &str) -> Result<ProjectDocSnapshot, String> {
         let id = validate_project_id(project_id)?;
+        let connection = self.lock()?;
         let content = self.read_file_full(id)?;
         let hash = content_hash(&content);
-        let connection = self.lock()?;
         let (current_seq, stored_hash) = connection
             .query_row(
                 "SELECT current_seq,
@@ -468,7 +495,7 @@ impl ProjectDocStore {
         let connection = self.lock()?;
         let mut stmt = connection
             .prepare(
-                "SELECT seq, updated_by, updated_at, summary, content_hash FROM project_versions
+                "SELECT seq, updated_by, updated_at, summary, content_hash, operation FROM project_versions
                  WHERE project_id = ?1 ORDER BY seq DESC",
             )
             .map_err(|e| format!("无法查询版本历史: {e}"))?;
@@ -480,6 +507,7 @@ impl ProjectDocStore {
                     updated_at: row.get(2)?,
                     summary: row.get(3)?,
                     content_hash: row.get(4)?,
+                    operation: row.get(5)?,
                 })
             })
             .map_err(|e| format!("无法读取版本历史: {e}"))?;
@@ -511,7 +539,9 @@ impl ProjectDocStore {
         }
 
         // 整个 read-check-write 在锁内完成，保证 seq 语义原子。
-        let connection = self.lock()?;
+        let guard = self.lock()?;
+        let connection = Transaction::new_unchecked(&guard, TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
         let current_seq: i64 = connection
             .query_row(
                 "SELECT current_seq FROM projects WHERE project_id = ?1",
@@ -539,7 +569,21 @@ impl ProjectDocStore {
             section,
             content,
         )?;
-        persist_body(&connection, &self.project_dir(id), id, current_seq, &next_body, updated_by, summary)
+        let operation = if is_append_section(section) {
+            format!("append:{section}")
+        } else {
+            "edit".into()
+        };
+        persist_body(
+            connection,
+            &self.project_dir(id),
+            id,
+            current_seq,
+            &next_body,
+            updated_by,
+            summary,
+            &operation,
+        )
     }
 
     /**
@@ -556,7 +600,9 @@ impl ProjectDocStore {
         summary: &str,
     ) -> Result<WriteOutcome, String> {
         let id = validate_project_id(project_id)?;
-        let connection = self.lock()?;
+        let guard = self.lock()?;
+        let connection = Transaction::new_unchecked(&guard, TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
         let current_seq: i64 = connection
             .query_row(
                 "SELECT current_seq FROM projects WHERE project_id = ?1",
@@ -574,51 +620,77 @@ impl ProjectDocStore {
 
         // 整文写入采用纯正文：剥离入参可能夹带的 front matter，由 Harness 重新生成。
         let next_body = strip_front_matter(full_content).trim().to_string();
-        persist_body(&connection, &self.project_dir(id), id, current_seq, &next_body, updated_by, summary)
+        let operation = "edit".to_string();
+        persist_body(
+            connection,
+            &self.project_dir(id),
+            id,
+            current_seq,
+            &next_body,
+            updated_by,
+            summary,
+            &operation,
+        )
     }
 }
 
 /// 共用持久化：seq+1、重写 current.md、存 history/<seq>.md 快照、记一条 project_versions。
 /// 调用方必须持有连接锁且已完成 seq 校验（CAS）；落盘与版本推进在同一临界区。
 fn persist_body(
-    connection: &Connection,
+    mut connection: Transaction<'_>,
     dir: &std::path::Path,
     id: &str,
     current_seq: i64,
     next_body: &str,
     updated_by: &str,
     summary: &str,
+    operation: &str,
 ) -> Result<WriteOutcome, String> {
+    use std::io::Write;
     let new_seq = current_seq + 1;
     let now = now_ms();
-    // 落盘 = front matter（Harness 簿记）+ 正文；hash 对落盘全文算，覆盖 front matter 的漂移防护。
     let next_file = format!(
         "{}\n{}",
         render_front_matter(id, new_seq, updated_by, now),
         next_body
     );
     let hash = content_hash(&next_file);
-
-    fs::create_dir_all(dir.join(HISTORY_DIR))
-        .map_err(|e| format!("无法创建快照目录: {e}"))?;
-    fs::write(dir.join(CURRENT_FILE), &next_file).map_err(|e| format!("无法写入项目文档: {e}"))?;
-    fs::write(dir.join(HISTORY_DIR).join(format!("{new_seq}.md")), &next_file)
-        .map_err(|e| format!("无法写入版本快照: {e}"))?;
-
-    connection
-        .execute(
-            "INSERT INTO project_versions (project_id, seq, updated_by, updated_at, summary, content_hash)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, new_seq, updated_by, now, summary, hash],
-        )
-        .map_err(|e| format!("无法记录版本: {e}"))?;
+    fs::create_dir_all(dir.join(HISTORY_DIR)).map_err(|e| e.to_string())?;
+    let original = fs::read(dir.join(CURRENT_FILE)).map_err(|e| e.to_string())?;
+    let mut staged = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
+    staged
+        .write_all(next_file.as_bytes())
+        .and_then(|_| staged.as_file().sync_all())
+        .map_err(|e| e.to_string())?;
+    let history = dir.join(HISTORY_DIR).join(format!("{new_seq}.md"));
+    fs::write(&history, &next_file).map_err(|e| format!("无法写入版本快照: {e}"))?;
+    connection.execute(
+        "INSERT INTO project_versions (project_id, seq, updated_by, updated_at, summary, content_hash, operation) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, new_seq, updated_by, now, summary, hash, operation],
+    ).map_err(|e| e.to_string())?;
     connection
         .execute(
             "UPDATE projects SET current_seq = ?2, updated_at = ?3 WHERE project_id = ?1",
             params![id, new_seq, now],
         )
-        .map_err(|e| format!("无法推进项目版本: {e}"))?;
-
+        .map_err(|e| e.to_string())?;
+    staged
+        .persist(dir.join(CURRENT_FILE))
+        .map_err(|e| format!("无法替换项目文档: {e}"))?;
+    // Keep the SQLite write lock while restoring after a failed COMMIT, so another
+    // store connection cannot start a write against the uncommitted file.
+    if let Err(error) = connection.execute_batch("COMMIT") {
+        let mut restore = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
+        restore
+            .write_all(&original)
+            .and_then(|_| restore.as_file().sync_all())
+            .map_err(|e| e.to_string())?;
+        restore
+            .persist(dir.join(CURRENT_FILE))
+            .map_err(|e| format!("恢复原文失败: {e}"))?;
+        return Err(format!("无法提交版本，已恢复原文: {error}"));
+    }
+    connection.set_drop_behavior(rusqlite::DropBehavior::Ignore);
     Ok(WriteOutcome::Applied {
         new_seq,
         content_hash: hash,
@@ -765,11 +837,27 @@ mod tests {
         assert_eq!(new_seq, 2);
         let snapshot = store.read_doc("demo").unwrap();
         assert_eq!(snapshot.current_seq, 2);
-        assert!(snapshot.content.contains("new status"), "got: {}", snapshot.content);
-        assert!(snapshot.content.contains("manual entry"), "got: {}", snapshot.content);
-        assert!(!snapshot.content.contains("old status"), "got: {}", snapshot.content);
+        assert!(
+            snapshot.content.contains("new status"),
+            "got: {}",
+            snapshot.content
+        );
+        assert!(
+            snapshot.content.contains("manual entry"),
+            "got: {}",
+            snapshot.content
+        );
+        assert!(
+            !snapshot.content.contains("old status"),
+            "got: {}",
+            snapshot.content
+        );
         // 版本快照落盘。
-        assert!(store.project_dir("demo").join(HISTORY_DIR).join("2.md").exists());
+        assert!(store
+            .project_dir("demo")
+            .join(HISTORY_DIR)
+            .join("2.md")
+            .exists());
         assert_eq!(store.list_versions("demo").unwrap().len(), 2);
     }
 
@@ -787,7 +875,10 @@ mod tests {
             .write_document("demo", Some(0), "hijack", "user", "stale")
             .unwrap();
         match outcome {
-            WriteOutcome::Conflict { current_seq, base_seq } => {
+            WriteOutcome::Conflict {
+                current_seq,
+                base_seq,
+            } => {
                 assert_eq!(current_seq, 1);
                 assert_eq!(base_seq, Some(0));
             }
@@ -804,14 +895,19 @@ mod tests {
         store.create_project("demo", "Demo").unwrap();
 
         // 入参夹带伪造 front matter：服务端剥掉，用自己的簿记重建。
-        let forged = "---\ndoc_id: demo\nseq: 999\nupdated_by: attacker\n---\n\n## Status\n\nreal body\n";
+        let forged =
+            "---\ndoc_id: demo\nseq: 999\nupdated_by: attacker\n---\n\n## Status\n\nreal body\n";
         store
             .write_document("demo", Some(0), forged, "user", "edit")
             .unwrap();
         let snapshot = store.read_doc("demo").unwrap();
         assert_eq!(snapshot.current_seq, 1);
         assert!(snapshot.content.contains("real body"));
-        assert!(!snapshot.content.contains("999"), "forged seq stripped: {}", snapshot.content);
+        assert!(
+            !snapshot.content.contains("999"),
+            "forged seq stripped: {}",
+            snapshot.content
+        );
         // 落盘文件的 front matter 是 Harness 生成的（updated_by=user, seq=1）。
         let file = std::fs::read_to_string(store.project_dir("demo").join(CURRENT_FILE)).unwrap();
         assert!(file.contains("seq: 1"), "got: {file}");

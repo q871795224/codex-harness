@@ -1,6 +1,7 @@
 import { Component, createContext, useContext, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 import { runtime } from '../runtime/bridge'
 import type {
+  ConversationBannerContribution, ConversationBannerProps,
   ComposerActionContribution,
   ComposerActionProps,
   ComposerCompletionContribution,
@@ -35,6 +36,7 @@ interface PluginHostContextValue {
   resolvedThreadHeaderActions(context: PluginViewContext): ResolvedContribution<ThreadHeaderActionContribution>[]
   resolvedNewThreadPanels(context: PluginViewContext): ResolvedContribution<NewThreadPanelContribution>[]
   resolvedComposerActions(context: PluginViewContext): ResolvedContribution<ComposerActionContribution>[]
+  resolvedConversationBanners(context: PluginViewContext): ResolvedContribution<ConversationBannerContribution>[]
   resolvedTurnActions(context: PluginViewContext): ResolvedContribution<TurnActionContribution>[]
   resolvedComposerCompletions(context: PluginViewContext): ResolvedContribution<ComposerCompletionContribution>[]
   resolvedQuickActions(context: PluginViewContext): ResolvedContribution<QuickActionContribution>[]
@@ -127,6 +129,7 @@ export function PluginHostProvider({ definitions, defaultInstances, services, ch
     resolvedThreadHeaderActions: (context) => host.resolvedThreadHeaderActions(context),
     resolvedNewThreadPanels: (context) => host.resolvedNewThreadPanels(context),
     resolvedComposerActions: (context) => host.resolvedComposerActions(context),
+    resolvedConversationBanners: (context) => host.resolvedConversationBanners(context),
     resolvedTurnActions: (context) => host.resolvedTurnActions(context),
     resolvedComposerCompletions: (context) => host.resolvedComposerCompletions(context),
     resolvedQuickActions: (context) => host.resolvedQuickActions(context),
@@ -201,6 +204,14 @@ export class PluginTabBoundary extends Component<PluginTabBoundaryProps, PluginT
     }
     return this.props.tab.contribution.render(this.props.props)
   }
+}
+
+export function PluginConversationBanner({ entry, props }: {
+  entry: ResolvedContribution<ConversationBannerContribution>; props: ConversationBannerProps
+}) {
+  return <PluginRenderBoundary pluginId={entry.pluginId} instanceId={entry.instanceId} label="会话提醒">
+    {entry.contribution.render(props)}
+  </PluginRenderBoundary>
 }
 
 export function PluginComposerAction({ action, props }: {

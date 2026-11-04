@@ -98,3 +98,9 @@
 - Quick Action 通过声明式 `quickActions` slot 显示，调用 `harness.agentRuns` 创建独立会话；Run 记录 parent thread、child thread、turn 和 provider。
 - Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery`。共享写任务使用同一 checkout 时互斥；隔离交付 worktree 固定创建在 `~/.codex-harness/agent-worktrees/<run-id>` 并保留给用户检查。
 - `return-to-parent` 是一次性的用户手动操作，父会话 active 时不得自动回传或重试。
+
+## 项目文档精简
+
+项目文档插件通过 `conversationBanners` slot 显示共用确认卡，手动入口保留在 Composer 右侧。会话结束只触发本地计数和提醒；用户确认后才启动只读 Codex detached run。默认门限10,000 tokens，按正文版本缓存 `o200k_base` 计数；配置位于插件设置。
+
+原文归档、追加合并、并发修改检查和恢复由 Rust `project_doc_store::compaction` 负责，模型只输出四分区 Markdown。普通写入与精简共用 SQLite immediate transaction，跨 UI/HTTP 连接串行。详见 [项目文档精简](../docs/project-doc-compaction.md)。

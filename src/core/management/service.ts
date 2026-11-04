@@ -164,7 +164,7 @@ export function createManagementHandler(get: () => ManagementContext) {
           workspaceRoot: typeof p.workspaceRoot === 'string' ? p.workspaceRoot
             : h.workspaces.find((workspace) => workspace.root === (threadId ? h.threadRoots[threadId] : null))?.root ?? null }
         const entries = { tabs: plugins.resolvedTabs(context), headerActions: plugins.resolvedThreadHeaderActions(context),
-          newThreadPanels: plugins.resolvedNewThreadPanels(context), composerActions: plugins.resolvedComposerActions(context),
+          conversationBanners: plugins.resolvedConversationBanners(context), newThreadPanels: plugins.resolvedNewThreadPanels(context), composerActions: plugins.resolvedComposerActions(context),
           turnActions: plugins.resolvedTurnActions(context), completions: plugins.resolvedComposerCompletions(context),
           quickActions: plugins.resolvedQuickActions(context), quickCommands: plugins.resolvedQuickCommands(context) }
         return { source: 'Harness PluginHost', context, definitions: plugins.definitions.map((definition) => definition.manifest),

@@ -83,7 +83,7 @@ describe('management controls the real plugin host', () => {
       config: { secret: 'private-value' }, createdAt: 1, updatedAt: 1 }
     context.plugins = { loading: false, error: null, definitions: [plugin], instances: [instance],
       status: (id) => host.status(id), resolvedTabs: (view) => host.resolvedTabs(view), resolvedThreadHeaderActions: () => [],
-      resolvedNewThreadPanels: () => [], resolvedComposerActions: () => [], resolvedTurnActions: () => [],
+      resolvedConversationBanners: () => [], resolvedNewThreadPanels: () => [], resolvedComposerActions: () => [], resolvedTurnActions: () => [],
       resolvedComposerCompletions: () => [], resolvedQuickActions: () => [], resolvedQuickCommands: () => [],
       upsertInstance: async (next) => {
         const saved = { ...next, config: Object.fromEntries(Object.entries(next.config).sort(([a], [b]) => a.localeCompare(b))) }

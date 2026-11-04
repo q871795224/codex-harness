@@ -1951,3 +1951,12 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .team-mode-nav .thread-row { gap: 7px; font-size: calc(13px + var(--h-navigation-font-offset)); }
 .team-mode-nav .thread-row b { margin-left: auto; font-size: 10px; font-weight: 400; color: #737a86; }
 .app-shell[data-theme='dark'] .team-mode-nav .thread-row b { color: #929dab; }
+
+/* Project compaction uses the recap palette and typography in both themes. */
+.project-compaction-card { position: relative; }
+.project-compaction-card .recap-banner-body { flex: 1; }
+.project-compaction-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.project-compaction-actions button { border: 1px solid currentColor; border-radius: 6px; padding: 5px 10px; background: transparent; color: inherit; font-size: 12px; cursor: pointer; }
+.project-compaction-actions button.primary { background: var(--h-accent, #4059b9); border-color: transparent; color: white; }
+.project-compaction-close { display: flex; border: 0; padding: 3px; background: transparent; color: inherit; cursor: pointer; }
+.project-history-preview { max-height: 380px; overflow: auto; }

@@ -54,7 +54,7 @@ struct AppState {
     jev: jev::JevClient,
     codex_analytics: CodexAnalytics,
     store: Arc<HarnessStore>,
-    project_docs: Mutex<Option<project_doc_store::ProjectDocStore>>,
+    project_docs: Mutex<Option<Arc<project_doc_store::ProjectDocStore>>>,
     project_doc_proposals: Mutex<Option<project_doc_proposals::ProposalQueue>>,
     project_doc_server: Mutex<Option<project_doc_server::ProjectDocServer>>,
     management: Arc<management::Management>,
@@ -663,13 +663,13 @@ fn read_handover_document(file_name: String) -> Result<String, String> {
 /// 惰性开启项目文档库：首次使用时初始化，避免拖累启动路径（项目文档是可选能力）。
 fn project_docs<'a>(
     state: &'a State<'a, AppState>,
-) -> Result<std::sync::MutexGuard<'a, Option<project_doc_store::ProjectDocStore>>, String> {
+) -> Result<std::sync::MutexGuard<'a, Option<Arc<project_doc_store::ProjectDocStore>>>, String> {
     let mut guard = state
         .project_docs
         .lock()
         .map_err(|_| "项目文档库锁不可用".to_string())?;
     if guard.is_none() {
-        *guard = Some(project_doc_store::ProjectDocStore::open()?);
+        *guard = Some(Arc::new(project_doc_store::ProjectDocStore::open()?));
     }
     Ok(guard)
 }
@@ -900,6 +900,37 @@ fn project_doc_write_document(
         .as_ref()
         .unwrap()
         .write_document(&project_id, base_seq, &content, &updated_by, &summary)
+}
+
+#[tauri::command]
+async fn project_doc_measure(state: State<'_, AppState>, project_id: String) -> Result<project_doc_store::DocumentMeasure, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.measure(&project_id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_begin_compaction(state: State<'_, AppState>, project_id: String) -> Result<project_doc_store::CompactionInput, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.begin_compaction(&project_id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_complete_compaction(state: State<'_, AppState>, project_id: String, job_id: String, content: String) -> Result<project_doc_store::CompactionResult, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.complete_compaction(&project_id, &job_id, &content)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_cancel_compaction(state: State<'_, AppState>, project_id: String, job_id: String) -> Result<(), String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.cancel_compaction(&project_id, &job_id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_read_version(state: State<'_, AppState>, project_id: String, seq: i64) -> Result<String, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.read_version(&project_id, seq)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_restore_version(state: State<'_, AppState>, project_id: String, seq: i64, base_seq: i64) -> Result<project_doc_store::WriteOutcome, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.restore_version(&project_id, seq, base_seq)).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1392,6 +1423,12 @@ pub fn run() {
             project_doc_versions,
             project_doc_write_section,
             project_doc_write_document,
+            project_doc_measure,
+            project_doc_begin_compaction,
+            project_doc_complete_compaction,
+            project_doc_cancel_compaction,
+            project_doc_read_version,
+            project_doc_restore_version,
             project_doc_list_proposals,
             project_doc_approve_proposal,
             project_doc_reject_proposal,
