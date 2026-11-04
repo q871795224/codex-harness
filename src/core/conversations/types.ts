@@ -1,3 +1,4 @@
+import type { QuestionEvent } from '../questions/types'
 import type { Turn } from '../domain/codex'
 
 export interface TurnCompletedEvent {
@@ -8,6 +9,7 @@ export interface TurnCompletedEvent {
 }
 
 export interface ConversationService {
+  onUserInputRequested(listener: (event: QuestionEvent) => void): () => void
   onTurnCompleted(listener: (event: TurnCompletedEvent) => void): () => void
   /** User submitted input (including queued input); selection alone does not emit. */
   onMessageSubmitted(listener: (threadId: string) => void): () => void
