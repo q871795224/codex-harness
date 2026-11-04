@@ -1,3 +1,4 @@
+import { RouterFeedbackCard } from './features/conversation/RouterFeedbackCard'
 import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
 import { useQuestionLinks } from './features/conversation/useQuestionLinks'
 import type { QuestionNotificationService } from './core/questions/types'
@@ -248,6 +249,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const [composerDraftsLoaded, setComposerDraftsLoaded] = useState(false)
   const composerDraftWriterRef = useRef<ComposerDraftWriter | null>(null)
   const queuedComposerDraftsRef = useRef<Record<string, ComposerDraft>>({})
+  const draftReplacementIdsRef = useRef<Record<string, string>>({})
   if (!composerDraftWriterRef.current) {
     composerDraftWriterRef.current = new ComposerDraftWriter(runtime, (error) => {
       harness.notify(`无法保存输入草稿`, 'error', error)
@@ -277,6 +279,16 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     }
     queuedComposerDraftsRef.current = composerDrafts
   }, [composerDrafts, composerDraftsLoaded])
+  useEffect(() => harness.onDraftThreadReplaced?.((from, to) => {
+    draftReplacementIdsRef.current[from] = to
+    const draft = queuedComposerDraftsRef.current[from]
+    if (!draft) return
+    const empty: ComposerDraft = { text: '', collapsedPastes: [], attachments: [] }
+    queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [from]: empty, [to]: draft }
+    composerDraftWriterRef.current?.update(to, draft)
+    composerDraftWriterRef.current?.update(from, empty)
+    setComposerDrafts((current) => ({ ...current, [from]: empty, [to]: draft }))
+  }), [harness.onDraftThreadReplaced])
   const handover = useHandover({
     startTurnInThread: harness.startTurnInThread,
     onTurnCompleted: harness.onTurnCompleted,
@@ -769,7 +781,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
         {notificationsOpen && <NotificationCenter store={notifications} currentThreadId={harness.selectedThreadId} selectedId={selectedNotificationId} onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
         <div className="notification-conversation" hidden={notificationsOpen}>
         {harness.currentThread ? (
-          <Fragment key={harness.currentThread.id}>
+          <Fragment key={harness.draftOrigins?.[harness.currentThread.id] ?? harness.currentThread.id}>
             <ConversationHeader
               thread={harness.currentThread}
               workspace={workspace}
@@ -777,7 +789,8 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
               archived={harness.viewMode === 'archived'}
               isWorking={harness.isCurrentWorking}
               pinned={harness.navigation.pinnedThreadIds.includes(harness.currentThread.id)}
-              workspaceChanging={Boolean(harness.busy.threadWorkspace)}
+              workspaceChanging={Boolean(harness.busy.threadWorkspace || harness.busy.workspaceRouter)}
+              automaticWorkspace={codexConversation && harness.automaticWorkspace}
               canChangeWorkspace={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
               projectName={projectBinding.project?.name ?? null}
               onOpenProject={() => {
@@ -867,7 +880,8 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 sendShortcut={harness.keyboard.sendShortcut}
                 workspace={workspace}
                 workspaces={harness.workspaces}
-                workspaceChanging={Boolean(harness.busy.threadWorkspace)}
+                workspaceChanging={Boolean(harness.busy.threadWorkspace || harness.busy.workspaceRouter)}
+                automaticWorkspace={codexConversation && harness.automaticWorkspace}
                 initialScrollTop={conversationScrollPositions.current[harness.currentThread.id] ?? null}
                 scrollToLatestRequest={scrollToLatestRequest?.threadId === harness.currentThread.id ? scrollToLatestRequest.sequence : 0}
                 hasOlderTurns={Boolean(harness.currentDetail?.nextTurnsCursor)}
@@ -910,10 +924,17 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 backgroundWorking={harness.isCurrentBackgroundWorking}
                 pendingSteers={currentSteers}
                 workingStartedAt={turnStartedAtMilliseconds(harness.selectedProvider, currentActiveTurn?.startedAt ?? null)}
-                banners={conversationBanners.map((entry) => <PluginConversationBanner key={entry.instanceId + entry.contribution.id} entry={entry} props={{
-                  provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd,
-                  workspaceRoot: workspace?.root ?? null, checkoutRoot: harness.currentThread?.cwd ?? null,
-                }} />)}
+                banners={<>
+                  {codexConversation && harness.currentRoute && <RouterFeedbackCard
+                    key={harness.currentRoute.id}
+                    record={harness.currentRoute}
+                    onFeedback={(accurate, actual) => harness.giveRouteFeedback(harness.currentRoute!.threadId, accurate, actual)}
+                  />}
+                  {conversationBanners.map((entry) => <PluginConversationBanner key={entry.instanceId + entry.contribution.id} entry={entry} props={{
+                    provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd,
+                    workspaceRoot: workspace?.root ?? null, checkoutRoot: harness.currentThread?.cwd ?? null,
+                  }} />)}
+                </>}
                 recap={codexConversation ? harness.currentRecap : null}
                 onRawModeToggle={() => setRawMode((current) => !current)}
                 onContinueAfterFailure={codexConversation && canMutate && harness.currentThread?.canAcceptDirectInput !== false ? () => void harness.continueAfterFailure() : undefined}
@@ -993,7 +1014,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                   onStart={() => void harness.startQueue()}
                 />
                 {composerDraftsLoaded && <Composer
-                  key={harness.currentThread.id}
+                  key={harness.draftOrigins?.[harness.currentThread.id] ?? harness.currentThread.id}
                   provider={harness.selectedProvider}
                   initialDraft={composerDrafts[harness.currentThread.id]}
                   projectCard={projectCard}
@@ -1027,9 +1048,17 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                   onFollowUpModeChange={harness.setFollowUpMode}
                   onSend={async (input, mode, references, titleSource) => {
                     const threadId = harness.currentThread!.id
+                    const submittedDraft = queuedComposerDraftsRef.current[threadId]
                     scrollRequestSequence.current += 1
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
                     await harness.sendMessage(input, mode, references, titleSource)
+                    const targetId = draftReplacementIdsRef.current[threadId] ?? threadId
+                    if (submittedDraft && queuedComposerDraftsRef.current[targetId] === submittedDraft) {
+                      const empty: ComposerDraft = { text: '', collapsedPastes: [], attachments: [] }
+                      queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [targetId]: empty }
+                      composerDraftWriterRef.current?.update(targetId, empty)
+                      setComposerDrafts((current) => ({ ...current, [targetId]: empty }))
+                    }
                     // 第 1 轮发送成功：绑定 pending → locked，此后只读、不再注入项目卡。
                     try {
                       await projectBinding.lockOnSend()

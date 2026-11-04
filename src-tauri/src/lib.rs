@@ -1,3 +1,4 @@
+mod workspace_router;
 mod async_waits;
 mod api_workbench;
 mod app_launcher;
@@ -633,6 +634,11 @@ fn record_client_diagnostic(state: State<'_, AppState>, diagnostic: ClientDiagno
             "status": diagnostic.status,
         }),
     );
+}
+
+#[tauri::command]
+fn workspace_router_directory() -> Result<String, String> {
+    workspace_router::directory_at(&store::harness_data_dir()?)
 }
 
 #[tauri::command]
@@ -1475,6 +1481,7 @@ pub fn run() {
             upsert_claude_session,
             set_claude_session_archived,
             record_client_diagnostic,
+            workspace_router_directory,
             open_diagnostics_directory,
             runtime_versions,
             codex_update_status,

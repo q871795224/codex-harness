@@ -16,6 +16,8 @@ vi.mock('../../core/runtime/bridge', () => ({
   diagnosticErrorCode: vi.fn(), recordWorkspaceContextDiagnostic: vi.fn(),
   runtime: {
     recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
+    projectDocThreadBinding: vi.fn().mockResolvedValue(null),
+    routerWorkspaceDirectory: vi.fn().mockResolvedValue('/neutral'),
     listWorkspaces: vi.fn().mockResolvedValue([]),
     listThreadStates: vi.fn().mockResolvedValue([]),
     getAppState: vi.fn().mockResolvedValue(null),
@@ -297,7 +299,7 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
       activePermissionProfile: null,
     }))
     const hook = await ready()
-    await act(async () => { await hook.result.current.createThread() })
+    await act(async () => { await hook.result.current.createThread('/repo') })
     return hook
   }
   const accepted = { turn: { id: 'turn-1', status: 'inProgress' as const, items: [], error: null, startedAt: 1, completedAt: null, durationMs: null } }
