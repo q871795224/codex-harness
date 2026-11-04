@@ -159,3 +159,16 @@ it('replaces the selected command label when completing an argument without over
   expect(draft?.collapsedPastes).toHaveLength(1)
   expect(container.querySelector('.composer-reference-label')?.textContent).toBe('/permissions never')
 })
+
+it.each(['codex', 'claude'] as const)('sends full project context to %s and a separate task-only title source', async (provider) => {
+  const onSend = vi.fn().mockResolvedValue(undefined)
+  const background = '长项目背景'.repeat(2000)
+  render(<Composer {...props} provider={provider} projectCard={{ projectId: 'one', name: '项目', seq: 1, content: background }}
+    initialDraft={{ text: '排查 batch 报错', collapsedPastes: [], attachments: [] }} onSend={onSend} />)
+  const input = screen.getByPlaceholderText(provider === 'codex' ? '给 Codex 发送消息' : '给 Claude 发送消息')
+  await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+  expect(onSend).toHaveBeenCalledTimes(1)
+  const [messages, , , titleSource] = onSend.mock.calls[0]
+  expect(messages.find((item: { type: string }) => item.type === 'text').text).toBe(`${background}\n排查 batch 报错`)
+  expect(titleSource).toBe('排查 batch 报错')
+})

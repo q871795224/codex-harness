@@ -11,7 +11,7 @@ function service(content = ''): ProjectDocService {
   return {
     measure: vi.fn(), beginCompaction: vi.fn(), completeCompaction: vi.fn(), cancelCompaction: vi.fn(), readVersion: vi.fn(), restoreVersion: vi.fn(),
     create: vi.fn(async () => meta), list: vi.fn(async () => [meta]), get: vi.fn(async () => meta),
-    rename: vi.fn(async () => undefined), archive: vi.fn(async () => undefined),
+    setShortName: vi.fn(async () => null), rename: vi.fn(async () => undefined), archive: vi.fn(async () => undefined),
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: 2, content, contentHash: 'h', consistent: true })),
     versions: vi.fn(async () => []), workspaces: vi.fn(async () => []), bindWorkspace: vi.fn(),
     writeSection: vi.fn(async () => ({ kind: 'applied' as const, newSeq: 3, contentHash: 'h' })),
@@ -129,4 +129,19 @@ it('shows conflict when full-document write returns conflict', async () => {
   fireEvent.click(screen.getByText('编辑'))
   fireEvent.click(screen.getByText('保存'))
   await screen.findByText(/版本冲突：当前已是 v9/)
+})
+
+it('edits and clears the project alias independently of its full name', async () => {
+  const svc = service()
+  mount(svc)
+  fireEvent.click(await screen.findByText('设置简称'))
+  fireEvent.change(screen.getByLabelText('项目简称'), { target: { value: 'DNS限速' } })
+  fireEvent.click(screen.getByText('保存简称'))
+  await waitFor(() => expect(svc.setShortName).toHaveBeenCalledWith('demo', 'DNS限速', false))
+  expect(svc.rename).not.toHaveBeenCalled()
+  expect(svc.writeDocument).not.toHaveBeenCalled()
+  fireEvent.click(await screen.findByText('设置简称'))
+  fireEvent.change(screen.getByLabelText('项目简称'), { target: { value: '' } })
+  fireEvent.click(screen.getByText('保存简称'))
+  await waitFor(() => expect(svc.setShortName).toHaveBeenLastCalledWith('demo', '', false))
 })

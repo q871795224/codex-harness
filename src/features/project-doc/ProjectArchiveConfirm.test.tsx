@@ -26,7 +26,7 @@ function service(overrides: Partial<ProjectDocService> = {}, content = CURRENT_D
   return {
     measure: vi.fn(), beginCompaction: vi.fn(), completeCompaction: vi.fn(), cancelCompaction: vi.fn(), readVersion: vi.fn(), restoreVersion: vi.fn(),
     create: vi.fn(async () => meta), list: vi.fn(async () => [meta]), get: vi.fn(async () => ({ ...meta, currentSeq: seq })),
-    rename: vi.fn(async () => undefined), archive: vi.fn(async () => undefined),
+    setShortName: vi.fn(async () => null), rename: vi.fn(async () => undefined), archive: vi.fn(async () => undefined),
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: seq, content, contentHash: 'h', consistent: true })),
     versions: vi.fn(async () => []), workspaces: vi.fn(async () => []), bindWorkspace: vi.fn(),
     writeSection: vi.fn(async () => ({ kind: 'applied' as const, newSeq: seq + 1, contentHash: 'h' })),

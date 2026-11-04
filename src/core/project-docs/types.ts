@@ -47,6 +47,7 @@ export interface ProjectDocService {
   list(): Promise<ProjectMeta[]>
   get(projectId: string): Promise<ProjectMeta>
   rename(projectId: string, name: string): Promise<void>
+  setShortName(projectId: string, shortName: string, onlyIfEmpty: boolean): Promise<string | null>
   archive(projectId: string): Promise<void>
   bindWorkspace(projectId: string, workspaceRoot: string): Promise<void>
   workspaces(projectId: string): Promise<string[]>

@@ -300,7 +300,7 @@ export function useUnifiedHarness() {
     }
   }, [claude, codex, currentThread?.cwd])
 
-  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = []) => {
+  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string) => {
     if (selectedThreadId) noteMessageSubmitted(selectedThreadId)
     recordWorkspaceContextDiagnostic({
       level: 'info',
@@ -327,13 +327,13 @@ export function useUnifiedHarness() {
         && shouldGenerateClaudeTitle(session.title, session.providerSessionId, Boolean(claude.activeTurnIds[selectedThreadId])))
       await claude.sendMessage(selectedThreadId, input, mode)
       if (shouldGenerateTitle && session) {
-        void codex.generateConversationTitle(session.id, session.cwd, userText)
+        void codex.generateConversationTitle(session.id, session.cwd, titleSource ?? userText)
           .then((title) => title ? claude.applyGeneratedTitle(session.id, title) : undefined)
           .catch(() => undefined)
       }
       return
     }
-    return codex.sendMessage(input, mode, references)
+    return codex.sendMessage(input, mode, references, titleSource)
   }, [claude, codex, noteMessageSubmitted, selectedProvider, selectedThreadId])
 
   const stopTurn = useCallback(() => {

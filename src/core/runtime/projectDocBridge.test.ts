@@ -24,3 +24,13 @@ it('passes typed thread binding operations through the registered IPC commands',
   await expect(runtime.projectDocUnbindThread('t')).rejects.toThrow('已锁定')
   expect(invoke).toHaveBeenLastCalledWith('project_doc_unbind_thread', { threadId: 't' })
 })
+
+it('passes alias writes and atomic fill semantics through IPC', async () => {
+  vi.mocked(invoke).mockResolvedValueOnce('DNS限速')
+  expect(await runtime.projectDocSetShortName('demo', 'DNS', true)).toBe('DNS限速')
+  expect(invoke).toHaveBeenLastCalledWith('project_doc_set_short_name', { projectId: 'demo', shortName: 'DNS', onlyIfEmpty: true })
+  await runtime.projectDocSetShortName('demo', '', false)
+  expect(invoke).toHaveBeenLastCalledWith('project_doc_set_short_name', { projectId: 'demo', shortName: '', onlyIfEmpty: false })
+  vi.mocked(invoke).mockRejectedValueOnce(new Error('项目不存在'))
+  await expect(runtime.projectDocSetShortName('missing', 'DNS', true)).rejects.toThrow('项目不存在')
+})

@@ -142,6 +142,7 @@ export interface ThreadTitleGenerationSettings {
 }
 
 export const DEFAULT_THREAD_TITLE_PROMPT = `Generate a concise, single-line task title of at most 80 characters and under five words where possible.
+Describe the user's current specific task and its object; do not summarize general project progress.
 Start with an imperative verb. Capitalize only the first word unless the user's language, proper nouns, acronyms, or code terms require otherwise.
 Preserve ticket references exactly. Write in the user's language. Do not use quotes, Markdown, or trailing punctuation.
 Return only the title. Do not answer the user's request.`

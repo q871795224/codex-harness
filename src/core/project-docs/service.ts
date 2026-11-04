@@ -17,6 +17,7 @@ export function createProjectDocService(): ProjectDocService {
     list: () => runtime.projectDocList(),
     get: (projectId) => runtime.projectDocGet(projectId),
     rename: (projectId, name) => runtime.projectDocRename(projectId, name),
+    setShortName: (projectId, shortName, onlyIfEmpty) => runtime.projectDocSetShortName(projectId, shortName, onlyIfEmpty),
     archive: (projectId) => runtime.projectDocArchive(projectId),
     bindWorkspace: (projectId, workspaceRoot) => runtime.projectDocBindWorkspace(projectId, workspaceRoot),
     workspaces: (projectId) => runtime.projectDocWorkspaces(projectId),

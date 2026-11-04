@@ -301,6 +301,24 @@ mod tests {
     const OUTPUT: &str =
         "## Status\n当前事实\n\n## Log\n\n## Decisions\n当前决定\n\n## Open Questions\n待办\n";
     #[test]
+    fn metadata_updates_during_compaction_survive_replacement_and_restore() {
+        let (dir, store) = setup();
+        store.set_short_name("demo", "最初简称", true).unwrap();
+        let job = store.begin_compaction("demo").unwrap();
+        let other = ProjectDocStore::open_at(dir.path().to_path_buf()).unwrap();
+        other.set_short_name("demo", "手动简称", false).unwrap();
+        assert_eq!(other.get_project("demo").unwrap().current_seq, 1);
+        let result = store.complete_compaction("demo", &job.job_id, OUTPUT).unwrap();
+        assert_eq!(result.new_seq, 2);
+        assert_eq!(store.get_project("demo").unwrap().short_name.as_deref(), Some("手动简称"));
+        assert_eq!(store.list_versions("demo").unwrap()[0].operation, "compaction:1");
+        assert!(matches!(store.restore_version("demo", 1, 2).unwrap(), WriteOutcome::Applied { new_seq: 3, .. }));
+        drop(other); drop(store);
+        let reopened = ProjectDocStore::open_at(dir.path().to_path_buf()).unwrap();
+        assert_eq!(reopened.get_project("demo").unwrap().short_name.as_deref(), Some("手动简称"));
+        assert_eq!(reopened.get_project("demo").unwrap().current_seq, 3);
+    }
+    #[test]
     fn archives_exact_input_then_merges_concurrent_appends_and_restores() {
         let (dir, store) = setup();
         let before = store.read_file_full("demo").unwrap();

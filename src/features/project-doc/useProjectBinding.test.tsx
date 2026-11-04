@@ -19,6 +19,7 @@ function makeService(initial: Record<string, ThreadProjectBinding> = {}) {
     create: vi.fn(async () => meta),
     list: vi.fn(async () => [meta]),
     get: vi.fn(async (projectId: string) => ({ ...meta, projectId })),
+    setShortName: vi.fn(async () => null),
     rename: vi.fn(async () => undefined),
     archive: vi.fn(async () => undefined),
     bindWorkspace: vi.fn(async () => undefined),
