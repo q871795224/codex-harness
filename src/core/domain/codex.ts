@@ -11,6 +11,7 @@ export type CodexTurnTrigger =
   | 'memory-save'
   | 'return-to-parent'
   | 'thread-title'
+  | 'workspace-router'
 
 export interface Workspace {
   root: string

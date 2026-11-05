@@ -110,6 +110,7 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
 }
 
 export const runtime = {
+  routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),
   listAsyncWaits: () => invoke<AsyncWaitSnapshot>('async_wait_list'),
   createAsyncWait: (input: CreateAsyncWait) => invoke<AsyncWaitTask>('async_wait_create', { input }),
   asyncWaitAction: (id: string, action: AsyncWaitAction) => invoke<AsyncWaitTask>('async_wait_action', { id, action }),

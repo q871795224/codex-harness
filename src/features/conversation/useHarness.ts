@@ -1,3 +1,5 @@
+import { retargetDraftProjectInput } from './draftProjectInput'
+import { isRouterThread, pendingRouteKey, readRouteRecord, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord, writeRouteRecord, type RouteRecord } from '../../core/workspace-router/service'
 import { questionRequestIdentity } from '../../core/questions/identity'
 import type { QuestionEvent } from '../../core/questions/types'
 import type { MessageReference } from '../../core/domain/codex'
@@ -120,8 +122,6 @@ import {
   isArchivedThreadError,
   isFirstUserTurn,
   activeThreadIdsForRecovery,
-  resolveDefaultWorkspaceCwd,
-  resolveNewThreadWorkspaceRoot,
   resumedThreadDetail,
   resumeThreadWithRetry,
   resumeThreadRequest,
@@ -194,6 +194,18 @@ export function useHarness() {
   const [conversationStats, setConversationStatsState] = useState<ConversationStatsPreferences>(defaultConversationStatsPreferences)
   const [threadTitleGeneration, setThreadTitleGenerationState] = useState<ThreadTitleGenerationSettings>(DEFAULT_THREAD_TITLE_GENERATION)
   const [recapGeneration, setRecapGenerationState] = useState<RecapGenerationSettings>(DEFAULT_RECAP_GENERATION)
+  const [automaticWorkspaces, setAutomaticWorkspaces] = useState<Record<string, boolean>>({})
+  const automaticWorkspacesRef = useRef<Record<string, boolean>>({})
+  const submittingThreadsRef = useRef(new Set<string>())
+  const migratedDraftProjectsRef = useRef(new Map<string, { projectId: string; previousThreadId: string }>())
+  const [draftOrigins, setDraftOrigins] = useState<Record<string, string>>({})
+  const draftOriginsRef = useRef<Record<string, string>>({})
+  const draftReplacementListenersRef = useRef(new Set<(from: string, to: string) => void>())
+  const onDraftThreadReplaced = useCallback((listener: (from: string, to: string) => void) => {
+    draftReplacementListenersRef.current.add(listener)
+    return () => { draftReplacementListenersRef.current.delete(listener) }
+  }, [])
+  const [routeRecords, setRouteRecords] = useState<Record<string, RouteRecord>>({})
   const [recapBanner, setRecapBanner] = useState<{ threadId: string; text: string; createdAt: number } | null>(null)
   const [queues, setQueues] = useState<Record<string, QueuedSubmission[]>>({})
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest[]>>({})
@@ -309,6 +321,45 @@ export function useHarness() {
       workspaceRoot: context?.workspaceRoot ?? (context?.threadId ? threadsRef.current.find((thread) => thread.id === context.threadId)?.cwd : undefined),
     })
   }, [])
+
+  const setAutomaticWorkspace = useCallback(async (threadId: string, automatic: boolean) => {
+    await runtime.setAppState(pendingRouteKey(threadId), automatic ? 'true' : 'false')
+    automaticWorkspacesRef.current = { ...automaticWorkspacesRef.current, [threadId]: automatic }
+    setAutomaticWorkspaces(automaticWorkspacesRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (!selectedThreadId) return
+    let disposed = false
+    const id = selectedThreadId
+    void Promise.all([runtime.getAppState(pendingRouteKey(id)), readRouteRecord(id)]).then(([pending, record]) => {
+      if (disposed) return
+      if (automaticWorkspacesRef.current[id] === undefined) {
+        automaticWorkspacesRef.current = { ...automaticWorkspacesRef.current, [id]: pending === 'true' }
+        setAutomaticWorkspaces(automaticWorkspacesRef.current)
+      }
+      if (record) setRouteRecords((current) => ({ ...current, [id]: record }))
+    }).catch((error) => notify('无法读取工作区路由记录', 'warning', error, { threadId: id }))
+    return () => { disposed = true }
+  }, [selectedThreadId, notify])
+
+  const giveRouteFeedback = useCallback(async (threadId: string, accurate: boolean, actual: string | null = null) => {
+    try {
+      const record = await readRouteRecord(threadId)
+      if (!record) throw new Error('路由记录不存在')
+      const saved = await recordRouteFeedback(record, accurate ? 'accurate' : 'inaccurate', actual)
+      setRouteRecords((current) => ({ ...current, [threadId]: saved }))
+    } catch (error) { notify('无法保存路由反馈', 'error', error, { threadId }); throw error }
+  }, [notify])
+
+  const acceptRouteImplicitly = useCallback(async (threadId: string, messageId: string) => {
+    try {
+      const record = await readRouteRecord(threadId)
+      if (!record || record.feedback !== 'pending' || record.status !== 'started') return
+      const saved = await recordRouteFeedback(record, 'implicit-accurate', null, messageId)
+      setRouteRecords((current) => ({ ...current, [threadId]: saved }))
+    } catch (error) { notify('消息已发送，但路由反馈保存失败', 'warning', error, { threadId }) }
+  }, [notify])
 
   const updateNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
     setNavigation((current) => {
@@ -682,7 +733,7 @@ export function useHarness() {
   }, [])
 
   const discardEmptyDraftThread = useCallback((threadId: string | null) => {
-    if (!threadId || !shouldDiscardDraftThread(
+    if (!threadId || submittingThreadsRef.current.has(threadId) || !shouldDiscardDraftThread(
       isUnstartedLocalThread(threadId),
       draftContentThreadIdsRef.current.has(threadId),
     )) return
@@ -1024,15 +1075,8 @@ export function useHarness() {
   }, [rememberNextThreadCwd, workspaces])
 
   const startNewThread = useCallback(async (sessionStartSource: 'clear' | undefined, operation: '创建' | '重置', explicitCwd?: string) => {
-    const workspaceRoot = explicitCwd ?? resolveNewThreadWorkspaceRoot(
-      selectedThreadIdRef.current,
-      threadsRef.current,
-      nextThreadCwdRef.current ?? resolveDefaultWorkspaceCwd(workspaces, selectedWorkspaceRoot),
-    )
-    if (!workspaceRoot) {
-      notify('请先在左侧选择一个 Git 主工作区。', 'warning')
-      return
-    }
+    const automatic = !explicitCwd && !sessionStartSource
+    const workspaceRoot = explicitCwd ?? (sessionStartSource ? threadsRef.current.find((thread) => thread.id === selectedThreadIdRef.current)?.cwd : undefined)
     const previousThread = threadsRef.current.find((thread) => thread.id === selectedThreadIdRef.current)
     recordWorkspaceContextDiagnostic({
       level: 'info',
@@ -1049,14 +1093,15 @@ export function useHarness() {
     setBusy((current) => ({ ...current, createThread: true }))
     try {
       const yolo = yoloModeSettings(true)
+      const cwd = workspaceRoot ?? await runtime.routerWorkspaceDirectory()
       const response: StartThreadResponse = await appServer.startThread({
-        cwd: workspaceRoot,
-        runtimeWorkspaceRoots: [workspaceRoot],
+        cwd, runtimeWorkspaceRoots: [cwd],
         approvalPolicy: yolo.approvalPolicy,
         approvalsReviewer: yolo.approvalsReviewer,
         sandbox: yolo.sandboxMode,
         ...(sessionStartSource ? { sessionStartSource } : {}),
       })
+      await setAutomaticWorkspace(response.thread.id, automatic)
       const previousThreadId = selectedThreadIdRef.current
       setViewMode('active')
       unstartedDraftThreadIdsRef.current.add(response.thread.id)
@@ -1092,7 +1137,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, selectedWorkspaceRoot, setViewMode, upsertThread, workspaces])
+  }, [discardEmptyDraftThread, mapThreadRoots, markThreadRead, notify, rememberNextThreadCwd, setAutomaticWorkspace, setViewMode, upsertThread])
 
   const createThread = useCallback(async (cwd?: string) => {
     return startNewThread(undefined, '创建', cwd)
@@ -1110,7 +1155,11 @@ export function useHarness() {
 
   const changeThreadWorkspace = useCallback(async (threadId: string, checkoutRoot: string) => {
     const currentThread = threadsRef.current.find((thread) => thread.id === threadId)
-    if (!checkoutRoot || !currentThread || currentThread.cwd === checkoutRoot) return
+    if (!currentThread) return
+    if (submittingThreadsRef.current.has(threadId)) return
+    if (!checkoutRoot && unstartedDraftThreadIdsRef.current.has(threadId)) { await setAutomaticWorkspace(threadId, true); return }
+    if (!checkoutRoot) return
+    if (currentThread.cwd === checkoutRoot) { await setAutomaticWorkspace(threadId, false); return }
     if (activeTurnIdsRef.current[threadId]) {
       notify('请先停止或等待当前轮完成，再切换工作目录。', 'warning')
       return
@@ -1139,6 +1188,7 @@ export function useHarness() {
       })
       const overrides = threadPermissionOverrides(detail, currentThread.cwd, nextCwd)
       await appServer.updateThreadSettings({ threadId, cwd: nextCwd, ...overrides })
+      await setAutomaticWorkspace(threadId, false)
       await appServer.updateThreadMetadata({
         threadId,
         gitInfo: { branch: workspace.branch, sha: workspace.sha },
@@ -1180,7 +1230,7 @@ export function useHarness() {
     } finally {
       setBusy((current) => ({ ...current, threadWorkspace: false }))
     }
-  }, [notify, rememberNextThreadCwd, updateDetail, updateThread])
+  }, [notify, rememberNextThreadCwd, setAutomaticWorkspace, updateDetail, updateThread])
 
   const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
     setThreadStarting(threadId, false)
@@ -1518,6 +1568,18 @@ export function useHarness() {
     }
   }, [cancelRecapTimer, handleRecapFocusGained, handleRecapFocusLost])
 
+  const prepareRoutedDraft = useCallback(async (threadId: string, record: RouteRecord) => {
+    const candidate = record.candidates.find((item) => item.root === record.choice?.primary)
+    const current = threadsRef.current.find((thread) => thread.id === threadId)
+    if (!current || !unstartedDraftThreadIdsRef.current.has(threadId)) throw new Error('待路由会话已不可用，请重新创建会话')
+    const cwd = candidate?.checkoutRoot ?? await runtime.routerWorkspaceDirectory()
+    threadsRef.current = threadsRef.current.map((thread) => thread.id === threadId ? { ...thread, cwd } : thread)
+    const detail = detailsRef.current[threadId]
+    if (detail) detailsRef.current = { ...detailsRef.current, [threadId]: { ...detail, thread: { ...detail.thread, cwd } } }
+    setThreads(threadsRef.current)
+    setDetails(detailsRef.current)
+  }, [])
+
   const recreateDraftThreadForSelectedCwd = useCallback(async (threadId: string) => {
     if (!unstartedDraftThreadIdsRef.current.has(threadId)) return threadId
     const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
@@ -1525,17 +1587,26 @@ export function useHarness() {
     if (!thread || !shouldRecreateDraftThread(initialCwd, thread.cwd)) return threadId
 
     const detail = detailsRef.current[threadId]
+    const binding = await runtime.projectDocThreadBinding(threadId)
     const response = await appServer.startThread(draftThreadStartRequest(thread.cwd, detail))
     const replacementId = response.thread.id
     try {
       if (detail?.threadSettings?.effort) {
         await appServer.updateThreadSettings({ threadId: replacementId, effort: detail.threadSettings.effort })
       }
+      if (binding) {
+        await runtime.projectDocBindThread(replacementId, binding.projectId)
+        migratedDraftProjectsRef.current.set(replacementId, { projectId: binding.projectId, previousThreadId: threadId })
+      }
     } catch (error) {
       await appServer.deleteThread(replacementId).catch(() => undefined)
       throw error
     }
 
+    // Keep the mounted composer and its pending draft across the thread-id change.
+    for (const listener of draftReplacementListenersRef.current) listener(threadId, replacementId)
+    draftOriginsRef.current = { ...draftOriginsRef.current, [replacementId]: draftOriginsRef.current[threadId] ?? threadId }
+    setDraftOrigins(draftOriginsRef.current)
     const replacementDetail = startedThreadDetail(response)
     if (detail?.threadSettings) replacementDetail.threadSettings = detail.threadSettings
     const nextThreads = [response.thread, ...threadsRef.current.filter((candidate) => candidate.id !== threadId && candidate.id !== replacementId)]
@@ -1560,10 +1631,12 @@ export function useHarness() {
     draftInitialCwdsRef.current.delete(threadId)
     unstartedDraftThreadIdsRef.current.add(replacementId)
     draftInitialCwdsRef.current.set(replacementId, response.thread.cwd)
-    selectedThreadIdRef.current = replacementId
-    setSelectedThreadId(replacementId)
-    rememberNextThreadCwd(response.thread.cwd)
-    void runtime.setAppState('selectedThreadId', replacementId).catch(() => undefined)
+    if (selectedThreadIdRef.current === threadId) {
+      selectedThreadIdRef.current = replacementId
+      setSelectedThreadId(replacementId)
+      rememberNextThreadCwd(response.thread.cwd)
+      void runtime.setAppState('selectedThreadId', replacementId).catch(() => undefined)
+    }
     void mapThreadRoots([response.thread])
     void appServer.deleteThread(threadId).catch(() => undefined)
     recordWorkspaceContextDiagnostic({
@@ -1587,6 +1660,7 @@ export function useHarness() {
     inputs?: UserInput[],
     trigger?: CodexTurnTrigger,
     references: MessageReference[] = [],
+    route?: RouteRecord,
   ) => {
     const firstSubmission = unstartedDraftThreadIdsRef.current.has(threadId) || pendingCatalogThreadIdsRef.current.has(threadId)
     if (firstSubmission) {
@@ -1646,6 +1720,16 @@ export function useHarness() {
           turnId: response.turn.id,
         },
       })
+      if (migratedDraftProjectsRef.current.has(threadId)) {
+        try { await runtime.projectDocLockThreadBinding(threadId); migratedDraftProjectsRef.current.delete(threadId) }
+        catch (error) { notify('消息已发送，但项目绑定尚未锁定', 'warning', error, { threadId }) }
+      }
+      if (route) {
+        try {
+          const saved = await updateRouteRecord(route.id, (latest) => ({ ...latest, status: 'started', sourceMessageId: clientId, sourceTurnId: response.turn.id }))
+          setRouteRecords((current) => ({ ...current, [threadId]: saved }))
+        } catch (error) { notify('消息已发送，但路由记录更新失败', 'warning', error, { threadId }) }
+      } else if (!trigger && inputs?.length) await acceptRouteImplicitly(threadId, clientId)
       if (!completedTurnIdsRef.current.delete(response.turn.id)) setActiveTurn(threadId, response.turn.id, true)
       if (firstSubmission) {
         // A refresh failure must not turn an accepted message into a send failure.
@@ -1658,11 +1742,12 @@ export function useHarness() {
       locallyStartingRef.current.delete(threadId)
       setThreadStarting(threadId, false)
     }
-  }, [notify, refreshThreads, setActiveTurn, setThreadStarting])
+  }, [acceptRouteImplicitly, notify, refreshThreads, setActiveTurn, setThreadStarting])
 
   const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string) => {
     const threadId = selectedThreadIdRef.current
     if (!threadId || input.length === 0) return
+    if (submittingThreadsRef.current.has(threadId)) throw new Error('消息正在发送，请稍候')
     const text = input
       .filter((item): item is Extract<UserInput, { type: 'text' }> => item.type === 'text')
       .map((item) => item.text)
@@ -1677,11 +1762,32 @@ export function useHarness() {
       notify('该会话正由其他客户端运行；请等待当前轮结束。', 'warning')
       return
     }
+    submittingThreadsRef.current.add(threadId)
     setBusy((current) => ({ ...current, composer: true }))
     try {
       if (!activeTurnId) {
+        let record: RouteRecord | null = null
+        const pending = automaticWorkspacesRef.current[threadId] ?? (await runtime.getAppState(pendingRouteKey(threadId)) === 'true')
+        if (pending) {
+          setBusy((current) => ({ ...current, workspaceRouter: true }))
+          const source = threadsRef.current.find((thread) => thread.id === threadId)
+          if (!source) throw new Error('待路由会话不存在')
+          record = await routeWorkspace(threadId, source.cwd, input, workspaces)
+          await prepareRoutedDraft(threadId, record)
+        }
         const startedThreadId = await recreateDraftThreadForSelectedCwd(threadId)
-        await startTurn(startedThreadId, null, input, undefined, references)
+        if (record) {
+          record = { ...record, threadId: startedThreadId }
+          await writeRouteRecord(record)
+          await setAutomaticWorkspace(threadId, false)
+          await setAutomaticWorkspace(startedThreadId, false)
+          setRouteRecords((current) => ({ ...current, [startedThreadId]: record! }))
+        }
+        const previousRoute = record ?? await readRouteRecord(startedThreadId)
+        const routedInput = previousRoute?.status === 'selected' && previousRoute.choice ? [...input, ...relatedWorkspaceInput(previousRoute.choice, previousRoute.candidates)] : input
+        const migratedProject = migratedDraftProjectsRef.current.get(startedThreadId)
+        const submission = migratedProject ? retargetDraftProjectInput(routedInput, references, migratedProject.projectId, migratedProject.previousThreadId, startedThreadId) : { input: routedInput, references }
+        await startTurn(startedThreadId, null, submission.input, undefined, submission.references, previousRoute?.status === 'selected' ? previousRoute : undefined)
         if (text.trim()) {
           updateThread(startedThreadId, (thread) => withInitialThreadPreview(thread, text))
           updateDetail(startedThreadId, (detail) => ({
@@ -1703,6 +1809,7 @@ export function useHarness() {
         mode,
       })
       if (result.kind === 'queued') {
+        await acceptRouteImplicitly(threadId, clientUserMessageId)
         await loadQueue(threadId)
         return
       }
@@ -1710,13 +1817,15 @@ export function useHarness() {
         ...current,
         [threadId]: [...(current[threadId] ?? []), result.pending],
       }))
+      await acceptRouteImplicitly(threadId, clientUserMessageId)
     } catch (error) {
       notify('无法发送消息', 'error', error, { threadId })
       throw error
     } finally {
-      setBusy((current) => ({ ...current, composer: false }))
+      submittingThreadsRef.current.delete(threadId)
+      setBusy((current) => ({ ...current, composer: false, workspaceRouter: submittingThreadsRef.current.size > 0 }))
     }
-  }, [loadQueue, maybeGenerateThreadTitle, notify, recreateDraftThreadForSelectedCwd, startTurn, updateDetail, updateThread])
+  }, [acceptRouteImplicitly, loadQueue, maybeGenerateThreadTitle, notify, prepareRoutedDraft, recreateDraftThreadForSelectedCwd, setAutomaticWorkspace, startTurn, updateDetail, updateThread, workspaces])
 
   const continueAfterFailure = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -2051,6 +2160,7 @@ export function useHarness() {
     const method = event.method
     const params = event.params ?? {}
     if (!method) return
+    if (isRouterThread(eventThreadId(params) ?? '')) return
 
     if (handleTitleGeneratorEvent(method, params)) return
     if (handleRecapGeneratorEvent(method, params)) return
@@ -2462,6 +2572,11 @@ export function useHarness() {
     currentTokenUsage,
     currentTaskPlan,
     currentRecap,
+    automaticWorkspace: Boolean(automaticWorkspaces[selectedThreadId ?? '']),
+    currentRoute: routeRecords[selectedThreadId ?? ''] ?? null,
+    giveRouteFeedback,
+    draftOrigins,
+    onDraftThreadReplaced,
     activeTurnId,
     activeTurnIds,
     currentForeignActive,
