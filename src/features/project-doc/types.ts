@@ -23,7 +23,31 @@ export interface ProjectVersion {
   operation?: string
 }
 
+export interface ProjectEntry {
+  id: string
+  section: 'decisions' | 'openQuestions'
+  state: 'active' | 'open' | 'done' | 'deleted' | 'superseded' | 'revoked'
+  revision: number
+  reason: string
+  replacedBy: string | null
+  previousState: string | null
+  updatedBy: string
+  updatedAt: number
+  content: string
+}
+export interface EntryMutation {
+  action: 'adopt' | 'update' | 'supersede' | 'delete' | 'restore' | 'revoke' | 'close' | 'reopen'
+  id?: string
+  revision?: number
+  section?: 'decisions' | 'openQuestions'
+  content?: string
+  reason: string
+  baseSeq?: number
+}
+export interface ProjectContext { content: string; seq: number; tokens: number; omittedEntries: number }
+
 export interface ProjectDocSnapshot {
+  entries?: ProjectEntry[]
   projectId: string
   currentSeq: number
   content: string

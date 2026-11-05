@@ -39,6 +39,10 @@ Harness 与 CLI 的核对要区分两个层次：
 `text_elements[].byteRange` 是 UTF-8 字节范围，不是 JavaScript 字符下标。位置参数里直接写 `@README.md`
 则仍然只是普通文本，不能代替在交互 Composer 中实际选中文件建议项。对当前 CLI 0.151.0 的交互式文件选择也捕获到：选中后 `turn/start.input` 是不带 `@` 的路径文本，未带结构化 `mention`。2026-09-16 已确认按 CLI 行为对齐：Harness 选中文件后把路径写回输入框文本随消息发出（App Server 不会把结构化 `mention` 放进模型上下文，此前 @ 文件后模型收不到路径即由此产生）；文件选择器/旧草稿残留的文件附件也在 `composerInputs` 兜底内联为路径文本。
 
+## 项目文档原生 Skill 加载
+
+迁移 Skill 分发或自动加载入口前，可显式运行隔离的原生黑箱检查。方法、版本与边界见 [原生 Skill 加载验证](../docs/project-doc-native-skill-validation.md)；检查模型请求中的随机正文标记，不能以接口成功或列表可见替代正文已加载的验证。该检查不连接日常 daemon，不加入常规 CI。
+
 ## Token 埋点
 
 当前不引入 Grafana 或新的指标数据库。Rust 原生层会把诊断日志写入

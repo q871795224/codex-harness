@@ -21,6 +21,7 @@ mod management;
 mod project_doc_proposals;
 mod project_doc_server;
 mod project_doc_store;
+mod project_doc_skill;
 mod quick_command;
 mod release_command;
 mod store;
@@ -979,6 +980,17 @@ fn project_doc_write_document(
 }
 
 #[tauri::command]
+async fn project_doc_context(state: State<'_, AppState>, project_id: String, threshold: usize) -> Result<project_doc_store::ProjectContext, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.context(&project_id, threshold)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_mutate_entry(state: State<'_, AppState>, project_id: String, mutation: project_doc_store::EntryMutation) -> Result<project_doc_store::WriteOutcome, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.mutate_entry(&project_id, &mutation, "user")).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn project_doc_measure(state: State<'_, AppState>, project_id: String) -> Result<project_doc_store::DocumentMeasure, String> {
     let docs = project_docs(&state)?.as_ref().unwrap().clone();
     tauri::async_runtime::spawn_blocking(move || docs.measure(&project_id)).await.map_err(|e| e.to_string())?
@@ -1392,12 +1404,17 @@ pub fn run() {
         .setup(move |app| {
             system_notification::install(app.handle());
             let store = Arc::new(store);
+            let project_skill = Arc::new(project_doc_skill::ProjectDocSkill::new(
+                store.clone(),
+                store::harness_data_dir()?.join("project-doc-skills"),
+            ));
             let ownership = Arc::new(turn_ownership::TurnOwnership::new(store.clone())?);
             let manager = Arc::new(AppServerManager::new(
                 app.handle().clone(),
                 diagnostics.clone(),
                 analytics.clone(),
                 ownership,
+                project_skill.clone(),
                 app_server::history_response_limit(
                     store.get_app_state("conversationHistoryPreferences")?.as_deref(),
                 ),
@@ -1405,6 +1422,7 @@ pub fn run() {
             let claude_runtime = Arc::new(ClaudeRuntime::new(
                 app.handle().clone(),
                 diagnostics.clone(),
+                project_skill,
             ));
             let terminal = Arc::new(terminal::TerminalManager::new(diagnostics.clone()));
             let management_app = app.handle().clone();
@@ -1512,6 +1530,8 @@ pub fn run() {
             project_doc_write_section,
             project_doc_write_document,
             project_doc_measure,
+            project_doc_context,
+            project_doc_mutate_entry,
             project_doc_begin_compaction,
             project_doc_complete_compaction,
             project_doc_cancel_compaction,

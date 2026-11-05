@@ -1,4 +1,6 @@
 import { RouterFeedbackCard } from './features/conversation/RouterFeedbackCard'
+import { useReminderSources } from './features/notifications/useReminderSources'
+import { attentionGroups } from './core/notifications/store'
 import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
 import { useQuestionLinks } from './features/conversation/useQuestionLinks'
 import type { QuestionNotificationService } from './core/questions/types'
@@ -208,11 +210,13 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   useManagement({ harness, codex, plugins, flavor })
   const [tab, setTab] = useState('chat')
+  useReminderSources(harness)
+  const [remindersOpen, setRemindersOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [selectedNotificationId, setSelectedNotificationId] = useState<string | undefined>()
   const notificationState = useSyncExternalStore(notifications.subscribe, notifications.snapshot)
-  const unreadNotifications = notificationState.records.filter((record) => !record.read).length
-  const openNotifications = (id?: string) => { setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
+  const unreadNotifications = attentionGroups(notificationState.records).length
+  const openNotifications = (id?: string) => { setRemindersOpen(false); setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
   const [focusedTab, setFocusedTab] = useState<string | null>(null)
   const [tabOrder, setTabOrder] = useState<string[]>([])
   const tabOrderRef = useRef<string[]>([])
@@ -321,33 +325,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const boundProjectId = projectBinding.binding?.projectId ?? null
   const [pendingProjectConflict, setPendingProjectConflict] = useState<{ proposalContent: string; section: string } | null>(null)
   // 折叠项目卡 spec：仅第 0 轮（pending 且有项目正文）下发给 Composer；锁定后不再注入。
-  const [projectCardContent, setProjectCardContent] = useState<string | null>(null)
-  useEffect(() => {
-    const binding = projectBinding.binding
-    if (!binding || binding.phase !== 'pending') {
-      setProjectCardContent(null)
-      return undefined
-    }
-    let disposed = false
-    void projectDocs.read(binding.projectId)
-      .then((snapshot) => { if (!disposed) setProjectCardContent(snapshot.content) })
-      .catch(() => { if (!disposed) setProjectCardContent(null) })
-    return () => { disposed = true }
-  }, [projectBinding.binding])
-  const projectCard = useMemo(() => {
-    const binding = projectBinding.binding
-    if (!binding || binding.phase !== 'pending' || !projectBinding.project || projectCardContent === null) return null
-    // 正文开头注入机器可读标记：skill 命令据此拿到 project_id / thread_id（详见 .agents/skills/project-doc）。
-    const marker = harness.selectedThreadId
-      ? `<!-- project-doc: project_id=${binding.projectId} thread_id=${harness.selectedThreadId} -->\n\n`
-      : ''
-    return {
-      projectId: binding.projectId,
-      name: projectBinding.project.name,
-      seq: projectBinding.project.currentSeq,
-      content: `${marker}${projectCardContent}`,
-    }
-  }, [projectBinding.binding, projectBinding.project, projectCardContent, harness.selectedThreadId])
+  const [projectCardContent, setProjectCardContent] = useState<{ projectId: string; threshold: number; seq: number; content: string } | null>(null)
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
@@ -390,6 +368,36 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  const projectDocInstanceId = resolvedComposerActions.find((action) => action.pluginId === 'builtin.project-doc' && action.contribution.id === 'compact-project')?.instanceId
+  const projectDocThresholdValue = plugins.instances.find((instance) => instance.instanceId === projectDocInstanceId)?.config.compactionThreshold
+  const projectDocThreshold = typeof projectDocThresholdValue === 'number' && Number.isFinite(projectDocThresholdValue) && projectDocThresholdValue >= 1
+    ? Math.floor(projectDocThresholdValue) : 10_000
+  useEffect(() => {
+    const binding = projectBinding.binding
+    if (!binding || binding.phase !== 'pending') {
+      setProjectCardContent(null)
+      return undefined
+    }
+    let disposed = false
+    void projectDocs.context(binding.projectId, projectDocThreshold)
+      .then((snapshot) => { if (!disposed) setProjectCardContent({ projectId: binding.projectId, threshold: projectDocThreshold, seq: snapshot.seq, content: snapshot.content }) })
+      .catch(() => { if (!disposed) setProjectCardContent(null) })
+    return () => { disposed = true }
+  }, [projectBinding.binding, projectDocThreshold])
+  const projectCard = useMemo(() => {
+    const binding = projectBinding.binding
+    if (!binding || binding.phase !== 'pending' || !projectBinding.project || !projectCardContent || projectCardContent.projectId !== binding.projectId || projectCardContent.threshold !== projectDocThreshold) return null
+    // 正文开头注入机器可读标记：skill 命令据此拿到 project_id / thread_id（详见 .agents/skills/project-doc）。
+    const marker = harness.selectedThreadId
+      ? `<!-- project-doc: project_id=${binding.projectId} thread_id=${harness.selectedThreadId} -->\n\n`
+      : ''
+    return {
+      projectId: binding.projectId,
+      name: projectBinding.project.name,
+      seq: projectCardContent.seq,
+      content: `${marker}${projectCardContent.content}`,
+    }
+  }, [projectBinding.binding, projectBinding.project, projectCardContent, harness.selectedThreadId, projectDocThreshold])
   const resolvedTurnActions = plugins.resolvedTurnActions({
     provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
@@ -720,7 +728,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
             }).catch((error) => harness.notify('无法打开成员会话', 'error', error))
           }}
           onSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
-          onNotifications={() => { selectMode('conversation'); openNotifications() }}
+          onNotifications={() => setRemindersOpen(true)}
           unreadNotifications={unreadNotifications}
         /></Suspense>
       </div>}
@@ -764,9 +772,9 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
         onToggleWorkspacePinned={harness.toggleWorkspacePinned}
         onSidebarWidth={harness.setSidebarWidth}
         onSidebarListSplitRatio={harness.setSidebarListSplitRatio}
-        onOpenNotifications={() => openNotifications()}
+        onOpenNotifications={() => setRemindersOpen((current) => !current)}
         onMarkAllNotificationsRead={() => notifications.markRead()}
-        notificationsOpen={notificationsOpen}
+        notificationsOpen={notificationsOpen || remindersOpen}
         unreadNotifications={unreadNotifications}
         onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
         onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
@@ -861,12 +869,11 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 })}
               </div>
               <div className="notification-tab-tools">
-              <button type="button" className="notification-bell" aria-label="打开通知中心" title="通知中心" onClick={() => openNotifications()}><Bell size={16} />{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>
+              <button type="button" className="notification-bell" data-notification-toggle aria-label="打开通知提醒" title="通知提醒" onClick={() => setRemindersOpen((current) => !current)}><Bell size={16} />{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>
               <span className={`connection-state ${codexConversation ? '' : 'claude'}`}><span />{codexConversation ? '本机 App Server' : 'Claude · Agent SDK'}</span>
               </div>
             </div>
 
-            <div className="notification-anchor"><NotificationViewport store={notifications} onOpen={openNotifications} /></div>
             {tab === 'chat' ? (
               <ConversationView
                 asyncWaitPanel={codexConversation ? <AsyncWaitPanel threadId={harness.currentThread.id} onOpenThread={(id) => { void harness.selectThread(id) }} /> : undefined}
@@ -1138,7 +1145,6 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
             )}
           </Fragment>
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread(harness.newThreadProvider)} onWorkspace={() => void harness.chooseWorkspace()} />}
-        {!harness.currentThread && <NotificationViewport store={notifications} onOpen={openNotifications} />}
         </div>
       </main>
       {quickPanelsVisible && harness.currentThread && (
@@ -1159,6 +1165,11 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
           />
         </div>
       )}
+      <NotificationViewport
+        store={notifications} onOpen={openNotifications} open={remindersOpen} onToggle={setRemindersOpen} onAction={handleNotificationAction}
+        currentThread={harness.currentThread ? { id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd } : null}
+        focusedThreadId={mode === 'conversation' && tab === 'chat' && !notificationsOpen && !settingsOpen && !pluginsOpen ? harness.selectedThreadId : null}
+      />
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
           codexUpdate={codexUpdate}

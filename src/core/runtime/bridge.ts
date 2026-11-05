@@ -407,6 +407,12 @@ export const runtime = {
   },
 
   // 项目文档（活文档 / 共享白板）：seq 语义与落盘在 Rust `project_doc_store` 强制。
+  projectDocContext(projectId: string, threshold: number): Promise<import('../../features/project-doc/types').ProjectContext> {
+    return invoke('project_doc_context', { projectId, threshold })
+  },
+  projectDocMutateEntry(projectId: string, mutation: import('../../features/project-doc/types').EntryMutation): Promise<ProjectDocWriteOutcome> {
+    return invoke('project_doc_mutate_entry', { projectId, mutation })
+  },
   projectDocMeasure(projectId: string): Promise<import('../../features/project-doc/types').DocumentMeasure> {
     return invoke('project_doc_measure', { projectId })
   },

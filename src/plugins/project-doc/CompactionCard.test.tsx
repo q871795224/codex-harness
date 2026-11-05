@@ -16,10 +16,14 @@ it('shows the agreed copy and requires an explicit operation confirmation', () =
 })
 it('settings save the editable local-token threshold', async () => {
   const save=vi.fn(async () => {})
-  render(<ProjectDocSettings instance={projectDocDefaultInstance} models={[]} saveConfig={save} />)
+  const instance={...projectDocDefaultInstance,config:{...projectDocDefaultInstance.config,archiveTurns:25,archivePromptTemplate:'legacy custom template'}}
+  render(<ProjectDocSettings instance={instance} models={[]} saveConfig={save} />)
+  expect(screen.queryByLabelText('取最近几轮')).toBeNull()
+  expect(screen.queryByLabelText(/归档 Prompt 模板/)).toBeNull()
+  expect(screen.getByLabelText('精简模型')).toBeTruthy()
   fireEvent.change(screen.getByLabelText('精简提醒门限（tokens）'), {target:{value:'15000'}})
   fireEvent.click(screen.getByRole('button',{name:'保存'}))
-  expect(save).toHaveBeenCalledWith(expect.objectContaining({compactionThreshold:15000}))
+  expect(save).toHaveBeenCalledWith({...instance.config,compactionThreshold:15000})
 })
 
 it('automatic reminders respect threshold and cooldown; manual action bypasses both', async () => {
