@@ -1,3 +1,5 @@
+import { useReminderSources } from './features/notifications/useReminderSources'
+import { attentionGroups } from './core/notifications/store'
 import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
 import { useQuestionLinks } from './features/conversation/useQuestionLinks'
 import type { QuestionNotificationService } from './core/questions/types'
@@ -207,11 +209,13 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   useManagement({ harness, codex, plugins, flavor })
   const [tab, setTab] = useState('chat')
+  useReminderSources(harness)
+  const [remindersOpen, setRemindersOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [selectedNotificationId, setSelectedNotificationId] = useState<string | undefined>()
   const notificationState = useSyncExternalStore(notifications.subscribe, notifications.snapshot)
-  const unreadNotifications = notificationState.records.filter((record) => !record.read).length
-  const openNotifications = (id?: string) => { setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
+  const unreadNotifications = attentionGroups(notificationState.records).length
+  const openNotifications = (id?: string) => { setRemindersOpen(false); setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
   const [focusedTab, setFocusedTab] = useState<string | null>(null)
   const [tabOrder, setTabOrder] = useState<string[]>([])
   const tabOrderRef = useRef<string[]>([])
@@ -708,7 +712,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
             }).catch((error) => harness.notify('无法打开成员会话', 'error', error))
           }}
           onSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
-          onNotifications={() => { selectMode('conversation'); openNotifications() }}
+          onNotifications={() => setRemindersOpen(true)}
           unreadNotifications={unreadNotifications}
         /></Suspense>
       </div>}
@@ -752,9 +756,9 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
         onToggleWorkspacePinned={harness.toggleWorkspacePinned}
         onSidebarWidth={harness.setSidebarWidth}
         onSidebarListSplitRatio={harness.setSidebarListSplitRatio}
-        onOpenNotifications={() => openNotifications()}
+        onOpenNotifications={() => setRemindersOpen((current) => !current)}
         onMarkAllNotificationsRead={() => notifications.markRead()}
-        notificationsOpen={notificationsOpen}
+        notificationsOpen={notificationsOpen || remindersOpen}
         unreadNotifications={unreadNotifications}
         onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
         onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
@@ -848,12 +852,11 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 })}
               </div>
               <div className="notification-tab-tools">
-              <button type="button" className="notification-bell" aria-label="打开通知中心" title="通知中心" onClick={() => openNotifications()}><Bell size={16} />{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>
+              <button type="button" className="notification-bell" data-notification-toggle aria-label="打开通知提醒" title="通知提醒" onClick={() => setRemindersOpen((current) => !current)}><Bell size={16} />{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>
               <span className={`connection-state ${codexConversation ? '' : 'claude'}`}><span />{codexConversation ? '本机 App Server' : 'Claude · Agent SDK'}</span>
               </div>
             </div>
 
-            <div className="notification-anchor"><NotificationViewport store={notifications} onOpen={openNotifications} /></div>
             {tab === 'chat' ? (
               <ConversationView
                 asyncWaitPanel={codexConversation ? <AsyncWaitPanel threadId={harness.currentThread.id} onOpenThread={(id) => { void harness.selectThread(id) }} /> : undefined}
@@ -1109,7 +1112,6 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
             )}
           </Fragment>
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread(harness.newThreadProvider)} onWorkspace={() => void harness.chooseWorkspace()} />}
-        {!harness.currentThread && <NotificationViewport store={notifications} onOpen={openNotifications} />}
         </div>
       </main>
       {quickPanelsVisible && harness.currentThread && (
@@ -1130,6 +1132,11 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
           />
         </div>
       )}
+      <NotificationViewport
+        store={notifications} onOpen={openNotifications} open={remindersOpen} onToggle={setRemindersOpen} onAction={handleNotificationAction}
+        currentThread={harness.currentThread ? { id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd } : null}
+        focusedThreadId={mode === 'conversation' && tab === 'chat' && !notificationsOpen && !settingsOpen && !pluginsOpen ? harness.selectedThreadId : null}
+      />
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
           codexUpdate={codexUpdate}

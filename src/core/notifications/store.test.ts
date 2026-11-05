@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createNotificationStore, type AppNotification } from './store'
+import { attentionGroups, createNotificationStore, type AppNotification } from './store'
 
 const input = { source: '测试', title: '操作未完成', level: 'error' as const, details: 'RAW_ERROR\nline 2' }
 function storage(initial: string | null = null) {
@@ -107,4 +107,84 @@ describe('notification history', () => {
     expect(store.snapshot().storageError).toBeNull()
     expect(JSON.parse((await disk.load())!)).toHaveLength(2)
   })
+})
+
+
+it('groups one conversation into one reminder and keeps read actions pending', async () => {
+  const store = createNotificationStore(storage()); await store.initialize()
+  store.publish({ ...input, id: 'answer', threadId: 'a', state: 'pending' })
+  store.publish({ ...input, id: 'result', threadId: 'a', attention: 'result' })
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(1)
+  expect(attentionGroups(store.snapshot().records)[0].record.id).toBe('answer')
+  store.markRead()
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(1)
+  store.resolve('answer')
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(0)
+  expect(store.snapshot().records).toHaveLength(2)
+})
+
+it('persists snoozes and catches up exactly once after reopening', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(10000)
+  try {
+    const disk = storage(), store = createNotificationStore(disk); await store.initialize()
+    const id = store.publish(input)
+    store.snooze([id], 20000); await store.flushed()
+    const restored = createNotificationStore(disk); await restored.initialize()
+    expect(attentionGroups(restored.snapshot().records)).toHaveLength(0)
+    vi.setSystemTime(30000); restored.tick(); await restored.flushed()
+    expect(restored.snapshot().floating).toHaveLength(1)
+    const again = createNotificationStore(disk); await again.initialize()
+    expect(again.snapshot().floating).toHaveLength(0)
+    expect(attentionGroups(again.snapshot().records)).toHaveLength(1)
+    again.tick(); expect(again.snapshot().floating).toHaveLength(0)
+  } finally { vi.useRealTimers() }
+})
+
+it('cancels a snoozed source action when the real request finishes', async () => {
+  const store = createNotificationStore(storage()); await store.initialize()
+  const id = store.publish({ ...input, state: 'pending' })
+  store.snooze([id], Date.now() + 10000); store.resolve(id); store.tick(Date.now() + 20000)
+  expect(store.snapshot().floating).toHaveLength(0)
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(0)
+})
+
+it('only notifies watched sessions on new source revisions and preserves the subscription', async () => {
+  const disk = storage(), store = createNotificationStore(disk); await store.initialize()
+  store.watchThread({ id: 'a', title: '任务' }, true)
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(0)
+  const event = { id: 'watch:a', source: '会话关注', title: '任务', level: 'info' as const, state: 'done' as const, threadId: 'a', eventKey: 'turn-1' }
+  store.publish(event); store.markRead('watch:a'); store.publish({ ...event, title: '重命名后的任务' })
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(0)
+  store.publish({ ...event, eventKey: 'turn-2' })
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(1)
+  expect(store.snapshot().records[0].watchThread).toBe(true)
+  await store.flushed()
+  const restored = createNotificationStore(disk); await restored.initialize()
+  expect(restored.snapshot().records[0].watchThread).toBe(true)
+  restored.watchThread({ id: 'a', title: '任务' }, false)
+  expect(attentionGroups(restored.snapshot().records)).toHaveLength(0)
+})
+
+it('suppresses duplicate popups while the source session is actually being viewed', async () => {
+  const store = createNotificationStore(storage()); await store.initialize()
+  store.setFocusedThread('a')
+  store.publish({ ...input, id: 'same', threadId: 'a' })
+  expect(store.snapshot().floating).toHaveLength(0)
+  store.publish({ ...input, id: 'other', threadId: 'b' })
+  expect(store.snapshot().floating.map((item) => item.id)).toEqual(['other'])
+  store.setFocusedThread('b')
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(0)
+  store.publish({ ...input, id: 'approval', threadId: 'b', state: 'pending' })
+  expect(store.snapshot().floating).toHaveLength(0)
+  expect(attentionGroups(store.snapshot().records)).toHaveLength(1)
+  store.setFocusedThread(null)
+  store.publish({ ...input, id: 'global', threadId: null })
+  expect(store.snapshot().floating.map((item) => item.id)).toEqual(['global'])
+})
+
+it('does not create timers for invalid dates', async () => {
+  const store = createNotificationStore(storage()); await store.initialize()
+  expect(() => store.remindThread({ id: 'a', title: '任务' }, NaN)).toThrow('未来')
+  expect(() => store.remindThread({ id: 'a', title: '任务' }, Date.now() - 1)).toThrow('未来')
+  expect(store.snapshot().records).toHaveLength(0)
 })
