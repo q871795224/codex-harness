@@ -1,3 +1,4 @@
+import { RouterSettings } from './RouterSettings'
 import { HistorySettings } from './HistorySettings'
 import type { useCodexUpdate } from '../codex/useCodexUpdate'
 import { MemorySettings } from './MemorySettings'
@@ -73,7 +74,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
+type SettingsPage = 'router' | 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -96,6 +97,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
     keyboard: { heading: '快捷键', kicker: 'KEYBOARD' },
     models: { heading: '模型', kicker: 'CODEX' },
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
+    router: { heading: '工作区 Router', kicker: 'AUTOMATION' },
     recap: { heading: '会话回顾', kicker: 'AUTOMATION' },
     memory: { heading: '记忆', kicker: 'MEMORY' },
     handover: { heading: '交接', kicker: 'AUTOMATION' },
@@ -167,6 +169,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
             <button type="button" className={page === 'thread-title' ? 'selected' : ''} aria-current={page === 'thread-title' ? 'page' : undefined} onClick={() => setPage('thread-title')}>
               <MessageSquareText size={16} />会话标题
             </button>
+            <button type="button" className={page === 'router' ? 'selected' : ''} aria-current={page === 'router' ? 'page' : undefined} onClick={() => setPage('router')}><FolderOpen size={16} />工作区 Router</button>
             <button type="button" className={page === 'recap' ? 'selected' : ''} aria-current={page === 'recap' ? 'page' : undefined} onClick={() => setPage('recap')}>
               <Sparkles size={16} />会话回顾
             </button>
@@ -201,6 +204,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
           {page === 'models' && <ModelsSettings codex={codex} claudeModels={claudeModels} />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
+          {page === 'router' && <RouterSettings models={codex.models} workspaces={workspaces} />}
           {page === 'recap' && <RecapSettings codex={codex} settings={recapGeneration} onChange={onRecapGeneration} />}
           {page === 'memory' && <MemorySettings models={codex.models} />}
           {page === 'handover' && <HandoverSettings />}

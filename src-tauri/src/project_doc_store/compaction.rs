@@ -25,7 +25,7 @@ pub struct CompactionResult {
     pub after_tokens: usize,
     pub archive_path: String,
 }
-fn tokens(text: &str) -> usize {
+pub(super) fn tokens(text: &str) -> usize {
     tiktoken_rs::o200k_base_singleton()
         .encode_ordinary(text)
         .len()
@@ -45,7 +45,7 @@ fn save_archive(path: &std::path::Path, content: &str) -> Result<(), String> {
         .and_then(|_| file.sync_all())
         .map_err(|e| format!("无法归档原文: {e}"))
 }
-fn current_checked(
+pub(super) fn current_checked(
     store: &ProjectDocStore,
     connection: &Connection,
     id: &str,
@@ -92,6 +92,7 @@ impl ProjectDocStore {
         if content.trim().is_empty() {
             return Err("项目文档为空，无需整理".into());
         }
+        let model_content = super::entries::model_content(&content)?;
         let mut random = [0u8; 16];
         getrandom::fill(&mut random).map_err(|e| e.to_string())?;
         let job_id = random
@@ -113,7 +114,7 @@ impl ProjectDocStore {
             job_id,
             base_seq: seq,
             tokens: tokens(&content),
-            content,
+            content: model_content,
             archive_path,
         })
     }
@@ -166,7 +167,7 @@ impl ProjectDocStore {
         if tokens(output) >= tokens(original_body) {
             return Err("精简结果未缩短，原文未替换".into());
         }
-        let mut next = output.to_string();
+        let mut next = super::entries::preserve_for_compaction(original_body, output)?;
         // Always add an archive pointer even when the model omits it.
         next = apply_section_write(
             &next,
@@ -360,10 +361,17 @@ mod tests {
             store.restore_version("demo", 4, 5).unwrap(),
             WriteOutcome::Applied { new_seq: 6, .. }
         ));
-        assert_eq!(
-            store.read_doc("demo").unwrap().content,
-            strip_front_matter(&immediate_before).trim()
-        );
+        let restored = store.read_doc("demo").unwrap();
+        let previous = strip_front_matter(&immediate_before).trim();
+        assert_eq!(super::entries::model_content(&restored.content).unwrap(), super::entries::model_content(previous).unwrap());
+        let old_entries = super::entries::list(previous).unwrap();
+        assert_eq!(restored.entries.len(), old_entries.len());
+        for (entry, old) in restored.entries.iter().zip(old_entries.iter()) {
+            assert_eq!(entry.meta.id, old.meta.id);
+            assert_eq!(entry.meta.state, old.meta.state);
+            assert_eq!(entry.content, old.content);
+            assert!(entry.meta.revision > old.meta.revision);
+        }
         assert!(store.read_version("demo", 5).unwrap().contains("当前事实"));
         assert!(matches!(
             store.restore_version("demo", 1, 5).unwrap(),

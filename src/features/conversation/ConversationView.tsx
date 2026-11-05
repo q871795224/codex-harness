@@ -46,6 +46,7 @@ import { WorkingStatus } from './ConversationStats'
 import { collectNativeAgentActivities, type NativeAgentActivity } from './agentActivity'
 
 interface ConversationHeaderProps {
+  automaticWorkspace?: boolean
   thread: Thread
   workspace: Workspace | null
   gitContextResolved: boolean
@@ -67,7 +68,7 @@ interface ConversationHeaderProps {
   headerActions?: ReactNode
 }
 
-export function ConversationHeader({ thread, workspace, gitContextResolved, archived, isWorking, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
+export function ConversationHeader({ automaticWorkspace = false, thread, workspace, gitContextResolved, archived, isWorking, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -110,8 +111,8 @@ export function ConversationHeader({ thread, workspace, gitContextResolved, arch
           </button>
         )}
         <div className="thread-context">
-          <span><GitBranch size={13} />{workspace?.name ?? '未分组'}</span>
-          <span>{threadGitContextLabel(thread.gitInfo, gitContextResolved)}</span>
+          <span><GitBranch size={13} />{automaticWorkspace ? '自动选择工作区' : workspace?.name ?? '未分组'}</span>
+          {!automaticWorkspace && <span>{threadGitContextLabel(thread.gitInfo, gitContextResolved)}</span>}
           {thread.forkedFromId && (
             <button type="button" className="thread-origin" onClick={() => onOpenThread?.(thread.forkedFromId!)} title="打开分支来源会话">
               <GitFork size={12} />来自 {thread.forkedFromId.slice(0, 8)}
@@ -120,11 +121,11 @@ export function ConversationHeader({ thread, workspace, gitContextResolved, arch
           <button
             type="button"
             className="thread-path"
-            title={`${thread.cwd}\n点击切换 checkout 或 worktree`}
+            title={automaticWorkspace ? '发送后自动选择工作区，也可手动指定' : `${thread.cwd}\n点击切换 checkout 或 worktree`}
             disabled={!canChangeWorkspace || workspaceChanging}
             onClick={onChooseWorkspace}
           >
-            {workspaceChanging ? '正在切换…' : thread.cwd}
+            {workspaceChanging ? '正在选择…' : automaticWorkspace ? '手动选择' : thread.cwd}
           </button>
           {projectName && (
             <button
@@ -211,6 +212,7 @@ interface ConversationViewProps {
   onInterruptAgent?: (threadId: string) => void
   newThreadHeader?: ReactNode
   newThreadPanels?: ReactNode
+  automaticWorkspace?: boolean
   recap?: { text: string; createdAt: number } | null
   rawMode: boolean
   working: boolean
@@ -232,7 +234,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions, banners }: ConversationViewProps) {
+export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, automaticWorkspace = false, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions, banners }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -372,7 +374,7 @@ export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex',
                     在
                     <span className="fresh-workspace-select">
                       <select
-                        value={workspace?.root ?? ''}
+                        value={automaticWorkspace ? '' : workspace?.root ?? ''}
                         aria-label="切换新会话工作区"
                         disabled={workspaceChanging}
                         onChange={(event) => {
@@ -380,7 +382,7 @@ export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex',
                           else onWorkspaceChange(event.target.value)
                         }}
                       >
-                        {!workspace && <option value="">当前工作区</option>}
+                        {provider === 'codex' ? <option value="">自动选择工作区</option> : !workspace && <option value="">当前工作区</option>}
                         {workspaces.map((candidate) => <option key={candidate.root} value={candidate.root}>{candidate.name}</option>)}
                         <option value={CHOOSE_WORKSPACE_VALUE}>… 选择其他目录</option>
                       </select>

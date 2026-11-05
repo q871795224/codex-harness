@@ -65,7 +65,7 @@ try {
 }
 const { getSessionMessages, query } = sdk
 
-const PROTOCOL_VERSION = 2
+const PROTOCOL_VERSION = 3
 const MAX_REPLAY_EVENTS = 5_000
 const DEFAULT_MAX_TURNS = 65_536
 const socketPath = process.env.CODEX_HARNESS_CLAUDE_SOCKET
@@ -569,10 +569,25 @@ async function startTurn(params) {
   activeTurns.set(sessionId, active)
   try {
     const message = await userMessage(params.input, active.providerMessageId)
+    const projectSkill = params.projectDocSkill
+    if (projectSkill?.invoke) {
+      const command = '/harness-project-doc:project-doc '
+      if (typeof message.message.content === 'string') {
+        message.message.content = command + message.message.content
+      } else {
+        // Native slash dispatch reads the final text block. Combine all text
+        // there, after images, so neither attachments nor extra text skip expansion.
+        const content = message.message.content
+        const text = command + content.filter(part => part.type === 'text').map(part => part.text).join('\n\n')
+        const attachments = content.filter(part => part.type !== 'text')
+        message.message.content = attachments.length ? [...attachments, { type: 'text', text }] : text
+      }
+    }
     const env = await queryEnvironment()
     const permissionMode = params.permissionMode ?? 'default'
     const settings = { cwd: params.cwd, model: params.model ?? null, effort: params.effort ?? null,
-      permissionMode, maxTurns: params.maxTurns ?? DEFAULT_MAX_TURNS }
+      permissionMode, maxTurns: params.maxTurns ?? DEFAULT_MAX_TURNS,
+      projectSkillRoot: projectSkill?.pluginRoot ?? null }
     const key = createHash('sha256').update(JSON.stringify([settings,
       Object.keys(env).sort().map(key => [key, env[key]])])).digest('hex')
     let runtime = sessionQueries.get(sessionId)
@@ -599,6 +614,7 @@ async function startTurn(params) {
         ...(params.effort ? { effort: params.effort } : {}),
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
         settingSources: ['user', 'project', 'local'], permissionMode,
+        ...(projectSkill ? { plugins: [{ type: 'local', path: projectSkill.pluginRoot }] } : {}),
         ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true }
           : { canUseTool: (toolName, input, context) => approvalRequest(sessionId,
             activeTurns.get(sessionId)?.turnId ?? runtime.lastTurnId, toolName, input, context) }),
@@ -777,7 +793,7 @@ async function handle(client, request) {
   const { id, method, params = {} } = request
   if (method === 'initialize') {
     const lastEventSeq = Number.isSafeInteger(params.lastEventSeq) ? params.lastEventSeq : 0
-    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.2.0', ...runtimeSnapshot() })
+    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.3.0', ...runtimeSnapshot() })
     for (const event of replayEvents) {
       if (event.seq > lastEventSeq) send(client, { ...event, replayed: true })
     }

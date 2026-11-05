@@ -15,7 +15,7 @@ const meta = { projectId: 'demo', name: '示例项目', currentSeq: 2, createdAt
 
 function service(): ProjectDocService {
   return {
-    measure: vi.fn(), beginCompaction: vi.fn(), completeCompaction: vi.fn(), cancelCompaction: vi.fn(), readVersion: vi.fn(), restoreVersion: vi.fn(),
+    context: vi.fn(), mutateEntry: vi.fn(), measure: vi.fn(), beginCompaction: vi.fn(), completeCompaction: vi.fn(), cancelCompaction: vi.fn(), readVersion: vi.fn(), restoreVersion: vi.fn(),
     create: vi.fn(async () => meta), list: vi.fn(async () => [meta]), get: vi.fn(async () => meta),
     setShortName: vi.fn(async () => null), rename: vi.fn(async () => undefined), archive: vi.fn(async () => undefined),
     read: vi.fn(async () => ({ projectId: 'demo', currentSeq: 2, content: '', contentHash: 'h', consistent: true })),

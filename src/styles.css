@@ -697,6 +697,13 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .project-create-row button { display: inline-flex; align-items: center; gap: 4px; padding: 7px 12px; border: 1px solid var(--project-selected); border-radius: 8px; background: var(--project-selected); color: var(--project-text); font-size: 12.5px; cursor: pointer; }
 .project-doc-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 14px 16px; border: 1px solid var(--project-border); border-radius: 10px; }
 .project-edit-panel { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-height: 0; }
+.project-entries { display: flex; flex-direction: column; gap: 12px; flex: 1 0 auto; }
+.project-entries details { padding: 10px 12px; border: 1px solid var(--project-border); border-radius: 8px; background: var(--project-surface); overflow-wrap: anywhere; }
+.project-entries summary { cursor: pointer; }
+.project-entries label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.project-entries select { padding: 6px 8px; border: 1px solid var(--project-border); border-radius: 7px; background: var(--project-surface); color: var(--project-text); }
+.project-entries .project-edit-panel textarea { width: 100%; box-sizing: border-box; flex: none; resize: vertical; }
+.project-entries details button { padding: 5px 8px; border: 1px solid var(--project-border); border-radius: 6px; background: var(--project-surface); color: var(--project-text); cursor: pointer; }
 .project-edit-hint { margin: 0; color: var(--project-muted); font-size: 12.5px; }
 .project-edit-panel textarea { flex: 1 1 auto; min-height: 0; padding: 10px 12px; border: 1px solid var(--project-border); border-radius: 8px; font-family: ui-monospace, monospace; font-size: 12.5px; resize: none; }
 .project-edit-actions { display: inline-flex; gap: 6px; }
@@ -1963,3 +1970,12 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 
 /* Question answer links append multiline drafts without touching the chat composer. */
 textarea.user-input-freeform, textarea.user-input-other-field { min-height: 52px; height: auto; resize: vertical; }
+
+.router-feedback-card .recap-banner-body { flex: 1; }
+.router-feedback-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.router-feedback-actions button, .router-feedback-actions select { border: 1px solid currentColor; border-radius: 5px; padding: 3px 8px; background: transparent; color: inherit; font: inherit; font-size: 12px; max-width: 100%; }
+.router-feedback-actions button { cursor: pointer; }
+.router-feedback-actions button:disabled { opacity: .5; cursor: default; }
+.router-description { margin-top: 14px; }
+.router-description small { display: block; overflow-wrap: anywhere; opacity: .7; }
+.router-description textarea { min-height: 72px; }

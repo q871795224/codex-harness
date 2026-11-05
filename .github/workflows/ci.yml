@@ -41,6 +41,8 @@ jobs:
 
       - name: Test bundled Harness CLI
         run: python3 -m unittest discover -s .agents/skills/harness-runtime/tests -p 'test_*.py'
+      - name: Test project document CLI
+        run: python3 -m unittest discover -s .agents/skills/project-doc -p 'test_*.py'
 
       - name: Build frontend
         run: pnpm build

@@ -109,6 +109,26 @@ pub fn handle_propose(
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EntryRequest {
+    thread_id: String,
+    project_id: String,
+    mutation: crate::project_doc_store::EntryMutation,
+}
+fn handle_entry(store: &ProjectDocStore, lookup: &ThreadProjectLookup, req: &EntryRequest) -> (u16, Value) {
+    if lookup(&req.thread_id).as_deref() != Some(req.project_id.as_str()) {
+        return (403, json!({"error": "项目未绑定在该会话"}));
+    }
+    match store.mutate_entry(&req.project_id, &req.mutation, &req.thread_id) {
+        Ok(outcome) => {
+            let conflict = matches!(outcome, WriteOutcome::Conflict { .. });
+            (if conflict { 409 } else { 200 }, json!({"outcome": outcome}))
+        }
+        Err(error) => (if error.contains("冲突") { 409 } else { 400 }, json!({"error": error})),
+    }
+}
+
 /// 处理 GET /read：返回当前正文 + seq。
 pub fn handle_read(store: &ProjectDocStore, project_id: &str) -> (u16, Value) {
     match store.read_doc(project_id) {
@@ -116,6 +136,7 @@ pub fn handle_read(store: &ProjectDocStore, project_id: &str) -> (u16, Value) {
             "projectId": snapshot.project_id,
             "currentSeq": snapshot.current_seq,
             "content": snapshot.content,
+            "entries": snapshot.entries,
         })),
         Err(e) => (404, json!({ "error": e })),
     }
@@ -323,6 +344,10 @@ async fn handle_connection(
                 None => (404, json!({"error": "本实例不支持管理入口"})),
             }
         }
+        ("POST", "/entries") if !has_origin => match serde_json::from_slice::<EntryRequest>(body) {
+            Ok(req) => handle_entry(&store, &lookup, &req),
+            Err(e) => (400, json!({"error": format!("条目请求无效: {e}")})),
+        },
         ("POST", "/propose") => match serde_json::from_slice::<ProposeRequest>(body) {
             Ok(req) => handle_propose(&store, &proposals, &lookup, &req),
             Err(e) => (400, json!({ "error": format!("请求体不是合法 JSON: {e}") })),
@@ -437,6 +462,27 @@ mod tests {
             section: section.into(),
             content: content.into(),
         }
+    }
+
+    #[tokio::test]
+    async fn entry_http_checks_binding_and_revision_and_keeps_deleted_content_readable() {
+        let (dir, store, proposals) = stores();
+        store.create_project("p", "P").unwrap();
+        store.write_section("p", "decisions", None, "历史错误经验", "t", "init").unwrap();
+        let entry = store.read_doc("p").unwrap().entries[0].clone();
+        let server = serve(store, proposals, lookup_binding(&[("t", "p")]), dir.path()).await.unwrap();
+        let base = format!("http://127.0.0.1:{}", server.port().unwrap());
+        let client = reqwest::Client::new();
+        let mut request = json!({"projectId":"p", "threadId":"wrong", "mutation": {"action":"delete", "id":entry.meta.id, "revision":1, "reason":"已失败，保留经验"}});
+        assert_eq!(client.post(format!("{base}/entries")).json(&request).send().await.unwrap().status(), 403);
+        request["threadId"] = json!("t");
+        assert_eq!(client.post(format!("{base}/entries")).header("Origin", "http://example.com").json(&request).send().await.unwrap().status(), 404);
+        assert_eq!(client.post(format!("{base}/entries")).json(&request).send().await.unwrap().status(), 200);
+        assert_eq!(client.post(format!("{base}/entries")).json(&request).send().await.unwrap().status(), 409);
+        let read: Value = client.get(format!("{base}/read?project_id=p")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(read["entries"][0]["state"], "deleted");
+        assert_eq!(read["entries"][0]["content"], "历史错误经验");
+        assert_eq!(read["currentSeq"], 2);
     }
 
     #[tokio::test]

@@ -25,7 +25,7 @@ use tokio::{
     time::{sleep, timeout, Duration},
 };
 
-const PROTOCOL_VERSION: u64 = 2;
+const PROTOCOL_VERSION: u64 = 3;
 const CONNECT_ATTEMPTS: usize = 50;
 const LAUNCH_AGENT_LABEL: &str = "com.local.codex-harness.claude-provider";
 
@@ -40,6 +40,7 @@ struct ClaudeConnection {
 pub struct ClaudeRuntime {
     app: AppHandle,
     diagnostics: Arc<DiagnosticLog>,
+    project_skill: Arc<crate::project_doc_skill::ProjectDocSkill>,
     connection: Mutex<Option<Arc<ClaudeConnection>>>,
     next_id: AtomicU64,
     latest_event_seq: Arc<AtomicU64>,
@@ -59,10 +60,15 @@ pub struct ClaudeRuntimeStatus {
 }
 
 impl ClaudeRuntime {
-    pub fn new(app: AppHandle, diagnostics: Arc<DiagnosticLog>) -> Self {
+    pub fn new(
+        app: AppHandle,
+        diagnostics: Arc<DiagnosticLog>,
+        project_skill: Arc<crate::project_doc_skill::ProjectDocSkill>,
+    ) -> Self {
         let runtime = Self {
             app,
             diagnostics: diagnostics.clone(),
+            project_skill,
             connection: Mutex::new(None),
             next_id: AtomicU64::new(1),
             latest_event_seq: Arc::new(AtomicU64::new(0)),
@@ -108,10 +114,34 @@ impl ClaudeRuntime {
         }
     }
 
-    pub async fn request(&self, method: &str, params: Value) -> Result<Value, String> {
+    pub async fn request(&self, method: &str, mut params: Value) -> Result<Value, String> {
+        let load = if method == "turn/start" {
+            // Native core derives this from the persisted binding, never from UI input.
+            if let Some(object) = params.as_object_mut() {
+                object.remove("projectDocSkill");
+            }
+            let load = match params["sessionId"].as_str() {
+                Some(thread) => self.project_skill.prepare("claude", thread)?,
+                None => None,
+            };
+            if let Some(load) = &load {
+                params["projectDocSkill"] = load.claude_params();
+            }
+            load
+        } else {
+            None
+        };
         let connection = self.connection().await?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        send_request(&connection, id, method, params).await
+        let result = send_request(&connection, id, method, params).await;
+        if result.as_ref().is_ok_and(|value| value["accepted"] == true) {
+            if let Some(load) = load.as_ref().filter(|load| load.needed) {
+                if self.project_skill.accepted(load).is_err() {
+                    self.diagnostics.record("error", "project-doc", "skill.marker_failed", json!({}));
+                }
+            }
+        }
+        result
     }
 
     async fn connection(&self) -> Result<Arc<ClaudeConnection>, String> {

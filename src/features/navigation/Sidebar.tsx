@@ -666,6 +666,7 @@ export function Sidebar({
           <div className="notification-split">
             <button
               type="button"
+              data-notification-toggle
               className={`notification-nav${onMarkAllNotificationsRead ? '' : ' solo'}${notificationsOpen ? ' active' : ''}`}
               onClick={onOpenNotifications}
             >

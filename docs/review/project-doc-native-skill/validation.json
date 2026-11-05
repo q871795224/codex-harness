@@ -1,0 +1,92 @@
+{
+  "codex": "codex-cli 0.166.0",
+  "claude": "2.1.303 (Claude Code)",
+  "sdk": "0.3.252",
+  "backend": "loopback fixture; no real model calls",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "modelRequests": 12,
+  "results": [
+    {
+      "provider": "codex",
+      "case": "unregistered",
+      "discovered": false,
+      "pathAlias": true,
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "per-cwd",
+      "discovered": false,
+      "pathAlias": true,
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "registered",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": true,
+      "resumeBodyReachedModel": true,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "registered-alias",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "registered-unbound",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "managed",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": true,
+      "resumeBodyReachedModel": true,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "managed-unbound",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "requestCount": 1
+    },
+    {
+      "provider": "claude",
+      "case": "bound",
+      "nativeBodyReachedModel": true,
+      "resumeBodyReachedModel": true,
+      "pluginDiscovered": true,
+      "requestCount": 1,
+      "originalInputPreserved": true
+    },
+    {
+      "provider": "claude",
+      "case": "unbound",
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "pluginDiscovered": false,
+      "requestCount": 1,
+      "originalInputPreserved": true
+    }
+  ]
+}
