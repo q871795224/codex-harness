@@ -20,6 +20,7 @@ mod management;
 mod project_doc_proposals;
 mod project_doc_server;
 mod project_doc_store;
+mod project_doc_skill;
 mod quick_command;
 mod release_command;
 mod store;
@@ -1397,12 +1398,17 @@ pub fn run() {
         .setup(move |app| {
             system_notification::install(app.handle());
             let store = Arc::new(store);
+            let project_skill = Arc::new(project_doc_skill::ProjectDocSkill::new(
+                store.clone(),
+                store::harness_data_dir()?.join("project-doc-skills"),
+            ));
             let ownership = Arc::new(turn_ownership::TurnOwnership::new(store.clone())?);
             let manager = Arc::new(AppServerManager::new(
                 app.handle().clone(),
                 diagnostics.clone(),
                 analytics.clone(),
                 ownership,
+                project_skill.clone(),
                 app_server::history_response_limit(
                     store.get_app_state("conversationHistoryPreferences")?.as_deref(),
                 ),
@@ -1410,6 +1416,7 @@ pub fn run() {
             let claude_runtime = Arc::new(ClaudeRuntime::new(
                 app.handle().clone(),
                 diagnostics.clone(),
+                project_skill,
             ));
             let terminal = Arc::new(terminal::TerminalManager::new(diagnostics.clone()));
             let management_app = app.handle().clone();

@@ -5,7 +5,7 @@
   "backend": "loopback fixture; no real model calls",
   "platform": "darwin",
   "architecture": "arm64",
-  "modelRequests": 9,
+  "modelRequests": 12,
   "results": [
     {
       "provider": "codex",
@@ -53,12 +53,31 @@
       "requestCount": 1
     },
     {
+      "provider": "codex",
+      "case": "managed",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": true,
+      "resumeBodyReachedModel": true,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "managed-unbound",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "requestCount": 1
+    },
+    {
       "provider": "claude",
       "case": "bound",
       "nativeBodyReachedModel": true,
       "resumeBodyReachedModel": true,
       "pluginDiscovered": true,
-      "requestCount": 1
+      "requestCount": 1,
+      "originalInputPreserved": true
     },
     {
       "provider": "claude",
@@ -66,7 +85,8 @@
       "nativeBodyReachedModel": false,
       "resumeBodyReachedModel": null,
       "pluginDiscovered": false,
-      "requestCount": 1
+      "requestCount": 1,
+      "originalInputPreserved": true
     }
   ]
 }

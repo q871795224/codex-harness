@@ -111,6 +111,7 @@ pub struct AppServerManager {
     diagnostics: Arc<DiagnosticLog>,
     analytics: CodexAnalytics,
     ownership: Arc<TurnOwnership>,
+    project_skill: Arc<crate::project_doc_skill::ProjectDocSkill>,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
     max_response_bytes: usize,
@@ -146,6 +147,7 @@ impl AppServerManager {
         diagnostics: Arc<DiagnosticLog>,
         analytics: CodexAnalytics,
         ownership: Arc<TurnOwnership>,
+        project_skill: Arc<crate::project_doc_skill::ProjectDocSkill>,
         max_response_bytes: usize,
     ) -> Self {
         Self {
@@ -153,6 +155,7 @@ impl AppServerManager {
             diagnostics,
             analytics,
             ownership,
+            project_skill,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
             max_response_bytes,
@@ -327,7 +330,7 @@ impl AppServerManager {
         );
         Ok(turn)
     }
-    pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
+    pub async fn request(&self, method: String, mut params: Value) -> Result<Value, String> {
         if matches!(
             method.as_str(),
             "thread/queue/add"
@@ -350,6 +353,35 @@ impl AppServerManager {
                 self.ownership.check(thread, turn)?;
             }
         }
+        let skill_load = if method == "turn/start" {
+            let load = match params["threadId"].as_str() {
+                Some(thread) => self.project_skill.prepare("codex", thread)?,
+                None => None,
+            };
+            if let Some(load) = load.as_ref().filter(|load| load.needed) {
+                let path = load.register_codex(&resolved_codex_home()?)?;
+                let connection = self.connection().await?;
+                let cwd = if let Some(cwd) = params["cwd"].as_str() {
+                    cwd.to_string()
+                } else {
+                    let thread = self.send_request(
+                        &connection, "thread/read".into(),
+                        json!({"threadId":params["threadId"],"includeTurns":false}),
+                    ).await?;
+                    thread["thread"]["cwd"].as_str()
+                        .ok_or("Codex 会话缺少 cwd")?.to_string()
+                };
+                let listing = self.send_request(
+                    &connection, "skills/list".into(),
+                    json!({"cwds":[cwd],"forceReload":true}),
+                ).await?;
+                let skill = crate::project_doc_skill::discovered_skill(&listing, &path)?;
+                crate::project_doc_skill::add_codex_input(&mut params, skill)?;
+            }
+            load
+        } else {
+            None
+        };
         let started = Instant::now();
         let request_context = request_context(&params);
         let pending_turn = match method.as_str() {
@@ -371,6 +403,14 @@ impl AppServerManager {
         if method == "thread/resume" {
             if let Ok(response) = &mut result {
                 self.ownership.annotate_resume(response, None)?;
+            }
+        }
+        if result.is_ok() {
+            if let Some(load) = skill_load.as_ref().filter(|load| load.needed) {
+                if self.project_skill.accepted(load).is_err() {
+                    // A successful send must not become a failed send in the UI.
+                    self.diagnostics.record("error", "project-doc", "skill.marker_failed", json!({}));
+                }
             }
         }
         let duration_ms = started.elapsed().as_millis() as u64;

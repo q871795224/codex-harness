@@ -7,6 +7,12 @@ description: Use when working in a Codex Harness session bound to a project docu
 
 项目文档是多会话共享的当前项目记忆，Markdown 正文由 Harness 管理。通过 `project-doc` 命令读写，不直接编辑管理目录里的文件。Harness 负责版本、条目属性和落盘，Agent 判断应记录的事实、决定和待办。
 
+命令与本 Skill 同版本分发。使用本次原生加载所示 Skill 目录内的 `bin/project-doc`，不要依赖 PATH 中旧版命令或源码 checkout。下面的 `PROJECT_DOC_CLI` 替换为该命令的绝对路径，路径含空格时保留引号：
+
+```bash
+PROJECT_DOC_CLI="<本次加载的 Skill 目录>/bin/project-doc"
+```
+
 首轮背景含标记：
 
 ```text
@@ -18,8 +24,8 @@ description: Use when working in a Codex Harness session bound to a project docu
 ## 读取与记录
 
 ```bash
-project-doc read --thread-id "$THREAD_ID" --project-id "$PROJECT_ID"
-project-doc entries --thread-id "$THREAD_ID" --project-id "$PROJECT_ID"
+"$PROJECT_DOC_CLI" read --thread-id "$THREAD_ID" --project-id "$PROJECT_ID"
+"$PROJECT_DOC_CLI" entries --thread-id "$THREAD_ID" --project-id "$PROJECT_ID"
 ```
 
 `read` 返回完整当前正文和 seq；`entries` 返回受管理条目的 ID、修订号、状态、原因及替代关系，包含软删除、撤销、被替代和已完成条目。历史版本可在项目 Tab 的“历史”查看、恢复。
@@ -32,7 +38,7 @@ project-doc entries --thread-id "$THREAD_ID" --project-id "$PROJECT_ID"
 | Open Questions | 未决问题与待办 | `propose --section openQuestions` 新增条目；完成、重开、修改走条目命令 |
 
 ```bash
-project-doc propose --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
+"$PROJECT_DOC_CLI" propose --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
   --section log --content '本次验收通过，证据见……'
 ```
 
@@ -74,7 +80,7 @@ project-doc propose --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
 先用 `entries` 取得 ID 与 revision，再提交修改。以下示例的 ID、修订号必须替换为实际值。
 
 ```bash
-project-doc supersede --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
+"$PROJECT_DOC_CLI" supersede --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
   --id D-example --revision 3 --reason '用户改为只补缺失项，保留目标独有数据' \
   --content '仅新增缺失对象；其他差异单独决定。'
 ```
@@ -94,7 +100,7 @@ project-doc supersede --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
 旧文档不会批量自动迁移。需要维护某段旧决定或待办时，精确选取完整且唯一的原文段落纳管：
 
 ```bash
-project-doc adopt --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
+"$PROJECT_DOC_CLI" adopt --thread-id "$THREAD_ID" --project-id "$PROJECT_ID" \
   --section decisions --base-seq 12 --reason '为已有决定建立可追溯条目' --file /tmp/exact-old-decision.md
 ```
 

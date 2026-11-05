@@ -3,7 +3,7 @@
 // Prints booleans and version metadata, never model request bodies or credentials.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, writeFile, rm, realpath, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, realpath, readFile, symlink, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
@@ -67,13 +67,32 @@ await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 const project = join(root, 'project');
 await mkdir(project, { recursive: true });
+const sourceSkill = new URL('../../project-doc/', import.meta.url);
+async function writeBundledSkill(dir, name, nonce) {
+    await mkdir(join(dir, 'bin'), { recursive: true });
+    const text = await readFile(new URL('SKILL.md', sourceSkill), 'utf8');
+    await writeFile(join(dir, 'SKILL.md'), text.replace('name: project-doc\n', `name: ${name}\n`) + `\nNative test marker: ${nonce}\n`);
+    await writeFile(join(dir, 'project_doc.py'), await readFile(new URL('project_doc.py', sourceSkill)));
+    await writeFile(join(dir, 'bin/project-doc'), await readFile(new URL('bin/project-doc', sourceSkill)));
+    await chmod(join(dir, 'bin/project-doc'), 0o755);
+}
 async function codexProbe(mode) {
     const home = join(root, 'codex-home-' + mode);
     await mkdir(join(home, '.codex'), { recursive: true });
-    const dir = join(root, 'resources-' + mode, '.agents', 'skills', 'probe');
+    const managed = mode.startsWith('managed');
+    const name = managed ? 'harness-project-doc' : 'harness-native-probe';
+    const dir = join(root, 'resources with spaces-' + mode, 'codex', name);
     await mkdir(dir, { recursive: true });
     const skill = join(dir, 'SKILL.md'), nonce = 'CODEX_NATIVE_' + randomUUID();
     await writeFile(skill, `---\nname: harness-native-probe\ndescription: Native loading test.\n---\n\nNative proof ${nonce}. Respond OK.\n`);
+    if (managed) {
+        await writeBundledSkill(dir, name, nonce);
+        const skills = join(home, '.codex/skills');
+        await mkdir(join(skills, 'project-doc'), { recursive: true });
+        await writeFile(join(skills, 'project-doc/SKILL.md'), '---\nname: project-doc\ndescription: Existing legacy user Skill.\n---\nLegacy Skill.');
+        await symlink(dir, join(skills, name));
+        assert.match(execFileSync(join(dir, 'bin/project-doc'), ['--help'], { env: { ...baseEnv, HOME: home }, encoding: 'utf8' }), /supersede/);
+    }
     const child = spawn('codex', ['app-server', '--listen', 'stdio://', '-c', 'model_provider="fixture"', '-c', `model_providers.fixture={name="fixture",base_url="${base}/codex",wire_api="responses",requires_openai_auth=false}`, '-c', 'model="gpt-5.1-codex"', '-c', 'check_for_update_on_startup=false'], { env: { ...baseEnv, HOME: home, CODEX_HOME: join(home, '.codex') }, cwd: project, stdio: ['pipe', 'pipe', 'pipe'] });
     let next = 1, stderr = '';
     const pending = new Map(), notes = [];
@@ -101,12 +120,15 @@ async function codexProbe(mode) {
             await rpc('skills/extraRoots/set', { extraRoots: [dir] });
         const listing = await rpc('skills/list', { cwds: [project], forceReload: true,
             ...(mode === 'per-cwd' ? { perCwdExtraUserRoots: [{ cwd: project, extraUserRoots: [dir] }] } : {}) });
-        const found = listing.data?.flatMap(x => x.skills ?? []).find(x => x.name === 'harness-native-probe');
+        const found = listing.data?.flatMap(x => x.skills ?? []).find(x => x.name === name);
+        if (managed) assert.ok(listing.data?.flatMap(x => x.skills ?? []).some(x => x.name === 'project-doc'), 'legacy user Skill remains discoverable');
         const alias = await realpath(skill) !== skill;
         const selectedPath = mode === 'registered-alias' ? skill : found?.path ?? await realpath(skill);
         const requestStart = captures.length;
         const t = await rpc('thread/start', { cwd: project, approvalPolicy: 'never', sandbox: 'read-only', ephemeral: false, model: 'gpt-5.1-codex' });
-        await rpc('turn/start', { threadId: t.thread.id, input: mode === 'registered-unbound' ? [{ type: 'text', text: 'Respond OK.' }] : [{ type: 'text', text: '$harness-native-probe Respond OK.' }, { type: 'skill', name: 'harness-native-probe', path: selectedPath }] });
+        await rpc('turn/start', { threadId: t.thread.id, input: mode.endsWith('unbound') ? [{ type: 'text', text: 'Respond OK.' }] : managed
+            ? [{type:'text',text:'Respond OK.'}, {type:'text',text:`$${name}`,text_elements:[]}, {type:'skill',name,path:selectedPath}]
+            : [{ type: 'text', text: '$harness-native-probe Respond OK.' }, { type: 'skill', name, path: selectedPath }] });
         const until = Date.now() + 20000;
         while (Date.now() < until && !notes.some(n => n.method === 'turn/completed'))
             await new Promise(r => setTimeout(r, 100));
@@ -114,12 +136,12 @@ async function codexProbe(mode) {
         assert.equal(requests.length, 1, 'Codex must reach the local fixture model exactly once');
         assert.equal(notes.find(n => n.method === 'turn/completed')?.params.turn.status, 'completed');
         const loaded = requests.some(x => JSON.stringify({ input: x.body.input, instructions: x.body.instructions }).includes(nonce));
-        if (mode === 'registered')
+        if (mode === 'registered' || mode === 'managed')
             assert.equal(loaded, true, 'positive control must load native Skill content');
-        if (mode === 'unregistered' || mode === 'registered-unbound')
+        if (mode === 'unregistered' || mode.endsWith('unbound'))
             assert.equal(loaded, false);
         let resumeBodyReachedModel = null;
-        if (mode === 'registered') {
+        if (mode === 'registered' || mode === 'managed') {
             await rpc('thread/resume', { threadId: t.thread.id, excludeTurns: true });
             const start = captures.length, completed = notes.filter(n => n.method === 'turn/completed').length;
             await rpc('turn/start', { threadId: t.thread.id, input: [{ type: 'text', text: 'Respond OK to continuation.' }] });
@@ -143,14 +165,16 @@ async function claudeProbe(mode) {
     const plugin = join(root, 'claude-plugin-' + mode);
     await mkdir(join(plugin, '.claude-plugin'), { recursive: true });
     await mkdir(join(plugin, 'skills', 'project-doc'), { recursive: true });
-    await writeFile(join(plugin, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'harness-native-probe', version: '0.0.1' }));
+    await writeFile(join(plugin, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'harness-project-doc', version: '1.0.0' }));
     const nonce = 'CLAUDE_NATIVE_' + randomUUID();
-    await writeFile(join(plugin, 'skills', 'project-doc', 'SKILL.md'), `---\nname: project-doc\ndescription: Native loading test.\n---\n\nNative proof ${nonce}. Respond OK.\n`);
+    await writeBundledSkill(join(plugin, 'skills', 'project-doc'), 'project-doc', nonce);
+    const original = 'ORIGINAL_USER_' + randomUUID(), background = 'BACKGROUND_' + randomUUID();
+    const image = {type:'image',source:{type:'base64',media_type:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='}};
     const env = { ...cleanSdkEnv, ...baseEnv, HOME: home, CLAUDE_CONFIG_DIR: join(home, '.claude'), ANTHROPIC_API_KEY: 'fixture-not-a-secret', ANTHROPIC_BASE_URL: base + '/claude', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1' };
     async function run(text, resume) {
         let release;
         const hold = new Promise(r => release = r);
-        async function* input() { yield { type: 'user', session_id: '', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'text', text }] } }; await hold; }
+        async function* input() { yield { type: 'user', session_id: '', parent_tool_use_id: null, message: { role: 'user', content: [image, { type: 'text', text: text + ' ' + background + '\n\n' + original }] } }; await hold; }
         const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 30000);
         const q = query({ prompt: input(), options: { cwd: project, ...(mode === 'bound' ? { plugins: [{ type: 'local', path: plugin }] } : {}), ...(resume ? { resume } : {}), settingSources: [], model: 'claude-sonnet-4-5', env, maxTurns: 2, persistSession: mode === 'bound', abortController: abort, pathToClaudeCodeExecutable: execFileSync('which', ['claude'], { encoding: 'utf8' }).trim() } });
         const messages = [], requestStart = captures.length;
@@ -164,6 +188,9 @@ async function claudeProbe(mode) {
             const result = messages.find(x => x.type === 'result');
             assert.equal(result?.subtype, 'success');
             assert.equal(requests.length, 1, 'Claude must reach the local fixture model exactly once');
+            assert.ok(requests.some(x => JSON.stringify(x.body.messages).includes(original)), 'native slash dispatch preserves user request');
+            assert.ok(requests.some(x => JSON.stringify(x.body.messages).includes(background)), 'native slash dispatch preserves background');
+            assert.ok(requests.some(x => JSON.stringify(x.body.messages).includes(image.source.data)), 'native slash dispatch preserves image');
             return { loaded: requests.some(x => JSON.stringify({ messages: x.body.messages, system: x.body.system }).includes(nonce)), init: messages.find(x => x.type === 'system' && x.subtype === 'init'), session: result.session_id };
         }
         finally {
@@ -172,7 +199,7 @@ async function claudeProbe(mode) {
             q.close();
         }
     }
-    const first = await run(mode === 'bound' ? '/harness-native-probe:project-doc Respond OK.' : 'Respond OK.');
+    const first = await run(mode === 'bound' ? '/harness-project-doc:project-doc' : 'Respond OK.');
     assert.equal(first.loaded, mode === 'bound');
     let resumeBodyReachedModel = null;
     if (mode === 'bound') {
@@ -181,11 +208,11 @@ async function claudeProbe(mode) {
         resumeBodyReachedModel = resumed.loaded;
         assert.equal(resumeBodyReachedModel, true, 'resumed SDK session must preserve native Skill context');
     }
-    return { provider: 'claude', case: mode, nativeBodyReachedModel: first.loaded, resumeBodyReachedModel, pluginDiscovered: !!first.init?.plugins?.some(x => x.name === 'harness-native-probe'), requestCount: 1 };
+    return { provider: 'claude', case: mode, nativeBodyReachedModel: first.loaded, resumeBodyReachedModel, pluginDiscovered: !!first.init?.plugins?.some(x => x.name === 'harness-project-doc'), requestCount: 1, originalInputPreserved: true };
 }
 const results = [];
 try {
-    for (const mode of ['unregistered', 'per-cwd', 'registered', 'registered-alias', 'registered-unbound'])
+    for (const mode of ['unregistered', 'per-cwd', 'registered', 'registered-alias', 'registered-unbound', 'managed', 'managed-unbound'])
         results.push(await codexProbe(mode));
     for (const mode of ['bound', 'unbound'])
         results.push(await claudeProbe(mode));
