@@ -125,6 +125,56 @@ test('passes explicitly configured values to Claude subprocesses after startup f
   })
 })
 
+test('loads the project Skill natively once and retains the plugin when resuming a query', async (t) => {
+  const daemon = await fixture(t, `
+let queries = 0
+export function query({prompt, options}) {
+  const queryNumber = ++queries
+  return { async *[Symbol.asyncIterator]() {
+    for await (const message of prompt) {
+      yield {type:'result', subtype:'success', session_id:'native-session', user_message_uuid:message.uuid,
+        result:JSON.stringify({plugins:options.plugins ?? [], resume:options.resume ?? null,
+          sources:options.settingSources, content:message.message.content, queryNumber})}
+      yield {type:'system', subtype:'session_state_changed', state:'idle'}
+    }
+  } }
+}`)
+  let number = 0
+  async function turn(extra) {
+    const turnId = `native-${++number}`
+    await daemon.request('turn/start', {sessionId:'bound', turnId, cwd:daemon.home,
+      input:[{type:'text',text:'project background'}, {type:'text',text:'user request'}], ...extra})
+    const event = await waitFor(() => daemon.messages.find(message =>
+      message.method === 'turn/completed' && message.params.turnId === turnId))
+    return JSON.parse(event.params.result)
+  }
+  const config = {pluginRoot:'/bundled skill/claude-plugin', invoke:true}
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+  const imagePath = join(daemon.home, 'image.png')
+  await writeFile(imagePath, Buffer.from(png, 'base64'))
+  const originalInput = [{type:'text',text:'project background'}, {type:'text',text:'user request'},
+    {type:'localImage',path:imagePath}]
+  const first = await turn({projectDocSkill:config, input:originalInput})
+  assert.deepEqual(first.plugins, [{type:'local', path:config.pluginRoot}])
+  assert.deepEqual(first.sources, ['user','project','local'])
+  assert.deepEqual(first.content, [
+    {type:'image', source:{type:'base64', media_type:'image/png', data:png}},
+    {type:'text', text:'/harness-project-doc:project-doc project background\n\nuser request'},
+  ])
+  const next = await turn({projectDocSkill:{...config, invoke:false}})
+  assert.equal(next.queryNumber, first.queryNumber, 'invocation flag must not recreate the query')
+  assert.deepEqual(next.content, [{type:'text',text:'project background'}, {type:'text',text:'user request'}])
+  const resumed = await turn({projectDocSkill:{...config, invoke:false}, providerSessionId:'native-session', effort:'high'})
+  assert.notEqual(resumed.queryNumber, first.queryNumber)
+  assert.equal(resumed.resume, 'native-session')
+  assert.deepEqual(resumed.plugins, first.plugins)
+  const plain = await turn({sessionId:'unbound', input:[{type:'text',text:'plain'}]})
+  assert.deepEqual(plain.plugins, [])
+  assert.equal(plain.content, 'plain')
+  const userEvent = daemon.messages.find(message => message.method === 'message/user')
+  assert.deepEqual(userEvent.params.content, originalInput)
+})
+
 test('uses the same unique prompt UUID for live events and SDK history, including repeated input', async (t) => {
   const daemon = await fixture(t)
   await daemon.turn()

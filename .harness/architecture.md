@@ -118,7 +118,27 @@
 - Job 必须声明 `read-only`、`shared-write` 或 `isolated-delivery`。共享写任务使用同一 checkout 时互斥；隔离交付 worktree 固定创建在 `~/.codex-harness/agent-worktrees/<run-id>` 并保留给用户检查。
 - `return-to-parent` 是一次性的用户手动操作，父会话 active 时不得自动回传或重试。
 
-## 项目文档精简
+## 项目文档维护
+
+旧“归档到项目”功能已下线：不再注册输入框和回答操作行的触发入口，插件设置不再展示旧流程的轮数和 Prompt 模板。日常记录通过 Agent 的 `project-doc` Skill 追加，整文整理使用“精简项目文档”。旧归档编排、确认面板、配置字段和历史草稿处理暂留，后续可单独清理；不得因底层代码仍在就重新展示入口。
+
+### 决定与待办条目
+
+Markdown 继续作为正文和条目属性的唯一来源。Decisions / Open Questions 新增内容自动带稳定 ID、状态、修订号与原因；旧段落可显式纳管，不批量迁移。原生 `project_doc_store::entries` 校验条目操作并通过既有事务/快照保存；Agent 经 CLI，用户经项目 Tab“条目”页操作。替代原子建立新旧关系，删除只软删除；人工全文编辑可改正文，不能移除条目或伪造属性。Status 仍经人工确认覆盖，Log 只追加。
+
+首轮默认全文注入；仅超过当前作用域插件门限时排除明确软删除/失效的受管理条目，其他正文完整保留，不做语义检索或硬截断。项目页和工具读取保持完整。条目与人工作业边界见 [项目文档条目维护](../docs/project-doc-entries.md)。
+
+### 项目文档 Skill 分发
+
+`.agents/skills/project-doc/` 是 Skill 与 CLI 的 Git 源码，编译进 Harness 原生程序；首次绑定会话发送时，按内容版本落到 `~/.codex-harness/project-doc-skills/`，不依赖源码 checkout 或 PATH 里的旧命令。仅分发执行所需的 SKILL.md、Python CLI 和命令脚本，维护者设计沿革不进入运行资源。合并 PR 后还需构建、安装新应用，运行中的旧应用不会随 Git 合并更新。
+
+Codex 核心在真实 CODEX_HOME 的原生 user-Skills 目录维护专属 `harness-project-doc` 链接，保留旧 `project-doc` 和其他 Skill；重名且非 Harness 管理时失败并保留原文件。共享 daemon 和其他客户端可发现元信息，这是允许的。绑定会话由 `app_server.rs` 刷新原生列表、采用返回的规范路径，提交原生 `skill` 输入；不替换全局 extraRoots，不追加 developer instructions。
+
+Claude 核心按持久化绑定给 SDK query 配置本地插件 `harness-project-doc`，通过原生 `/harness-project-doc:project-doc` 调用。首次调用将文本合成最后一个文本块、图片保持在前，避免原生 CLI 静默跳过 Skill 展开；界面用户消息保持原输入。未绑定会话不配置此插件。Provider 协议版本为 3，旧 daemon 不能静默忽略新增参数。
+
+加载标记只记录 Provider、会话、项目和资源版本；仅在发送被接受后保存，失败可重试，恢复和后续回合不重复主动加载同版本，资源更新后重新加载。旧版本资源保留供历史会话引用。CLI 使用本次加载的 Skill 目录内 `bin/project-doc`，无需另装全局命令。原生机制的隔离黑箱验证见 [验证记录](../docs/project-doc-native-skill-validation.md)。
+
+### 项目文档精简
 
 项目文档插件通过 `conversationBanners` slot 显示共用确认卡，手动入口保留在 Composer 右侧。会话结束只触发本地计数和提醒；用户确认后才启动只读 Codex detached run。默认门限10,000 tokens，按正文版本缓存 `o200k_base` 计数；配置位于插件设置。
 

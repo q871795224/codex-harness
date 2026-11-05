@@ -34,3 +34,13 @@ it('passes alias writes and atomic fill semantics through IPC', async () => {
   vi.mocked(invoke).mockRejectedValueOnce(new Error('项目不存在'))
   await expect(runtime.projectDocSetShortName('missing', 'DNS', true)).rejects.toThrow('项目不存在')
 })
+
+it('uses native entry mutations and a deterministic context threshold', async () => {
+  const mutation = { action: 'delete' as const, id: 'D-test', revision: 2, reason: '保留失败经验' }
+  await runtime.projectDocMutateEntry('demo', mutation)
+  expect(invoke).toHaveBeenLastCalledWith('project_doc_mutate_entry', { projectId: 'demo', mutation })
+  await runtime.projectDocContext('demo', 10000)
+  expect(invoke).toHaveBeenLastCalledWith('project_doc_context', { projectId: 'demo', threshold: 10000 })
+  vi.mocked(invoke).mockRejectedValueOnce(new Error('条目修订冲突'))
+  await expect(runtime.projectDocMutateEntry('demo', mutation)).rejects.toThrow('冲突')
+})

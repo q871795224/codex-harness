@@ -37,6 +37,8 @@ export interface ProjectDocProposal {
 }
 
 export interface ProjectDocService {
+  context(projectId: string, threshold: number): Promise<import('../../features/project-doc/types').ProjectContext>
+  mutateEntry(projectId: string, mutation: import('../../features/project-doc/types').EntryMutation): Promise<ProjectDocWriteOutcome>
   measure(projectId: string): Promise<DocumentMeasure>
   beginCompaction(projectId: string): Promise<CompactionInput>
   completeCompaction(projectId: string, jobId: string, content: string): Promise<CompactionResult>

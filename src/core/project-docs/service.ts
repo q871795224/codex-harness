@@ -7,6 +7,8 @@ export function createProjectDocService(): ProjectDocService {
     for (const listener of [...bindingListeners]) listener()
   }
   return {
+    context: (id, threshold) => runtime.projectDocContext(id, threshold),
+    mutateEntry: (id, mutation) => runtime.projectDocMutateEntry(id, mutation),
     measure: (id) => runtime.projectDocMeasure(id),
     beginCompaction: (id) => runtime.projectDocBeginCompaction(id),
     completeCompaction: (id, job, content) => runtime.projectDocCompleteCompaction(id, job, content),

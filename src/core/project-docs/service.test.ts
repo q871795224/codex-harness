@@ -4,6 +4,8 @@ import { createProjectDocService } from './service'
 
 vi.mock('../runtime/bridge', () => ({ runtime: {
   projectDocThreadBinding: vi.fn(),
+  projectDocContext: vi.fn(),
+  projectDocMutateEntry: vi.fn(),
   projectDocBindThread: vi.fn(),
   projectDocLockThreadBinding: vi.fn(),
   projectDocUnbindThread: vi.fn(),
@@ -42,4 +44,15 @@ it('preserves native failures without reporting a successful binding change', as
   expect(listener).not.toHaveBeenCalled()
   vi.mocked(runtime.projectDocThreadBinding).mockRejectedValue(new Error('无法读取'))
   await expect(service.threadBinding('t')).rejects.toThrow('无法读取')
+})
+
+it('delegates entry edits and contextual reads to the native service', async () => {
+  const service = createProjectDocService()
+  const mutation = { action: 'close' as const, id: 'Q-one', revision: 4, reason: '验收通过' }
+  vi.mocked(runtime.projectDocMutateEntry).mockResolvedValue({ kind: 'applied', newSeq: 8, contentHash: 'h' })
+  expect(await service.mutateEntry('demo', mutation)).toEqual({ kind: 'applied', newSeq: 8, contentHash: 'h' })
+  expect(runtime.projectDocMutateEntry).toHaveBeenCalledWith('demo', mutation)
+  vi.mocked(runtime.projectDocContext).mockResolvedValue({ content: '完整正文', seq: 8, tokens: 120, omittedEntries: 0 })
+  expect((await service.context('demo', 10000)).content).toBe('完整正文')
+  expect(runtime.projectDocContext).toHaveBeenCalledWith('demo', 10000)
 })

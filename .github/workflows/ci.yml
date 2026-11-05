@@ -39,5 +39,8 @@ jobs:
       - name: Test release scripts
         run: python3 -m unittest discover -s .agents/skills/harness-release/scripts -p 'test_release*.py'
 
+      - name: Test project document CLI
+        run: python3 -m unittest discover -s .agents/skills/project-doc -p 'test_*.py'
+
       - name: Build frontend
         run: pnpm build
