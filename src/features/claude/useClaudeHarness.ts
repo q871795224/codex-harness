@@ -661,7 +661,7 @@ export function useClaudeHarness() {
     }
   }, [notify])
 
-  const stopTurn = useCallback(async (sessionId: string) => {
+  const stopTurn = useCallback(async (sessionId: string, propagateError = false) => {
     if (!activeTurnIdsRef.current[sessionId] && !isClaudeSessionWorking(sessionActivitiesRef.current[sessionId])) return
     if (activeTurnIdsRef.current[sessionId]) manualStopRef.current.add(sessionId)
     setBusy((current) => ({ ...current, stop: true }))
@@ -670,12 +670,13 @@ export function useClaudeHarness() {
     } catch (error) {
       manualStopRef.current.delete(sessionId)
       notify(`无法停止 Claude turn`, 'error', error)
+      if (propagateError) throw error
     } finally {
       setBusy((current) => ({ ...current, stop: false }))
     }
   }, [notify])
 
-  const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
+  const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown, propagateError = false) => {
     const allow = decision === 'accept' || decision === 'approved' || decision === 'acceptForSession'
     const input = request.params.input && typeof request.params.input === 'object'
       ? request.params.input as Record<string, unknown>
@@ -688,6 +689,7 @@ export function useClaudeHarness() {
       removeApproval(request.threadId, String(request.id))
     } catch (error) {
       notify(`无法提交 Claude 审批`, 'error', error)
+      if (propagateError) throw error
     }
   }, [notify, removeApproval])
 

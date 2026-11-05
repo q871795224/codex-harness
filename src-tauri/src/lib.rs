@@ -278,6 +278,11 @@ struct ClientDiagnostic {
 }
 
 #[tauri::command]
+async fn seatalk_remote_call(state: State<'_, AppState>, action: String, input: Value) -> Result<Value, String> {
+    state.local_connector.harness_remote(&action, input).await
+}
+
+#[tauri::command]
 async fn local_connector_health(
     state: State<'_, AppState>,
     base_url: String,
@@ -1567,6 +1572,7 @@ pub fn run() {
             drain_question_links,
             send_question_notification,
             pending_user_input,
+            seatalk_remote_call,
             local_connector_health,
             local_connector_list_messages,
             local_connector_send_message,

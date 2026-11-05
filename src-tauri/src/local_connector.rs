@@ -193,6 +193,31 @@ impl LocalConnector {
         })
     }
 
+    pub async fn harness_remote(&self, action: &str, input: Value) -> Result<Value, String> {
+        self.harness_remote_at("http://127.0.0.1:8787", action, input).await
+    }
+
+    async fn harness_remote_at(&self, base_url: &str, action: &str, input: Value) -> Result<Value, String> {
+        if !matches!(action, "status" | "bindings" | "messages" | "send" | "claim" | "finish") {
+            return Err("不支持的 SeaTalk 会话操作".into());
+        }
+        let mut url = endpoint(base_url, &format!("local/harness/{action}"))?;
+        let request = if matches!(action, "status" | "bindings" | "messages") {
+            if let Some(fields) = input.as_object() {
+                for (key, value) in fields {
+                    let value = value.as_str().map(ToString::to_string).unwrap_or_else(|| value.to_string());
+                    url.query_pairs_mut().append_pair(key, &value);
+                }
+            }
+            self.client.get(url)
+        } else { self.client.post(url).json(&input) };
+        let response = request.send().await.map_err(|_| "无法连接 SeaTalk Bridge".to_string())?;
+        if !response.status().is_success() { return Err("SeaTalk 会话通道请求失败，请检查 Bridge".into()); }
+        let value: Value = response.json().await.map_err(|_| "SeaTalk Bridge 回包无效".to_string())?;
+        if value.get("ok").and_then(Value::as_bool) != Some(true) { return Err("SeaTalk Bridge 未确认操作".into()); }
+        value.get("data").cloned().ok_or_else(|| "SeaTalk Bridge 缺少返回数据".to_string())
+    }
+
     pub async fn send_question(&self, base_url: &str, payload: Value) -> Result<(), String> {
         let response = self.client.post(endpoint(base_url, "v1/messages")?).json(&payload).send().await
             .map_err(|_| "无法连接本机 Bridge，提问仍可在 Harness 内回答。".to_string())?;
@@ -294,6 +319,27 @@ fn truncate(value: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn harness_remote_restricts_actions_and_preserves_the_transport_contract() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 8192];
+            let count = stream.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..count]);
+            assert!(request.starts_with("GET /local/harness/messages?after=123 HTTP/1.1"));
+            let body = r#"{"ok":true,"data":{"messages":[],"cursor":123,"hasMore":false}}"#;
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+        });
+        let connector = LocalConnector::new();
+        assert!(connector.harness_remote_at(&base, "turn/start", serde_json::json!({})).await.is_err());
+        let page = connector.harness_remote_at(&base, "messages", serde_json::json!({"after":123})).await.unwrap();
+        assert_eq!(page["cursor"], 123);
+        worker.join().unwrap();
+    }
 
     #[test]
     fn accepts_only_literal_loopback_base_urls() {

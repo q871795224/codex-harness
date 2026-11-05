@@ -1,3 +1,4 @@
+import { useSeaTalkSync } from './core/seatalk/react'
 import { RouterFeedbackCard } from './features/conversation/RouterFeedbackCard'
 import { useReminderSources } from './features/notifications/useReminderSources'
 import { attentionGroups } from './core/notifications/store'
@@ -75,6 +76,7 @@ const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDial
 export default function App() {
   useEffect(() => { void notifications.initialize() }, [])
   const harness = useUnifiedHarness()
+  useSeaTalkSync(harness)
   const codex = useCodexCore()
   const selectAgentRunThread = useCallback(
     (threadId: string) => harness.selectThread(threadId, 'agent-run'),
@@ -111,7 +113,17 @@ export default function App() {
     'harness.quickCommands': {
       run: runtime.runQuickCommand,
     } satisfies QuickCommandService,
-    'harness.questionNotifications': { send: runtime.sendQuestionNotification } satisfies QuestionNotificationService,
+    'harness.questionNotifications': {
+      send: async (...args) => {
+        // Session branches carry actionable questions. Retain the older cards
+        // as a fallback when the remote session channel is offline.
+        try {
+          const status = await runtime.seatalkRemoteCall<{ reachable: boolean; connected: boolean }>('status')
+          if (status.reachable && status.connected) return
+        } catch { /* Older Bridge versions still support question cards. */ }
+        await runtime.sendQuestionNotification(...args)
+      },
+    } satisfies QuestionNotificationService,
     'harness.conversations': {
       onUserInputRequested: harness.onUserInputRequested,
       onTurnCompleted: harness.onTurnCompleted,

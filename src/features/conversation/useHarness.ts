@@ -535,7 +535,8 @@ export function useHarness() {
 
   const updateDetail = useCallback((threadId: string, change: (detail: ThreadDetail) => ThreadDetail) => {
     setDetails((current) => {
-      const detail = current[threadId]
+      const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+      const detail = current[threadId] ?? (thread ? emptyThreadDetail(thread) : undefined)
       return detail ? { ...current, [threadId]: change(detail) } : current
     })
   }, [])
@@ -777,13 +778,9 @@ export function useHarness() {
       [threadId]: response.harnessOwnership?.canTakeOver ? response.harnessOwnership.turnId : undefined,
     }))
     const owned = ownership.ownedActiveThreads[threadId] === true
-    setDetails((current) => ({
-      ...current,
-      [threadId]: {
-        ...resumedDetail,
-        foreignActive: activeTurnId !== null && !owned,
-      },
-    }))
+    const detail = { ...resumedDetail, foreignActive: activeTurnId !== null && !owned }
+    detailsRef.current = { ...detailsRef.current, [threadId]: detail }
+    setDetails((current) => ({ ...current, [threadId]: detail }))
     updateThread(threadId, (current) => ({ ...current, ...resumedDetail.thread }))
     void mapThreadRoots([resumedDetail.thread])
     if (loadQueueAfter) await loadQueue(threadId)
@@ -1674,8 +1671,8 @@ export function useHarness() {
     locallyStartingRef.current.add(threadId)
     setThreadStarting(threadId, true)
     try {
-      const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
       const detail = detailsRef.current[threadId]
+      const thread = threadsRef.current.find((candidate) => candidate.id === threadId) ?? detail?.thread
       const clientId = newClientId()
       await saveMessageReferences(clientId, inputs ?? [], references)
       const request = turnStartRequest(
@@ -1826,6 +1823,40 @@ export function useHarness() {
       setBusy((current) => ({ ...current, composer: false, workspaceRouter: submittingThreadsRef.current.size > 0 }))
     }
   }, [acceptRouteImplicitly, loadQueue, maybeGenerateThreadTitle, notify, prepareRoutedDraft, recreateDraftThreadForSelectedCwd, setAutomaticWorkspace, startTurn, updateDetail, updateThread, workspaces])
+
+  const prepareRemoteThread = useCallback(async (threadId: string): Promise<boolean> => {
+    const response = await appServer.resumeThread(resumeThreadRequest(threadId, threadsRef.current.find((thread) => thread.id === threadId)?.cwd))
+    await applyResumedThread(threadId, response)
+    return !activeTurnIdsRef.current[threadId] || ownedActiveThreadsRef.current[threadId] === true
+  }, [applyResumedThread])
+
+  const sendRemoteMessage = useCallback(async (threadId: string, text: string) => {
+    if (!text.trim()) throw new Error('消息不能为空');
+    if (submittingThreadsRef.current.has(threadId)) throw new Error('该会话正在提交消息，请稍后再发');
+    submittingThreadsRef.current.add(threadId)
+    try {
+      const response = await appServer.resumeThread(resumeThreadRequest(threadId, threadsRef.current.find((thread) => thread.id === threadId)?.cwd))
+      await applyResumedThread(threadId, response)
+      if (response.thread.canAcceptDirectInput === false) throw new Error('该会话不接受直接输入')
+      if (response.thread.ephemeral) throw new Error('临时会话不接受远程输入')
+      const activeTurnId = activeTurnIdsRef.current[threadId]
+      if (activeTurnId && !ownedActiveThreadsRef.current[threadId]) throw new Error('该会话由其他客户端运行，请在持有会话的 Harness 中处理')
+      if (!activeTurnId) await startTurn(threadId, text, undefined, 'seatalk')
+      else {
+        await submitActiveTurnInput(appServer, { threadId, activeTurnId, clientUserMessageId: newClientId(), input: [textInput(text)], mode: 'queue' })
+        await loadQueue(threadId).catch(error => notify('手机消息已排队，但队列显示尚未刷新。', 'warning', error, { threadId }))
+      }
+    } finally { submittingThreadsRef.current.delete(threadId) }
+  }, [applyResumedThread, loadQueue, notify, startTurn])
+
+  const stopRemoteTurn = useCallback(async (threadId: string) => {
+    const response = await appServer.resumeThread(resumeThreadRequest(threadId, threadsRef.current.find((thread) => thread.id === threadId)?.cwd))
+    await applyResumedThread(threadId, response)
+    const turnId = activeTurnIdsRef.current[threadId]
+    if (!turnId) throw new Error('该会话当前没有运行中的轮次')
+    if (!ownedActiveThreadsRef.current[threadId]) throw new Error('该会话由其他客户端运行')
+    await appServer.interruptTurn(threadId, turnId)
+  }, [applyResumedThread])
 
   const continueAfterFailure = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -2052,7 +2083,7 @@ export function useHarness() {
     await openThread(threadId)
   }, [notify, openThread])
 
-  const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
+  const answerApproval = useCallback(async (request: ApprovalRequest, decision: unknown, propagateError = false) => {
     try {
       if (request.method === ASYNC_USER_INPUT_METHOD) {
         const input = [textInput(asyncUserInputAnswer(request, decision as UserInputResponse))]
@@ -2088,7 +2119,7 @@ export function useHarness() {
       if (remaining.length === 0 && activeTurnIdsRef.current[request.threadId]) persistBadge(request.threadId, 'working')
     } catch (error) {
       notify(request.method === 'item/tool/requestUserInput' || request.method === ASYNC_USER_INPUT_METHOD ? '无法提交回答' : '无法提交审批结果', 'error', error, { threadId: request.threadId })
-      if (request.method === ASYNC_USER_INPUT_METHOD || request.method === 'item/tool/requestUserInput') throw error
+      if (propagateError || request.method === ASYNC_USER_INPUT_METHOD || request.method === 'item/tool/requestUserInput') throw error
     }
   }, [notify, persistBadge, startTurn])
 
@@ -2598,6 +2629,9 @@ export function useHarness() {
     generateConversationTitle,
     startTurnInThread: (threadId: string, prompt: string, trigger?: CodexTurnTrigger) => startTurn(threadId, prompt, undefined, trigger),
     sendMessage,
+    prepareRemoteThread,
+    sendRemoteMessage,
+    stopRemoteTurn,
     continueAfterFailure,
     stopTurn,
     interruptAgentThread,

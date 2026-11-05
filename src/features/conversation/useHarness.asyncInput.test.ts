@@ -29,7 +29,7 @@ vi.mock('../../core/runtime/bridge', () => ({
 }))
 vi.mock('../../core/runtime/appServerClient', () => ({
   appServer: {
-    listThreads: vi.fn(), archiveThread: vi.fn().mockResolvedValue(undefined),
+    listThreads: vi.fn(), addQueue: vi.fn().mockResolvedValue(undefined), archiveThread: vi.fn().mockResolvedValue(undefined),
     steerTurn: vi.fn().mockResolvedValue(undefined), startTurn: vi.fn(), updateThreadSettings: vi.fn().mockResolvedValue(undefined),
     interruptTurn: vi.fn().mockResolvedValue(undefined),
     updateThreadMetadata: vi.fn().mockResolvedValue(undefined),
@@ -183,5 +183,40 @@ describe('async question submission', () => {
       threadId: 'active', turnId: undefined, method: 'item/tool/requestUserInput',
     })
     expect(appServer.startTurn).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('SeaTalk addressed input', () => {
+  it('resumes the target session and preserves its settings without switching the desktop selection', async () => {
+    const { result } = await ready()
+    await act(async () => { await result.current.selectThread('active') })
+    vi.mocked(appServer.resumeThread).mockResolvedValue({ ...resumeResponse('mobile-target'), model: 'target-model' })
+    vi.mocked(appServer.startTurn).mockResolvedValue({ turn: { id: 'remote-turn' } } as never)
+    await act(async () => { await result.current.sendRemoteMessage('mobile-target', 'continue here') })
+    expect(result.current.selectedThreadId).toBe('active')
+    expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'mobile-target', cwd: '/repo', sandboxPolicy: { type: 'dangerFullAccess' }, turnTrigger: 'seatalk', input: [expect.objectContaining({ text: 'continue here' })] }))
+  })
+
+  it('queues additional mobile input into an owned active turn and rejects a foreign turn', async () => {
+    const { result } = await ready()
+    const working = { ...resumeResponse('active'), initialTurnsPage: { data: [{ id: 'running', status: 'inProgress' as const, items: [], error: null, startedAt: null, completedAt: null, durationMs: null }], nextCursor: null }, harnessOwnership: { turnId: 'running', owned: true, canTakeOver: false } }
+    vi.mocked(appServer.resumeThread).mockResolvedValue(working)
+    await act(async () => { await result.current.sendRemoteMessage('active', 'next task') })
+    expect(appServer.addQueue).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'active', input: [expect.objectContaining({ text: 'next task' })] }))
+    expect(appServer.startTurn).not.toHaveBeenCalled()
+    vi.mocked(appServer.resumeThread).mockResolvedValue({ ...working, harnessOwnership: { turnId: 'running', owned: false, canTakeOver: true } })
+    await act(async () => { await expect(result.current.sendRemoteMessage('active', 'another task')).rejects.toThrow('其他客户端') })
+    expect(appServer.addQueue).toHaveBeenCalledTimes(1)
+  })
+
+  it('propagates native stop and approval failures to the mobile acknowledgement', async () => {
+    const { result } = await ready()
+    const working = { ...resumeResponse('active'), initialTurnsPage: { data: [{ id: 'running', status: 'inProgress' as const, items: [], error: null, startedAt: null, completedAt: null, durationMs: null }], nextCursor: null }, harnessOwnership: { turnId: 'running', owned: true, canTakeOver: false } }
+    vi.mocked(appServer.resumeThread).mockResolvedValue(working)
+    vi.mocked(appServer.interruptTurn).mockRejectedValueOnce(new Error('disconnected'))
+    await act(async () => { await expect(result.current.stopRemoteTurn('active')).rejects.toThrow('disconnected') })
+    vi.mocked(runtime.respond).mockRejectedValueOnce(new Error('expired'))
+    await act(async () => { await expect(result.current.answerApproval({ id: 'req', threadId: 'active', method: 'item/commandExecution/requestApproval', params: {} }, 'accept', true)).rejects.toThrow('expired') })
   })
 })
