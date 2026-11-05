@@ -9,6 +9,7 @@ export function compactionPrompt(input: CompactionInput): string {
 保留事实的核实时间、有效决定、授权范围、未完成事项和关键证据入口；不扩大授权，不把推测或建议改写为事实。冲突无法消解时保留为待核实。
 Status 保留目标、范围、当前成果、验收边界和操作入口；Decisions 保留现行决定与操作约束；Open Questions 保留尚未解决的问题、阻塞及下一步；Log 仅保留必要里程碑。
 合并重复内容，将排查过程、逐次测试结果和已替代方案留在归档。让新 Agent 能迅速判断项目现状、允许做什么、接下来做什么，以及去哪里查证。
+受管理决定和待办由 Harness 从原文完整保留，已从输入剔除；不要生成 project-entry 标记，也不要凭空重建这些条目或其状态。
 保留已有归档入口，并加入本次归档路径，说明需要追溯时查询原文，历史结论可能已被替代。不要为固定压缩比例牺牲关键约束。
 仅输出完整 Markdown 正文，依次保留 ## Status、## Log、## Decisions、## Open Questions 四个分区，不输出解释、前言或代码围栏。
 归档路径：${input.archivePath}

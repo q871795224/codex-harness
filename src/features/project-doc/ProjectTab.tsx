@@ -15,6 +15,7 @@ import {
 import type { ProjectDocService } from '../../core/project-docs/types'
 import type { Workspace } from '../../core/domain/codex'
 import { Markdown } from '../markdown/Markdown'
+import { ProjectEntries } from './ProjectEntries'
 import { parseProjectBoard } from './board'
 import type { ProjectDocSnapshot, ProjectMeta, ProjectVersion } from './types'
 import type { SectionKey } from './document'
@@ -34,7 +35,7 @@ export interface ProjectTabArchiveRequest {
   baseSeq: number
 }
 
-type DetailView = 'doc' | 'board' | 'edit' | 'history' | 'diff' | 'archive'
+type DetailView = 'entries' | 'doc' | 'board' | 'edit' | 'history' | 'diff' | 'archive'
 
 function ProjectMetaActions({ service, project, onChanged, onArchived }: {
   service: ProjectDocService
@@ -332,6 +333,9 @@ function ProjectDetail({ initialView = 'doc', service, projectId, conflictReques
           <button type="button" className={view === 'board' ? 'active' : ''} onClick={() => setView('board')} title="按 run 聚合的进度看板">
             <KanbanSquare size={12} />看板
           </button>
+          <button type="button" className={view === 'entries' ? 'active' : ''} onClick={() => setView('entries')} title="维护决定和待办条目">
+            <Pencil size={12} />条目
+          </button>
           <button type="button" className={view === 'edit' ? 'active' : ''} onClick={() => setView('edit')} title="编辑整篇文档（走 seq 校验）">
             <Pencil size={12} />编辑
           </button>
@@ -362,6 +366,7 @@ function ProjectDetail({ initialView = 'doc', service, projectId, conflictReques
           ? <ProjectBoardView content={snapshot.content} />
           : <p className="project-tab-empty"><LoaderCircle className="spin" size={14} />加载中…</p>
       )}
+      {view === 'entries' && snapshot && <ProjectEntries service={service} projectId={projectId} snapshot={snapshot} onChanged={() => { void reload(); onChanged() }} />}
       {view === 'edit' && snapshot && (
         <ProjectFullEditPanel
           service={service}
@@ -533,7 +538,7 @@ function ProjectFullEditPanel({ service, projectId, snapshot, onSaved, onCancel 
 
   return (
     <div className="project-edit-panel">
-      <p className="project-edit-hint">编辑整篇文档（v{snapshot.currentSeq}），含所有分区。保存为整文替换，走 seq 校验；文件头（front matter）由 Harness 自动重建，无需填写。</p>
+      <p className="project-edit-hint">编辑整篇文档（v{snapshot.currentSeq}），含所有分区。受管理条目的正文可修改，保留系统标记和属性说明；删除请到「条目」使用软删除。保存为整文替换，走 seq 校验；文件头（front matter）由 Harness 自动重建，无需填写。</p>
       <textarea
         value={content}
         onChange={(event) => setContent(event.target.value)}

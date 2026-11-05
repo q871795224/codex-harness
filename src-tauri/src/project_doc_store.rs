@@ -6,7 +6,7 @@
 //!
 //! seq 语义（见 .harness/agent-interaction.md 第七节）在 Rust 单连接事务里强制：
 //! - 受控区（status）写入必须 base_seq == current_seq（CAS），不等则冲突；
-//! - 追加区（log / decisions / open_questions）不校验 base_seq，由本层按 seq 落序；
+//! - 新增内容不校验 base_seq，由本层按 seq 落序；决定/待办的后续维护走 entries 的 revision 校验；
 //! - 每次成功写入：seq+1、写 current.md、存 history/<seq>.md 快照、记一条 project_versions。
 //!
 //! 协议外修改防护：写入时记录内容 hash，读取/注入前可校验漂移（hash 不一致即文件被绕过协议改过）。
@@ -15,6 +15,8 @@ use crate::store;
 use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
 mod compaction;
+mod entries;
+pub use entries::{EntryMutation, ProjectEntry, ProjectContext};
 pub use compaction::{CompactionInput, CompactionResult, DocumentMeasure};
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
@@ -58,6 +60,7 @@ pub struct ProjectVersion {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectDocSnapshot {
+    pub entries: Vec<ProjectEntry>,
     pub project_id: String,
     pub current_seq: i64,
     pub content: String,
@@ -214,25 +217,19 @@ fn section_heading(section: &str) -> String {
 fn find_section(content: &str, heading: &str) -> Option<(usize, usize)> {
     let target = format!("## {heading}");
     let mut offset = 0;
+    let mut body_start = None;
+    let mut fence = None;
     for line in content.split_inclusive('\n') {
-        let line_end = offset + line.len();
-        offset = line_end;
+        let start = offset;
+        offset += line.len();
         let text = line.trim_end_matches(['\n', '\r']);
-        if text == target || text == format!("{target} ") {
-            let body_start = line_end;
-            // 找下一个 `## ` 或 `# ` 标题作为 section 结束。
-            let mut inner = body_start;
-            for sub in content[body_start..].split_inclusive('\n') {
-                let t = sub.trim_end_matches(['\n', '\r']);
-                if t.starts_with("## ") || (t.starts_with("# ") && !t.starts_with("## ")) {
-                    return Some((body_start, inner));
-                }
-                inner += sub.len();
-            }
-            return Some((body_start, content.len()));
+        if entries::toggle_fence(text, &mut fence) || fence.is_some() { continue; }
+        if body_start.is_some() && (text.starts_with("## ") || text.starts_with("# ")) {
+            return body_start.map(|s| (s, start));
         }
+        if text.trim_end() == target { body_start = Some(offset); }
     }
-    None
+    body_start.map(|s| (s, content.len()))
 }
 
 impl ProjectDocStore {
@@ -529,6 +526,7 @@ impl ProjectDocStore {
             None => current_seq == 0 && content.is_empty(),
         };
         Ok(ProjectDocSnapshot {
+            entries: entries::list(&content)?,
             project_id: id.to_string(),
             current_seq,
             // content 给前端展示/注入，用纯正文（剥离 front matter）。
@@ -608,6 +606,7 @@ impl ProjectDocStore {
         let body = self.read_body(id)?;
         // 旧版创建的是空文件；首次写入在 CAS 通过后补齐分区，不改已有正文。
         let initial_body = "## Status\n\n## Log\n\n## Decisions\n\n## Open Questions\n";
+        let content = entries::append_content(section, content, updated_by, if updated_by == "user" { summary } else { "新增条目" })?;
         let next_body = apply_section_write(
             if body.trim().is_empty() {
                 initial_body
@@ -615,8 +614,9 @@ impl ProjectDocStore {
                 &body
             },
             section,
-            content,
+            &content,
         )?;
+        entries::list(&next_body)?;
         let operation = if is_append_section(section) {
             format!("append:{section}")
         } else {
@@ -667,7 +667,10 @@ impl ProjectDocStore {
         }
 
         // 整文写入采用纯正文：剥离入参可能夹带的 front matter，由 Harness 重新生成。
-        let next_body = strip_front_matter(full_content).trim().to_string();
+        let supplied = strip_front_matter(full_content).trim();
+        // Explicit history restoration can reintroduce an earlier snapshot.
+        let next_body = if updated_by == "user:restore" { entries::restored(supplied, current_seq + 1)? }
+            else { entries::reconcile(&self.read_body(id)?, supplied, updated_by)? };
         let operation = "edit".to_string();
         persist_body(
             connection,

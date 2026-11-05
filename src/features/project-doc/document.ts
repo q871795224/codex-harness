@@ -5,7 +5,7 @@
  * 设计见 .harness/agent-interaction.md 第七节。写入通道见 .harness/project-doc-fix-plan.md：
  * Agent 经 `project-doc propose` 命令回传（不再 emit `<project-doc-update>` 文本块）；
  * 受控区（status）写入必须经审批卡（CAS：base_seq == current_seq）；追加区免审批直落盘。
- * 分区是推荐约定，不是硬性 schema。
+ * 决定和待办的条目修改另走原生 mutateEntry + revision；本模块只描述分区新增/覆盖语义。
  */
 
 /** 推荐分区键。append 区免审批；status 受控。 */
