@@ -3,9 +3,9 @@
 .async-wait-panel summary { cursor: pointer; }
 .async-wait-panel > p, .async-wait-panel small { opacity: .75; }
 .async-wait-panel article { padding: 12px 0; border-top: 1px solid #8883; margin-top: 10px; }
-.async-wait-panel article > span { margin-left: 12px; opacity: .75; }
+
 .async-wait-panel article p { white-space: pre-wrap; overflow-wrap: anywhere; }
-.async-wait-panel article button { margin: 8px 8px 0 0; }
+.async-wait-panel article button { margin: 0; }
 .async-wait-page { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 24px max(24px, calc((100% - 960px) / 2)); border: 0; border-radius: 0; color: #252933; background: #fff; }
 .async-wait-page header { display: flex; align-items: center; gap: 16px; }
 .async-wait-page h2 { margin: 0; font-size: 20px; }
@@ -16,3 +16,26 @@
 .app-shell[data-theme='dark'] .async-wait-page { color: #d1d5dd; background: #22252b; }
 .app-shell[data-theme='dark'] .async-wait-page select, .app-shell[data-theme='dark'] .async-wait-page button { color: #d1d5dd; border-color: #3d424c; background: #292d34; }
 .app-shell[data-theme='dark'] .async-wait-page button:hover { background: #343943; }
+
+.async-wait-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.async-wait-heading > strong { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.async-wait-times { display: flex; flex-wrap: wrap; gap: 12px; margin-left: auto; color: #78827e; font-size: 11px; font-variant-numeric: tabular-nums; }
+.async-wait-status { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 5px; color: #59635f; background: #eceef0; font-size: 11px; }
+.async-wait-status.waiting, .async-wait-status.dispatching { color: #366ba5; background: #e8f0f9; }
+.async-wait-status.ready, .async-wait-status.delivered, .async-wait-status.closed { color: #19805f; background: #e7f1ec; }
+.async-wait-status.paused, .async-wait-status.uncertain { color: #946216; background: #fbf0d9; }
+.async-wait-status.expired, .async-wait-times .expired { color: #a85551; }
+.async-wait-status.expired { background: #f6e8e7; }
+.async-wait-panel .async-wait-summary { margin: 8px 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.async-wait-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.async-wait-details { margin-top: 8px; }
+.async-wait-details > summary { width: fit-content; color: #78827e; font-size: 11px; }
+.async-wait-details small { display: block; margin: 8px 0; }
+.app-shell[data-theme='dark'] .async-wait-times, .app-shell[data-theme='dark'] .async-wait-details > summary { color: #a3abb5; }
+.app-shell[data-theme='dark'] .async-wait-status { color: #b9c0c8; background: #343943; }
+.app-shell[data-theme='dark'] .async-wait-status.waiting, .app-shell[data-theme='dark'] .async-wait-status.dispatching { color: #9bc2ee; background: #25394e; }
+.app-shell[data-theme='dark'] .async-wait-status.ready, .app-shell[data-theme='dark'] .async-wait-status.delivered, .app-shell[data-theme='dark'] .async-wait-status.closed { color: #95d0b7; background: #253e34; }
+.app-shell[data-theme='dark'] .async-wait-status.paused, .app-shell[data-theme='dark'] .async-wait-status.uncertain { color: #e6c17c; background: #473b26; }
+.app-shell[data-theme='dark'] .async-wait-status.expired { color: #e7a5a0; background: #482f30; }
+.app-shell[data-theme='dark'] .async-wait-times .expired { color: #e7a5a0; }
+@media (max-width: 680px) { .async-wait-times { width: 100%; margin-left: 0; } .async-wait-page { padding: 16px; } }

@@ -29,7 +29,7 @@ it('opens the dedicated page across conversations and filters completed tasks', 
   await waitFor(() => expect(screen.getByText('Waiting certificate')).toBeTruthy())
   expect(screen.getByRole('heading', { name: '异步任务' })).toBeTruthy()
   expect((screen.getByLabelText('查看所有会话') as HTMLInputElement).checked).toBe(true)
-  expect(screen.getByText('Finished bot')).toBeTruthy()
+  expect(screen.queryByText('Finished bot')).toBeNull()
   fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'pending' } })
   expect(screen.queryByText('Finished bot')).toBeNull()
   fireEvent.click(screen.getByText('打开来源会话'))
@@ -44,4 +44,16 @@ it('keeps the dedicated page visible when no asynchronous tasks exist', async ()
   await waitFor(() => expect(runtime.listAsyncWaits).toHaveBeenCalled())
   expect(screen.getByRole('region', { name: '异步任务' })).toBeTruthy()
   expect(screen.getByText('没有符合条件的异步任务。任务由 Agent 创建后会显示在这里。')).toBeTruthy()
+})
+
+it('keeps continuation and observations collapsed while showing checks alongside the task title', async () => {
+  vi.mocked(runtime.listAsyncWaits).mockResolvedValue({ data: [{ id: 'reply', threadId: 'origin', status: 'waiting', title: '等待回复', summary: '尚无回复', lastObservation: 'previous observation', continuation: 'Internal continuation instructions', lastCheckedAt: 1700000000, deadline: 1700000300 } as AsyncWaitTask], schedulerError: null })
+  render(<AsyncWaitPanel threadId="origin" view="page" />)
+  await screen.findByText('等待回复')
+  const details = screen.getByText('详情').closest('details')!
+  expect(details.open).toBe(false)
+  expect(details.textContent).toContain('Internal continuation instructions')
+  const heading = screen.getByText('等待回复').parentElement!
+  expect(heading.querySelectorAll('time')).toHaveLength(2)
+  expect(screen.getByRole('status').className).toContain('waiting')
 })

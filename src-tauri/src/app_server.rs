@@ -111,6 +111,7 @@ pub struct AppServerManager {
     diagnostics: Arc<DiagnosticLog>,
     analytics: CodexAnalytics,
     ownership: Arc<TurnOwnership>,
+    runtime_skill: crate::runtime_skill::RuntimeSkill,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
     max_response_bytes: usize,
@@ -146,6 +147,7 @@ impl AppServerManager {
         diagnostics: Arc<DiagnosticLog>,
         analytics: CodexAnalytics,
         ownership: Arc<TurnOwnership>,
+        runtime_skill: crate::runtime_skill::RuntimeSkill,
         max_response_bytes: usize,
     ) -> Self {
         Self {
@@ -153,6 +155,7 @@ impl AppServerManager {
             diagnostics,
             analytics,
             ownership,
+            runtime_skill,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
             max_response_bytes,
@@ -327,7 +330,7 @@ impl AppServerManager {
         );
         Ok(turn)
     }
-    pub async fn request(&self, method: String, params: Value) -> Result<Value, String> {
+    pub async fn request(&self, method: String, mut params: Value) -> Result<Value, String> {
         if matches!(
             method.as_str(),
             "thread/queue/add"
@@ -350,6 +353,20 @@ impl AppServerManager {
                 self.ownership.check(thread, turn)?;
             }
         }
+        let skill_load = if method == "turn/start" && !matches!(params["turnTrigger"].as_str(), Some("thread-title" | "recap" | "memory-save")) {
+            let thread = params["threadId"].as_str().ok_or("turn/start 缺少 threadId")?;
+            let load = self.runtime_skill.prepare(&resolved_codex_home()?, thread)?;
+            if let Some(load) = &load {
+                let connection = self.connection().await?;
+                let cwd = if let Some(cwd) = params["cwd"].as_str() { cwd.to_owned() } else {
+                    let response = self.send_request(&connection, "thread/read".into(), json!({"threadId":thread,"includeTurns":false})).await?;
+                    response["thread"]["cwd"].as_str().ok_or("来源会话缺少 cwd")?.to_owned()
+                };
+                let listing = self.send_request(&connection, "skills/list".into(), json!({"cwds":[cwd],"forceReload":true})).await?;
+                crate::runtime_skill::add_input(&mut params, &listing, &load.path)?;
+            }
+            load
+        } else { None };
         let started = Instant::now();
         let request_context = request_context(&params);
         let pending_turn = match method.as_str() {
@@ -368,6 +385,13 @@ impl AppServerManager {
             Ok(connection) => self.send_request(&connection, method.clone(), params).await,
             Err(error) => Err(error),
         };
+        if result.is_ok() {
+            if let Some(load) = &skill_load {
+                if self.runtime_skill.accepted(load).is_err() {
+                    self.diagnostics.record("error", "harness-runtime", "skill.marker_failed", json!({}));
+                }
+            }
+        }
         if method == "thread/resume" {
             if let Ok(response) = &mut result {
                 self.ownership.annotate_resume(response, None)?;

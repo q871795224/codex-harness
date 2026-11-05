@@ -1,6 +1,10 @@
 # 本机 Harness 管理入口
 
-全局 `codex-harness` Skill 和 `harnessctl` 位于私有 `yf-agent-skills` 仓库。它们从任意 cwd 查询和操作运行中的 Harness，不直接修改 SQLite。
+应用随附的 `harness-runtime` Skill 和 `harnessctl.py` 在本仓库 `.agents/skills/harness-runtime/` 维护，编译进应用，随应用版本发布。Harness 在 Codex 会话首次发送时通过原生 Skill 输入加载；会话恢复不重复加载，同一 Skill 资源更新后重新加载。发送失败不记为已加载。标题生成、recap 和记忆整理不加载这份运行协议。
+
+资源以内容版本写入 Codex 的 user-Skills 目录，使用真实文件副本，不依赖源码 checkout、全局 CLI 或软链接；旧版本副本保留供历史会话使用。Codex 的发现元信息可能对共享 daemon 的其他会话可见，正文只在 Harness 显式调用后加载；不替换 daemon 的 extraRoots。当前异步调度和自动加载仅支持 Codex，Claude 沿用现有运行方式。
+
+Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnessctl.py ...`。仓库开发时使用 `python3 .agents/skills/harness-runtime/harnessctl.py ...`。旧私有安装可继续调用兼容管理接口，但不再是本功能的运行依赖。
 
 ## 连接与执行
 
@@ -108,3 +112,13 @@ harnessctl call asyncWaits.list
 任务定义、检查摘要和发送意图保存在原子替换的任务文件中；SQLite 不保存这些正文。稳定版/开发版通过 OS 文件锁共用一个检查执行者。会话续跑先持久化 `dispatching`，再发送带 `clientUserMessageId` 和 `turnTrigger: async-wait` 的新轮次；成功保存为 `delivered`。提交断线、响应丢失或崩溃后的 `dispatching` / `uncertain` 不自动重发。用户先打开原会话核对，再通过 `acknowledge` 结束记录；确需重新执行时由用户明确决定，不能自动换 ID 重试。
 
 实现与验证：[原生执行与恢复](../src-tauri/src/async_waits/mod.rs)、[原子存储与操作状态](../src-tauri/src/async_waits/store.rs)、[任务卡片](../src/core/async-waits/AsyncWaitPanel.tsx)、[管理入口契约测试](../src/core/management/service.test.ts)。
+
+## 自带 CLI 与异步任务展示
+
+`async-waits list` 列出任务；`async-waits get ID` 返回指定任务（含 `lastObservation` 和 `continuation`）；`async-waits create --file FILE` 创建任务，未显式填 `threadId` 时仅取来源进程的 `CODEX_THREAD_ID`，不使用界面选中会话。`check`、`pause`、`resume`、`cancel`、`acknowledge` 使用管理入口的原生操作。
+
+续跑用户消息只携带任务标题和 ID，观察正文、后续动作及内部时间留在任务文件；Agent 通过 CLI 查询所需详情。保留外部观察与授权动作的边界，Harness 不把外部回复当作指令。后台仍复用原生调度、忙时排队和未知发送不重试机制。
+
+异步任务 tab 使用与其他工作 tab 相同的会话输入框和折叠状态。卡片默认展示带文字的彩色状态、两行结果摘要，检查与到期时间在标题行右侧，窄屏换行；后续动作、最近观察和次要操作收进详情，页面默认筛选待处理任务。
+
+验证：`python3 -m unittest discover -s .agents/skills/harness-runtime/tests -p 'test_*.py'`；原生加载可用 `node .agents/skills/harness-runtime/tests/verify-native.mjs` 在隔离 HOME 和 loopback 假模型下验证，包含未注册路径反例、真实副本加载和恢复，不调用真实模型。
