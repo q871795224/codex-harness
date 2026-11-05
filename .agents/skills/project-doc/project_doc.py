@@ -7,8 +7,10 @@ POST 到 Harness 的本地回传服务（地址从 ~/.codex-harness/project-doc-
 子命令：
   project-doc read     --thread-id T --project-id P      # 读当前正文 + seq
   project-doc propose  --thread-id T --project-id P --section S [--content ... | --file ...]
+  project-doc entries  --thread-id T --project-id P
+  project-doc update/supersede/delete/... --id ID --revision N --reason ...
 
-base_seq 不用传：Harness 在收到 status 提议时按当前 seq 自动入待审批队列；
+propose 不用传 base_seq：Harness 在收到 status 提议时按当前 seq 自动入待审批队列；
 log / decisions / openQuestions 追加区则免审批直接落盘。
 """
 from __future__ import annotations
@@ -106,6 +108,33 @@ def cmd_propose(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_entries(args: argparse.Namespace) -> int:
+    base = load_base_url()
+    query = urllib.parse.urlencode({"project_id": args.project_id})
+    status, body = http_json("GET", f"{base}/read?{query}", None)
+    if status != 200:
+        raise ProjectDocError(body.get("error", f"读取失败（HTTP {status}）"))
+    print(json.dumps({"projectId": body["projectId"], "currentSeq": body["currentSeq"], "entries": body.get("entries", [])}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_entry(args: argparse.Namespace) -> int:
+    mutation = {"action": args.command, "reason": args.reason}
+    if args.command == "adopt":
+        mutation.update(section=args.section, baseSeq=args.base_seq, content=read_content_arg(args))
+    else:
+        mutation.update(id=args.id, revision=args.revision)
+        if args.command in ("update", "supersede"):
+            mutation["content"] = read_content_arg(args)
+    status, body = http_json("POST", f"{load_base_url()}/entries", {
+        "threadId": args.thread_id, "projectId": args.project_id, "mutation": mutation,
+    })
+    if status >= 400:
+        raise ProjectDocError(body.get("error", f"修改失败（HTTP {status}），请重读后重试"))
+    print(json.dumps(body, ensure_ascii=False, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="project-doc", description="项目文档回传命令")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -123,6 +152,25 @@ def build_parser() -> argparse.ArgumentParser:
     propose.add_argument("--content")
     propose.add_argument("--file")
     propose.set_defaults(func=cmd_propose)
+    entries = sub.add_parser("entries", help="读取受管理条目、修订号、状态和原因（包含软删除条目）")
+    entries.add_argument("--thread-id", required=True)
+    entries.add_argument("--project-id", required=True)
+    entries.set_defaults(func=cmd_entries)
+    for action in ("adopt", "update", "supersede", "delete", "restore", "revoke", "close", "reopen"):
+        entry = sub.add_parser(action, help=f"条目操作：{action}（不硬删除）")
+        entry.add_argument("--thread-id", required=True)
+        entry.add_argument("--project-id", required=True)
+        entry.add_argument("--reason", required=True)
+        if action == "adopt":
+            entry.add_argument("--section", required=True, choices=["decisions", "openQuestions"])
+            entry.add_argument("--base-seq", required=True, type=int)
+        else:
+            entry.add_argument("--id", required=True)
+            entry.add_argument("--revision", required=True, type=int)
+        if action in ("adopt", "update", "supersede"):
+            entry.add_argument("--content")
+            entry.add_argument("--file")
+        entry.set_defaults(func=cmd_entry)
     return parser
 
 

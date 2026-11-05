@@ -309,33 +309,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const boundProjectId = projectBinding.binding?.projectId ?? null
   const [pendingProjectConflict, setPendingProjectConflict] = useState<{ proposalContent: string; section: string } | null>(null)
   // 折叠项目卡 spec：仅第 0 轮（pending 且有项目正文）下发给 Composer；锁定后不再注入。
-  const [projectCardContent, setProjectCardContent] = useState<string | null>(null)
-  useEffect(() => {
-    const binding = projectBinding.binding
-    if (!binding || binding.phase !== 'pending') {
-      setProjectCardContent(null)
-      return undefined
-    }
-    let disposed = false
-    void projectDocs.read(binding.projectId)
-      .then((snapshot) => { if (!disposed) setProjectCardContent(snapshot.content) })
-      .catch(() => { if (!disposed) setProjectCardContent(null) })
-    return () => { disposed = true }
-  }, [projectBinding.binding])
-  const projectCard = useMemo(() => {
-    const binding = projectBinding.binding
-    if (!binding || binding.phase !== 'pending' || !projectBinding.project || projectCardContent === null) return null
-    // 正文开头注入机器可读标记：skill 命令据此拿到 project_id / thread_id（详见 .agents/skills/project-doc）。
-    const marker = harness.selectedThreadId
-      ? `<!-- project-doc: project_id=${binding.projectId} thread_id=${harness.selectedThreadId} -->\n\n`
-      : ''
-    return {
-      projectId: binding.projectId,
-      name: projectBinding.project.name,
-      seq: projectBinding.project.currentSeq,
-      content: `${marker}${projectCardContent}`,
-    }
-  }, [projectBinding.binding, projectBinding.project, projectCardContent, harness.selectedThreadId])
+  const [projectCardContent, setProjectCardContent] = useState<{ projectId: string; threshold: number; seq: number; content: string } | null>(null)
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
   const [composerFocusRequest, setComposerFocusRequest] = useState(0)
@@ -378,6 +352,36 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
+  const projectDocInstanceId = resolvedComposerActions.find((action) => action.pluginId === 'builtin.project-doc' && action.contribution.id === 'compact-project')?.instanceId
+  const projectDocThresholdValue = plugins.instances.find((instance) => instance.instanceId === projectDocInstanceId)?.config.compactionThreshold
+  const projectDocThreshold = typeof projectDocThresholdValue === 'number' && Number.isFinite(projectDocThresholdValue) && projectDocThresholdValue >= 1
+    ? Math.floor(projectDocThresholdValue) : 10_000
+  useEffect(() => {
+    const binding = projectBinding.binding
+    if (!binding || binding.phase !== 'pending') {
+      setProjectCardContent(null)
+      return undefined
+    }
+    let disposed = false
+    void projectDocs.context(binding.projectId, projectDocThreshold)
+      .then((snapshot) => { if (!disposed) setProjectCardContent({ projectId: binding.projectId, threshold: projectDocThreshold, seq: snapshot.seq, content: snapshot.content }) })
+      .catch(() => { if (!disposed) setProjectCardContent(null) })
+    return () => { disposed = true }
+  }, [projectBinding.binding, projectDocThreshold])
+  const projectCard = useMemo(() => {
+    const binding = projectBinding.binding
+    if (!binding || binding.phase !== 'pending' || !projectBinding.project || !projectCardContent || projectCardContent.projectId !== binding.projectId || projectCardContent.threshold !== projectDocThreshold) return null
+    // 正文开头注入机器可读标记：skill 命令据此拿到 project_id / thread_id（详见 .agents/skills/project-doc）。
+    const marker = harness.selectedThreadId
+      ? `<!-- project-doc: project_id=${binding.projectId} thread_id=${harness.selectedThreadId} -->\n\n`
+      : ''
+    return {
+      projectId: binding.projectId,
+      name: projectBinding.project.name,
+      seq: projectCardContent.seq,
+      content: `${marker}${projectCardContent.content}`,
+    }
+  }, [projectBinding.binding, projectBinding.project, projectCardContent, harness.selectedThreadId, projectDocThreshold])
   const resolvedTurnActions = plugins.resolvedTurnActions({
     provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,

@@ -973,6 +973,17 @@ fn project_doc_write_document(
 }
 
 #[tauri::command]
+async fn project_doc_context(state: State<'_, AppState>, project_id: String, threshold: usize) -> Result<project_doc_store::ProjectContext, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.context(&project_id, threshold)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn project_doc_mutate_entry(state: State<'_, AppState>, project_id: String, mutation: project_doc_store::EntryMutation) -> Result<project_doc_store::WriteOutcome, String> {
+    let docs = project_docs(&state)?.as_ref().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || docs.mutate_entry(&project_id, &mutation, "user")).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn project_doc_measure(state: State<'_, AppState>, project_id: String) -> Result<project_doc_store::DocumentMeasure, String> {
     let docs = project_docs(&state)?.as_ref().unwrap().clone();
     tauri::async_runtime::spawn_blocking(move || docs.measure(&project_id)).await.map_err(|e| e.to_string())?
@@ -1505,6 +1516,8 @@ pub fn run() {
             project_doc_write_section,
             project_doc_write_document,
             project_doc_measure,
+            project_doc_context,
+            project_doc_mutate_entry,
             project_doc_begin_compaction,
             project_doc_complete_compaction,
             project_doc_cancel_compaction,
