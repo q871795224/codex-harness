@@ -11,6 +11,7 @@ import { MemoryButton } from './features/memory/MemoryButton'
 import { createMemoryService } from './core/memory/service'
 import { createProjectOnboarding } from './core/project-onboarding/service'
 import { onboardingHistory } from './core/project-onboarding/history'
+import { prepareProjectInput } from './core/project-onboarding/context'
 import { appServer } from './core/runtime/appServerClient'
 import type { ProjectOnboardingService } from './core/project-onboarding/types'
 import { notifications } from './core/notifications/service'
@@ -243,6 +244,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   teams: TeamsService
   codex: ReturnType<typeof useCodexCore>
 }) {
+  const selectedThreadRef = useRef(harness.selectedThreadId)
+  selectedThreadRef.current = harness.selectedThreadId
   const { mode, selectMode, teamVisited } = useInterfaceMode(runtime, (error) => harness.notify('无法保存工作模式', 'error', error))
   const plugins = usePluginHost()
   const codexUpdate = useCodexUpdate(harness.selectedProvider === 'codex' ? harness.selectedThreadId : null, codex.reload)
@@ -1087,10 +1090,12 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                   onFollowUpModeChange={harness.setFollowUpMode}
                   onSend={async (input, mode, references, titleSource) => {
                     const threadId = harness.currentThread!.id
+                    const prepared = await prepareProjectInput(projectDocs, threadId, input, projectDocThreshold)
+                    if (selectedThreadRef.current !== threadId) throw new Error('会话已切换，消息未发送；请回到来源会话继续')
                     const submittedDraft = queuedComposerDraftsRef.current[threadId]
                     scrollRequestSequence.current += 1
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
-                    await harness.sendMessage(input, mode, references, titleSource)
+                    await harness.sendMessage(prepared.input, mode, references, titleSource)
                     const targetId = draftReplacementIdsRef.current[threadId] ?? threadId
                     if (submittedDraft && queuedComposerDraftsRef.current[targetId] === submittedDraft) {
                       const empty: ComposerDraft = { text: '', collapsedPastes: [], attachments: [] }
@@ -1100,7 +1105,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                     }
                     // 绑定后的背景消息发送成功：pending → locked，此后只读、不再注入项目卡。
                     try {
-                      await projectBinding.lockOnSend()
+                      if (prepared.projectId) await projectBinding.lockOnSend()
                     } catch (error) {
                       // 消息已经发送，仍让 Composer 消耗草稿，避免用户重复发送。
                       harness.notify('消息已发送，但项目绑定尚未锁定。', 'warning', error)
