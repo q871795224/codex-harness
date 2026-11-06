@@ -1,0 +1,94 @@
+[
+  {
+    "id": "w0",
+    "name": "dns-test"
+  },
+  {
+    "id": "w1",
+    "name": "yf-music"
+  },
+  {
+    "id": "w2",
+    "name": "yf-agent"
+  },
+  {
+    "id": "w3",
+    "name": "multica"
+  },
+  {
+    "id": "w4",
+    "name": "YF-QQSG"
+  },
+  {
+    "id": "w5",
+    "name": "yf-finance"
+  },
+  {
+    "id": "w6",
+    "name": "space-sgw-management"
+  },
+  {
+    "id": "w7",
+    "name": "digital_employee"
+  },
+  {
+    "id": "w8",
+    "name": "health-check-api"
+  },
+  {
+    "id": "w9",
+    "name": "gf"
+  },
+  {
+    "id": "w10",
+    "name": "测试"
+  },
+  {
+    "id": "w11",
+    "name": "dns-agent"
+  },
+  {
+    "id": "w12",
+    "name": "yf-travel"
+  },
+  {
+    "id": "w13",
+    "name": "yf-dota"
+  },
+  {
+    "id": "w14",
+    "name": "yf-agent-skills"
+  },
+  {
+    "id": "w15",
+    "name": "codex-harness"
+  },
+  {
+    "id": "w16",
+    "name": "jewell"
+  },
+  {
+    "id": "w17",
+    "name": "dns-api"
+  },
+  {
+    "id": "w18",
+    "name": "dpdkdns"
+  },
+  {
+    "id": "w19",
+    "name": "httpdns-test"
+  },
+  {
+    "id": "w20",
+    "name": "adr-api"
+  },
+  {
+    "id": "w21",
+    "name": "iterm2-codex-sidebar"
+  },
+  {
+    "id": "general",
+    "name": "通用问答"
+  }
+]

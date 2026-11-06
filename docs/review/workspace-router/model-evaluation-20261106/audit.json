@@ -1,0 +1,30 @@
+{
+  "audited_at": "2026-11-06T18:29:19.949313+08:00",
+  "completed": 112,
+  "errors": 0,
+  "unique_cases": 16,
+  "conditions": 7,
+  "historical_cases_per_condition": 5,
+  "synthetic_cases_per_condition": 11,
+  "checks": [
+    "dataset hash and deterministic randomized plan",
+    "112 unique planned results with consistent labels",
+    "all request body hashes regenerated from frozen inputs",
+    "all 64 Decision calls compile/usage equality without clipping",
+    "all 16 Prism calls native-v2 template, 23 complete score pairs and consistent argmax",
+    "22 valid pre-fix rows retained, 5 invalid Prism trials excluded and rerun",
+    "deployed Python scripts match local snapshots; all 3 services healthy"
+  ],
+  "raw_sha256": {
+    "dataset.json": "cb0f2a1c8b0c505c7ec6fd5a4c39c6288904c0821bbba3a55f337498a793677a",
+    "results.jsonl": "ed8ec8a54cc4ea1e480f053f26055642f6a2462dbf0254d42abb658475820304",
+    "plan.json": "aed5f10d6c7d5ceb3f626ddd024a96c93dec8229f39d242bfe63dcc20e425a03",
+    "capacity.json": "924428477530259794b66cdaa2bea3eae6b77525fa9cb8dd76d9f4b6e12b469a",
+    "environment.json": "85e9cfbfdc88826fa29f025a2bf12c5cf47bdfc4746d729a64e8f791de5631fa",
+    "results-before-prism-template-fix.jsonl": "7e3b90adf9f40175e72bdc0a3fc50fcb4957e05fa6aae8f9c212e9671fa73232"
+  },
+  "prism_max_pair_tokens": 391,
+  "first_formal_response_at": "2026-11-06T18:07:50.944195+08:00",
+  "last_formal_response_at": "2026-11-06T18:21:40.674084+08:00",
+  "services_observed_at": "2026-11-06T18:24:55.078929+08:00"
+}

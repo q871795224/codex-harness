@@ -1,0 +1,239 @@
+{
+  "observed_at": "2026-11-06T18:24:55.078929+08:00",
+  "platform": "Linux-5.15.0-162.011-shopee-x86_64-with-glibc2.39",
+  "cpu": "Architecture:                         x86_64\nCPU op-mode(s):                       32-bit, 64-bit\nAddress sizes:                        46 bits physical, 48 bits virtual\nByte Order:                           Little Endian\nCPU(s):                               48\nOn-line CPU(s) list:                  0-47\nVendor ID:                            GenuineIntel\nModel name:                           Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz\nCPU family:                           6\nModel:                                85\nThread(s) per core:                   2\nCore(s) per socket:                   12\nSocket(s):                            2\nStepping:                             4\nCPU(s) scaling MHz:                   80%\nCPU max MHz:                          3000.0000\nCPU min MHz:                          800.0000\nBogoMIPS:                             4200.00\nFlags:                                fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cdp_l3 invpcid_single pti ssbd mba ibrs ibpb stibp tpr_shadow vnmi flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm cqm mpx rdt_a avx512f avx512dq rdseed adx smap clflushopt clwb intel_pt avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local dtherm ida arat pln pts hwp hwp_act_window hwp_epp hwp_pkg_req pku ospke md_clear flush_l1d arch_capabilities\nVirtualization:                       VT-x\nL1d cache:                            768 KiB (24 instances)\nL1i cache:                            768 KiB (24 instances)\nL2 cache:                             24 MiB (24 instances)\nL3 cache:                             33 MiB (2 instances)\nNUMA node(s):                         2\nNUMA node0 CPU(s):                    0-11,24-35\nNUMA node1 CPU(s):                    12-23,36-47\nVulnerability Gather data sampling:   Mitigation; Microcode\nVulnerability Itlb multihit:          KVM: Mitigation: VMX disabled\nVulnerability L1tf:                   Mitigation; PTE Inversion; VMX conditional cache flushes, SMT vulnerable\nVulnerability Mds:                    Mitigation; Clear CPU buffers; SMT vulnerable\nVulnerability Meltdown:               Mitigation; PTI\nVulnerability Mmio stale data:        Mitigation; Clear CPU buffers; SMT vulnerable\nVulnerability Reg file data sampling: Not affected\nVulnerability Retbleed:               Vulnerable\nVulnerability Spec rstack overflow:   Not affected\nVulnerability Spec store bypass:      Mitigation; Speculative Store Bypass disabled via prctl and seccomp\nVulnerability Spectre v1:             Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:             Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP conditional; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                  Not affected\nVulnerability Tsx async abort:        Mitigation; Clear CPU buffers; SMT vulnerable\n",
+  "packages": {
+    "torch": "2.14.0+cpu",
+    "transformers": "5.17.0",
+    "huggingface-hub": "1.32.0",
+    "llama-cpp-python": "0.3.36",
+    "fastapi": "0.141.1",
+    "uvicorn": "0.53.0"
+  },
+  "deployment": {
+    "stage": "ready",
+    "at": "2026-11-06T18:06:26.884695+08:00",
+    "services": {
+      "decision08": {
+        "pid": 114561,
+        "port": 16601,
+        "args": [
+          "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+          "/home/toc/SSE/harness-router-eval-20261106/chinese-decision/scripts/serve.py",
+          "--base",
+          "/home/toc/SSE/harness-router-eval-20261106/models/decision08",
+          "--backend",
+          "gguf",
+          "--gguf",
+          "/home/toc/SSE/harness-router-eval-20261106/models/decision08/chinese-decision-0.8b-Q8_0.gguf",
+          "--threads",
+          "16",
+          "--context-size",
+          "16384",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "16601"
+        ],
+        "health": {
+          "status": "ok",
+          "model": "chinese-decision-0.8b",
+          "temperature": 1.10813307762146,
+          "calibrated": true,
+          "backend": "gguf",
+          "device": "cpu",
+          "max_length": 16384,
+          "step": null
+        }
+      },
+      "decision2": {
+        "pid": 114562,
+        "port": 16602,
+        "args": [
+          "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+          "/home/toc/SSE/harness-router-eval-20261106/chinese-decision/scripts/serve.py",
+          "--base",
+          "/home/toc/SSE/harness-router-eval-20261106/models/decision2",
+          "--backend",
+          "gguf",
+          "--gguf",
+          "/home/toc/SSE/harness-router-eval-20261106/models/decision2/chinese-decision-2b-Q8_0.gguf",
+          "--threads",
+          "16",
+          "--context-size",
+          "16384",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "16602"
+        ],
+        "health": {
+          "status": "ok",
+          "model": "chinese-decision-2b",
+          "temperature": 1.074872374534607,
+          "calibrated": true,
+          "backend": "gguf",
+          "device": "cpu",
+          "max_length": 16384,
+          "step": 4994
+        }
+      },
+      "prism08": {
+        "pid": 114563,
+        "port": 16603,
+        "args": [
+          "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+          "/home/toc/SSE/harness-router-eval-20261106/prism_server.py"
+        ],
+        "health": {
+          "status": "ok",
+          "model": "Prism-Qwen3.5-Reranker-0.8B",
+          "dtype": "fp32",
+          "device": "cpu",
+          "threads": 16,
+          "max_length": 10000,
+          "batch_size": 4
+        }
+      }
+    },
+    "source_revision": "25923d266c4d69629560193b119966d41ebbba62"
+  },
+  "services_current": {
+    "decision08": {
+      "pid": 114561,
+      "port": 16601,
+      "args": [
+        "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+        "/home/toc/SSE/harness-router-eval-20261106/chinese-decision/scripts/serve.py",
+        "--base",
+        "/home/toc/SSE/harness-router-eval-20261106/models/decision08",
+        "--backend",
+        "gguf",
+        "--gguf",
+        "/home/toc/SSE/harness-router-eval-20261106/models/decision08/chinese-decision-0.8b-Q8_0.gguf",
+        "--threads",
+        "16",
+        "--context-size",
+        "16384",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "16601"
+      ],
+      "health": {
+        "status": "ok",
+        "model": "chinese-decision-0.8b",
+        "temperature": 1.10813307762146,
+        "calibrated": true,
+        "backend": "gguf",
+        "device": "cpu",
+        "max_length": 16384,
+        "step": null
+      }
+    },
+    "decision2": {
+      "pid": 114562,
+      "port": 16602,
+      "args": [
+        "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+        "/home/toc/SSE/harness-router-eval-20261106/chinese-decision/scripts/serve.py",
+        "--base",
+        "/home/toc/SSE/harness-router-eval-20261106/models/decision2",
+        "--backend",
+        "gguf",
+        "--gguf",
+        "/home/toc/SSE/harness-router-eval-20261106/models/decision2/chinese-decision-2b-Q8_0.gguf",
+        "--threads",
+        "16",
+        "--context-size",
+        "16384",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "16602"
+      ],
+      "health": {
+        "status": "ok",
+        "model": "chinese-decision-2b",
+        "temperature": 1.074872374534607,
+        "calibrated": true,
+        "backend": "gguf",
+        "device": "cpu",
+        "max_length": 16384,
+        "step": 4994
+      }
+    },
+    "prism08": {
+      "pid": 128413,
+      "port": 16603,
+      "args": [
+        "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+        "/home/toc/SSE/harness-router-eval-20261106/prism_server.py"
+      ],
+      "health": {
+        "status": "ok",
+        "model": "Prism-Qwen3.5-Reranker-0.8B",
+        "dtype": "fp32",
+        "device": "cpu",
+        "threads": 16,
+        "max_length": 10000,
+        "batch_size": 4,
+        "template_sha256": "1d339995eeb0125c2f95fa502d65bdb4ddfbfed3b85641a54a3dda4e6aee0e3a",
+        "template_version": "native-v2"
+      }
+    }
+  },
+  "scripts_sha256": {
+    "deploy.py": "b631f6d9ef1e5c4b04fb2795e7aac79c0bd3fdc5426e701cdb76d8530d3f35e3",
+    "download_models.py": "22e2df109aa38b4ba77b8eeeaba51ff77d64c5a4b3329244b83c6527f1966efd",
+    "prism_server.py": "223863065f7acad5a2d634f502571565dc10d84bd04e846e5280922d9e498b76",
+    "benchmark.py": "2468bad15d36cdc5d4a33f26d3f20d280052e764346235dd674a3c57ce02ba54",
+    "metadata.py": "f16740a393bbe3440e9819744b4bde991f0e2de40b10b8f3992e956bb939a4bc",
+    "manage_services.py": "3baf4de496a4ec3104c68e5efd82c9f1e5c52c637afa5151049b5ffb4d5cf8de",
+    "status_report.py": "bb3238a4c97724bf74e1c07a50fc7fed8b43db600bead913fdf86822688de0ad"
+  },
+  "models": {
+    "decision08": {
+      "download": {
+        "repo": "quincyqiang/chinese-decision-0.8b-gguf",
+        "revision": "890ffc6791c383107614f21b30f41669b8adb117",
+        "finished_at": "2026-11-06T18:04:39.797872+08:00"
+      },
+      "files": [
+        {
+          "name": "chinese-decision-0.8b-Q8_0.gguf",
+          "size": 811843936,
+          "sha256": "6a71cc35bd83f8b050499567faec59e9ae05778b75b1e2119d27d45b80f7e68b"
+        }
+      ]
+    },
+    "decision2": {
+      "download": {
+        "repo": "quincyqiang/chinese-decision-2b-gguf",
+        "revision": "2357aa9aad05cbd87bcfc11a1b74e5705e3b5bbc",
+        "finished_at": "2026-11-06T18:05:00.499151+08:00"
+      },
+      "files": [
+        {
+          "name": "chinese-decision-2b-Q8_0.gguf",
+          "size": 2012012800,
+          "sha256": "4f902f73781f87cc8388617bc7e2e99eb14fdeb8551f7ebb48ffbde69394cc02"
+        }
+      ]
+    },
+    "prism08": {
+      "download": {
+        "repo": "infgrad/Prism-Qwen3.5-Reranker-0.8B",
+        "revision": "c60729783cb2f0662c0b054a02964402a211e3f4",
+        "finished_at": "2026-11-06T18:06:06.624515+08:00"
+      },
+      "files": [
+        {
+          "name": "model.safetensors",
+          "size": 1504827608,
+          "sha256": "332d3d2205b1ad703c63eb44335ab0f24a2217789fc11d77bf1b3de90bbcb460"
+        }
+      ]
+    }
+  }
+}
