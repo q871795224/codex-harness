@@ -139,27 +139,28 @@ pub fn info(path: &str, refresh: bool) -> Result<ReleaseCommandInfo, String> {
             ["fetch", "origin", "--prune", "--tags"],
         )?;
     }
-    let current_version = origin_branch_version(&workspace.checkout_root, project.branch())?;
     let origin_main_sha = origin_branch_sha(&workspace.checkout_root, project.branch())?;
     let installed_version = (project == ReleaseProject::CodexHarness)
         .then(installed_app_version)
         .flatten();
-    let version_base = if project == ReleaseProject::CodexHarness {
-        release_base_version(&current_version)
-    } else {
-        current_version.clone()
-    };
-    let mut versions = next_versions(&version_base)?;
-    if project == ReleaseProject::Jewell
-        && can_resume_jewell_release(status.as_ref(), &current_version)
-        && remote_tag_exists(&workspace.checkout_root, &current_version)?
-    {
-        versions.insert(0, current_version.clone());
+    let current_version =
+        release_version(project, &workspace.checkout_root, installed_version.clone())?;
+    let mut versions = current_version
+        .as_deref()
+        .map(next_versions)
+        .transpose()?
+        .unwrap_or_default();
+    if let (ReleaseProject::Jewell, Some(current_version)) = (project, current_version.as_ref()) {
+        if can_resume_jewell_release(status.as_ref(), current_version)
+            && remote_tag_exists(&workspace.checkout_root, current_version)?
+        {
+            versions.insert(0, current_version.clone());
+        }
     }
     Ok(ReleaseCommandInfo {
         supported: true,
         project: Some(project.key().to_string()),
-        current_version: Some(current_version),
+        current_version,
         installed_version,
         versions,
         origin_main_sha: Some(origin_main_sha),
@@ -186,7 +187,11 @@ pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<Releas
         }
     }
 
-    let current_version = origin_branch_version(&workspace.checkout_root, project.branch())?;
+    let installed_version = (project == ReleaseProject::CodexHarness)
+        .then(installed_app_version)
+        .flatten();
+    let current_version = release_version(project, &workspace.checkout_root, installed_version)?
+        .ok_or("无法读取本机安装的 Codex Harness 稳定版版本，请先检查安装状态")?;
     let current_sha = origin_branch_sha(&workspace.checkout_root, project.branch())?;
     if let Some(expected_sha) = base_sha {
         if expected_sha != current_sha {
@@ -197,16 +202,11 @@ pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<Releas
         }
     }
     let release_base_sha = base_sha.unwrap_or(current_sha.as_str());
-    let version_base = if project == ReleaseProject::CodexHarness {
-        release_base_version(&current_version)
-    } else {
-        current_version.clone()
-    };
     let resume = project == ReleaseProject::Jewell
         && can_resume_jewell_release(previous_status.as_ref(), &current_version)
         && version == current_version
         && remote_tag_exists(&workspace.checkout_root, version)?;
-    let version_is_allowed = next_versions(&version_base)?
+    let version_is_allowed = next_versions(&current_version)?
         .iter()
         .any(|item| item == version);
     if !resume && !version_is_allowed {
@@ -430,16 +430,14 @@ fn installed_app_version() -> Option<String> {
     Version::parse(&version).ok().map(|_| version)
 }
 
-fn release_base_version(current_version: &str) -> String {
-    installed_app_version()
-        .filter(|installed| installed_version_is_older(installed, current_version))
-        .unwrap_or_else(|| current_version.to_string())
-}
-
-fn installed_version_is_older(installed: &str, current: &str) -> bool {
-    match (Version::parse(installed), Version::parse(current)) {
-        (Ok(installed), Ok(current)) => installed < current,
-        _ => false,
+fn release_version(
+    project: ReleaseProject,
+    cwd: &str,
+    installed: Option<String>,
+) -> Result<Option<String>, String> {
+    match project {
+        ReleaseProject::CodexHarness => Ok(installed),
+        ReleaseProject::Jewell => origin_branch_version(cwd, project.branch()).map(Some),
     }
 }
 
@@ -573,11 +571,24 @@ mod tests {
     }
 
     #[test]
-    fn installed_version_comparison_detects_older_builds() {
-        assert!(installed_version_is_older("0.8.6", "0.8.7"));
-        assert!(!installed_version_is_older("0.8.7", "0.8.7"));
-        assert!(!installed_version_is_older("0.8.8", "0.8.7"));
-        assert!(!installed_version_is_older("invalid", "0.8.7"));
+    fn harness_uses_only_installed_version_without_reading_origin() {
+        let directory = tempfile::tempdir().unwrap();
+        // No Git repository: reading any origin version would fail this call.
+        let cwd = directory.path().to_str().unwrap();
+        for (installed, expected) in [
+            ("0.12.4", ["0.12.5", "0.13.0"]),
+            ("0.14.2", ["0.14.3", "0.15.0"]),
+        ] {
+            let version =
+                release_version(ReleaseProject::CodexHarness, cwd, Some(installed.into()))
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(next_versions(&version).unwrap(), expected);
+        }
+        assert_eq!(
+            release_version(ReleaseProject::CodexHarness, cwd, None).unwrap(),
+            None
+        );
     }
 }
 

@@ -37,6 +37,14 @@ describe('QuickCommandPanel workspace release', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
   })
 
+  it('explains missing installed version without offering origin-derived choices', async () => {
+    render(<QuickCommandPanel commands={[]} release={controller({ currentVersion: null, installedVersion: null, versions: [] })} />)
+    fireEvent.click(screen.getByRole('button', { name: '打开快捷命令' }))
+    fireEvent.click(screen.getByRole('button', { name: '发布 Codex Harness' }))
+    expect(await screen.findByText('未读取到本机稳定版版本，请检查安装状态')).toBeTruthy()
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0)
+  })
+
   it('does not add the release command for another workspace', () => {
     render(<QuickCommandPanel commands={[]} release={controller({ supported: false })} />)
     expect(screen.queryByRole('button', { name: '打开快捷命令' })).toBeNull()

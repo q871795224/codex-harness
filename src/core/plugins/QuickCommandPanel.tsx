@@ -122,7 +122,7 @@ export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRo
                 </button>
                 {releasePicker && (
                   <div className="release-version-menu" role="menu" aria-label="选择发布版本">
-                    <span>发布至</span>
+                    <span>{!isJewellRelease && release.versions.length === 0 ? '未读取到本机稳定版版本，请检查安装状态' : '发布至'}</span>
                     <div>
                       {release.versions.map((version) => (
                         <button key={version} type="button" role="menuitem" onClick={() => void startRelease(version)}>{version}</button>
