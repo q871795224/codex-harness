@@ -886,6 +886,11 @@ fn project_doc_thread_binding(
 }
 
 #[tauri::command]
+fn project_onboarding_requests(state: State<'_, AppState>) -> Result<Vec<store::onboarding_requests::StoredOnboardingRequest>, String> {
+    state.store.project_onboarding_requests()
+}
+
+#[tauri::command]
 fn project_doc_pending_onboardings(state: State<'_, AppState>) -> Result<Vec<project_doc_store::SavedOnboarding>, String> {
     let saved = project_docs(&state)?.as_ref().unwrap().saved_onboardings()?;
     let mut pending = Vec::new();
@@ -1561,6 +1566,7 @@ pub fn run() {
             project_doc_thread_binding,
             project_doc_commit_onboarding,
             project_doc_pending_onboardings,
+            project_onboarding_requests,
             project_doc_finish_onboarding,
             project_doc_bind_thread,
             project_doc_lock_thread_binding,

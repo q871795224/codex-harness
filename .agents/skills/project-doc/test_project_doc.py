@@ -55,7 +55,7 @@ class CliTests(unittest.TestCase):
         with contextlib.redirect_stdout(self.output), contextlib.redirect_stderr(self.output):
             return cli.main([*args, '--thread-id', 't', '--project-id', 'p'])
 
-    def test_unbound_agent_only_requests_a_confirmation_card(self):
+    def test_unbound_agent_requests_a_prefilled_card_and_can_continue(self):
         endpoint = {"protocolVersion": 1, "baseUrl": self.base, "token": "test-token-" * 8}
         self.response = {"requestId": "ignored-fixture", "result": {"requestId": "card", "phase": "confirm"}}
         with patch.object(Path, "read_text", return_value=json.dumps(endpoint)):
@@ -66,7 +66,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(path, "/management/call")
         self.assertEqual(body["method"], "projects.requestOnboarding")
         self.assertEqual(body["params"], {"threadId": "unbound", "mode": "create", "name": "新项目"})
-        self.assertIn("等待用户确认", self.output.getvalue())
+        self.assertIn("5 分钟未操作将按默认选项执行", self.output.getvalue())
         self.assertNotIn(endpoint["token"], self.output.getvalue())
 
     def test_claude_request_uses_its_query_environment_after_context_compaction(self):

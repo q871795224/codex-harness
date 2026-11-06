@@ -101,11 +101,12 @@ export function createManagementHandler(get: () => ManagementContext) {
         if (!thread) throw new Error('请先在 Harness 打开来源会话')
         const context: PluginViewContext = { threadId, provider: threadId.startsWith('claude:') ? 'claude' : 'codex',
           threadCwd: thread.cwd, workspaceRoot: h.threadRoots[threadId] ?? thread.cwd }
-        if (!plugins.resolvedConversationBanners(context).some(b => b.pluginId === 'builtin.project-doc' && b.contribution.id === 'project-onboarding')) {
+        const host = plugins.resolvedConversationBanners(context).find(b => b.pluginId === 'builtin.project-doc' && b.contribution.id === 'project-onboarding')
+        if (!host) {
           throw new Error('来源会话的项目文档插件未启用，无法显示确认卡')
         }
-        return service.request(threadId, { mode, requestedBy: 'agent',
-          name: typeof p.name === 'string' ? p.name : undefined, projectId: mode === 'join' ? text(p, 'projectId') : undefined })
+        return service.request(threadId, { mode, requestedBy: 'agent', instanceId: host.instanceId,
+          name: mode === 'create' ? text(p, 'name') : undefined, projectId: mode === 'join' ? text(p, 'projectId') : undefined })
       }
       case 'capabilities':
         return { protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),

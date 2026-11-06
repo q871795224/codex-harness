@@ -11,9 +11,9 @@ it('reads every page, including early turns never rendered in the UI', async () 
   expect(await onboardingHistory(source)).toEqual(['agentMessage:\n最初的约束','agentMessage:\n后来的纠正'])
   expect(appServer.listTurns).toHaveBeenNthCalledWith(2,expect.objectContaining({cursor:'next',sortDirection:'asc',itemsView:'full'}))
 })
-it('rejects incomplete active history and cursor loops instead of silently summarizing a tail', async () => {
+it('labels active work as unfinished and rejects cursor loops', async () => {
   vi.mocked(appServer.listTurns).mockResolvedValueOnce({data:[{id:'active',status:'inProgress',items:[]}],nextCursor:null} as never)
-  await expect(onboardingHistory(source)).rejects.toThrow('当前轮次')
+  expect((await onboardingHistory(source))[0]).toContain('仍在执行')
   vi.mocked(appServer.listTurns).mockResolvedValue({data:[],nextCursor:'loop'})
   await expect(onboardingHistory(source)).rejects.toThrow('分页未前进')
 })

@@ -21,7 +21,7 @@ export async function onboardingHistory(source: OnboardingSource): Promise<strin
     for (const turn of page.data) {
       if (seen.has(turn.id)) continue
       seen.add(turn.id)
-      if (turn.status === 'inProgress') throw new Error('请等当前轮次结束后再整理')
+      if (turn.status === 'inProgress') messages.push('当前轮次仍在执行，以下记录不代表任务已经完成。')
       for (const item of turn.items) {
         if (!['userMessage', 'agentMessage', 'commandExecution', 'mcpToolCall'].includes(item.type)) continue
         const text = itemText(item).trim()

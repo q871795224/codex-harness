@@ -11,11 +11,12 @@ const dark = params.get('theme') === 'dark'
 const mode = params.get('mode') === 'join' ? 'join' : 'create'
 const phase = (params.get('phase') || 'confirm') as OnboardingState['phase']
 const state: OnboardingState = {id:'visual-fixture',source:{threadId:'fixture', title:'DNS 同步方案与验收边界',cwd:'/example/dns-tools'},
-  mode,phase,name:mode === 'join' ? 'AIOps 自动化运维' : 'DNS 配置同步',projectId:mode === 'join' ? 'aiops' : '',requestedBy:params.get('agent') === '1' ? 'agent' : 'user',
+  mode,phase,name:mode === 'join' ? (phase === 'done' ? 'AIOps 自动化运维' : '') : 'DNS 配置同步',projectId:mode === 'join' ? 'aiops' : '',requestedBy:params.get('agent') === '1' ? 'agent' : 'user',
+  autoConfirmAt:params.get('agent') === '1' && phase === 'confirm' ? Date.now()+300_000 : undefined,
   detail:phase === 'running' ? '正在对照项目文档，整理已有结论' : undefined,
   messages:46,chunks:3,completedChunks:1,
   ...(phase === 'done' ? {receipt:{projectId:'aiops',seq:12}} : {}),
-  ...(phase === 'error' ? {error:'整理期间项目文档已更新。请重新整理，已有内容未修改。'} : {})}
+  ...(phase === 'error' ? {error:'项目文档已更新，请重试。'} : {})}
 const thread = {id:'fixture',cwd:'/example/dns-tools',name:state.source.title,preview:'',status:{type:'idle'},turns:[]} as unknown as Thread
 const noop = () => {}
 function Preview() {

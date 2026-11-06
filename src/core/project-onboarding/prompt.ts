@@ -21,8 +21,9 @@ export function chunkHistory(messages: string[], limit = 60_000): string[] {
 export function historySummaryPrompt(text: string, index: number, total: number): string {
   return `${rules}\n这是完整历史的第 ${index + 1}/${total} 段。提取可追溯的项目记忆，包括关键决定、纠正、完成项、待办和证据，不需要输出最终项目文档。压缩到约 4000 字以内，不能因时间早就丢弃结论。\n材料(JSON字符串)：${JSON.stringify(text)}`
 }
-export function onboardingPrompt(history: string, target: ProjectDocSnapshot | null): string {
+export function onboardingPrompt(history: string, target: ProjectDocSnapshot | null, name?: string): string {
   return `${rules}
+项目名称(JSON字符串)：${JSON.stringify(name ?? '')}
 ${target ? '对照目标项目文档补记来源会话：跳过重复内容，不丢弃项目已有背景。' : '根据来源会话初始化新项目的四个分区。'}
 只输出一个 JSON 对象，格式：
 {"status":"完整的当前概况，已有项目无需更新时为 null","log":["新增里程碑"],"decisions":["每项一个新决定"],"openQuestions":["每项一个新待办"],"mutations":[{"action":"supersede","id":"已有条目ID","revision":1,"reason":"依据与原因","content":"新决定正文"}]}

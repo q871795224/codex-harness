@@ -26,11 +26,11 @@ describe('management uses effective application state', () => {
     const {context,call}=fixture()
     context.harness.threads=[{id:'source',cwd:'/source'}] as never
     context.harness.threadRoots={source:'/source'}
-    context.plugins.resolvedConversationBanners=vi.fn(() => [{pluginId:'builtin.project-doc',contribution:{id:'project-onboarding'}}]) as never
+    context.plugins.resolvedConversationBanners=vi.fn(() => [{pluginId:'builtin.project-doc',instanceId:'host',contribution:{id:'project-onboarding'}}]) as never
     const request=vi.fn(async () => ({requestId:'pending',phase:'confirm'}))
     context.onboarding={request} as never
     expect(await call('projects.requestOnboarding',{threadId:'source',mode:'create',name:'新项目'})).toEqual({requestId:'pending',phase:'confirm'})
-    expect(request).toHaveBeenCalledWith('source',{mode:'create',name:'新项目',projectId:undefined,requestedBy:'agent'})
+    expect(request).toHaveBeenCalledWith('source',{mode:'create',name:'新项目',projectId:undefined,requestedBy:'agent',instanceId:'host'})
     context.plugins.resolvedConversationBanners=vi.fn(() => [])
     await expect(call('projects.requestOnboarding',{threadId:'source',mode:'create'})).rejects.toThrow('插件未启用')
   })

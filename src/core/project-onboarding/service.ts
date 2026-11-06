@@ -1,7 +1,9 @@
 import type { AgentRunService } from '../agent-runs/types'
 import type { ProjectDocService } from '../project-docs/types'
-import type { ProjectOnboardingService, OnboardingPorts, OnboardingSettings, OnboardingState } from './types'
+import type { ProjectOnboardingService, OnboardingPorts, OnboardingSettings, OnboardingState, StoredOnboardingRequest } from './types'
 import { chunkHistory, historySummaryPrompt, onboardingPrompt, parsePlan } from './prompt'
+
+export const AUTO_CONFIRM_DELAY_MS = 5 * 60_000
 
 function waitForRun(runs: AgentRunService, id: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -20,8 +22,52 @@ function waitForRun(runs: AgentRunService, id: string): Promise<string> {
 
 export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDocService, runs: AgentRunService): ProjectOnboardingService {
   let cards: ReadonlyMap<string, OnboardingState> = new Map()
-  const listeners = new Set<() => void>(), finishing = new Set<string>(), requesting = new Map<string, Promise<{requestId: string; phase: string}>>()
-  const publish = (card: OnboardingState) => { cards = new Map(cards).set(card.source.threadId, card); listeners.forEach(fn => fn()) }
+  const listeners = new Set<() => void>(), finishing = new Set<string>()
+  const requesting = new Map<string, ReturnType<ProjectOnboardingService['request']>>()
+  const hosts = new Map<string, OnboardingSettings>(), timers = new Map<string, ReturnType<typeof setTimeout>>()
+  const writes = new Map<string, Promise<void>>(), serialized = new Map<string, string>()
+  const persist = (card: OnboardingState) => {
+    const stored: StoredOnboardingRequest = {id:card.id,threadId:card.source.threadId,mode:card.mode,name:card.name,projectId:card.projectId,
+      requestedBy:card.requestedBy,phase:card.phase === 'confirm' ? 'confirm' : card.phase === 'error' ? 'error' : 'interrupted',
+      autoConfirmAt:card.autoConfirmAt,instanceId:card.instanceId}
+    const remove = Boolean(card.receipt) || card.phase === 'done'
+    const value = remove ? '' : JSON.stringify(stored)
+    if (serialized.get(card.id) === value) return
+    serialized.set(card.id,value)
+    const task = (writes.get(card.id) ?? Promise.resolve()).catch(() => {}).then(async () => {
+      if (remove) await ports.removeRequest?.(card.id)
+      else await ports.saveRequest?.(stored)
+    })
+    writes.set(card.id,task)
+    void task.catch(() => { if (serialized.get(card.id) === value) serialized.delete(card.id) })
+  }
+  const schedule = (card: OnboardingState) => {
+    clearTimeout(timers.get(card.source.threadId)); timers.delete(card.source.threadId)
+    if (card.phase !== 'confirm' || card.requestedBy !== 'agent' || !card.autoConfirmAt || !card.instanceId || !hosts.has(card.instanceId)) return
+    timers.set(card.source.threadId,setTimeout(() => {
+      timers.delete(card.source.threadId)
+      void automatic(card.source.threadId).catch(error => {
+        const current=cards.get(card.source.threadId)
+        if (current?.phase === 'confirm') publish({...current,phase:'error',autoConfirmAt:undefined,error:message(error)})
+      })
+    },Math.max(0,card.autoConfirmAt-Date.now())))
+  }
+  const publish = (card: OnboardingState) => {
+    cards = new Map(cards).set(card.source.threadId, card)
+    persist(card); schedule(card); listeners.forEach(fn => fn())
+  }
+  async function automatic(threadId: string) {
+    const pending=cards.get(threadId)
+    if (!pending || pending.phase !== 'confirm' || !pending.autoConfirmAt || pending.autoConfirmAt > Date.now()) return
+    if (ports.requests) {
+      const stored=(await ports.requests()).find(r=>r.id===pending.id)
+      if (!stored || stored.phase !== 'confirm' || stored.autoConfirmAt !== pending.autoConfirmAt) return
+    }
+    const current=cards.get(threadId)
+    const settings=current?.instanceId ? hosts.get(current.instanceId) : undefined
+    if (!current || current.phase !== 'confirm' || current.autoConfirmAt !== pending.autoConfirmAt || !settings) return
+    await confirm(threadId,{mode:current.mode,name:current.name,projectId:current.projectId},settings)
+  }
   const finish = async (card: OnboardingState) => {
     const id = card.source.threadId
     if (ports.busy(id) || finishing.has(id)) return
@@ -41,23 +87,29 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
     const pending = requesting.get(threadId); if (pending) return pending
     const task = (async () => {
       const existing = cards.get(threadId)
-      if (existing) return { requestId: existing.id, phase: existing.phase }
+      if (existing) return { requestId: existing.id, phase: existing.phase, autoConfirmAt: existing.autoConfirmAt }
+      if (options.requestedBy === 'agent') {
+        if (!options.instanceId || !hosts.has(options.instanceId)) throw new Error('项目入口尚未就绪')
+        if ((options.mode ?? 'create') === 'create' && !options.name?.trim()) throw new Error('Agent 需要提供项目名称')
+        if (options.mode === 'join' && !options.projectId) throw new Error('Agent 需要选择已有项目')
+      }
       if (await ports.binding(threadId)) throw new Error('当前会话已经绑定项目')
       const source = await ports.source(threadId)
       if (options.mode === 'join' && options.projectId) await docs.get(options.projectId)
       const card: OnboardingState = { id: crypto.randomUUID(), source, phase: 'confirm', mode: options.mode ?? 'create',
-        name: options.name ?? source.title, projectId: options.projectId ?? '', requestedBy: options.requestedBy ?? 'user' }
+        name: options.name ?? '', projectId: options.projectId ?? '', requestedBy: options.requestedBy ?? 'user',
+        instanceId:options.instanceId, autoConfirmAt:options.requestedBy === 'agent' ? Date.now()+AUTO_CONFIRM_DELAY_MS : undefined }
       publish(card)
-      return { requestId: card.id, phase: card.phase }
+      await writes.get(card.id)
+      return { requestId: card.id, phase: card.phase, autoConfirmAt:card.autoConfirmAt }
     })().finally(() => requesting.delete(threadId))
     requesting.set(threadId, task); return task
   }
   const confirm: ProjectOnboardingService['confirm'] = async (threadId, selection, settings) => {
     const previous = cards.get(threadId)
     if (!previous || !['confirm', 'error'].includes(previous.phase)) return
-    if (ports.busy(threadId)) { publish({ ...previous, error: '请等当前轮次和后台任务结束后再开始' }); return }
     if (previous.receipt) { const ready = { ...previous, phase: 'binding' as const, error: undefined }; publish(ready); await finish(ready); return }
-    let card: OnboardingState = { ...previous, ...selection, name: selection.name.trim(), phase: 'reading', error: undefined }
+    let card: OnboardingState = { ...previous, ...selection, name: selection.name.trim(), phase: 'reading', error: undefined, autoConfirmAt:undefined, instanceId:settings.instanceId }
     // A retry may regenerate against a newer target, but retains its request ID.
     publish(card)
     const update = (patch: Partial<OnboardingState>) => { card = { ...card, ...patch }; publish(card) }
@@ -71,14 +123,16 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
       }
       if (selection.mode === 'create' && !card.name) throw new Error('请填写项目名称')
       if (selection.mode === 'join' && !card.projectId) throw new Error('请选择目标项目')
+      if (selection.mode === 'join' && !card.name) update({name:(await docs.get(card.projectId)).name})
       if (await ports.binding(threadId)) throw new Error('当前会话已经绑定项目')
       const source = await ports.source(threadId)
       const history = await ports.history(source)
-      if (ports.busy(threadId)) throw new Error('会话已继续执行，请结束后重新确认')
       if (!history.length) throw new Error('当前会话还没有可总结的对话')
+      if (ports.busy(threadId)) history.push('备注：来源会话仍在执行，当前轮次的材料只是已发生事项的快照，不代表任务已完成。')
       const target = selection.mode === 'join' ? await ports.project(card.projectId) : null
       if (target && (!target.consistent || target.content.length > 180_000)) throw new Error('目标文档过长或存在协议外修改，请先检查或人工精简后重试')
       const run = async (prompt: string, title: string) => {
+        await writes.get(card.id)
         const task = await runs.start({ instanceId: settings.instanceId, provider: 'codex', title, mode: 'detached', workspaceAccess: 'read-only',
           workspaceRoot: source.cwd, parentThreadId: threadId, prompt,
           settings: { model: settings.model, effort: settings.effort, serviceTier: null, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'read-only' } })
@@ -98,7 +152,7 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
         if (chunks.length > 1 && chunks.join('').length >= previousLength) throw new Error('分段历史未能缩短，请重试；未丢弃历史内容')
       }
       update({ detail: '正在生成项目记忆' })
-      const plan = parsePlan(await run(onboardingPrompt(chunks[0], target), selection.mode === 'create' ? '从会话建立项目' : '补记会话到项目'))
+      const plan = parsePlan(await run(onboardingPrompt(chunks[0], target, card.name), selection.mode === 'create' ? '从会话建立项目' : '补记会话到项目'))
       if (!target && !plan.status) throw new Error('新项目整理结果缺少概况')
       const projectId = target?.projectId ?? `project-${card.id}`
       update({ phase: 'saving', projectId, detail: '正在保存项目文档' })
@@ -111,10 +165,25 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
     snapshot: () => cards,
     subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn) } }, request, confirm,
     listProjects: () => docs.list(),
+    registerHost: settings => {
+      hosts.set(settings.instanceId,settings)
+      for (const card of cards.values()) if (card.instanceId === settings.instanceId) schedule(card)
+      return () => {
+        if (hosts.get(settings.instanceId) !== settings) return
+        hosts.delete(settings.instanceId)
+        for (const card of cards.values()) if (card.instanceId === settings.instanceId) {clearTimeout(timers.get(card.source.threadId));timers.delete(card.source.threadId)}
+      }
+    },
+    updateDraft: (id,selection) => {
+      const card=cards.get(id)
+      if (!card || !['confirm','error'].includes(card.phase) || card.receipt) return
+      publish({...card,...selection,autoConfirmAt:undefined,error:undefined})
+    },
     dismiss: id => {
       const card = cards.get(id)
       if (!card || !['confirm', 'done', 'error'].includes(card.phase) || (card.receipt && card.phase !== 'done')) return
-      cards = new Map(cards); (cards as Map<string, OnboardingState>).delete(id); listeners.forEach(fn => fn())
+      clearTimeout(timers.get(id)); timers.delete(id)
+      cards = new Map(cards); (cards as Map<string, OnboardingState>).delete(id); persist({...card,phase:'done'}); listeners.forEach(fn => fn())
     },
     resumeBindings: async () => { await Promise.all([...cards.values()].filter(c => c.phase === 'binding').map(finish)) },
     restoreSaved: async () => {
@@ -126,6 +195,18 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
             phase: 'binding', requestedBy: 'user', receipt: {projectId: saved.projectId, seq: saved.seq}, detail: '文档已保存，继续完成会话绑定' }
           publish(card); await finish(card)
         } catch { /* Keep the native receipt; retry when the source becomes available. */ }
+      }
+      for (const pending of await ports.requests?.() ?? []) {
+        if (cards.has(pending.threadId)) continue
+        try {
+          if (await ports.binding(pending.threadId)) { await ports.removeRequest?.(pending.id); continue }
+          const source=await ports.source(pending.threadId)
+          const interrupted=pending.phase !== 'confirm'
+          const card: OnboardingState = {id:pending.id,source,mode:pending.mode,name:pending.name,projectId:pending.projectId,
+            phase:interrupted ? 'error' : 'confirm',requestedBy:pending.requestedBy,instanceId:pending.instanceId,
+            autoConfirmAt:interrupted ? undefined : pending.autoConfirmAt,error:interrupted ? '整理已中断，请重试' : undefined}
+          publish(card)
+        } catch { /* Source may not be loaded yet; retain its pending metadata. */ }
       }
     },
   }

@@ -13,7 +13,7 @@ import { createProjectOnboarding } from './core/project-onboarding/service'
 import { onboardingHistory } from './core/project-onboarding/history'
 import { prepareProjectInput } from './core/project-onboarding/context'
 import { appServer } from './core/runtime/appServerClient'
-import type { ProjectOnboardingService } from './core/project-onboarding/types'
+import { ONBOARDING_REQUEST_STATE_PREFIX, type ProjectOnboardingService } from './core/project-onboarding/types'
 import { notifications } from './core/notifications/service'
 import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter } from './features/notifications/Notifications'
@@ -89,6 +89,9 @@ export default function App() {
   const onboardingHarness = useRef(harness)
   onboardingHarness.current = harness
   const onboarding = useMemo(() => createProjectOnboarding({
+    requests: runtime.projectOnboardingRequests,
+    saveRequest: request => runtime.setAppState(`${ONBOARDING_REQUEST_STATE_PREFIX}${request.id}`, JSON.stringify(request)),
+    removeRequest: id => runtime.setAppState(`${ONBOARDING_REQUEST_STATE_PREFIX}${id}`, ''),
     saved: runtime.projectDocPendingOnboardings,
     source: async threadId => {
       let thread = onboardingHarness.current.threads.find(t => t.id === threadId)

@@ -181,7 +181,7 @@ def cmd_onboarding(args: argparse.Namespace) -> int:
     if not isinstance(result, dict) or result.get("requestId") != request_id or "result" not in result:
         raise ProjectDocError(f"申请结果无法关联，请检查来源会话确认卡（requestId={request_id}）")
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    if args.command != "projects": print("已申请显示确认卡。等待用户确认，不要自行创建、绑定或写文档。")
+    if args.command != "projects": print("已显示预填确认卡；5 分钟未操作将按默认选项执行。继续当前任务，保存和绑定由 Harness 完成。")
     return 0
 
 
@@ -191,7 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
     projects = sub.add_parser("projects", help="列出可加入的项目")
     projects.set_defaults(func=cmd_onboarding)
     for action in ("request-create", "request-join"):
-        command = sub.add_parser(action, help="申请新建/加入项目，仅显示确认卡，不直接写入")
+        command = sub.add_parser(action, help="申请新建/加入项目，预填确认卡，未操作时超时自动执行")
         command.add_argument("--thread-id", default=os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_HARNESS_THREAD_ID"))
         if action == "request-create": command.add_argument("--name", required=True)
         else: command.add_argument("--project-id", required=True)

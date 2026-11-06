@@ -52,3 +52,8 @@ it('uses native entry mutations and a deterministic context threshold', async ()
   vi.mocked(invoke).mockRejectedValueOnce(new Error('条目修订冲突'))
   await expect(runtime.projectDocMutateEntry('demo', mutation)).rejects.toThrow('冲突')
 })
+
+it('reads persisted onboarding choices through the registered native boundary', async () => {
+  await runtime.projectOnboardingRequests()
+  expect(invoke).toHaveBeenLastCalledWith('project_onboarding_requests')
+})
