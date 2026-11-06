@@ -110,6 +110,7 @@ export default function App() {
     commit: projectDocs.commitOnboarding,
     finish: projectDocs.finishOnboarding,
   }, projectDocs, agentRuns), [agentRuns])
+  useEffect(() => harness.onMessageAccepted(onboarding.messageAccepted), [harness.onMessageAccepted, onboarding])
   useEffect(() => { void onboarding.resumeBindings() }, [onboarding, harness.workingThreadIds])
   useEffect(() => { if (harness.phase === 'ready') void onboarding.restoreSaved().catch(() => {}) }, [onboarding, harness.phase])
   const teams = useTeamsService(agentRuns)

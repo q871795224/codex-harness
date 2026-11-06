@@ -68,4 +68,4 @@ rg --no-filename '"area":"codex-usage"' ~/.codex-harness/logs/harness-*.jsonl | 
 
 ## 会话中途建立项目记忆
 
-`project-onboarding` 测试覆盖完整历史分页、长记录分段、Agent 超时默认执行、编辑停止计时、人工发起不自动执行、待选项恢复、版本冲突、保存回执恢复与来源空闲时绑定。Rust 在临时 SQLite/目录验证整批回滚、旧段落纳管后替代、待办关闭、请求去重和绑定完成标记。CLI 使用本地 HTTP fixture；真实 Provider 的原生发现复验仍只请求本地假模型。入口、截图与本次复验结果见 [从会话建立项目记忆](../docs/project-doc-onboarding.md)。
+`project-onboarding` 测试覆盖完整历史分页、长记录分段、Agent 超时默认执行、编辑停止计时、人工发起不自动执行、待选项恢复、逐秒版本检查与取消、迟到结果丢弃、成功卡按用户下一条消息发送成功收起、fork 继承项目绑定、版本冲突、保存回执恢复与来源空闲时绑定。Rust 在临时 SQLite/目录验证整批回滚、旧段落纳管后替代、待办关闭、请求去重和绑定完成标记。CLI 使用本地 HTTP fixture；真实 Provider 的原生发现复验仍只请求本地假模型。入口、截图与本次复验结果见 [从会话建立项目记忆](../docs/project-doc-onboarding.md)。

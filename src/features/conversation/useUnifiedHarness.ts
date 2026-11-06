@@ -180,6 +180,12 @@ export function useUnifiedHarness() {
 
   const selectedProvider: ConversationProvider = selectedThreadId?.startsWith('claude:') ? 'claude' : 'codex'
   const capabilities = useMemo(() => capabilitiesForProvider(selectedProvider), [selectedProvider])
+  const onMessageAccepted = useCallback((listener: (threadId: string) => void) => {
+    const disposeCodex = codex.onMessageAccepted(listener)
+    const disposeClaude = claude.onMessageAccepted(listener)
+    return () => { disposeCodex(); disposeClaude() }
+  }, [claude.onMessageAccepted, codex.onMessageAccepted])
+
   const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
     const disposeCodex = codex.onTurnCompleted(listener)
     const disposeClaude = claude.onTurnCompleted(listener)
@@ -423,6 +429,7 @@ export function useUnifiedHarness() {
     activeTurnId,
     selectedProvider,
     onTurnCompleted,
+    onMessageAccepted,
     onMessageSubmitted,
     newThreadProvider,
     toggleNewThreadProvider,

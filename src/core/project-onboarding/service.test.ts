@@ -14,8 +14,8 @@ function fixture() {
     history: vi.fn(async () => ['用户：早期背景', 'Agent：最新结论']), project: vi.fn(async () => ({projectId:'p',currentSeq:4,content:'已有项目背景',entries:[],consistent:true,contentHash:'h'})),
     binding: vi.fn(async () => null), commit: vi.fn(async () => ({projectId:'p', seq:5})), finish: vi.fn(async () => 'p') } satisfies OnboardingPorts
   const runs = { start: vi.fn(async () => ({runId:'run'})), snapshot: () => [{runId:'run',status:'completed'}],
-    subscribe: vi.fn(() => () => {}), loadResult: vi.fn(async () => JSON.stringify(plan)), cancel: vi.fn() } as unknown as AgentRunService
-  const docs = {list:vi.fn(async () => []),get:vi.fn(async () => ({}))} as unknown as ProjectDocService
+    subscribe: vi.fn(() => () => {}), loadResult: vi.fn(async () => JSON.stringify(plan)), cancel: vi.fn().mockResolvedValue(undefined) } as unknown as AgentRunService
+  const docs = {list:vi.fn(async () => []),get:vi.fn(async () => ({projectId:"p",name:"已有项目",currentSeq:4}))} as unknown as ProjectDocService
   const service = createProjectOnboarding(ports, docs, runs)
   const settings = { instanceId:'instance', model:'fixture-model', effort:'low' }
   disposers.push(service.registerHost(settings))
@@ -213,4 +213,148 @@ describe('pending choices survive navigation and restart', () => {
     expect(f.runs.start).not.toHaveBeenCalled()
     expect(JSON.stringify([...db.saved.values()])).not.toContain('早期背景')
   })
+})
+
+it('cancels stale join generation on the next one-second check and ignores late output', async () => {
+  vi.useFakeTimers()
+  const f=fixture()
+  const unsubscribe=vi.fn()
+  vi.mocked(f.runs.subscribe).mockReturnValue(unsubscribe)
+  vi.spyOn(f.runs,'snapshot').mockReturnValue([])
+  await f.service.request('t',{mode:'join',projectId:'p'})
+  const pending=f.service.confirm('t',{mode:'join',name:'已有项目',projectId:'p'},f.settings)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(f.runs.start).toHaveBeenCalledTimes(1)
+  vi.mocked(f.docs.get).mockResolvedValue({projectId:'p',name:'已有项目',currentSeq:5,createdAt:1,updatedAt:1})
+  await vi.advanceTimersByTimeAsync(999)
+  expect(f.runs.cancel).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1)
+  await pending
+  expect(f.runs.cancel).toHaveBeenCalledWith('run')
+  expect(unsubscribe).toHaveBeenCalled()
+  expect(f.service.snapshot().get('t')).toMatchObject({phase:'error',error:expect.stringContaining('v4 → v5')})
+  const calls=vi.mocked(f.docs.get).mock.calls.length
+  vi.spyOn(f.runs,'snapshot').mockReturnValue([{runId:'run',status:'completed'}] as never)
+  vi.mocked(f.runs.subscribe).mock.calls[0][0]()
+  await vi.advanceTimersByTimeAsync(10_000)
+  expect(f.ports.commit).not.toHaveBeenCalled()
+  expect(f.ports.finish).not.toHaveBeenCalled()
+  expect(f.docs.get).toHaveBeenCalledTimes(calls)
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('keeps success until the user sends another message in the same conversation', async () => {
+  vi.useFakeTimers()
+  const f=fixture()
+  await f.service.request('t')
+  f.service.messageAccepted('t')
+  expect(f.service.snapshot().has('t')).toBe(true)
+  await f.service.confirm('t',{mode:'create',name:'项目',projectId:''},f.settings)
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(f.service.snapshot().get('t')?.phase).toBe('done')
+  f.service.messageAccepted('other')
+  expect(f.service.snapshot().has('t')).toBe(true)
+  f.service.messageAccepted('t')
+  expect(f.service.snapshot().has('t')).toBe(false)
+})
+
+it('cancels a late-started job after already notifying about a newer version', async () => {
+  vi.useFakeTimers()
+  const f=fixture()
+  let started!: (task: {runId:string}) => void
+  vi.mocked(f.runs.start).mockImplementationOnce(() => new Promise(resolve => {started=resolve as typeof started}))
+  await f.service.request('t')
+  const pending=f.service.confirm('t',{mode:'join',name:'项目',projectId:'p'},f.settings)
+  await vi.advanceTimersByTimeAsync(0)
+  vi.mocked(f.docs.get).mockResolvedValue({projectId:'p',name:'项目',currentSeq:6,createdAt:1,updatedAt:1})
+  await vi.advanceTimersByTimeAsync(1000)
+  await pending
+  expect(f.service.snapshot().get('t')?.phase).toBe('error')
+  started({runId:'late'})
+  await vi.advanceTimersByTimeAsync(0)
+  expect(f.runs.cancel).toHaveBeenCalledWith('late')
+  expect(f.ports.commit).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('checks again before saving and retries against the updated snapshot', async () => {
+  vi.useFakeTimers()
+  const f=fixture(); await f.service.request('t')
+  vi.mocked(f.runs.loadResult).mockImplementationOnce(async () => {
+    vi.mocked(f.docs.get).mockResolvedValue({projectId:'p',name:'项目',currentSeq:5,createdAt:1,updatedAt:1})
+    return JSON.stringify(f.plan)
+  })
+  await f.service.confirm('t',{mode:'join',name:'项目',projectId:'p'},f.settings)
+  expect(f.service.snapshot().get('t')?.phase).toBe('error')
+  expect(f.ports.commit).not.toHaveBeenCalled()
+  f.ports.project.mockResolvedValueOnce({projectId:'p',currentSeq:5,content:'新版背景',entries:[],consistent:true,contentHash:'new'})
+  await f.service.confirm('t',{mode:'join',name:'项目',projectId:'p'},f.settings)
+  expect(f.ports.commit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({baseSeq:5}))
+  expect(f.service.snapshot().get('t')?.phase).toBe('done')
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('stops checking after a model failure and preserves its error card on user messages', async () => {
+  vi.useFakeTimers()
+  const f=fixture(); await f.service.request('t')
+  vi.mocked(f.runs.start).mockRejectedValueOnce(new Error('模型不可用'))
+  await f.service.confirm('t',{mode:'join',name:'项目',projectId:'p'},f.settings)
+  f.service.messageAccepted('t')
+  expect(f.service.snapshot().get('t')).toMatchObject({phase:'error',error:'模型不可用'})
+  expect(f.ports.commit).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('cancels without saving when the version check fails', async () => {
+  vi.useFakeTimers()
+  const f=fixture()
+  vi.spyOn(f.runs,'snapshot').mockReturnValue([])
+  await f.service.request('t')
+  const pending=f.service.confirm('t',{mode:'join',name:'项目',projectId:'p'},f.settings)
+  await vi.advanceTimersByTimeAsync(0)
+  vi.mocked(f.docs.get).mockRejectedValueOnce(new Error('项目已删除'))
+  await vi.advanceTimersByTimeAsync(1000); await pending
+  expect(f.runs.cancel).toHaveBeenCalledWith('run')
+  expect(f.service.snapshot().get('t')?.error).toContain('无法检查项目版本')
+  expect(f.ports.commit).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('keeps checking unchanged versions without overlapping slow metadata requests', async () => {
+  vi.useFakeTimers()
+  const f=fixture()
+  vi.spyOn(f.runs,'snapshot').mockReturnValue([])
+  await f.service.request('t')
+  const pending=f.service.confirm('t',{mode:'join',name:'项目',projectId:'p'},f.settings)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(f.runs.cancel).not.toHaveBeenCalled()
+  let release!: (value: Awaited<ReturnType<ProjectDocService['get']>>) => void
+  vi.mocked(f.docs.get).mockImplementationOnce(() => new Promise(resolve => {release=resolve}))
+  await vi.advanceTimersByTimeAsync(1000)
+  const calls=vi.mocked(f.docs.get).mock.calls.length
+  await vi.advanceTimersByTimeAsync(4000)
+  expect(f.docs.get).toHaveBeenCalledTimes(calls)
+  expect(f.runs.cancel).not.toHaveBeenCalled()
+  release({projectId:'p',name:'项目',currentSeq:5,createdAt:1,updatedAt:1})
+  await vi.advanceTimersByTimeAsync(0); await pending
+  expect(f.runs.cancel).toHaveBeenCalledTimes(1)
+  expect(f.ports.project).toHaveBeenCalledTimes(1)
+  expect(f.ports.commit).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('does not launch the next history chunk after a version change', async () => {
+  vi.useFakeTimers()
+  const f=fixture()
+  f.ports.history.mockResolvedValueOnce(['很长的历史'.repeat(20_000)])
+  vi.spyOn(f.runs,'snapshot').mockReturnValue([])
+  await f.service.request('t')
+  const pending=f.service.confirm('t',{mode:'join',name:'项目',projectId:'p'},f.settings)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(f.service.snapshot().get('t')!.chunks).toBeGreaterThan(1)
+  vi.mocked(f.docs.get).mockResolvedValue({projectId:'p',name:'项目',currentSeq:5,createdAt:1,updatedAt:1})
+  await vi.advanceTimersByTimeAsync(1000); await pending
+  expect(f.runs.start).toHaveBeenCalledTimes(1)
+  expect(f.ports.commit).not.toHaveBeenCalled()
+  expect(f.service.snapshot().get('t')?.phase).toBe('error')
 })

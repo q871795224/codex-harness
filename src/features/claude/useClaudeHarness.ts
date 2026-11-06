@@ -38,6 +38,7 @@ export function useClaudeHarness() {
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
   const queuesRef = useRef<Record<string, QueuedSubmission[]>>({})
   const settingsRef = useRef<Record<string, ClaudeSessionSettings>>({})
+  const messageAcceptedListenersRef = useRef(new Set<(threadId: string) => void>())
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
   const manualStopRef = useRef(new Set<string>())
   const interjectRef = useRef(new Set<string>())
@@ -68,6 +69,11 @@ export function useClaudeHarness() {
       threadId: context?.threadId,
       workspaceRoot: context?.workspaceRoot,
     })
+  }, [])
+
+  const onMessageAccepted = useCallback((listener: (threadId: string) => void) => {
+    messageAcceptedListenersRef.current.add(listener)
+    return () => { messageAcceptedListenersRef.current.delete(listener) }
   }, [])
 
   const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
@@ -293,6 +299,7 @@ export function useClaudeHarness() {
     if (input.length === 0) return
     if (!activeTurnIdsRef.current[sessionId]) {
       await beginTurn(sessionId, input)
+      for (const listener of messageAcceptedListenersRef.current) listener(sessionId)
       return
     }
     const queued: QueuedSubmission = {
@@ -303,6 +310,7 @@ export function useClaudeHarness() {
     const nextQueue = [...(queuesRef.current[sessionId] ?? []), queued]
     queuesRef.current = { ...queuesRef.current, [sessionId]: nextQueue }
     setQueues(queuesRef.current)
+    for (const listener of messageAcceptedListenersRef.current) listener(sessionId)
     if (mode === 'interject' && !interjectRef.current.has(sessionId)) {
       interjectRef.current.add(sessionId)
       try {
@@ -796,6 +804,7 @@ export function useClaudeHarness() {
     updateSessionSettings,
     refreshContext,
     onTurnCompleted,
+    onMessageAccepted,
     selectSession,
     createSession,
     sendMessage,
