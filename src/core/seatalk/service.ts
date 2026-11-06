@@ -1,4 +1,4 @@
-import { itemText, threadTitle, queueText, type ApprovalRequest, type Thread, type ThreadDetail, type QueuedSubmission } from '../domain/codex'
+import { itemText, threadTitle, type ApprovalRequest, type Thread, type ThreadDetail, type QueuedSubmission } from '../domain/codex'
 import { parseUserInputQuestions } from '../domain/userInput'
 import { asyncUserInputAnswered, asyncUserInputRequest } from '../../features/conversation/asyncUserInput'
 
@@ -21,7 +21,7 @@ export type RemoteCall = <T>(action: 'status' | 'bindings' | 'messages' | 'send'
 interface Binding { threadId: string; rootId: string; createdAt: number }
 interface Inbound { id: string; rootId: string; text: string; cursor: number }
 interface Page { messages: Inbound[]; cursor: number; hasMore: boolean }
-interface ChannelStatus { accountId: string; ownerId: string; reachable: boolean; connected: boolean; state: string }
+interface ChannelStatus { accountId: string; ownerId: string; reachable: boolean; connected: boolean; state: string; interactiveCards?: boolean }
 const bytes = new TextEncoder()
 export async function digest(text: string): Promise<string> {
   const hash = await crypto.subtle.digest('SHA-256', bytes.encode(text))
@@ -45,11 +45,13 @@ export class SeaTalkSync {
   private running = false
   private disposed = false
   private cursor = 0
+  private interactiveCards = false
   private nextThreadIndex = 0
   private sendBudget = 24
   private deadline = Infinity
   private readonly sent = new Set<string>()
   private readonly warned = new Set<string>()
+  private readonly selections = new Map<string, Record<string, string>>()
   private readonly answered = new Set<string>()
   private readonly completedTurns = new Map<string, number>()
   noteTurnCompleted(threadId: string, turnId: string) { this.completedTurns.set(`${threadId}:${turnId}`, Date.now()) }
@@ -68,6 +70,7 @@ export class SeaTalkSync {
         return
       }
       this.warned.delete('offline')
+      this.interactiveCards = status.interactiveCards === true
       this.deadline = Infinity
       this.sendBudget = 1000
       const { bindings } = await this.call<{ bindings: Binding[] }>('bindings')
@@ -138,12 +141,17 @@ export class SeaTalkSync {
     finally { this.running = false }
   }
 
-  private async send(threadId: string, eventId: string, text: string) {
+  private async send(threadId: string, eventId: string, text: string, card?: { title: string; buttons: { text: string; command: string }[] }) {
+    if (card && !this.interactiveCards) {
+      this.warning('cards-unavailable', 'Bridge 尚未支持会话交互卡片，请安装配套补丁；当前可用文字指令处理审批和提问。')
+      text = `${card.title}\n${text}\n\n${card.buttons.map(button => `${button.text}：${button.command}`).join('\n')}`
+      card = undefined
+    }
     // Split on Unicode codepoints; every segment is below the native byte limit.
     const segments: string[] = []; let segment = ''; let length = 0
     for (const char of text) {
       const size = bytes.encode(char).length
-      if (length + size > 16000) { segments.push(segment); segment = ''; length = 0 }
+      if (length + size > (card ? 3500 : 16000)) { segments.push(segment); segment = ''; length = 0 }
       segment += char; length += size
     }
     if (segment) segments.push(segment)
@@ -155,7 +163,7 @@ export class SeaTalkSync {
       if (Date.now() > this.deadline || this.sendBudget <= 0) throw new SyncYield()
       --this.sendBudget
       this.sent.add(key)
-      await this.call('send', { threadId, title: thread ? threadTitle(thread) : 'Harness 会话', cwd: thread?.cwd ?? '/', eventId: `${eventId}:${index}`, text: part })
+      await this.call('send', { threadId, title: thread ? threadTitle(thread) : 'Harness 会话', cwd: thread?.cwd ?? '/', eventId: `${eventId}:${index}`, text: part, ...(card ? { card } : { format: 'markdown' }) })
     }
   }
 
@@ -163,27 +171,24 @@ export class SeaTalkSync {
     const detail = snapshot.details[thread.id]
     const since = binding.createdAt
     const activeTurnId = snapshot.activeTurnIds[thread.id]
-    if (activeTurnId) await this.send(thread.id, `started:${activeTurnId}`, '开始执行。')
-    for (const queued of snapshot.queues?.[thread.id] ?? []) {
-      await this.send(thread.id, `queued:${queued.id}:${await digest(queueText(queued))}`, `已排队：\n${queueText(queued)}`)
-    }
     for (const entry of detail?.items ?? []) {
       const turn = detail?.turns.find(turn => turn.id === entry.turnId)
-      const completedAt = entry.timing?.completedAt ?? (millis(turn?.completedAt) || this.completedTurns.get(`${thread.id}:${entry.turnId}`))
+      const completedAt = (entry.item.type === 'userMessage' ? entry.timing?.startedAt : undefined) ?? entry.timing?.completedAt ?? (millis(turn?.completedAt) || this.completedTurns.get(`${thread.id}:${entry.turnId}`))
       if (!completedAt || (completedAt < since && entry.turnId !== activeTurnId)) continue
       const item = entry.item
-      if (!item.id || !['userMessage', 'agentMessage', 'commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type)) continue
-      // Async questions have a separate, actionable notification below.
-      if (item.delivery === 'async') continue
-      const text = item.type === 'userMessage' ? `你：\n${itemText(item)}`
-        : item.type === 'agentMessage' ? itemText(item)
-        : item.type === 'commandExecution' ? `命令执行${item.exitCode === 0 ? '完成' : '结束'}：${item.command ?? ''}${item.exitCode != null ? `\n退出码：${item.exitCode}` : ''}`
-        : item.type === 'fileChange' ? `文件更新：\n${(item.changes ?? []).map(change => change.path).filter(Boolean).join('\n')}`
-        : `工具调用完成：${item.tool ?? ''}`
+      if (!item.id || item.delivery === 'async') continue
+      const isUser = item.type === 'userMessage'
+      const isFinal = item.type === 'agentMessage' && (item.phase === 'final_answer' || (
+        !item.phase && turn?.status === 'completed' &&
+        !detail?.items.some(other => other.turnId === entry.turnId && other.item.phase === 'final_answer' && other.item.delivery !== 'async') &&
+        detail?.items.filter(other => other.turnId === entry.turnId && other.item.type === 'agentMessage' && !other.item.phase && other.item.delivery !== 'async').at(-1) === entry
+      ))
+      if (!isUser && !isFinal) continue
+      const text = isUser ? `你：\n${itemText(item)}` : itemText(item)
       if (text.trim()) await this.send(thread.id, `item:${entry.turnId}:${item.id}`, text)
     }
     for (const turn of detail?.turns ?? []) {
-      if (turn.status === 'inProgress' || (millis(turn.completedAt) || this.completedTurns.get(`${thread.id}:${turn.id}`) || 0) < since) continue
+      if (!['failed', 'interrupted'].includes(turn.status) || (millis(turn.completedAt) || this.completedTurns.get(`${thread.id}:${turn.id}`) || 0) < since) continue
       await this.send(thread.id, `turn:${turn.id}:${turn.status}`, turn.status === 'failed' ? '本轮执行失败，请在 Harness 查看错误。' : turn.status === 'interrupted' ? '本轮已停止。' : '本轮执行完成。')
     }
     for (const request of pendingRequests(snapshot, thread.id)) {
@@ -193,10 +198,17 @@ export class SeaTalkSync {
       if (questions.some(question => question.isSecret)) {
         await this.send(thread.id, `request:${token}`, '有一个涉及敏感信息的问题，请回到 Harness 回答。')
       } else if (questions.length) {
-        const prompt = questions.map(question => `${question.id}：${question.question}${question.options.length ? `\n选项：${question.options.map(option => option.label).join(' / ')}` : ''}`).join('\n\n')
-        await this.send(thread.id, `request:${token}`, `${prompt}\n\n回复 /回答 ${token} ${questions.length === 1 ? '你的答案' : 'JSON（例如 {"问题ID":"答案"}，须回答所有问题）'}`)
+        for (const [index, question] of questions.entries()) {
+          const prompt = `${question.question}\n\n${question.options.map(option => `${option.label}${option.description ? `：${option.description}` : ''}`).join('\n')}\n\n自定义回答：/回答 ${token} ${questions.length === 1 ? '你的答案' : JSON.stringify(Object.fromEntries(questions.map(q => [q.id, '答案'])))}`
+          await this.send(thread.id, `request:${token}:q${index}`, prompt, {
+            title: question.header,
+            buttons: question.options.slice(0, 5).map((option, optionIndex) => ({ text: option.label, command: `/选项 ${token} ${index} ${optionIndex}` })),
+          })
+        }
       } else if (isExecutableApproval(request)) {
-        await this.send(thread.id, `request:${token}`, `需要你审批：${request.method}\n${approvalDescription(request)}\n\n回复 /批准 ${token} 或 /拒绝 ${token}`)
+        await this.send(thread.id, `request:${token}`, approvalDescription(request), { title: '需要审批', buttons: [
+          { text: '批准本次操作', command: `/批准 ${token}` }, { text: '拒绝', command: `/拒绝 ${token}` },
+        ] })
       } else {
         await this.send(thread.id, `request:${token}`, '有一个待处理请求，请回到 Harness 查看。')
       }
@@ -208,10 +220,10 @@ export class SeaTalkSync {
     if (!value) throw new Error('暂只支持文字消息')
     if (value === '/状态') {
       const snapshot = this.snapshot()
-      return snapshot.activeTurnIds[threadId] ? (pendingRequests(snapshot, threadId).length ? '等待你处理审批或问题。' : '正在执行。') : '当前空闲。'
+      return pendingRequests(snapshot, threadId).length ? '等待你处理审批或问题。' : snapshot.activeTurnIds[threadId] ? '正在执行。' : '当前空闲。'
     }
     if (value === '/停止') { await this.actions.stop(threadId); return '已请求停止当前轮次。' }
-    const command = value.match(/^\/(批准|拒绝|回答)\s+([a-f0-9]{16})(?:\s+([\s\S]+))?$/)
+    const command = value.match(/^\/(批准|拒绝|回答|选项)\s+([a-f0-9]{16})(?:\s+([\s\S]+))?$/)
     if (command) {
       const [, action, token, answer] = command
       const requests = pendingRequests(this.snapshot(), threadId)
@@ -219,7 +231,17 @@ export class SeaTalkSync {
       if (!request || this.answered.has(token)) throw new Error('该请求已处理、已更新或已过期')
       const questions = parseUserInputQuestions(request.params)
       if (questions.some(question => question.isSecret)) throw new Error('敏感问题请在 Harness 内回答')
-      if (action === '回答') {
+      if (action === '选项') {
+        const choice = answer?.match(/^(\d+) (\d+)$/)
+        const question = choice && questions[Number(choice[1])]
+        const option = question && question.options[Number(choice![2])]
+        if (!question || !option) throw new Error('选项已失效')
+        const values = { ...this.selections.get(token), [question.id]: option.label }
+        this.selections.set(token, values)
+        if (questions.some(q => !values[q.id])) return `已选择「${option.label}」，请继续回答其余问题。`
+        await this.actions.answer(request, { answers: Object.fromEntries(questions.map(q => [q.id, { answers: [values[q.id]] }])) })
+        this.selections.delete(token)
+      } else if (action === '回答') {
         if (!questions.length || !answer) throw new Error('请提供完整问题答案')
         const values = questions.length === 1 ? { [questions[0].id]: answer } : JSON.parse(answer) as Record<string, string>
         if (!values || typeof values !== 'object' || questions.some(question => typeof values[question.id] !== 'string' || !values[question.id].trim())) throw new Error('请回答所有问题')
@@ -229,7 +251,7 @@ export class SeaTalkSync {
         await this.actions.answer(request, action === '批准' ? 'accept' : 'decline')
       }
       this.answered.add(token)
-      return action === '回答' ? '回答已提交。' : action === '批准' ? '已批准本次请求。' : '已拒绝本次请求。'
+      return action === '回答' || action === '选项' ? '回答已提交。' : action === '批准' ? '已批准本次请求。' : '已拒绝本次请求。'
     }
     if (value.startsWith('/')) throw new Error('支持 /状态、/停止、/批准、/拒绝、/回答；普通文字直接继续会话')
     await this.actions.send(threadId, value)
