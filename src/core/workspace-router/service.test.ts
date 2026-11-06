@@ -125,3 +125,14 @@ it('enforces the token budget before starting the router model', async () => {
   await expect(routeWorkspace('source', '/neutral', [textInput('large request')], workspaces)).rejects.toThrow('文本预算')
   expect(appServer.startThread).not.toHaveBeenCalled()
 })
+it('previews the same prompt fields used by execution without starting a model', async () => {
+  const { prepareRouterPrompt, routingCandidates } = await import('./service')
+  const settings = { ...DEFAULT_ROUTER_SETTINGS, feedbackCount: 5, feedbackRule: 'recent' as const }
+  const candidates = await routingCandidates(workspaces, settings)
+  const prepared = await prepareRouterPrompt([textInput('private preview')], candidates, settings)
+  expect(prepared.input.at(-1)).toEqual(textInput('private preview'))
+  expect(prepared.developerInstructions).toContain('Choose the workspace')
+  expect(runtime.buildRouterPrompt).toHaveBeenCalledWith(expect.objectContaining({ exampleLimit: 5 }))
+  expect(appServer.startThread).not.toHaveBeenCalled()
+  expect([...storage.values()].join('')).not.toContain('private preview')
+})

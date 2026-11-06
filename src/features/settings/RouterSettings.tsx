@@ -1,12 +1,16 @@
 import { useEffect, useId, useState } from 'react'
-import { GitBranch, RefreshCw, Search, Clock3 } from 'lucide-react'
+import { GitBranch, RefreshCw, Search } from 'lucide-react'
 import { runtime } from '../../core/runtime/bridge'
 import type { RouterSummary } from '../../core/workspace-router/types'
 import { refreshRouterSummaries } from '../../core/workspace-router/summaries'
 import type { CodexModel, Workspace } from '../../core/domain/codex'
 import { DEFAULT_ROUTER_SETTINGS, loadRouterSettings, saveRouterSettings, type RouterSettings as Settings } from '../../core/workspace-router/settings'
+import { RouterPromptPanel } from '../router/RouterPromptPanel'
+import { RouterFeedbackPanel } from '../router/RouterFeedbackPanel'
 import './RouterSettings.css'
 
+type RouterSection = 'workspaces' | 'prompt' | 'configuration' | 'feedback'
+const SECTIONS: Array<{ id: RouterSection; label: string }> = [{ id: 'workspaces', label: '工作区' }, { id: 'prompt', label: '最终 Prompt' }, { id: 'configuration', label: '设置' }, { id: 'feedback', label: '反馈' }]
 const DAY = 24 * 60 * 60_000
 export function routerNextCheck(summary: RouterSummary | undefined, now: number): string {
   if (summary?.updating) return '正在更新介绍'
@@ -23,11 +27,12 @@ function cacheState(summary?: RouterSummary) {
 const date = (value?: number | null) => value ? new Date(value).toLocaleString() : '尚未检查'
 
 export function RouterSettings({ models, workspaces, initialSection = 'configuration', standalone = false }: {
-  models: CodexModel[]; workspaces: Workspace[]; initialSection?: 'workspaces' | 'configuration'; standalone?: boolean
+  models: CodexModel[]; workspaces: Workspace[]; initialSection?: RouterSection; standalone?: boolean
 }) {
   const id = useId()
-  const materialsId = `${id}-materials`, configurationId = `${id}-configuration`
-  const [section, setSection] = useState(initialSection)
+  const [section, setSection] = useState<RouterSection>(initialSection)
+  const [visited, setVisited] = useState<Set<RouterSection>>(() => new Set([initialSection]))
+  const selectSection = (next: RouterSection) => { setSection(next); setVisited(previous => new Set([...previous, next])) }
   const [selectedRoot, setSelectedRoot] = useState(workspaces[0]?.root ?? '')
   const [query, setQuery] = useState('')
   const [now, setNow] = useState(Date.now())
@@ -42,6 +47,7 @@ export function RouterSettings({ models, workspaces, initialSection = 'configura
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState('')
+  const [settingsVersion, setSettingsVersion] = useState(0)
   useEffect(() => {
     let disposed = false
     void loadRouterSettings().then(value => { if (!disposed) { setDraft(value); setLoaded(true) } })
@@ -75,7 +81,7 @@ export function RouterSettings({ models, workspaces, initialSection = 'configura
   const update = (patch: Partial<Settings>) => { setDraft(current => ({ ...current, ...patch })); setStatus('有未保存的修改'); setError(null) }
   const save = async () => {
     setSaving(true); setError(null)
-    try { setDraft(await saveRouterSettings(draft)); setStatus('已保存，下次路由生效') }
+    try { setDraft(await saveRouterSettings(draft)); setStatus('已保存，下次路由生效'); setSettingsVersion(value => value + 1) }
     catch (next) { setError(next instanceof Error ? next.message : String(next)) }
     finally { setSaving(false) }
   }
@@ -90,50 +96,62 @@ export function RouterSettings({ models, workspaces, initialSection = 'configura
     } catch { setRefreshError('暂时无法完成更新，请重试。'); setCacheError(true) }
     finally { setRefreshing(null) }
   }
+  const feedbackCount = draft.feedbackCount ?? 3
+  const feedbackRule = draft.feedbackRule ?? 'relevant'
+  const statusClass = (value?: RouterSummary) => value?.updating ? 'updating' : value?.error ? 'error' : value?.description ? 'ready' : 'pending'
+  const messages = <>{status && <p role="status">{status}</p>}</>
   return <div className={`router-settings${standalone ? ' router-page' : ''}`}>
-    <header className="router-page-head"><div><h2><GitBranch size={20} />工作区 Router</h2><p>查看路由使用的介绍，管理更新与判断设置。配置适用于所有工作区。</p></div><span className="router-engine">Codex · {draft.model}</span></header>
+    <header className="router-page-head"><h2><GitBranch size={20} />工作区 Router</h2></header>
     <div className="router-sections" role="tablist" aria-label="Router 管理分区" onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
       event.preventDefault()
-      const index = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : section === 'workspaces' ? 1 : 0
-      setSection(index === 0 ? 'workspaces' : 'configuration')
+      const current = SECTIONS.findIndex(item => item.id === section)
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? SECTIONS.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + SECTIONS.length) % SECTIONS.length
+      selectSection(SECTIONS[index].id)
       event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[index]?.focus()
     }}>
-      <button type="button" role="tab" id={`${materialsId}-tab`} aria-controls={materialsId} tabIndex={section === 'workspaces' ? 0 : -1} aria-selected={section === 'workspaces'} onClick={() => setSection('workspaces')}>工作区介绍<span>{workspaces.length}</span></button>
-      <button type="button" role="tab" id={`${configurationId}-tab`} aria-controls={configurationId} tabIndex={section === 'configuration' ? 0 : -1} aria-selected={section === 'configuration'} onClick={() => setSection('configuration')}>判断设置</button>
+      {SECTIONS.map(item => <button type="button" role="tab" key={item.id} id={`${id}-${item.id}-tab`} aria-controls={`${id}-${item.id}`} tabIndex={section === item.id ? 0 : -1} aria-selected={section === item.id} onClick={() => selectSection(item.id)}>{item.label}</button>)}
     </div>
-    <section id={materialsId} role="tabpanel" aria-labelledby={`${materialsId}-tab`} hidden={section !== 'workspaces'}>
-      <div className="router-cache-toolbar"><p><Clock3 size={14} />每 24 小时检查，文档变化才重新生成</p><button type="button" disabled={busy || Boolean(refreshing) || workspaces.length === 0} onClick={() => void refresh(workspaces, 'all')}><RefreshCw size={14} />{refreshing === 'all' ? '正在检查全部…' : '更新全部'}</button></div>
-      {cacheError && <p role="alert">无法读取简介缓存，路由仍可使用工作区名称和手填说明。</p>}
+    {error && <p role="alert">{error}</p>}
+    <section id={`${id}-workspaces`} role="tabpanel" aria-labelledby={`${id}-workspaces-tab`} hidden={section !== 'workspaces'}>
+      <div className="router-cache-toolbar"><label className="router-search"><Search size={14} /><input aria-label="搜索路由工作区" placeholder="搜索工作区" value={query} onChange={event => setQuery(event.target.value)} /></label><button type="button" disabled={busy || Boolean(refreshing) || !workspaces.length} onClick={() => void refresh(workspaces, 'all')}><RefreshCw size={14} />{refreshing === 'all' ? '正在检查全部…' : '更新全部'}</button></div>
+      {cacheError && <p role="alert">无法读取简介缓存。</p>}
       {refreshStatus && <p className="router-update-message" role="status">{refreshStatus}</p>}
       {refreshError && <p className="router-update-message" role="alert">{refreshError}</p>}
       <div className="router-cache-layout">
-        <aside className="router-workspace-list" aria-label="路由工作区"><label className="router-search"><Search size={14} /><input aria-label="搜索路由工作区" placeholder="搜索工作区" value={query} onChange={event => setQuery(event.target.value)} /></label>
-          {filtered.map(w => <button type="button" key={w.root} aria-pressed={selectedRoot === w.root} onClick={() => setSelectedRoot(w.root)}><span>{w.name}<small>{w.root}</small></span><em>{cacheState(summaries.find(s => s.root === w.root))}</em></button>)}
-          {!filtered.length && <p>{workspaces.length ? '没有匹配的工作区' : '添加工作区后，介绍会显示在这里。'}</p>}
+        <aside className="router-workspace-list" aria-label="路由工作区">
+          {filtered.map(w => <button type="button" key={w.root} aria-pressed={selectedRoot === w.root} onClick={() => setSelectedRoot(w.root)}><span className={`router-status-dot ${statusClass(summaries.find(s => s.root === w.root))}`} /><span>{w.name}</span></button>)}
+          {!filtered.length && <p>{workspaces.length ? '没有匹配的工作区' : '暂无工作区'}</p>}
         </aside>
         {workspace && <article className="router-workspace-detail">
-          <header><div><h3>{workspace.name}</h3><p>{workspace.checkoutRoot}</p></div><button type="button" disabled={busy || Boolean(refreshing) || summary?.updating} onClick={() => void refresh([workspace], workspace.root)}><RefreshCw size={14} />{refreshing === workspace.root || summary?.updating ? '正在更新…' : '立即更新'}</button></header>
-          <div className="router-update-facts"><div><span>当前状态</span><strong>{cacheState(summary)}</strong></div><div><span>下次检查</span><strong title={date(summary?.nextCheckAt)}>{routerNextCheck(summary, now)}</strong></div></div>
-          <div className="router-description-body"><h4>自动介绍</h4><p>{summary?.description || '尚无自动介绍。点击“立即更新”检查 AGENTS.md 和 README；缺少文档时仍可使用下方补充说明。'}</p></div>
-          <dl className="router-update-dates"><div><dt>上次检查</dt><dd>{date(summary?.checkedAt)}</dd></div><div><dt>介绍生成</dt><dd>{summary?.generatedAt ? date(summary.generatedAt) : '尚未生成'}</dd></div></dl>
-          {summary?.error && <p role="alert" className="router-update-message">上次更新失败，当前仍使用已有介绍。可以点击“立即更新”重试。</p>}
-          <label className="router-supplement"><span>补充说明</span><small>可补充职责边界；与自动介绍一起用于路由。</small><textarea aria-label={`${workspace.name} 的路由用途`} maxLength={4000} rows={3} disabled={busy} value={draft.descriptions[workspace.root] ?? ''} placeholder="例如：管理侧接口在这里，解析节点程序位于 dns-agent。" onChange={event => update({ descriptions: { ...draft.descriptions, [workspace.root]: event.target.value } })} /></label>
-          <p className="router-note">立即更新会跳过等待时间；文档未变化时复用缓存。应用关闭或休眠期间暂停检查。</p>
+          <header><div className="router-workspace-heading"><span className={`router-status ${statusClass(summary)}`}>{cacheState(summary)}</span><h3>{workspace.name}</h3><span className="router-workspace-path" title={workspace.checkoutRoot}>{workspace.checkoutRoot}</span></div>
+          <div className="router-detail-actions"><span className="router-next-check" title={`上次检查：${date(summary?.checkedAt)}\n介绍生成：${date(summary?.generatedAt)}\n下次检查：${date(summary?.nextCheckAt)}`}>{routerNextCheck(summary, now)}</span><button type="button" disabled={busy || Boolean(refreshing) || summary?.updating} onClick={() => void refresh([workspace], workspace.root)}><RefreshCw size={14} />{refreshing === workspace.root || summary?.updating ? '正在更新…' : '立即更新'}</button></div></header>
+          <div className="router-description-body"><h4>介绍</h4><p>{summary?.description || '暂无介绍'}</p></div>
+          {summary?.error && <p role="alert" className="router-update-message">更新失败，已保留原有介绍。</p>}
+          <label className="router-supplement"><span>补充说明</span><textarea aria-label={`${workspace.name} 的路由用途`} maxLength={4000} rows={3} disabled={busy} value={draft.descriptions[workspace.root] ?? ''} onChange={event => update({ descriptions: { ...draft.descriptions, [workspace.root]: event.target.value } })} /></label>
+          <footer className="router-settings-footer"><div>{section === 'workspaces' && messages}</div><button type="button" className="primary" disabled={busy} onClick={() => void save()}>{saving ? '保存中…' : '保存补充说明'}</button></footer>
         </article>}
       </div>
     </section>
-    <section id={configurationId} role="tabpanel" aria-labelledby={`${configurationId}-tab`} hidden={section !== 'configuration'} className="router-configuration">
-      <h3>第二步：判断工作区</h3><p>当前通过 Codex 临时会话选择工作区，可单独设置模型与推理强度。</p>
-      <div className="router-setting-rows">
-        <label><span>判断后端</span><strong>Codex</strong></label>
-        <label><span>Router 模型</span><select aria-label="Router 模型" value={draft.model} disabled={busy} onChange={event => { const model = models.find(item => item.model === event.target.value); update({ model: event.target.value, effort: !model || model.supportedReasoningEfforts.some(item => item.reasoningEffort === draft.effort) ? draft.effort : model.defaultReasoningEffort ?? '' }) }}>
-          {!selected && <option value={draft.model}>{draft.model}（当前配置）</option>}{models.map(model => <option key={model.id} value={model.model}>{model.displayName}</option>)}
-        </select></label>
-        <label><span>推理强度</span><select aria-label="Router 推理强度" value={draft.effort} disabled={busy} onChange={event => update({ effort: event.target.value })}><option value="">模型默认</option>{draft.effort && !efforts.includes(draft.effort) && <option value={draft.effort}>{draft.effort}（当前配置）</option>}{efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}</select></label>
+    <section id={`${id}-prompt`} role="tabpanel" aria-labelledby={`${id}-prompt-tab`} hidden={section !== 'prompt'}>{visited.has('prompt') && <RouterPromptPanel workspaces={workspaces} settingsVersion={settingsVersion} />}</section>
+    <section id={`${id}-configuration`} role="tabpanel" aria-labelledby={`${id}-configuration-tab`} hidden={section !== 'configuration'} className="router-configuration">
+      <div className="router-backend active"><h3><label><input type="radio" name={`${id}-backend`} checked readOnly />Codex 临时会话</label></h3>
+        <div className="router-setting-rows">
+          <label><span>模型</span><select aria-label="Router 模型" value={draft.model} disabled={busy} onChange={event => { const model = models.find(item => item.model === event.target.value); update({ model: event.target.value, effort: !model || model.supportedReasoningEfforts.some(item => item.reasoningEffort === draft.effort) ? draft.effort : model.defaultReasoningEffort ?? '' }) }}>
+            {!selected && <option value={draft.model}>{draft.model}（当前配置）</option>}{models.map(model => <option key={model.id} value={model.model}>{model.displayName}</option>)}
+          </select></label>
+          <label><span>推理强度</span><select aria-label="Router 推理强度" value={draft.effort} disabled={busy} onChange={event => update({ effort: event.target.value })}><option value="">模型默认</option>{draft.effort && !efforts.includes(draft.effort) && <option value={draft.effort}>{draft.effort}（当前配置）</option>}{efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}</select></label>
+        </div>
+      </div>
+      <fieldset className="router-backend" disabled><h3><label><input type="radio" name={`${id}-backend`} />Jev / Laya</label><span>未接入</span></h3><div className="router-setting-rows"><label><span>服务地址</span><input aria-label="Jev/Laya 服务地址" /></label><label><span>模型</span><select aria-label="Jev/Laya 模型"><option>选择模型</option></select></label></div></fieldset>
+      <fieldset className="router-backend" disabled><h3><label><input type="radio" name={`${id}-backend`} />其他模型 API</label><span>未接入</span></h3><div className="router-setting-rows"><label><span>API 地址</span><input aria-label="其他模型 API 地址" /></label><label><span>模型</span><input aria-label="其他模型名称" /></label></div></fieldset>
+      <div className="router-setting-rows router-common-settings">
         <label><span>路由文本预算</span><input aria-label="Router 文本预算" type="number" min={2048} max={32768} step={1024} value={draft.tokenBudget ?? 8192} disabled={busy} onChange={event => update({ tokenBudget: Number(event.target.value) })} /></label>
-      </div><p className="router-note">预算包含原始需求、工作区介绍和纠错案例。超限先减少案例和介绍，保留原始需求与工作区列表；图片及系统背景另计。</p><p className="router-note">介绍需要重新生成时也使用这里的模型设置；更换模型不会自动重建已有缓存。</p>
+        <label><span>纠错引用上限</span><input aria-label="纠错引用上限" type="number" min={0} max={10} value={feedbackCount} disabled={busy} onChange={event => update({ feedbackCount: Number(event.target.value) })} /></label>
+        <label><span>纠错选取规则</span><select aria-label="纠错选取规则" value={feedbackRule} disabled={busy} onChange={event => update({ feedbackRule: event.target.value as 'relevant' | 'recent' })}><option value="relevant">相关优先</option><option value="recent">最近优先</option></select></label>
+      </div>
+      <footer className="router-settings-footer"><div>{section === 'configuration' && messages}</div><div><button type="button" disabled={busy} onClick={() => update({ model: DEFAULT_ROUTER_SETTINGS.model, effort: DEFAULT_ROUTER_SETTINGS.effort })}>恢复默认模型</button><button type="button" className="primary" disabled={busy} onClick={() => void save()}>{saving ? '保存中…' : '保存设置'}</button></div></footer>
     </section>
-    <footer className="router-settings-footer"><div>{status && <p role="status">{status}</p>}{error && <p role="alert">{error}</p>}</div><div>{section === 'configuration' && <button type="button" disabled={busy} onClick={() => update({ model: DEFAULT_ROUTER_SETTINGS.model, effort: DEFAULT_ROUTER_SETTINGS.effort })}>恢复默认模型</button>}<button type="button" className="primary" disabled={busy} onClick={() => void save()}>{saving ? '保存中…' : section === 'workspaces' ? '保存补充说明' : '保存设置'}</button></div></footer>
+    <section id={`${id}-feedback`} role="tabpanel" aria-labelledby={`${id}-feedback-tab`} hidden={section !== 'feedback'}>{visited.has('feedback') && <RouterFeedbackPanel workspaces={workspaces} active={section === 'feedback'} />}</section>
   </div>
 }

@@ -655,6 +655,11 @@ async fn workspace_router_corrections(state: State<'_, AppState>) -> Result<Vec<
     tauri::async_runtime::spawn_blocking(move || store.router_corrections()).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn workspace_router_feedback(state: State<'_, AppState>, offset: Option<usize>, limit: Option<usize>) -> Result<Value, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.router_feedback(offset.unwrap_or(0), limit.unwrap_or(20))).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn workspace_router_summaries(state: State<'_, AppState>, roots: Vec<String>) -> Result<Vec<store::RouterSummary>, String> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || store.router_summaries(&roots)).await.map_err(|e| e.to_string())?
@@ -1581,6 +1586,7 @@ pub fn run() {
             workspace_router_directory,
             workspace_router_summaries,
             workspace_router_corrections,
+            workspace_router_feedback,
             workspace_router_summary_claim,
             workspace_router_summary_finish,
             workspace_router_build_prompt,

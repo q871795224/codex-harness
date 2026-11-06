@@ -1,4 +1,4 @@
-import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection } from '../workspace-router/types'
+import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection, RouterFeedbackPage } from '../workspace-router/types'
 import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
 import type { ApprovalRequest } from '../domain/codex'
 import type { QuestionLocator, QuestionNotification } from '../questions/types'
@@ -116,6 +116,7 @@ export const runtime = {
   projectDocPendingOnboardings: () => invoke<Array<OnboardingReceipt & {requestId: string; threadId: string; name: string}>>('project_doc_pending_onboardings'),
   projectDocCommitOnboarding: (input: OnboardingCommit) => invoke<OnboardingReceipt>('project_doc_commit_onboarding', { input }),
   projectDocFinishOnboarding: (requestId: string, threadId: string, workspaceRoot: string) => invoke<string>('project_doc_finish_onboarding', { requestId, threadId, workspaceRoot }),
+  routerFeedback: (offset = 0, limit = 20) => invoke<RouterFeedbackPage>('workspace_router_feedback', { offset, limit }),
   routerCorrections: () => invoke<RouterCorrection[]>('workspace_router_corrections'),
   routerSummaries: (roots: string[]) => invoke<RouterSummary[]>('workspace_router_summaries', { roots }),
   claimRouterSummary: (root: string, checkoutRoot: string, checkNow = false) => invoke<RouterSummaryClaim | null>('workspace_router_summary_claim', { root, checkoutRoot, ...(checkNow ? { checkNow: true } : {}) }),

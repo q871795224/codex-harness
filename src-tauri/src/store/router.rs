@@ -102,7 +102,7 @@ fn write(connection: &Connection, state: &SummaryState, now: i64) -> Result<(), 
 impl HarnessStore {
     pub(crate) fn router_corrections(&self) -> Result<Vec<serde_json::Value>, String> {
         let connection = self.connection.lock().map_err(|e| e.to_string())?;
-        let mut query = connection.prepare("SELECT state_value FROM app_state WHERE state_key LIKE 'workspace-router.attempt:%' AND json_valid(state_value) AND json_extract(state_value, '$.feedback')='inaccurate' ORDER BY updated_at DESC LIMIT 20").map_err(|e| e.to_string())?;
+        let mut query = connection.prepare("SELECT state_value FROM app_state WHERE state_key LIKE 'workspace-router.attempt:%' AND json_valid(state_value) AND json_extract(state_value, '$.feedback')='inaccurate' ORDER BY COALESCE(json_extract(state_value, '$.history[#-1].at'),updated_at) DESC, state_key DESC LIMIT 20").map_err(|e| e.to_string())?;
         let rows = query
             .query_map([], |r| r.get::<_, String>(0))
             .map_err(|e| e.to_string())?;
@@ -120,6 +120,38 @@ impl HarnessStore {
             result.push(serde_json::json!({"threadId": value["threadId"], "sourceTurnId": value["sourceTurnId"], "sourceMessageId": value["sourceMessageId"], "wrong": value["choice"]["primary"], "correct": value["actualWorkspace"]}));
         }
         Ok(result)
+    }
+    pub(crate) fn router_feedback(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<serde_json::Value, String> {
+        let limit = limit.clamp(1, 100);
+        let connection = self.connection.lock().map_err(|e| e.to_string())?;
+        let mut query = connection.prepare("SELECT state_key,state_value,updated_at FROM app_state WHERE state_key LIKE 'workspace-router.attempt:%' AND json_valid(state_value) AND json_extract(state_value,'$.feedback') IN ('accurate','inaccurate') ORDER BY COALESCE(json_extract(state_value,'$.history[#-1].at'),updated_at) DESC,state_key DESC LIMIT ?1 OFFSET ?2").map_err(|e| e.to_string())?;
+        let rows = query
+            .query_map(params![limit + 1, offset], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut data = Vec::new();
+        for row in rows {
+            let (key, text, updated) = row.map_err(|e| e.to_string())?;
+            let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            let at = v["history"]
+                .as_array()
+                .and_then(|h| h.last())
+                .and_then(|h| h["at"].as_i64())
+                .unwrap_or(updated);
+            data.push(serde_json::json!({"id":v["id"].as_str().unwrap_or(&key),"threadId":v["threadId"],"sourceTurnId":v["sourceTurnId"],"sourceMessageId":v["sourceMessageId"],"chosen":v["choice"]["primary"],"correct":if v["feedback"]=="accurate" { &v["choice"]["primary"] } else { &v["actualWorkspace"] },"feedback":v["feedback"],"at":at}));
+        }
+        let has_more = data.len() > limit;
+        data.truncate(limit);
+        Ok(serde_json::json!({"data":data,"hasMore":has_more}))
     }
     pub(crate) fn router_summaries(&self, roots: &[String]) -> Result<Vec<RouterSummary>, String> {
         let connection = self.connection.lock().map_err(|e| e.to_string())?;
@@ -317,6 +349,32 @@ mod tests {
         }
         .view(200);
         assert_eq!(idle.next_check_at, Some(100 + DAY));
+    }
+    #[test]
+    fn feedback_pages_use_explicit_vote_time_and_return_metadata_only() {
+        let data = tempfile::tempdir().unwrap();
+        let store = HarnessStore::open_at(data.path().into()).unwrap();
+        for (id, feedback, at) in [
+            ("old", "accurate", 100),
+            ("new", "inaccurate", 200),
+            ("implicit", "implicit-accurate", 300),
+        ] {
+            let value = serde_json::json!({"id":id,"threadId":"thread","sourceTurnId":"turn","sourceMessageId":"message","status":"started","feedback":feedback,"choice":{"primary":"/a"},"actualWorkspace":"/b","history":[{"at":at}],"private":"not in output"});
+            store
+                .set_app_state(
+                    &format!("workspace-router.attempt:{id}"),
+                    &value.to_string(),
+                )
+                .unwrap();
+        }
+        let first = store.router_feedback(0, 1).unwrap();
+        assert_eq!(first["data"][0]["id"], "new");
+        assert_eq!(first["hasMore"], true);
+        assert!(!first.to_string().contains("not in output"));
+        let second = store.router_feedback(1, 1).unwrap();
+        assert_eq!(second["data"][0]["id"], "old");
+        assert_eq!(second["hasMore"], false);
+        assert_eq!(second["data"][0]["correct"], "/a");
     }
     #[test]
     fn daily_checks_only_generate_for_changed_content_and_persist_across_connections() {

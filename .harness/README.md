@@ -8,7 +8,7 @@
 | 从 Agent 查询或管理 Harness 本身 | [../docs/management.md](../docs/management.md) | 使用全局 codex-harness Skill、harnessctl 或维护本机管理入口时 |
 | 记录已经确认的长期决策和当前状态 | [memory.md](memory.md) | 需要延续历史决策，或任务完成后沉淀结论 |
 | 项目文档维护、会话中途新建/加入、注入与人工精简边界 | [architecture.md](architecture.md) 的“项目文档维护”；中途接入见 [project-doc-onboarding.md](../docs/project-doc-onboarding.md) | 修改项目文档插件或讨论 Agent 管理接口前 |
-| 工作区自动选择、简介缓存、纠错案例、切换与后端评估 | [workspace-router.md](workspace-router.md) | 修改 Router 或重新讨论其决策前 |
+| 工作区自动选择、简介缓存、最终 Prompt、反馈与后端设置 | [workspace-router.md](workspace-router.md) | 修改 Router 或重新讨论其决策前 |
 | 执行测试、构建、人工检查和黑箱对照 | [test.md](test.md) | 修改代码或验证行为前 |
 | 遇到已知的脆弱点、协议差异或数据安全问题 | [pitfall.md](pitfall.md) | 相关路径排查或修改前 |
 | 在固定 UI 区域（侧栏底部操作行、顶部主按钮、会话 tab 栏）新增或修改样式 | [frontend-style.md](frontend-style.md) | 改动这些区域的结构、共用选择器组或深色主题前 |

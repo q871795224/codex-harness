@@ -30,3 +30,15 @@ it('skips image-dependent examples and tolerates missing provider history', asyn
   vi.mocked(appServer.listTurns).mockRejectedValueOnce(new Error('missing'))
   expect(await routingExamples([textInput('DNS API')], candidates)).toEqual([])
 })
+it('supports recent corrections even without keyword overlap and can disable examples entirely', async () => {
+  expect(await routingExamples([textInput('写一个网页游戏')], candidates, { feedbackCount: 1, feedbackRule: 'recent' })).toEqual([{ request: '检查 DNS API 内存', wrong: '/dns-agent', correct: '/dns-api' }])
+  vi.mocked(runtime.routerCorrections).mockClear()
+  expect(await routingExamples([textInput('DNS API')], candidates, { feedbackCount: 0, feedbackRule: 'recent' })).toEqual([])
+  expect(runtime.routerCorrections).not.toHaveBeenCalled()
+})
+it('honors a configured count above three and preserves recent-first ordering', async () => {
+  vi.mocked(runtime.routerCorrections).mockResolvedValue(Array.from({ length: 6 }, (_, i) => ({ threadId: `count-${id}-${i}`, sourceTurnId: 'first', sourceMessageId: 'message', wrong: '/dns-agent', correct: '/dns-api' })))
+  vi.mocked(appServer.listTurns).mockImplementation(async params => ({ data: [{ id: 'first', items: [{ type: 'userMessage', clientId: 'message', content: [textInput(`DNS API case ${String(params.threadId).split('-').at(-1)}`)] }] }], nextCursor: null }) as never)
+  const examples = await routingExamples([textInput('DNS API')], candidates, { feedbackCount: 5, feedbackRule: 'recent' })
+  expect(examples.map(e => e.request)).toEqual(['DNS API case 0', 'DNS API case 1', 'DNS API case 2', 'DNS API case 3', 'DNS API case 4'])
+})

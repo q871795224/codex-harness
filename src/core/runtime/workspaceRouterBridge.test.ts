@@ -26,3 +26,8 @@ it('explicitly bypasses the 24h check through the native lease-aware command', a
   await runtime.claimRouterSummary('/a', '/checkout', true)
   expect(invoke).toHaveBeenLastCalledWith('workspace_router_summary_claim', { root: '/a', checkoutRoot: '/checkout', checkNow: true })
 })
+it('pages through explicit feedback metadata using the native bridge', async () => {
+  vi.mocked(invoke).mockResolvedValue({ data: [], hasMore: false })
+  expect(await runtime.routerFeedback(20, 20)).toEqual({ data: [], hasMore: false })
+  expect(invoke).toHaveBeenLastCalledWith('workspace_router_feedback', { offset: 20, limit: 20 })
+})

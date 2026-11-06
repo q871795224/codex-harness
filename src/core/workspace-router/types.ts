@@ -21,9 +21,17 @@ export interface RouterPromptInput {
   candidates: RouterPromptCandidate[]
   examples: RouterExample[]
   tokenBudget: number
+  exampleLimit?: number
 }
 export interface RouterPrompt { context: string; textTokens: number; examplesUsed: number }
 export interface RouterCorrection {
   threadId: string; sourceTurnId: string; sourceMessageId: string
   wrong: string | null; correct: string | null
 }
+
+export interface RouterFeedback {
+  id: string; threadId: string; sourceTurnId: string | null; sourceMessageId: string | null
+  chosen: string | null; correct: string | null; feedback: 'accurate' | 'inaccurate'; at: number
+}
+export interface RouterFeedbackPage { data: RouterFeedback[]; hasMore: boolean }
+export interface RouterFeedbackRow extends RouterFeedback { request: string | null; hasAttachments: boolean }
