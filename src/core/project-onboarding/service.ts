@@ -73,9 +73,9 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
     if (ports.busy(id) || finishing.has(id)) return
     finishing.add(id)
     try {
-      await ports.source(id)
+      const source = await ports.source(id)
       if (ports.busy(id)) return
-      await ports.finish(card.id, id, card.source.cwd)
+      await ports.finish(card.id, id, source.cwd)
       publish({ ...card, phase: 'done', detail: undefined })
     } catch (error) {
       if (message(error).includes('正在执行')) publish({ ...card, phase: 'binding', detail: '文档已保存，等待当前轮次结束后加入项目' })

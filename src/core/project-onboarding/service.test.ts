@@ -57,6 +57,12 @@ describe('session project onboarding', () => {
     expect(f.ports.finish).toHaveBeenLastCalledWith(card.id,'t','/original')
     expect(f.service.snapshot().get('t')?.phase).toBe('done')
   })
+  it('uses the source workspace at binding time if it changed while the card waited', async () => {
+    const f=fixture(); await f.service.request('t')
+    f.ports.source.mockResolvedValue({threadId:'t',title:'同步方案讨论',cwd:'/current'})
+    await f.service.confirm('t',{mode:'create',name:'新项目',projectId:''},f.settings)
+    expect(f.ports.finish).toHaveBeenCalledWith(expect.any(String),'t','/current')
+  })
   it('waits for an idle turn boundary before activating a saved binding', async () => {
     const f=fixture(); await f.service.request('t')
     f.ports.commit.mockImplementationOnce(async () => {f.ports.busy.mockReturnValue(true);return {projectId:'p',seq:5}})
