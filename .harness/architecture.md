@@ -155,6 +155,8 @@ Claude 核心按持久化绑定给 SDK query 配置本地插件 `harness-project
 
 ### 项目文档精简
 
+整文精简仅允许用户在界面确认发起，暂不向 Agent CLI 或管理 API 开放发起能力。用户确认启动后，结果通过校验即自动保存，无需人工审阅整理稿或二次确认；备份、失败保护和历史恢复承担保存保障。扩展 Agent 管理接口时保留这一边界，不将未开放精简接口或没有结果二审视为功能缺口。证据索引暂缓，先沿用正文中的证据链接与 Skill 记录规范。
+
 项目文档插件通过 `conversationBanners` slot 显示共用确认卡，手动入口保留在 Composer 右侧。会话结束只触发本地计数和提醒；用户确认后才启动只读 Codex detached run。默认门限10,000 tokens，按正文版本缓存 `o200k_base` 计数；配置位于插件设置。
 
 原文归档、追加合并、并发修改检查和恢复由 Rust `project_doc_store::compaction` 负责，模型只输出四分区 Markdown。普通写入与精简共用 SQLite immediate transaction，跨 UI/HTTP 连接串行。详见 [项目文档精简](../docs/project-doc-compaction.md)。
