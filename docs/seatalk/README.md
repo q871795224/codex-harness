@@ -47,7 +47,7 @@ sequenceDiagram
 
 ## 配套与验证
 
-本功能需要 Bridge 的 `HarnessRemote` 配套路由。Bridge 账号必须已启用 Bot 私聊发送权限和用户消息事件，并在开放平台将接收方式设为 WebSocket。账号配置示例只包含引用：
+本功能需要 Bridge 的 `HarnessRemote` 配套路由，配套代码、测试和说明见 [Bridge 补丁](bridge-agent.patch)（基于 Bridge commit `a0eda98`）。部署前先在对应 Bridge checkout 执行 `git apply --check` 检查该补丁，再按 Bridge 自身流程纳入代码并重启服务；已有本地改动时先处理冲突，不覆盖其他功能。Bridge 账号必须已启用 Bot 私聊发送权限和用户消息事件，并在开放平台将接收方式设为 WebSocket。账号配置示例只包含引用：
 
 ```json
 {
