@@ -58,7 +58,7 @@ diff --git a/src/harness-remote.js b/src/harness-remote.js
 +      conversationType: 'dm', conversationId: account.owner, threadId: button.root_id,
 +      text: button.command, messageType: 'text', status: 'received', raw: interaction.raw });
    }
- 
+
    async send(account, input) {
 @@ -98,12 +121,31 @@
        this.db.prepare('INSERT OR IGNORE INTO harness_remote_bindings VALUES (?, ?, ?, ?)').run(account.id, threadId, root.messageId, createdAt);
@@ -87,7 +87,7 @@ diff --git a/src/harness-remote.js b/src/harness-remote.js
 +    }
      return binding;
    }
- 
+
 -  async deliver(account, key, text, rootId, root = false) {
 -    const fingerprint = createHash('sha256').update(root ? key : JSON.stringify([rootId, text])).digest('hex');
 +  async deliver(account, key, text, rootId, root = false, message = { type: 'text', text }) {
