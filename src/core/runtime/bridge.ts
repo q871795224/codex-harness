@@ -118,7 +118,7 @@ export const runtime = {
   projectDocFinishOnboarding: (requestId: string, threadId: string, workspaceRoot: string) => invoke<string>('project_doc_finish_onboarding', { requestId, threadId, workspaceRoot }),
   routerCorrections: () => invoke<RouterCorrection[]>('workspace_router_corrections'),
   routerSummaries: (roots: string[]) => invoke<RouterSummary[]>('workspace_router_summaries', { roots }),
-  claimRouterSummary: (root: string, checkoutRoot: string) => invoke<RouterSummaryClaim | null>('workspace_router_summary_claim', { root, checkoutRoot }),
+  claimRouterSummary: (root: string, checkoutRoot: string, checkNow = false) => invoke<RouterSummaryClaim | null>('workspace_router_summary_claim', { root, checkoutRoot, ...(checkNow ? { checkNow: true } : {}) }),
   finishRouterSummary: (root: string, lease: string, description: string | null) => invoke<void>('workspace_router_summary_finish', { root, lease, description }),
   buildRouterPrompt: (input: RouterPromptInput) => invoke<RouterPrompt>('workspace_router_build_prompt', { input }),
   routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),

@@ -21,3 +21,8 @@ it('uses typed native commands for cached summaries, corrections, and the token 
   await runtime.buildRouterPrompt(input)
   expect(invoke).toHaveBeenLastCalledWith('workspace_router_build_prompt', { input })
 })
+it('explicitly bypasses the 24h check through the native lease-aware command', async () => {
+  vi.mocked(invoke).mockResolvedValue(null)
+  await runtime.claimRouterSummary('/a', '/checkout', true)
+  expect(invoke).toHaveBeenLastCalledWith('workspace_router_summary_claim', { root: '/a', checkoutRoot: '/checkout', checkNow: true })
+})

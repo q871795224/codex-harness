@@ -36,3 +36,24 @@ it('stops when its host is disposed and never claims another workspace', async (
   await refreshRouterSummaries(workspaces, () => true)
   expect(runtime.claimRouterSummary).not.toHaveBeenCalled()
 })
+it('requests an immediate hash check without forcing a model call for unchanged documents', async () => {
+  const results = await refreshRouterSummaries(workspaces, () => false, true)
+  expect(runtime.claimRouterSummary).toHaveBeenCalledWith('/a', '/checkout', true)
+  expect(results).toEqual([{ root: '/a', failed: false }])
+  expect(runRouterTask).not.toHaveBeenCalled()
+})
+it('runs a manual update after a running automatic workspace without dropping it or overlapping generation', async () => {
+  let finish!: (result: string) => void
+  vi.mocked(runtime.claimRouterSummary).mockResolvedValue({ lease: 'lease', source: 'docs' })
+  vi.mocked(runRouterTask).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const automatic = refreshRouterSummaries(workspaces)
+  await vi.waitFor(() => expect(finish).toBeDefined())
+  const manual = refreshRouterSummaries(workspaces, () => false, true)
+  expect(runRouterTask).toHaveBeenCalledTimes(1)
+  vi.mocked(runtime.claimRouterSummary).mockResolvedValue(null)
+  finish('{"description":"DNS API"}')
+  await automatic
+  expect(await manual).toEqual([{ root: '/a', failed: false }])
+  expect(runtime.claimRouterSummary).toHaveBeenLastCalledWith('/a', '/checkout', true)
+  expect(runRouterTask).toHaveBeenCalledTimes(1)
+})

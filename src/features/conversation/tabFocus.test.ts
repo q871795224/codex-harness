@@ -22,3 +22,6 @@ it('shares the composer with built-in async and plugin tabs, preserving collapse
   expect(conversationComposerState('plugin', true, { ...contribution(), hideComposer: true }, false).visible).toBe(false)
   expect(conversationComposerState('chat', true, null, true)).toEqual({ collapsible: false, visible: true })
 })
+it('keeps the Router management tab free of the chat composer', () => {
+  expect(conversationComposerState('router', true, null, false)).toEqual({ collapsible: false, visible: false })
+})

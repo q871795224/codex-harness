@@ -7,7 +7,7 @@ const DAY: i64 = 24 * 60 * 60 * 1000;
 const LEASE: i64 = 5 * 60 * 1000;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct RouterSummary {
+struct SummaryState {
     pub root: String,
     pub checkout_root: String,
     pub description: String,
@@ -26,6 +26,36 @@ pub(crate) struct RouterSummary {
     lease_until: i64,
 }
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RouterSummary {
+    root: String,
+    checkout_root: String,
+    pub description: String,
+    checked_at: i64,
+    generated_at: Option<i64>,
+    pub error: bool,
+    updating: bool,
+    next_check_at: Option<i64>,
+}
+impl SummaryState {
+    fn view(self, now: i64) -> RouterSummary {
+        RouterSummary {
+            updating: self.lease.is_some() && self.lease_until > now,
+            next_check_at: if self.lease.is_some() {
+                Some(self.lease_until)
+            } else {
+                (self.checked_at > 0).then_some(self.checked_at + DAY)
+            },
+            root: self.root,
+            checkout_root: self.checkout_root,
+            description: self.description,
+            checked_at: self.checked_at,
+            generated_at: self.generated_at,
+            error: self.error,
+        }
+    }
+}
+#[derive(Serialize)]
 pub(crate) struct SummaryClaim {
     lease: String,
     source: String,
@@ -37,7 +67,7 @@ fn read(
     connection: &Connection,
     data_dir: &std::path::Path,
     root: &str,
-) -> Result<RouterSummary, String> {
+) -> Result<SummaryState, String> {
     let text: Option<String> = connection
         .query_row(
             "SELECT state_value FROM app_state WHERE state_key=?1",
@@ -46,9 +76,9 @@ fn read(
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    let mut cache: RouterSummary = match text {
+    let mut cache: SummaryState = match text {
         Some(t) => serde_json::from_str(&t).map_err(|_| "工作区简介缓存损坏")?,
-        None => RouterSummary {
+        None => SummaryState {
             root: root.into(),
             ..Default::default()
         },
@@ -62,7 +92,7 @@ fn read(
     }
     Ok(cache)
 }
-fn write(connection: &Connection, state: &RouterSummary, now: i64) -> Result<(), String> {
+fn write(connection: &Connection, state: &SummaryState, now: i64) -> Result<(), String> {
     let mut metadata = state.clone();
     metadata.description.clear(); // Model-derived text lives in files, never in state.sqlite.
     let text = serde_json::to_string(&metadata).map_err(|e| e.to_string())?;
@@ -95,14 +125,26 @@ impl HarnessStore {
         let connection = self.connection.lock().map_err(|e| e.to_string())?;
         roots
             .iter()
-            .map(|root| read(&connection, &self.root, root))
+            .map(|root| {
+                read(&connection, &self.root, root).map(|cache| cache.view(super::now_ms()))
+            })
             .collect()
     }
-    pub(crate) fn claim_router_summary(
+    #[cfg(test)]
+    fn claim_router_summary(
         &self,
         root: &str,
         checkout: &str,
         now: i64,
+    ) -> Result<Option<SummaryClaim>, String> {
+        self.check_router_summary(root, checkout, now, false)
+    }
+    pub(crate) fn check_router_summary(
+        &self,
+        root: &str,
+        checkout: &str,
+        now: i64,
+        check_now: bool,
     ) -> Result<Option<SummaryClaim>, String> {
         let mut connection = self.connection.lock().map_err(|e| e.to_string())?;
         let tx = connection
@@ -112,7 +154,8 @@ impl HarnessStore {
         if cache.lease.is_some() && cache.lease_until > now {
             return Ok(None);
         }
-        if cache.lease.is_none()
+        if !check_now
+            && cache.lease.is_none()
             && cache.checkout_root == checkout
             && cache.checked_at > 0
             && now < cache.checked_at + DAY
@@ -213,6 +256,67 @@ mod tests {
                 serde_json::json!({"threadId":"correction","sourceTurnId":"turn","sourceMessageId":"message","wrong":"/wrong","correct":"/correct"})
             ]
         );
+    }
+    #[test]
+    fn manual_check_bypasses_daily_wait_but_still_skips_unchanged_content_and_active_leases() {
+        let data = tempfile::tempdir().unwrap();
+        let checkout = tempfile::tempdir().unwrap();
+        let path = checkout.path().to_str().unwrap();
+        let file = checkout.path().join("README.md");
+        std::fs::write(&file, "before").unwrap();
+        let store = HarnessStore::open_at(data.path().into()).unwrap();
+        let first = store
+            .check_router_summary("root", path, 1, true)
+            .unwrap()
+            .unwrap();
+        assert!(store
+            .check_router_summary("root", path, 2, true)
+            .unwrap()
+            .is_none());
+        store
+            .finish_router_summary("root", &first.lease, Some("old"), 3)
+            .unwrap();
+        assert!(store
+            .check_router_summary("root", path, 4, true)
+            .unwrap()
+            .is_none());
+        std::fs::write(file, "after").unwrap();
+        assert!(store
+            .check_router_summary("root", path, 5, false)
+            .unwrap()
+            .is_none());
+        let second = store
+            .check_router_summary("root", path, 6, true)
+            .unwrap()
+            .unwrap();
+        store
+            .finish_router_summary("root", &second.lease, Some("updated"), 7)
+            .unwrap();
+        assert_eq!(
+            store.router_summaries(&["root".into()]).unwrap()[0].description,
+            "updated"
+        );
+    }
+    #[test]
+    fn summary_view_exposes_schedule_without_leaking_generation_lease() {
+        let view = SummaryState {
+            root: "root".into(),
+            checked_at: 100,
+            lease: Some("private-lease".into()),
+            lease_until: 500,
+            ..Default::default()
+        }
+        .view(200);
+        let json = serde_json::to_value(&view).unwrap();
+        assert_eq!(json["updating"], true);
+        assert_eq!(json["nextCheckAt"], 500);
+        assert!(json.get("lease").is_none());
+        let idle = SummaryState {
+            checked_at: 100,
+            ..Default::default()
+        }
+        .view(200);
+        assert_eq!(idle.next_check_at, Some(100 + DAY));
     }
     #[test]
     fn daily_checks_only_generate_for_changed_content_and_persist_across_connections() {

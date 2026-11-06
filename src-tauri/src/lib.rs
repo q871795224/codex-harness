@@ -660,9 +660,9 @@ async fn workspace_router_summaries(state: State<'_, AppState>, roots: Vec<Strin
     tauri::async_runtime::spawn_blocking(move || store.router_summaries(&roots)).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-async fn workspace_router_summary_claim(state: State<'_, AppState>, root: String, checkout_root: String) -> Result<Option<store::SummaryClaim>, String> {
+async fn workspace_router_summary_claim(state: State<'_, AppState>, root: String, checkout_root: String, check_now: Option<bool>) -> Result<Option<store::SummaryClaim>, String> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || store.claim_router_summary(&root, &checkout_root, router_now_ms())).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || store.check_router_summary(&root, &checkout_root, router_now_ms(), check_now.unwrap_or(false))).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn workspace_router_summary_finish(state: State<'_, AppState>, root: String, lease: String, description: Option<String>) -> Result<(), String> {

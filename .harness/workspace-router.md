@@ -40,6 +40,16 @@ flowchart LR
 
 文档单文件最多1 MiB，拒绝解析到工作区外的符号链接。内容哈希覆盖完整文件，摘要输入每份文档最多6,000个本地 tokens；仅用于说明职责和项目边界。未找到文档时不调用模型；删除文档后清空过时的自动简介，仍保留手填用途。
 
+## Router 管理页
+
+会话页签栏新增核心「Router」页签，沿用可排序的页签行为，打开后不显示聊天输入区。设置对话框中的 Router 入口继续保留，两个入口使用同一组件与同一持久配置；配置范围为全局，不属于当前会话。
+
+- 「工作区介绍」：可搜索工作区，查看当前自动介绍、补充说明、生成时间、上次检查和下次检查倒计时。等待首次检查、更新中、已缓存、失败和无文档分别显示；失败时仍展示旧介绍。
+- 「立即更新」检查当前工作区，「更新全部」检查所有可见工作区。手动操作跳过24小时等待，仍按内容哈希判断是否调用模型，未变化不会重生成；不自动重启或改写正式会话。手动任务与后台任务共用串行生成队列，且沿用原生跨实例租约，不丢弃用户在后台生成期间发起的更新。
+- 「判断设置」：配置第二步现有 Codex 后端的模型、推理强度和路由文字预算。Jev/Laya 和其他后端不开放选择，保持本期暂缓决定。后台介绍生成沿用已保存的模型配置，但更换模型不自动使文档缓存失效。
+
+倒计时表示下次文档检查时间；只有内容变化才会产生新的介绍。应用关闭、休眠或检查队列繁忙时不会承诺到点完成，已到期时显示等待检查状态。配置未保存时不影响正在运行的任务。
+
 ## 输入预算和案例
 
 默认文字预算为8,192 tokens，可在 Router 设置中调整为2,048–32,768。以本地 o200k_base 计数，包含应用提供的路由指令、输出 schema、工作区目录、案例和原始用户文字，并预留64 tokens 的包装余量；图片及 App Server 自动注入的内容另计。这个数是应用文字预算，不宣称等于模型最终上下文或协议总输入。
@@ -91,4 +101,6 @@ Laya 耗时统计各21次请求，含去图探索样本；重复调用没有增�
 
 验证入口：同目录 Vitest 覆盖路由、简介生成、案例来源匹配；Rust 临时目录与SQLite测试覆盖24小时去重、跨连接租约、哈希变化、原文不进库、并发修改拒绝和预算；会话 Hook 与卡片测试覆盖保存反馈及显式切换。真实 Codex 摘要生成和原生窗口交互应在安装开发构建后人工验收，自动化测试不读写真实用户数据或调用模型。
 
-界面复查：[本地组件预览与检查脚本](../tests/visual/README.md#工作区简介与纠正)、[深色宽窗口](../docs/review/workspace-router/dark-wide.png)、[浅色窄窗口](../docs/review/workspace-router/light-narrow.png)、[执行中限制切换](../docs/review/workspace-router/running.png)。截图使用实际组件与隔离示例数据。
+初版界面截图（历史，供比较）：[本地组件预览与检查脚本](../tests/visual/README.md#工作区简介与纠正)、[深色宽窗口](../docs/review/workspace-router/dark-wide.png)、[浅色窄窗口](../docs/review/workspace-router/light-narrow.png)、[执行中限制切换](../docs/review/workspace-router/running.png)。截图使用实际组件与隔离示例数据。
+
+管理页截图：[介绍与倒计时](../docs/review/workspace-router/router-tab-dark.png)、[第二步配置](../docs/review/workspace-router/router-options-dark.png)、[浅色窄窗口](../docs/review/workspace-router/router-tab-light-narrow.png)、[保留旧介绍的失败状态](../docs/review/workspace-router/router-failed-light.png)。预览文案是示例数据，自动化检查不会发起真实模型调用。

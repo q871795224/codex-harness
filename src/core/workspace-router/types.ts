@@ -5,6 +5,8 @@ export interface RouterSummary {
   checkedAt: number
   generatedAt: number | null
   error: boolean
+  updating?: boolean
+  nextCheckAt?: number | null
 }
 export interface RouterSummaryClaim {
   lease: string
