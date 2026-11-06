@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -135,9 +137,65 @@ def cmd_entry(args: argparse.Namespace) -> int:
     return 0
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def cmd_onboarding(args: argparse.Namespace) -> int:
+    try:
+        endpoint = json.loads((Path.home() / ".codex-harness" / "management-server.json").read_text())
+    except (OSError, ValueError) as exc:
+        raise ProjectDocError("Harness 管理入口不可用，请先启动应用") from exc
+    if not isinstance(endpoint, dict): raise ProjectDocError("管理入口配置无效")
+    try:
+        url = urllib.parse.urlsplit(endpoint.get("baseUrl", ""))
+        port = url.port
+    except (ValueError, TypeError): raise ProjectDocError("管理入口配置无效") from None
+    token = endpoint.get("token")
+    if (endpoint.get("protocolVersion") != 1 or url.scheme != "http" or url.hostname not in ("127.0.0.1", "::1")
+            or not port or url.username or url.password or url.path not in ("", "/") or url.query or url.fragment
+            or not isinstance(token, str) or len(token) < 32):
+        raise ProjectDocError("管理入口配置无效")
+    params = {}
+    method = "projects.list"
+    if args.command != "projects":
+        if not args.thread_id: raise ProjectDocError("需要来源 --thread-id 或会话环境标记，不能使用当前选中会话代替")
+        params = {"threadId": args.thread_id, "mode": "create" if args.command == "request-create" else "join"}
+        if args.command == "request-create": params["name"] = args.name
+        else: params["projectId"] = args.project_id
+        method = "projects.requestOnboarding"
+    request_id = str(uuid.uuid4())
+    payload = {"requestId": request_id, "method": method, "params": params}
+    request = urllib.request.Request(endpoint["baseUrl"].rstrip("/") + "/management/call",
+        data=json.dumps(payload).encode(), headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    try:
+        with opener.open(request, timeout=30) as response: result = json.load(response)
+    except urllib.error.HTTPError as exc:
+        try: error = json.loads(exc.read(65536)).get("error", str(exc.code))
+        except ValueError: error = f"HTTP {exc.code}"
+        raise ProjectDocError(error) from None
+    except (OSError, ValueError) as exc:
+        raise ProjectDocError(f"申请结果未知，先检查来源会话确认卡（requestId={request_id}）") from exc
+    if not isinstance(result, dict) or result.get("requestId") != request_id or "result" not in result:
+        raise ProjectDocError(f"申请结果无法关联，请检查来源会话确认卡（requestId={request_id}）")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.command != "projects": print("已显示预填确认卡；5 分钟未操作将按默认选项执行。继续当前任务，保存和绑定由 Harness 完成。")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="project-doc", description="项目文档回传命令")
     sub = parser.add_subparsers(dest="command", required=True)
+    projects = sub.add_parser("projects", help="列出可加入的项目")
+    projects.set_defaults(func=cmd_onboarding)
+    for action in ("request-create", "request-join"):
+        command = sub.add_parser(action, help="申请新建/加入项目，预填确认卡，未操作时超时自动执行")
+        command.add_argument("--thread-id", default=os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_HARNESS_THREAD_ID"))
+        if action == "request-create": command.add_argument("--name", required=True)
+        else: command.add_argument("--project-id", required=True)
+        command.set_defaults(func=cmd_onboarding)
 
     read = sub.add_parser("read", help="读取项目当前正文 + seq")
     read.add_argument("--thread-id", required=True)

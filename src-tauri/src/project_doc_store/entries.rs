@@ -98,7 +98,7 @@ fn initial_state(section: &str) -> &str {
         "open"
     }
 }
-fn validate_content(content: &str) -> Result<(), String> {
+pub(super) fn validate_content(content: &str) -> Result<(), String> {
     if content.trim().is_empty() {
         return Err("条目正文不能为空".into());
     }
@@ -378,6 +378,95 @@ pub(super) fn preserve_for_compaction(previous: &str, output: &str) -> Result<St
     }
     Ok(next)
 }
+pub(super) fn mutated(body: &str, input: &EntryMutation, by: &str) -> Result<String, String> {
+    if input.reason.trim().is_empty() { return Err("条目操作必须说明原因".into()); }
+    let spans = parse(body)?;
+    let mut next = body.to_string();
+    if input.action == "adopt" {
+        let section = input
+            .section
+            .as_deref()
+            .filter(|s| managed_section(s))
+            .ok_or("只能纳管 Decisions 或 Open Questions")?;
+        let content = input.content.as_deref().ok_or("缺少待纳管正文")?.trim();
+        validate_content(content)?;
+        let (start, end) = find_section(body, &section_heading(section)).ok_or("分区不存在")?;
+        let matches: Vec<_> = body[start..end].match_indices(content).collect();
+        if matches.len() != 1 {
+            return Err("待纳管正文必须在该分区精确且唯一匹配，请重读后重试".into());
+        }
+        let at = start + matches[0].0;
+        if (at > 0 && !body[..at].ends_with('\n'))
+            || (at + content.len() < body.len()
+                && !body[at + content.len()..].starts_with('\n'))
+            || spans
+                .iter()
+                .any(|s| at < s.end && at + content.len() > s.start)
+        {
+            return Err("纳管必须选择完整且尚未纳管的段落".into());
+        }
+        next.replace_range(
+            at..at + content.len(),
+            render(&new_entry(section, content, by, &input.reason)?).trim_end(),
+        );
+    } else {
+        let target = spans
+            .iter()
+            .find(|s| Some(s.entry.meta.id.as_str()) == input.id.as_deref())
+            .ok_or("条目不存在，请先读取或纳管")?;
+        if input.revision != Some(target.entry.meta.revision) {
+            return Err(format!(
+                "条目修订冲突：当前为 {}，请重读后重试",
+                target.entry.meta.revision
+            ));
+        }
+        let mut entry = target.entry.clone();
+        let decision = entry.meta.section == "decisions";
+        let state = entry.meta.state.as_str();
+        match input.action.as_str() {
+            "update" if matches!(state, "active" | "open" | "done") => {
+                let content = input.content.as_deref().ok_or("缺少新正文")?;
+                validate_content(content)?;
+                entry.content = content.trim().into();
+            }
+            "delete" if state != "deleted" && state != "superseded" => {
+                entry.meta.previous_state = Some(entry.meta.state.clone());
+                entry.meta.state = "deleted".into();
+                entry.meta.replaced_by = None;
+            }
+            "restore" if state == "deleted" => {
+                entry.meta.state = entry.meta.previous_state.take().ok_or("缺少软删除前状态")?
+            }
+            "revoke" if decision && state == "active" => entry.meta.state = "revoked".into(),
+            "close" if !decision && state == "open" => entry.meta.state = "done".into(),
+            "reopen" if !decision && state == "done" => entry.meta.state = "open".into(),
+            "supersede" if decision && state == "active" => {
+                let replacement = new_entry(
+                    "decisions",
+                    input.content.as_deref().ok_or("缺少替代决定正文")?,
+                    by,
+                    &input.reason,
+                )?;
+                entry.meta.state = "superseded".into();
+                entry.meta.replaced_by = Some(replacement.meta.id.clone());
+                next = apply_section_write(&next, "decisions", &render(&replacement))?;
+            }
+            _ => return Err("当前分区或状态不支持该操作".into()),
+        }
+        entry.meta.reason = input.reason.trim().into();
+        entry.meta.revision += 1;
+        entry.meta.updated_by = by.into();
+        entry.meta.updated_at = now_ms();
+        next.replace_range(target.start..target.end, &render(&entry));
+    }
+    let after = parse(&next)?;
+    let expected_count =
+        spans.len() + usize::from(matches!(input.action.as_str(), "adopt" | "supersede"));
+    if after.len() != expected_count {
+        return Err("条目不能位于代码围栏内，请选择独立段落".into());
+    }
+    Ok(next)
+}
 impl ProjectDocStore {
     pub fn mutate_entry(
         &self,
@@ -394,97 +483,10 @@ impl ProjectDocStore {
             .map_err(|e| e.to_string())?;
         let (seq, file) = super::compaction::current_checked(self, &tx, id)?;
         let body = strip_front_matter(&file);
-        let spans = parse(body)?;
-        let mut next = body.to_string();
-        if input.action == "adopt" {
-            if input.base_seq != Some(seq) {
-                return Ok(WriteOutcome::Conflict {
-                    current_seq: seq,
-                    base_seq: input.base_seq,
-                });
-            }
-            let section = input
-                .section
-                .as_deref()
-                .filter(|s| managed_section(s))
-                .ok_or("只能纳管 Decisions 或 Open Questions")?;
-            let content = input.content.as_deref().ok_or("缺少待纳管正文")?.trim();
-            validate_content(content)?;
-            let (start, end) = find_section(body, &section_heading(section)).ok_or("分区不存在")?;
-            let matches: Vec<_> = body[start..end].match_indices(content).collect();
-            if matches.len() != 1 {
-                return Err("待纳管正文必须在该分区精确且唯一匹配，请重读后重试".into());
-            }
-            let at = start + matches[0].0;
-            if (at > 0 && !body[..at].ends_with('\n'))
-                || (at + content.len() < body.len()
-                    && !body[at + content.len()..].starts_with('\n'))
-                || spans
-                    .iter()
-                    .any(|s| at < s.end && at + content.len() > s.start)
-            {
-                return Err("纳管必须选择完整且尚未纳管的段落".into());
-            }
-            next.replace_range(
-                at..at + content.len(),
-                render(&new_entry(section, content, by, &input.reason)?).trim_end(),
-            );
-        } else {
-            let target = spans
-                .iter()
-                .find(|s| Some(s.entry.meta.id.as_str()) == input.id.as_deref())
-                .ok_or("条目不存在，请先读取或纳管")?;
-            if input.revision != Some(target.entry.meta.revision) {
-                return Err(format!(
-                    "条目修订冲突：当前为 {}，请重读后重试",
-                    target.entry.meta.revision
-                ));
-            }
-            let mut entry = target.entry.clone();
-            let decision = entry.meta.section == "decisions";
-            let state = entry.meta.state.as_str();
-            match input.action.as_str() {
-                "update" if matches!(state, "active" | "open" | "done") => {
-                    let content = input.content.as_deref().ok_or("缺少新正文")?;
-                    validate_content(content)?;
-                    entry.content = content.trim().into();
-                }
-                "delete" if state != "deleted" && state != "superseded" => {
-                    entry.meta.previous_state = Some(entry.meta.state.clone());
-                    entry.meta.state = "deleted".into();
-                    entry.meta.replaced_by = None;
-                }
-                "restore" if state == "deleted" => {
-                    entry.meta.state = entry.meta.previous_state.take().ok_or("缺少软删除前状态")?
-                }
-                "revoke" if decision && state == "active" => entry.meta.state = "revoked".into(),
-                "close" if !decision && state == "open" => entry.meta.state = "done".into(),
-                "reopen" if !decision && state == "done" => entry.meta.state = "open".into(),
-                "supersede" if decision && state == "active" => {
-                    let replacement = new_entry(
-                        "decisions",
-                        input.content.as_deref().ok_or("缺少替代决定正文")?,
-                        by,
-                        &input.reason,
-                    )?;
-                    entry.meta.state = "superseded".into();
-                    entry.meta.replaced_by = Some(replacement.meta.id.clone());
-                    next = apply_section_write(&next, "decisions", &render(&replacement))?;
-                }
-                _ => return Err("当前分区或状态不支持该操作".into()),
-            }
-            entry.meta.reason = input.reason.trim().into();
-            entry.meta.revision += 1;
-            entry.meta.updated_by = by.into();
-            entry.meta.updated_at = now_ms();
-            next.replace_range(target.start..target.end, &render(&entry));
+        if input.action == "adopt" && input.base_seq != Some(seq) {
+            return Ok(WriteOutcome::Conflict { current_seq: seq, base_seq: input.base_seq });
         }
-        let after = parse(&next)?;
-        let expected_count =
-            spans.len() + usize::from(matches!(input.action.as_str(), "adopt" | "supersede"));
-        if after.len() != expected_count {
-            return Err("条目不能位于代码围栏内，请选择独立段落".into());
-        }
+        let next = mutated(body, input, by)?;
         persist_body(
             tx,
             &self.project_dir(id),

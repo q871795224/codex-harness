@@ -5,6 +5,8 @@ export interface ManagementRequest {
 }
 
 export const managementMethods = {
+  'projects.list': false,
+  'projects.requestOnboarding': true,
   status: false,
   capabilities: false,
   'asyncWaits.list': false,

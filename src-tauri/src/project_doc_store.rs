@@ -16,6 +16,8 @@ use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
 mod compaction;
 mod entries;
+mod onboarding;
+pub use onboarding::{OnboardingCommit, OnboardingReceipt, SavedOnboarding};
 pub use entries::{EntryMutation, ProjectEntry, ProjectContext};
 pub use compaction::{CompactionInput, CompactionResult, DocumentMeasure};
 use std::collections::hash_map::DefaultHasher;

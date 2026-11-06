@@ -49,3 +49,7 @@ node .agents/skills/harness-codex-audit/scripts/verify-native-project-skill.mjs
 ```
 
 该脚本是显式执行的本机黑箱检查，不加入常规 CI；CI 环境未安装这两套原生程序。脚本使用临时目录和假模型服务，但会启动本机 CLI/SDK 进程，结果应结合输出版本解读。它不会对日常 daemon 注册搜索根。
+
+2026-11-06 复验（Codex 0.167.0，Claude / SDK 版本不变）：未绑定会话需要通过 Skill 申请新建/加入项目，因此 Claude 的未绑定用例也配置本地插件，验证元信息可发现、正文未主动加载。首次来源标记与 Provider 协议 4 的接入另由 daemon 集成测试覆盖。
+
+本次复验结果见 [native-validation.json](review/project-onboarding/native-validation.json)。上表与旧 validation.json 保留 2026-11-05 的发现范围，复验脚本现按新的未绑定发现要求运行。
