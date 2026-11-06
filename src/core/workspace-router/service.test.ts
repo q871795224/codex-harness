@@ -131,7 +131,7 @@ it('previews the same prompt fields used by execution without starting a model',
   const candidates = await routingCandidates(workspaces, settings)
   const prepared = await prepareRouterPrompt([textInput('private preview')], candidates, settings)
   expect(prepared.input.at(-1)).toEqual(textInput('private preview'))
-  expect(prepared.developerInstructions).toContain('Choose the workspace')
+  expect(prepared.developerInstructions).toContain('你是工作区选择助手')
   expect(runtime.buildRouterPrompt).toHaveBeenCalledWith(expect.objectContaining({ exampleLimit: 5 }))
   expect(appServer.startThread).not.toHaveBeenCalled()
   expect([...storage.values()].join('')).not.toContain('private preview')

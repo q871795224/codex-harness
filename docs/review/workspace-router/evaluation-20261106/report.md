@@ -95,3 +95,17 @@ typed-decisions 在完整组的中文指令均有截断，英文指令也少量�
 所有成功请求的 API input_tokens 均逐次与本地复现的 SDK 序列长度核对；原始本机实验目录另保留请求计划、脚本、完整回包和冻结数据。客户端耗时为 HTTP 发出到完整响应，服务端单次处理耗时也保留在 CSV；不与旧 Codex 的整个路由阶段耗时直接作倍率比较。
 
 本次样本小，合成标签由本轮作者给定；单格多选对一条就会改变约 6–7 个百分点。结果用于此次方案取舍，不写成生产正确率。没有验证图片、related、多窗口交互或 Codex 中英文质量差异。正式缓存、纠错规则、Prompt 与后端选型均保持现状，等待用户决策。
+
+## 中文决定与评测资料来源（2026-11-06补记）
+
+用户决定优先可读性，路由指令与工作区介绍使用中文，不为本次Token差异增加英文或双语简介缓存。前文英文组保留为历史实验数据；637 tokens覆盖当时全部22个可见工作区的实验短介绍、指令、两条示例和一条需求的平均值，没有加入各仓库AGENTS全文，也不是现有自动简介缓存的真实请求测量。
+
+此前“官方资料”具体指模型开发者发布的模型卡与仓库，例如[Fastino模型卡](https://huggingface.co/fastino/GLiNER2.5-multi-Decide)、[Qwen模型卡](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B)与[BAAI模型卡](https://huggingface.co/BAAI/bge-reranker-v2-m3)。这是开发者提供的模型能力、用法和自测信息，不能据此给出中文Router的模型强弱排序。
+
+| 评测入口 | 维护者与范围 | 本项目如何参考 |
+| --- | --- | --- |
+| [MTEB](https://leaderboard.mteb.org/) | MTEB社区，多种语言和任务，可筛选检索/重排等类别 | Qwen、BGE等匹配路线参考相关中文/多语言重排任务，不直接使用Embedding总榜替代路由评估 |
+| [fast-decisions](https://huggingface.co/datasets/fastino/fast-decisions) | Fastino开发者自测，17个运营分类领域，各300条测试样本；本次表格为英文 | 用于了解同类分类器的作者对照，中文效果需要另测 |
+| [system-one-benchmark](https://github.com/yanng981/system-one-benchmark) | 声明与模型厂商无关联的社区实验；英文分类与8语言MASSIVE场景分类，提供代码和逐条预测 | 对中文动态分类有直接参考，但仅单次、单机、中文150条，未在本机复现 |
+
+上述社区实验的中文MASSIVE表报告Jev 1.13为87%、Laya multilingual为66%、GLiNER2.5-multi-Decide为46%。任务使用18个场景标签，问题和候选描述是英文；这组结果与Fastino的英文自测不能合成统一排名，也不支持先认定GLiNER多语言模型强于Laya。本文记录的是2026-11-06查看的作者报告，不是本仓库复测结果，后续选型继续以实际工作区案例验证。
