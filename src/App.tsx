@@ -880,7 +880,6 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
 
             {tab === 'chat' ? (
               <ConversationView
-                asyncWaitPanel={codexConversation ? <AsyncWaitPanel threadId={harness.currentThread.id} onOpenThread={(id) => { void harness.selectThread(id) }} /> : undefined}
                 threadId={harness.currentThread.id}
                 provider={harness.selectedProvider}
                 items={harness.currentDetail?.items ?? []}

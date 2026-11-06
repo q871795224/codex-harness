@@ -13,7 +13,7 @@ function fixture() {
   const claimed = new Set<string>(); const delivered = new Set<string>()
   const deliveries: Record<string, unknown>[] = []
   const call = vi.fn(async (action: string, input: Record<string, unknown> = {}) => {
-    if (action === 'status') return { reachable: true, connected: true, accountId: 'account', ownerId: 'owner' }
+    if (action === 'status') return { reachable: true, connected: true, interactiveCards: true, accountId: 'account', ownerId: 'owner' }
     if (action === 'bindings') return { bindings }
     if (action === 'messages') {
       const page = messages.filter(m => m.cursor > Number(input.after ?? 0)).slice(0, 100)
@@ -35,19 +35,19 @@ function fixture() {
 }
 beforeEach(() => vi.clearAllMocks())
 
-it('sends background commentary and final results to their own branch once, without replaying older history', async () => {
+it('sends only user messages and final results to their own branch once, without replaying older history', async () => {
   const f = fixture(); const detail = emptyThreadDetail(thread('two'))
   detail.items = [
     { turnId: 'old', item: { id: 'old-item', type: 'agentMessage', text: 'old history' } },
-    { turnId: 'turn', item: { id: 'progress', type: 'agentMessage', text: 'working' }, timing: { completedAt: now } },
-    { turnId: 'turn', item: { id: 'final', type: 'agentMessage', text: 'done' }, timing: { completedAt: now } },
+    { turnId: 'turn', item: { id: 'progress', type: 'agentMessage', phase: 'commentary', text: 'working' }, timing: { completedAt: now } },
+    { turnId: 'turn', item: { id: 'final', type: 'agentMessage', phase: 'final_answer', text: 'done' }, timing: { completedAt: now } },
   ]
   f.snapshot.details.two = detail
   await f.service.tick(); await f.service.tick()
-  expect(f.deliveries.map(d => [d.threadId, d.text])).toEqual([['two', 'working'], ['two', 'done']])
+  expect(f.deliveries.map(d => [d.threadId, d.text])).toEqual([['two', 'done']])
   const restart = new SeaTalkSync(f.call as RemoteCall, () => f.snapshot, f.actions)
   await restart.tick()
-  expect(f.deliveries).toHaveLength(2)
+  expect(f.deliveries).toHaveLength(1)
 })
 
 it('directs an inbound reply to its mapped session and never submits the same message twice across instances', async () => {
@@ -126,7 +126,7 @@ it('creates roots automatically for ordinary sessions and skips ephemeral helper
 
 it('splits a long Unicode result into native-size messages without losing content', async () => {
   const f = fixture(); const detail = emptyThreadDetail(thread('one')); const content = '你好👋'.repeat(5000)
-  detail.items = [{ turnId: 'turn', item: { id: 'long', type: 'agentMessage', text: content }, timing: { completedAt: now } }]
+  detail.items = [{ turnId: 'turn', item: { id: 'long', type: 'agentMessage', phase: 'final_answer', text: content }, timing: { completedAt: now } }]
   f.snapshot.details.one = detail
   await f.service.tick()
   expect(f.deliveries.map(d => d.text).join('')).toBe(content)
@@ -137,10 +137,10 @@ it('includes the first input of an already active turn even when it precedes roo
   const f = fixture(); const detail = emptyThreadDetail(thread('one'))
   f.snapshot.activeTurnIds.one = 'turn'
   f.bindings[0].createdAt = now + 1000
-  detail.items = [{ turnId: 'turn', item: { id: 'input', type: 'userMessage', content: [textInput('first input')] }, timing: { completedAt: now } }]
+  detail.items = [{ turnId: 'turn', item: { id: 'input', type: 'userMessage', content: [textInput('first input')] }, timing: { startedAt: now } }]
   f.snapshot.details.one = detail
   await f.service.tick()
-  expect(f.deliveries.map(d => d.text)).toEqual(['开始执行。', '你：\nfirst input'])
+  expect(f.deliveries.map(d => d.text)).toEqual(['你：\nfirst input'])
 })
 
 it('checks current native ownership before claiming, rather than trusting a stale idle snapshot', async () => {
@@ -154,4 +154,77 @@ it('checks current native ownership before claiming, rather than trusting a stal
   prepare.mockResolvedValue(true)
   await service.tick()
   expect(f.actions.send).toHaveBeenCalledExactlyOnceWith('two', 'continue')
+})
+
+
+it('omits tool events, queued drafts and routine turn status while forwarding desktop input', async () => {
+  const f = fixture(); const detail = emptyThreadDetail(thread('one'))
+  detail.items = [
+    { turnId: 'turn', item: { id: 'u', type: 'userMessage', content: [textInput('hello')] }, timing: { completedAt: now } },
+    ...['commandExecution', 'fileChange', 'mcpToolCall', 'reasoning'].map(type => ({ turnId: 'turn', item: { id: type, type, text: 'private process' }, timing: { completedAt: now } })),
+    { turnId: 'turn', item: { id: 'a', type: 'agentMessage', phase: 'final_answer' as const, text: '**done**' }, timing: { completedAt: now } },
+  ]
+  detail.turns = [{ id: 'turn', status: 'completed', completedAt: now, startedAt: now - 100, durationMs: 100, error: null, items: [] }]
+  f.snapshot.details.one = detail
+  f.snapshot.activeTurnIds.one = 'turn'
+  await f.service.tick()
+  expect(f.deliveries.map(d => d.text)).toEqual(['你：\nhello', '**done**'])
+  expect(f.deliveries.every(d => d.format === 'markdown')).toBe(true)
+})
+
+it('waits for a legacy turn to finish and sends only its last phase-less message', async () => {
+  const f = fixture(); const detail = emptyThreadDetail(thread('one'))
+  detail.items = ['progress', 'result'].map(id => ({ turnId: 'turn', item: { id, type: 'agentMessage', text: id }, timing: { completedAt: now } }))
+  detail.turns = [{ id: 'turn', status: 'inProgress', completedAt: null, startedAt: now, durationMs: null, error: null, items: [] }]
+  f.snapshot.details.one = detail
+  await f.service.tick()
+  expect(f.deliveries).toHaveLength(0)
+  detail.turns[0].status = 'completed'
+  await f.service.tick()
+  expect(f.deliveries.map(d => d.text)).toEqual(['result'])
+})
+
+it('sends actionable approval cards and rejects repeated clicks after resolution', async () => {
+  const f = fixture()
+  const request: ApprovalRequest = { id: 'approval', threadId: 'two', method: 'item/commandExecution/requestApproval', params: { command: 'ls' } }
+  f.snapshot.approvals.two = [request]
+  await f.service.tick()
+  const card = f.deliveries[0].card as { buttons: { text: string; command: string }[] }
+  expect(card.buttons.map(b => b.text)).toEqual(['批准本次操作', '拒绝'])
+  f.messages.push({ id: 'click', cursor: 1, rootId: 'root-two', text: card.buttons[0].command })
+  await f.service.tick()
+  expect(f.actions.answer).toHaveBeenCalledExactlyOnceWith(request, 'accept')
+  f.messages.push({ id: 'click-again', cursor: 2, rootId: 'root-two', text: card.buttons[1].command })
+  await f.service.tick()
+  expect(f.actions.answer).toHaveBeenCalledTimes(1)
+})
+
+it('collects card selections for all questions before submitting one complete answer', async () => {
+  const f = fixture()
+  const request: ApprovalRequest = { id: 'q', threadId: 'two', method: 'item/tool/requestUserInput', params: { questions: [
+    { id: 'mode', question: 'Mode?', options: [{ label: 'fast', description: 'quick' }] },
+    { id: 'color', question: 'Color?', options: [{ label: 'blue' }] },
+  ] } }
+  f.snapshot.approvals.two = [request]
+  await f.service.tick()
+  const cards = f.deliveries.map(d => d.card as { buttons: { command: string }[] })
+  f.messages.push({ id: 'one', cursor: 1, rootId: 'root-two', text: cards[0].buttons[0].command })
+  await f.service.tick()
+  expect(f.actions.answer).not.toHaveBeenCalled()
+  f.messages.push({ id: 'two', cursor: 2, rootId: 'root-two', text: cards[1].buttons[0].command })
+  await f.service.tick()
+  expect(f.actions.answer).toHaveBeenCalledExactlyOnceWith(request, { answers: { mode: { answers: ['fast'] }, color: { answers: ['blue'] } } })
+})
+
+
+it('keeps approvals operable with explicit commands when Bridge has not been upgraded', async () => {
+  const f = fixture()
+  f.snapshot.approvals.two = [{ id: 'a', threadId: 'two', method: 'item/fileChange/requestApproval', params: {} }]
+  const call: RemoteCall = async (action, input) => action === 'status'
+    ? { reachable: true, connected: true } as never : f.call(action, input) as never
+  await new SeaTalkSync(call, () => f.snapshot, f.actions).tick()
+  expect(f.deliveries[0].card).toBeUndefined()
+  expect(f.deliveries[0].text).toContain('/批准 ')
+  expect(f.deliveries[0].text).toContain('/拒绝 ')
+  expect(f.actions.warn).toHaveBeenCalledTimes(1)
 })

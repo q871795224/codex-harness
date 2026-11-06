@@ -180,7 +180,6 @@ export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode 
 }
 
 interface ConversationViewProps {
-  asyncWaitPanel?: ReactNode
   threadId?: string
   provider?: 'codex' | 'claude'
   items: ThreadItemEntry[]
@@ -234,7 +233,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, automaticWorkspace = false, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions, banners }: ConversationViewProps) {
+export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, automaticWorkspace = false, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions, banners }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -344,7 +343,6 @@ export function ConversationView({ asyncWaitPanel, threadId, provider = 'codex',
         onScrollPosition(event.currentTarget.scrollTop)
       }}>
         <div className="message-column">
-          {asyncWaitPanel}
           {rawMode && (
             <div className="raw-mode-banner" role="status">
               <Terminal size={13} />
