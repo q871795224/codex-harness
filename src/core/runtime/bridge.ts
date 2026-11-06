@@ -672,6 +672,10 @@ export const runtime = {
     return invoke('send_question_notification', { baseUrl, account, targetId, input })
   },
 
+  seatalkRemoteCall<T>(action: 'status' | 'bindings' | 'messages' | 'send' | 'claim' | 'finish', input: Record<string, unknown> = {}): Promise<T> {
+    return invoke<T>('seatalk_remote_call', { action, input })
+  },
+
   localConnectorHealth(baseUrl: string): Promise<LocalConnectorHealth> {
     return invoke<LocalConnectorHealth>('local_connector_health', { baseUrl })
   },

@@ -191,6 +191,7 @@ export function useUnifiedHarness() {
   const threads = useMemo(() => [...claude.threads, ...codex.threads], [claude.threads, codex.threads])
   const details = useMemo(() => ({ ...codex.details, ...claude.details }), [claude.details, codex.details])
   const approvals = useMemo(() => ({ ...codex.approvals, ...claude.approvals }), [claude.approvals, codex.approvals])
+  const queues = useMemo(() => ({ ...codex.queues, ...claude.queues }), [claude.queues, codex.queues])
   const activeTurnIds = useMemo(() => ({ ...codex.activeTurnIds, ...claude.activeTurnIds }), [claude.activeTurnIds, codex.activeTurnIds])
   const claudeRoots = useMemo(
     () => Object.fromEntries(claude.sessions.map((session) => {
@@ -381,6 +382,22 @@ export function useUnifiedHarness() {
     ? claude.answerApproval(request, decision)
     : codex.answerApproval(request, decision), [claude, codex])
 
+  const prepareRemoteThread = useCallback(async (threadId: string) => threadId.startsWith('claude:')
+    ? true : codex.prepareRemoteThread(threadId), [codex.prepareRemoteThread])
+  const sendRemoteMessage = useCallback(async (threadId: string, text: string) => {
+    if (threadId.startsWith('claude:')) await claude.sendMessage(threadId, [{ type: 'text', text, text_elements: [] }], 'queue')
+    else await codex.sendRemoteMessage(threadId, text)
+    noteMessageSubmitted(threadId)
+  }, [claude.sendMessage, codex.sendRemoteMessage, noteMessageSubmitted])
+  const stopRemoteTurn = useCallback(async (threadId: string) => {
+    if (threadId.startsWith('claude:')) await claude.stopTurn(threadId, true)
+    else await codex.stopRemoteTurn(threadId)
+  }, [claude.stopTurn, codex.stopRemoteTurn])
+  const answerRemoteApproval = useCallback(async (request: ApprovalRequest, decision: unknown) => {
+    if (request.method.startsWith('claude/')) await claude.answerApproval(request, decision, true)
+    else await codex.answerApproval(request, decision, true)
+  }, [claude.answerApproval, codex.answerApproval])
+
   const refresh = useCallback(async () => {
     await Promise.all([codex.refresh(), claude.refresh(codex.viewMode === 'archived')])
   }, [claude, codex])
@@ -419,13 +436,17 @@ export function useUnifiedHarness() {
     isCurrentBackgroundWorking: selectedProvider === 'claude' && !activeTurnId
       && isClaudeSessionWorking(claude.sessionActivities[selectedThreadId ?? '']),
     busy: selectedProvider === 'claude' ? { ...codex.busy, ...claude.busy } : codex.busy,
-    queues: selectedProvider === 'claude' ? claude.queues : codex.queues,
+    queues,
     pendingSteers: selectedProvider === 'claude' && selectedThreadId ? { ...codex.pendingSteers, [selectedThreadId]: [] } : codex.pendingSteers,
     selectThread,
     openThread,
     createThread,
     resetThread,
     sendMessage,
+    prepareRemoteThread,
+    sendRemoteMessage,
+    stopRemoteTurn,
+    answerRemoteApproval,
     stopTurn,
     editQueue,
     removeQueue,

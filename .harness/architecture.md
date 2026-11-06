@@ -101,6 +101,13 @@
 - 历史通过现有 appState 接口写入 `state.sqlite` 的 `notifications.history`，永久保留，不做自动过期或脱敏。存储通知说明、原始错误和关联标识，不复制会话正文、归档草稿或完整日志。
 - 发布和项目归档按一次任务更新同一条通知；发布跨会话继续跟踪，历史日志按 run ID 打开。系统通知插件仍独立负责 macOS 回复完成提醒。
 
+## SeaTalk 会话续聊
+
+- `core/seatalk` 在应用核心挂载，普通活动会话默认同步到 Bridge 的 `harness-sessions` OpenAPI Bot；每个会话一条主消息，后续更新与远程输入都使用原生回复分支。同步不依赖插件 tab 或当前选中会话；完整使用和恢复语义见 `docs/seatalk/README.md`。
+- Rust `local_connector.rs` 只代理固定 loopback `/local/harness/*` 动作；Bridge 管理 Bot 凭据、原生发送回执、会话分支映射和入站指令原子领取，Harness 核心通过现有会话运行时提交输入、队列、停止与审批，不由 Bridge 直接连接 App Server。
+- 接收者和操作者使用账号显式配置的员工编号；仅接受该账号已映射私聊分支中的用户消息。远程执行先恢复会话核对轮次归属，不切换电脑选择、不自动接管其他实例。消息与指令均使用持久去重编号，结果不明的外部动作不自动重放。
+- 会话通道在线时，核心抑制旧提问通知插件的重复发送；离线时保留原有提问卡片。
+
 ## SeaTalk 中间提问通知
 
 - 独立插件 `builtin.question-notifications` 默认开启，通过核心 `harness.conversations.onUserInputRequested` 消费 `item/tool/requestUserInput` 和 `agentMessage.delivery=async`；不依赖 SeaTalk 草稿插件或异步等待任务。

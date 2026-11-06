@@ -2,6 +2,7 @@ export type JsonObject = Record<string, unknown>
 
 /** A low-cardinality source label for a Codex turn started by Harness. */
 export type CodexTurnTrigger =
+  | 'seatalk'
   | 'async-wait'
   | 'conversation-restart'
   | 'continue-after-failure'
