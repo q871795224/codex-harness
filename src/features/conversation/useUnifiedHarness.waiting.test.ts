@@ -161,3 +161,26 @@ describe('waiting indicators', () => {
     expect(result.current.waitingThreadIds.active).toBeUndefined()
   })
 })
+
+it('emits accepted user messages after send succeeds, keeping failed sends and agent replies separate', async () => {
+  const {result}=await ready()
+  const accepted=vi.fn()
+  const stop=result.current.onMessageAccepted(accepted)
+  await act(async () => { await result.current.selectThread('active') })
+  const event=vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
+  act(() => event({method:'item/completed',params:{threadId:'active',turnId:'old',item:{type:'agentMessage',id:'old',text:'Agent 回复'}}}))
+  expect(accepted).not.toHaveBeenCalled()
+  vi.mocked(appServer.startTurn).mockRejectedValueOnce(new Error('send failed'))
+  await act(async () => {
+    await expect(result.current.sendMessage([{type:'text',text:'hello',text_elements:[]}],'interject')).rejects.toThrow('send failed')
+  })
+  expect(accepted).not.toHaveBeenCalled()
+  vi.mocked(appServer.startTurn).mockResolvedValueOnce({turn:{id:'new-turn',status:'inProgress',items:[],error:null,startedAt:null,completedAt:null,durationMs:null}})
+  await act(async () => { await result.current.sendMessage([{type:'text',text:'hello',text_elements:[]}],'interject') })
+  expect(accepted).toHaveBeenCalledExactlyOnceWith('active')
+  await act(async () => { await result.current.selectThread('claude:active') })
+  act(() => vi.mocked(runtime.listenClaudeEvents).mock.calls.at(-1)![0]({method:'turn/started',params:{sessionId:'claude:active',turnId:'turn-c'}}))
+  await act(async () => { await result.current.sendMessage([{type:'text',text:'queued',text_elements:[]}],'queue') })
+  expect(accepted.mock.calls.map(([id])=>id)).toEqual(['active','claude:active'])
+  stop()
+})

@@ -13,6 +13,8 @@ vi.mock('@tauri-apps/api/window', () => ({
 vi.mock('../../core/runtime/bridge', () => ({
   diagnosticErrorCode: vi.fn(), recordWorkspaceContextDiagnostic: vi.fn(),
   runtime: {
+    projectDocThreadBinding: vi.fn().mockResolvedValue(null),
+    projectDocBindThread: vi.fn().mockResolvedValue(undefined),
     recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
     listWorkspaces: vi.fn().mockResolvedValue([]),
     listThreadStates: vi.fn().mockResolvedValue([]),
@@ -52,6 +54,7 @@ async function ready() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(runtime.projectDocThreadBinding).mockResolvedValue(null)
   vi.mocked(appServer.listThreads).mockImplementation(async (params) => page(params.archived ? 'archived' : 'active'))
   vi.mocked(appServer.resumeThread).mockImplementation(async (params) => resumeResponse(String(params.threadId)))
 })
@@ -79,6 +82,7 @@ describe('fork catalog retention', () => {
       await forking
     })
     expect(result.current.selectedThreadId).toBe('forked')
+    expect(runtime.projectDocBindThread).not.toHaveBeenCalled()
     const completed = vi.fn()
     const unsubscribe = result.current.onTurnCompleted(completed)
     // Reading copied history must not produce completion notifications.
@@ -106,4 +110,31 @@ describe('fork catalog retention', () => {
     await act(async () => { await result.current.refresh() })
     expect(result.current.threads.map((item) => item.id)).toEqual(['source', 'forked'])
   })
+})
+
+it.each(['pending', 'locked'] as const)('inherits a %s source project before opening the fork', async phase => {
+  const {result} = await ready()
+  await act(async () => { await result.current.selectThread('active') })
+  vi.mocked(runtime.projectDocThreadBinding).mockResolvedValue({projectId:'project-p',phase})
+  vi.mocked(appServer.forkThread).mockResolvedValueOnce({...resumeResponse('child')})
+  let release!: () => void
+  vi.mocked(runtime.projectDocBindThread).mockImplementationOnce(() => new Promise(resolve => {release=resolve}))
+  let pending!: Promise<void>
+  await act(async () => { pending=result.current.forkThreadAtTurn('turn-1'); await Promise.resolve(); await Promise.resolve() })
+  expect(runtime.projectDocBindThread).toHaveBeenCalledWith('child','project-p')
+  expect(result.current.selectedThreadId).toBe('active')
+  await act(async () => { release(); await pending })
+  expect(result.current.selectedThreadId).toBe('child')
+})
+
+it('keeps a created fork available and stays on the source if binding fails', async () => {
+  const {result} = await ready()
+  await act(async () => { await result.current.selectThread('active') })
+  vi.mocked(runtime.projectDocThreadBinding).mockResolvedValue({projectId:'p',phase:'locked'})
+  vi.mocked(appServer.forkThread).mockResolvedValueOnce(resumeResponse('child'))
+  vi.mocked(runtime.projectDocBindThread).mockRejectedValueOnce(new Error('storage unavailable'))
+  await act(async () => { await result.current.forkThreadAtTurn('turn-1') })
+  expect(result.current.selectedThreadId).toBe('active')
+  expect(result.current.threads.some(t => t.id === 'child')).toBe(true)
+  expect(result.current.forkingTurnId).toBeNull()
 })
