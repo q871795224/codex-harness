@@ -1,5 +1,7 @@
 # 会话反馈与提醒验收
 
+当前应用保留 main 禁用应用内提醒的策略，通知入口打开历史；本页的右栏仅验证保留组件，不代表应用已启用右栏。
+
 此页直接渲染生产组件 `ConversationHeader`、`ConversationView`、`RouterFeedbackCard`、`UserInputRequestCard`、`Composer` 和 `NotificationViewport`，使用内存数据和模拟发送，不连接原生运行时、不调用模型。页面只供 Vite 开发验证，不进入正式构建。
 
 ```bash
