@@ -264,6 +264,7 @@ export function useHarness() {
     return () => { questionListenersRef.current.delete(listener) }
   }, [])
 
+  const agentReplyListenersRef = useRef(new Set<(threadId: string) => void>())
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
   const transportRecoveryTimerRef = useRef<number | null>(null)
 
@@ -286,6 +287,11 @@ export function useHarness() {
   const rememberNextThreadCwd = useCallback((cwd: string | null) => {
     nextThreadCwdRef.current = cwd
     setNextThreadCwd(cwd)
+  }, [])
+
+  const onAgentReply = useCallback((listener: (threadId: string) => void) => {
+    agentReplyListenersRef.current.add(listener)
+    return () => { agentReplyListenersRef.current.delete(listener) }
   }, [])
 
   const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
@@ -985,6 +991,7 @@ export function useHarness() {
     if (!sourceThreadId || forkingTurnId) return
     setForkingTurnId(turnId)
     try {
+      const binding = await runtime.projectDocThreadBinding(sourceThreadId)
       const response = await appServer.forkThread(sourceThreadId, turnId)
       // Forked threads stay out of the state-DB catalog until their first
       // turn, so the fork's own thread/started refresh would otherwise drop
@@ -992,6 +999,14 @@ export function useHarness() {
       pendingCatalogThreadIdsRef.current.add(response.thread.id)
       upsertThread(response.thread)
       await mapThreadRoots([response.thread])
+      if (binding) {
+        try {
+          await runtime.projectDocBindThread(response.thread.id, binding.projectId)
+        } catch (error) {
+          notify('分支会话已创建，但项目绑定失败；请在新会话中重新选择项目。', 'error', error, { threadId: response.thread.id })
+          return
+        }
+      }
       await selectThread(response.thread.id, 'fork')
       notify('已创建分支会话。对话历史已复制，代码文件仍与来源会话共用同一工作目录。')
     } catch (error) {
@@ -2338,6 +2353,9 @@ export function useHarness() {
       const turnId = typeof params.turnId === 'string' ? params.turnId : null
       const item = eventThreadItem(params.item)
       if (threadId && turnId && item) {
+        if (!event.replayed && !completedTurnIdsRef.current.has(turnId) && item.type === 'agentMessage' && typeof item.text === 'string' && item.text.trim()) {
+          for (const listener of agentReplyListenersRef.current) listener(threadId)
+        }
         const questionRequest = asyncUserInputRequest(threadId, item, turnId)
         if (questionRequest) emitQuestion(questionRequest)
         const observedAt = Date.now()
@@ -2360,6 +2378,10 @@ export function useHarness() {
       const itemId = typeof params.itemId === 'string' ? params.itemId : null
       const delta = typeof params.delta === 'string' ? params.delta : ''
       if (threadId && itemId) {
+        const turnId = typeof params.turnId === 'string' ? params.turnId : null
+        if (!event.replayed && delta.trim() && (!turnId || !completedTurnIdsRef.current.has(turnId))) {
+          for (const listener of agentReplyListenersRef.current) listener(threadId)
+        }
         queueDetailDelta(threadId, 'agentMessageDelta', itemId, delta)
       }
       return
@@ -2618,6 +2640,7 @@ export function useHarness() {
     openThread,
     forkThreadAtTurn,
     onTurnCompleted,
+    onAgentReply,
     onUserInputRequested,
     notify,
     loadOlderTurns,

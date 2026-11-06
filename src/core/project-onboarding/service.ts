@@ -2,22 +2,32 @@ import type { AgentRunService } from '../agent-runs/types'
 import type { ProjectDocService } from '../project-docs/types'
 import type { ProjectOnboardingService, OnboardingPorts, OnboardingSettings, OnboardingState, StoredOnboardingRequest } from './types'
 import { chunkHistory, historySummaryPrompt, onboardingPrompt, parsePlan } from './prompt'
+import { watchProjectVersion, withAbort } from './versionWatch'
 
 export const AUTO_CONFIRM_DELAY_MS = 5 * 60_000
 
-function waitForRun(runs: AgentRunService, id: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let stop = () => {}
-    const timer = setTimeout(() => { stop(); void runs.cancel(id).catch(() => {}); reject(new Error('整理超时，项目文档未保存')) }, 300_000)
-    const check = () => {
-      const run = runs.snapshot().find(r => r.runId === id)
-      if (!run || !['completed', 'failed', 'cancelled'].includes(run.status)) return
-      clearTimeout(timer); stop()
-      if (run.status === 'completed') void runs.loadResult(id).then(resolve, reject)
-      else reject(new Error(run.errorSummary || '整理未完成，项目文档未保存'))
-    }
-    stop = runs.subscribe(check); check()
-  })
+async function waitForRun(runs: AgentRunService, id: string, signal?: AbortSignal): Promise<string> {
+  let stop = () => {}
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const cancel = () => { void runs.cancel(id).catch(() => {}) }
+  signal?.addEventListener('abort', cancel, { once: true })
+  try {
+    if (signal?.aborted) { cancel(); signal.throwIfAborted() }
+    return await withAbort(new Promise<string>((resolve, reject) => {
+      timer = setTimeout(() => { cancel(); reject(new Error('整理超时，项目文档未保存')) }, 300_000)
+      const check = () => {
+        if (signal?.aborted) return
+        const run = runs.snapshot().find(r => r.runId === id)
+        if (!run || !['completed', 'failed', 'cancelled'].includes(run.status)) return
+        clearTimeout(timer); stop()
+        if (run.status === 'completed') void runs.loadResult(id).then(resolve, reject)
+        else reject(new Error(run.errorSummary || '整理未完成，项目文档未保存'))
+      }
+      stop = runs.subscribe(check); check()
+    }), signal)
+  } finally {
+    clearTimeout(timer); stop(); signal?.removeEventListener('abort', cancel)
+  }
 }
 
 export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDocService, runs: AgentRunService): ProjectOnboardingService {
@@ -113,6 +123,7 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
     // A retry may regenerate against a newer target, but retains its request ID.
     publish(card)
     const update = (patch: Partial<OnboardingState>) => { card = { ...card, ...patch }; publish(card) }
+    let version: ReturnType<typeof watchProjectVersion> | undefined
     try {
       if (previous.phase === 'error') {
         const saved = (await ports.saved?.() ?? []).find(r => r.requestId === card.id && r.threadId === threadId)
@@ -131,12 +142,18 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
       if (ports.busy(threadId)) history.push('备注：来源会话仍在执行，当前轮次的材料只是已发生事项的快照，不代表任务已完成。')
       const target = selection.mode === 'join' ? await ports.project(card.projectId) : null
       if (target && (!target.consistent || target.content.length > 180_000)) throw new Error('目标文档过长或存在协议外修改，请先检查或人工精简后重试')
+      if (target) version = watchProjectVersion(docs, target.projectId, target.currentSeq)
       const run = async (prompt: string, title: string) => {
         await writes.get(card.id)
-        const task = await runs.start({ instanceId: settings.instanceId, provider: 'codex', title, mode: 'detached', workspaceAccess: 'read-only',
+        await version?.check()
+        const starting = runs.start({ instanceId: settings.instanceId, provider: 'codex', title, mode: 'detached', workspaceAccess: 'read-only',
           workspaceRoot: source.cwd, parentThreadId: threadId, prompt,
-          settings: { model: settings.model, effort: settings.effort, serviceTier: null, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'read-only' } })
-        return waitForRun(runs, task.runId)
+          settings: { model: settings.model, effort: settings.effort, serviceTier: null, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'read-only' } }).then(task => {
+          if (version?.signal.aborted) void runs.cancel(task.runId).catch(() => {})
+          return task
+        })
+        const task = await withAbort(starting, version?.signal)
+        return waitForRun(runs, task.runId, version?.signal)
       }
       let chunks = chunkHistory(history)
       update({ phase: 'running', messages: history.length, chunks: chunks.length, completedChunks: 0, detail: '正在整理会话结论' })
@@ -154,17 +171,21 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
       update({ detail: '正在生成项目记忆' })
       const plan = parsePlan(await run(onboardingPrompt(chunks[0], target, card.name), selection.mode === 'create' ? '从会话建立项目' : '补记会话到项目'))
       if (!target && !plan.status) throw new Error('新项目整理结果缺少概况')
+      await version?.check()
+      version?.stop()
       const projectId = target?.projectId ?? `project-${card.id}`
       update({ phase: 'saving', projectId, detail: '正在保存项目文档' })
       const receipt = await ports.commit({ ...plan, requestId: card.id, threadId, projectId, name: target ? null : card.name, baseSeq: target?.currentSeq ?? null })
       update({ receipt, phase: 'binding', detail: '文档已保存，等待当前轮次结束后加入项目' })
       await finish(card)
     } catch (error) { update({ phase: 'error', error: message(error), detail: undefined }) }
+    finally { version?.stop() }
   }
-  return {
+  const service: ProjectOnboardingService = {
     snapshot: () => cards,
     subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn) } }, request, confirm,
     listProjects: () => docs.list(),
+    agentReplied: threadId => { if (cards.get(threadId)?.phase === 'done') service.dismiss(threadId) },
     registerHost: settings => {
       hosts.set(settings.instanceId,settings)
       for (const card of cards.values()) if (card.instanceId === settings.instanceId) schedule(card)
@@ -210,5 +231,6 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
       }
     },
   }
+  return service
 }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
