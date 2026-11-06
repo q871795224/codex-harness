@@ -172,3 +172,43 @@ it.each(['codex', 'claude'] as const)('sends full project context to %s and a se
   expect(messages.find((item: { type: string }) => item.type === 'text').text).toBe(`${background}\n排查 batch 报错`)
   expect(titleSource).toBe('排查 batch 报错')
 })
+
+it('clears a composer remounted during send when the accepted snapshot has equivalent content', async () => {
+  const draft: ComposerDraft = { text: '发送后不应残留', attachments: [], collapsedPastes: [] }
+  let finish!: () => void
+  const onSend = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+  const original = render(<Composer {...props} initialDraft={draft} onSend={onSend} />)
+  fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
+  original.unmount()
+  // Switching away and back mounts a fresh composer before the original send settles.
+  const { rerender } = render(<Composer {...props} initialDraft={draft} onSend={onSend} />)
+  const input = screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement
+  const consumed = structuredClone(draft)
+  rerender(<Composer {...props} initialDraft={{ text: '', attachments: [], collapsedPastes: [] }} consumedDraft={consumed} onSend={onSend} />)
+  expect(input.value).toBe('')
+  fireEvent.change(input, { target: { value: '下一条未发送的草稿' } })
+  await act(async () => { finish() })
+  expect(input.value).toBe('下一条未发送的草稿')
+})
+it('preserves newer edits when an older send is consumed and when the composer is reopened', () => {
+  const sent: ComposerDraft = { text: '上一条', attachments: [], collapsedPastes: [] }
+  const newer = { ...sent, text: '新的草稿' }
+  const { rerender, unmount } = render(<Composer {...props} initialDraft={newer} />)
+  rerender(<Composer {...props} initialDraft={newer} consumedDraft={sent} />)
+  expect((screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement).value).toBe('新的草稿')
+  unmount()
+  // A later, intentionally identical draft is still unsent and must survive mounting.
+  render(<Composer {...props} initialDraft={sent} consumedDraft={sent} />)
+  expect((screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement).value).toBe('上一条')
+})
+
+it('consumes the user text when project locking removes its background card during send', async () => {
+  let finish!: () => void
+  const onSend = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
+  const initialDraft = { text: '实际任务', collapsedPastes: [], attachments: [] }
+  const { rerender } = render(<Composer {...props} initialDraft={initialDraft} projectCard={{ projectId: 'one', name: '项目', seq: 1, content: '项目背景' }} onSend={onSend} />)
+  fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
+  rerender(<Composer {...props} projectCard={null} onSend={onSend} />)
+  await act(async () => { finish() })
+  expect((screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement).value).toBe('')
+})

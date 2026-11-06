@@ -1969,7 +1969,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .project-history-preview { max-height: 380px; overflow: auto; }
 
 /* Question answer links append multiline drafts without touching the chat composer. */
-textarea.user-input-freeform, textarea.user-input-other-field { min-height: 52px; height: auto; resize: vertical; }
+textarea.user-input-freeform, textarea.user-input-other-field { min-height: 35px; max-height: 160px; height: auto; resize: none; overflow-y: auto; line-height: 19px; }
 
 .router-feedback-card .recap-banner-body { flex: 1; }
 .router-feedback-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
@@ -1979,3 +1979,23 @@ textarea.user-input-freeform, textarea.user-input-other-field { min-height: 52px
 .router-description { margin-top: 14px; }
 .router-description small { display: block; overflow-wrap: anywhere; opacity: .7; }
 .router-description textarea { min-height: 72px; }
+
+.router-feedback-actions button { display: inline-flex; align-items: center; gap: 4px; }
+.router-feedback-actions .route-accurate[aria-pressed='true'] { color: #287a51; border-color: #287a51; background: #edf7f0; }
+.router-feedback-actions .route-inaccurate[aria-pressed='true'] { color: #b04444; border-color: #b04444; background: #fff2f1; }
+.app-shell[data-theme='dark'] .router-feedback-actions .route-accurate[aria-pressed='true'] { color: #82cba3; border-color: #3c5747; background: #26372e; }
+.app-shell[data-theme='dark'] .router-feedback-actions .route-inaccurate[aria-pressed='true'] { color: #e59b97; border-color: #644346; background: #392829; }
+
+/* The reminder rail reduces the space available to the conversation toolbar. */
+.app-shell:has(> .notification-viewport.open) .thread-tabs { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.app-shell:has(> .notification-viewport.open) .thread-tabs::-webkit-scrollbar { display: none; }
+.app-shell:has(> .notification-viewport.open) .thread-tabs button { flex-shrink: 0; white-space: nowrap; }
+.app-shell:has(> .notification-viewport.open) .thread-tabs button.active::after { bottom: 0; }
+.app-shell:has(> .notification-viewport.open) .notification-tab-tools { flex-shrink: 0; }
+.app-shell:has(> .notification-viewport.open) .quick-action-dock { right: calc(var(--h-reminder-width) + 22px); }
+.app-shell:has(> .notification-viewport.open) .input-column { container-type: inline-size; container-name: reminder-composer; }
+@container reminder-composer (max-width: 460px) {
+  .composer-footer { flex-wrap: wrap; gap: 8px; }
+  .composer-left-actions { flex-basis: 100%; }
+  .composer-actions { margin-left: auto; max-width: 100%; }
+}

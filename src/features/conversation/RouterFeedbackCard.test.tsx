@@ -21,12 +21,26 @@ it('saves a correction only after choosing the actual workspace and submitting',
   fireEvent.click(screen.getByRole('button', { name: '保存反馈' }))
   await waitFor(() => expect(save).toHaveBeenCalledWith(false, '/b'))
 })
-it('keeps implicit acceptance editable and exposes a save failure', async () => {
-  const save = vi.fn().mockRejectedValue(new Error('disk unavailable'))
-  render(<RouterFeedbackCard record={{ ...record, feedback: 'implicit-accurate' }} onFeedback={save} />)
-  expect(screen.getByText('继续对话，已记为默认准')).toBeTruthy()
+it('hides feedback after the next message, including restored legacy implicit acceptance', () => {
+  const { rerender } = render(<RouterFeedbackCard record={{ ...record, feedback: 'implicit-accurate' }} onFeedback={vi.fn()} />)
+  expect(screen.queryByText('工作区路由')).toBeNull()
+  rerender(<RouterFeedbackCard record={{ ...record, feedback: 'accurate', feedbackDismissedAt: 10 }} onFeedback={vi.fn()} />)
+  expect(screen.queryByText('工作区路由')).toBeNull()
+})
+it('marks only the saved vote as selected without an extra confirmation line', () => {
+  const { rerender } = render(<RouterFeedbackCard record={{ ...record, feedback: 'accurate' }} onFeedback={vi.fn()} />)
+  expect(screen.getByRole('button', { name: '准' }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByRole('button', { name: '不准' }).getAttribute('aria-pressed')).toBe('false')
+  expect(screen.queryByRole('status')).toBeNull()
+  rerender(<RouterFeedbackCard record={{ ...record, feedback: 'inaccurate', actualWorkspace: '/b' }} onFeedback={vi.fn()} />)
+  expect(screen.getByRole('button', { name: '不准' }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByText('实际工作区：B')).toBeTruthy()
+})
+it('keeps the vote unselected when saving fails', async () => {
+  render(<RouterFeedbackCard record={record} onFeedback={vi.fn().mockRejectedValue(new Error('disk unavailable'))} />)
   fireEvent.click(screen.getByRole('button', { name: '准' }))
   await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('disk unavailable'))
+  expect(screen.getByRole('button', { name: '准' }).getAttribute('aria-pressed')).toBe('false')
 })
 it('cancelling a correction records nothing', () => {
   const save = vi.fn()

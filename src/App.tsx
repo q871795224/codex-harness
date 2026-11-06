@@ -34,7 +34,7 @@ import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
 import { DelegationReturnCard } from './features/conversation/DelegationReturnCard'
 import { insertComposerPrompt } from './features/conversation/composerInput'
-import { ComposerDraftWriter, restoreComposerDrafts } from './features/conversation/composerDraftStorage'
+import { ComposerDraftWriter, restoreComposerDrafts, sameComposerDraft } from './features/conversation/composerDraftStorage'
 import { useHandover } from './features/handover/useHandover'
 import { ConversationStats, turnStartedAtMilliseconds } from './features/conversation/ConversationStats'
 import { RetainedTab } from './features/conversation/RetainedTab'
@@ -256,6 +256,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     return next
   })
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
+  const [consumedComposerDrafts, setConsumedComposerDrafts] = useState<Record<string, ComposerDraft>>({})
   const [composerDraftsLoaded, setComposerDraftsLoaded] = useState(false)
   const composerDraftWriterRef = useRef<ComposerDraftWriter | null>(null)
   const queuedComposerDraftsRef = useRef<Record<string, ComposerDraft>>({})
@@ -1027,6 +1028,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                   key={harness.draftOrigins?.[harness.currentThread.id] ?? harness.currentThread.id}
                   provider={harness.selectedProvider}
                   initialDraft={composerDrafts[harness.currentThread.id]}
+                  consumedDraft={consumedComposerDrafts[harness.currentThread.id]}
                   projectCard={projectCard}
                   onProjectCardDismissed={() => {
                     void projectBinding.unbind().catch((error) => {
@@ -1063,7 +1065,8 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
                     await harness.sendMessage(input, mode, references, titleSource)
                     const targetId = draftReplacementIdsRef.current[threadId] ?? threadId
-                    if (submittedDraft && queuedComposerDraftsRef.current[targetId] === submittedDraft) {
+                    if (submittedDraft) setConsumedComposerDrafts((current) => ({ ...current, [targetId]: submittedDraft }))
+                    if (sameComposerDraft(queuedComposerDraftsRef.current[targetId], submittedDraft)) {
                       const empty: ComposerDraft = { text: '', collapsedPastes: [], attachments: [] }
                       queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [targetId]: empty }
                       composerDraftWriterRef.current?.update(targetId, empty)
