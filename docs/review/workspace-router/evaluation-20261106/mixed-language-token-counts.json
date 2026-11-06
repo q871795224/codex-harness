@@ -1,0 +1,103 @@
+{
+  "measured_at": "2026-11-06T17:38:27.796097+08:00",
+  "counter": "o200k_base",
+  "notes": "Same earlier fixed 22-workspace/16-case text-template corpus. No model calls; original requests and examples unchanged. English-instruction variant preserves Chinese descriptions. This is a template experiment, not measurement of the running production Router.",
+  "rows": [
+    {
+      "case": "H1",
+      "zh_instructions_zh_descriptions": 655,
+      "en_instructions_zh_descriptions": 646,
+      "en_instructions_en_descriptions": 589
+    },
+    {
+      "case": "H3",
+      "zh_instructions_zh_descriptions": 626,
+      "en_instructions_zh_descriptions": 617,
+      "en_instructions_en_descriptions": 560
+    },
+    {
+      "case": "H4",
+      "zh_instructions_zh_descriptions": 641,
+      "en_instructions_zh_descriptions": 632,
+      "en_instructions_en_descriptions": 575
+    },
+    {
+      "case": "H6",
+      "zh_instructions_zh_descriptions": 801,
+      "en_instructions_zh_descriptions": 792,
+      "en_instructions_en_descriptions": 735
+    },
+    {
+      "case": "H7",
+      "zh_instructions_zh_descriptions": 673,
+      "en_instructions_zh_descriptions": 664,
+      "en_instructions_en_descriptions": 607
+    },
+    {
+      "case": "S01",
+      "zh_instructions_zh_descriptions": 620,
+      "en_instructions_zh_descriptions": 611,
+      "en_instructions_en_descriptions": 554
+    },
+    {
+      "case": "S02",
+      "zh_instructions_zh_descriptions": 626,
+      "en_instructions_zh_descriptions": 617,
+      "en_instructions_en_descriptions": 560
+    },
+    {
+      "case": "S03",
+      "zh_instructions_zh_descriptions": 615,
+      "en_instructions_zh_descriptions": 606,
+      "en_instructions_en_descriptions": 549
+    },
+    {
+      "case": "S04",
+      "zh_instructions_zh_descriptions": 617,
+      "en_instructions_zh_descriptions": 608,
+      "en_instructions_en_descriptions": 551
+    },
+    {
+      "case": "S05",
+      "zh_instructions_zh_descriptions": 626,
+      "en_instructions_zh_descriptions": 617,
+      "en_instructions_en_descriptions": 560
+    },
+    {
+      "case": "S06",
+      "zh_instructions_zh_descriptions": 618,
+      "en_instructions_zh_descriptions": 609,
+      "en_instructions_en_descriptions": 552
+    },
+    {
+      "case": "S07",
+      "zh_instructions_zh_descriptions": 621,
+      "en_instructions_zh_descriptions": 612,
+      "en_instructions_en_descriptions": 555
+    },
+    {
+      "case": "S08",
+      "zh_instructions_zh_descriptions": 613,
+      "en_instructions_zh_descriptions": 604,
+      "en_instructions_en_descriptions": 547
+    },
+    {
+      "case": "S09",
+      "zh_instructions_zh_descriptions": 618,
+      "en_instructions_zh_descriptions": 609,
+      "en_instructions_en_descriptions": 552
+    },
+    {
+      "case": "S10",
+      "zh_instructions_zh_descriptions": 609,
+      "en_instructions_zh_descriptions": 600,
+      "en_instructions_en_descriptions": 543
+    },
+    {
+      "case": "S11",
+      "zh_instructions_zh_descriptions": 613,
+      "en_instructions_zh_descriptions": 604,
+      "en_instructions_en_descriptions": 547
+    }
+  ]
+}
