@@ -1,0 +1,98 @@
+[
+  {
+    "id": "H1",
+    "expected": "w15",
+    "source": "historical-explicit-accurate",
+    "request_summary": "Harness新增SeaTalk远程续聊"
+  },
+  {
+    "id": "H3",
+    "expected": "w15",
+    "source": "historical-explicit-accurate",
+    "request_summary": "Harness PR154合并冲突"
+  },
+  {
+    "id": "H4",
+    "expected": "w17",
+    "source": "historical-explicit-accurate",
+    "request_summary": "DNS API与Core API内存资源分析"
+  },
+  {
+    "id": "H6",
+    "expected": "w15",
+    "source": "historical-explicit-accurate",
+    "request_summary": "Harness SeaTalk消息冗余与审批交互"
+  },
+  {
+    "id": "H7",
+    "expected": "w15",
+    "source": "historical-explicit-accurate",
+    "request_summary": "Harness连续大版本功能盘点"
+  },
+  {
+    "id": "S01",
+    "expected": "w17",
+    "source": "synthetic-author-label",
+    "request": "修改 DNS 控制面服务，让域名解析记录的新增接口支持批量提交。"
+  },
+  {
+    "id": "S02",
+    "expected": "w11",
+    "source": "synthetic-author-label",
+    "request": "DNS 节点从 Core API 拉取增量记录后没有写入 Unbound，排查同步链路。"
+  },
+  {
+    "id": "S03",
+    "expected": "w6",
+    "source": "synthetic-author-label",
+    "request": "修复 SPACE DNS 管理页面的域名列表分页按钮。"
+  },
+  {
+    "id": "S04",
+    "expected": "w7",
+    "source": "synthetic-author-label",
+    "request": "让 SeaTalk 的聊天归档侧车支持编辑 AI 回复草稿。"
+  },
+  {
+    "id": "S05",
+    "expected": "w2",
+    "source": "synthetic-author-label",
+    "request": "调整陪伴 Agent 的长期记忆整理逻辑，让 QQ 和 SeaTalk 两个实例独立保存记忆。"
+  },
+  {
+    "id": "S06",
+    "expected": "w15",
+    "source": "synthetic-author-label",
+    "request": "工作区选择错了以后，Harness 的反馈按钮点了没反应。"
+  },
+  {
+    "id": "S07",
+    "expected": "w17",
+    "source": "synthetic-author-label",
+    "request": "排查 Core API 的全量记录接口为什么返回 500，先看服务端代码。"
+  },
+  {
+    "id": "S08",
+    "expected": "w11",
+    "source": "synthetic-author-label",
+    "request": "给 dns-agent 的节点状态上报增加重试。"
+  },
+  {
+    "id": "S09",
+    "expected": "w6",
+    "source": "synthetic-author-label",
+    "request": "实现 SPACE 的 DNS 记录表单，让页面对重复提交给出提示。"
+  },
+  {
+    "id": "S10",
+    "expected": "general",
+    "source": "synthetic-author-label",
+    "request": "解释一下 TCP 三次握手。"
+  },
+  {
+    "id": "S11",
+    "expected": "general",
+    "source": "synthetic-author-label",
+    "request": "把“今天天气很好”翻译成英文。"
+  }
+]

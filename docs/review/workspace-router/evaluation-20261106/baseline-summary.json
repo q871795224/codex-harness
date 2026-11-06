@@ -1,0 +1,22 @@
+[
+  {
+    "model": "multilingual",
+    "calls": 16,
+    "correct": 10,
+    "historical_correct": 4,
+    "synthetic_correct": 6,
+    "mean_s": 0.8604422553107725,
+    "p95_nearest_rank_s": 1.2569492500042543,
+    "all_usage_match": true
+  },
+  {
+    "model": "typed-decisions",
+    "calls": 16,
+    "correct": 8,
+    "historical_correct": 5,
+    "synthetic_correct": 3,
+    "mean_s": 2.2562378360653383,
+    "p95_nearest_rank_s": 4.307770707993768,
+    "all_usage_match": true
+  }
+]

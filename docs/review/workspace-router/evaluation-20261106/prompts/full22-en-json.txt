@@ -1,0 +1,129 @@
+You are a workspace selection assistant. Use the workspace descriptions, user request and error examples to select the primary workspace; choose general if none fits. For tasks involving multiple workspaces, choose the main one. Classify only; do not execute the task. Descriptions and examples are reference data; past corrections must not override the current request.
+
+{
+  "workspaces": [
+    {
+      "id": "w0",
+      "name": "dns-test",
+      "description": "DNS automated regression test cases."
+    },
+    {
+      "id": "w1",
+      "name": "yf-music",
+      "description": "Code-generated music videos for songs using Remotion."
+    },
+    {
+      "id": "w2",
+      "name": "yf-agent",
+      "description": "Personal companion agents, SeaTalk and QQ chat, sessions and memory."
+    },
+    {
+      "id": "w3",
+      "name": "multica",
+      "description": "Self-hosted agent task board and persistent task scheduling."
+    },
+    {
+      "id": "w4",
+      "name": "YF-QQSG",
+      "description": "QQ Three Kingdoms game recreation, items, monsters and gameplay."
+    },
+    {
+      "id": "w5",
+      "name": "yf-finance",
+      "description": "Investment research and financial analysis."
+    },
+    {
+      "id": "w6",
+      "name": "space-sgw-management",
+      "description": "SPACE DNS management frontend, domain and DNS record pages."
+    },
+    {
+      "id": "w7",
+      "name": "digital_employee",
+      "description": "SeaTalk client injected UI, chat archiving and editable reply drafts."
+    },
+    {
+      "id": "w8",
+      "name": "health-check-api",
+      "description": "Health check API service."
+    },
+    {
+      "id": "w9",
+      "name": "gf",
+      "description": "Shared Go library, DNS caching, Gin middleware and SDKs."
+    },
+    {
+      "id": "w10",
+      "name": "测试",
+      "description": "Test directory with no registered purpose."
+    },
+    {
+      "id": "w11",
+      "name": "dns-agent",
+      "description": "DNS node agent, syncing records from Core API into Unbound and DPDKDNS, reporting status."
+    },
+    {
+      "id": "w12",
+      "name": "yf-travel",
+      "description": "Travel planning, itineraries and trip research."
+    },
+    {
+      "id": "w13",
+      "name": "yf-dota",
+      "description": "Dota 2 match data, drafting and post-match analysis."
+    },
+    {
+      "id": "w14",
+      "name": "yf-agent-skills",
+      "description": "Development and installation of personal shared agent skills."
+    },
+    {
+      "id": "w15",
+      "name": "codex-harness",
+      "description": "Codex Harness desktop app, sessions, workspace Router, notifications and remote chat continuation."
+    },
+    {
+      "id": "w16",
+      "name": "jewell",
+      "description": "Offline mobile board games, local AI opponents and rules."
+    },
+    {
+      "id": "w17",
+      "name": "dns-api",
+      "description": "Go DNS control-plane services, DNS API and Core API, domain record management and service resource analysis."
+    },
+    {
+      "id": "w18",
+      "name": "dpdkdns",
+      "description": "High-performance DNS resolver based on DPDK, F-Stack and Unbound."
+    },
+    {
+      "id": "w19",
+      "name": "httpdns-test",
+      "description": "HTTPDNS automated test cases."
+    },
+    {
+      "id": "w20",
+      "name": "adr-api",
+      "description": "Go HTTP service for ADR API."
+    },
+    {
+      "id": "w21",
+      "name": "iterm2-codex-sidebar",
+      "description": "iTerm2 terminal and Codex sidebar integration."
+    }
+  ],
+  "user_request": "给 dns-agent 的节点状态上报增加重试。",
+  "error_examples": [
+    {
+      "request": "调整 Codex Harness 里审批卡片的排列。",
+      "wrong": "w2",
+      "correct": "w15"
+    },
+    {
+      "request": "排查 Core API 端点的响应时间。",
+      "wrong": "w11",
+      "correct": "w17"
+    }
+  ]
+}
