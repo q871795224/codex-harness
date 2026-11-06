@@ -72,7 +72,7 @@ pnpm tauri:build:dev
 - 前端单元测试使用 Vitest，Rust 单元测试使用 `cargo test`；测试必须使用临时目录或注入依赖，不得触碰真实 `~/.codex` 或 `~/.codex-harness` 数据。
 - 新增可独立验证的逻辑要补测试；改动 UI 或 IPC 流程至少执行 `pnpm build`。
 - 发布前的完整门禁、版本递增、release commit、tag、安装、上传和远端核对流程只在明确发布授权后执行，详见 `harness-release` Skill。
-- 已用于 release commit、构建发布或同名 tag 的版本不得继续承载后续改动；后续改动先按 SemVer 递增版本号，major 必须取得用户明确确认。
+- 普通开发不修改应用版本号；仅在明确发布时由用户选择版本，再由发布流程统一更新版本文件。已发布 tag 和制品不可覆盖，major 必须取得用户明确确认。
 
 ## 改动原则
 

@@ -295,8 +295,6 @@ def command_prepare(version: str, base_sha: str | None = None) -> None:
         if resolved_sha != base_sha or head_sha != base_sha:
             raise ReleaseError(f"release worktree is not at fetched base commit {base_sha}")
     base_version = origin_main_version(base_sha)
-    if parse_version(version) < parse_version(base_version):
-        raise ReleaseError(f"release version {version} must not be older than origin/main {base_version}")
     if version == base_version:
         require_matching_release_tag(version, base_sha)
         run("git", "switch", "--detach", base_sha)

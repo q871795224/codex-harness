@@ -143,14 +143,39 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertIn(("git", "switch", "--detach", "base-sha"), calls)
         self.assertFalse(any(args[:2] in [("git", "commit"), ("git", "push"), ("gh", "pr")] for args in calls))
 
-    def test_prepare_rejects_older_version(self):
+    def test_prepare_honors_selected_version_even_when_main_is_higher(self):
+        calls = []
         with (
             patch.object(release, "require_clean_worktree"),
-            patch.object(release, "run", return_value="base-sha"),
-            patch.object(release, "origin_main_version", return_value="0.8.9"),
-            self.assertRaisesRegex(release.ReleaseError, "must not be older"),
+            patch.object(release, "run", side_effect=lambda *args, **kwargs: calls.append(args) or {
+                ("git", "rev-parse", "base-sha^{commit}"): "base-sha",
+                ("git", "rev-parse", "HEAD"): "base-sha",
+            }.get(args, "")),
+            patch.object(release, "origin_main_version", return_value="0.13.0"),
+            patch.object(release, "try_run", return_value=release.subprocess.CompletedProcess([], 1)),
+            patch.object(release, "remove_previous_release_branch"),
+            patch.object(release, "update_version_files") as update,
+            patch.object(release, "require_synced_versions") as synced,
         ):
-            release.command_prepare("0.8.8", "base-sha")
+            release.command_prepare("0.12.5", "base-sha")
+        update.assert_called_once_with(release.REPO_ROOT, "0.12.5")
+        synced.assert_called_once_with("0.12.5")
+        self.assertIn(("git", "switch", "--create", "release/v0.12.5", "base-sha"), calls)
+
+    def test_selected_version_cannot_replace_an_existing_tag_when_main_is_higher(self):
+        for local in [True, False]:
+            with (
+                self.subTest(local=local),
+                patch.object(release, "require_clean_worktree"),
+                patch.object(release, "origin_main_version", return_value="0.13.0"),
+                patch.object(release, "run", side_effect=lambda *args, **kwargs:
+                    "existing-tag" if args[:3] == ("git", "ls-remote", "--tags") else "base-sha"),
+                patch.object(release, "try_run", return_value=release.subprocess.CompletedProcess([], 0 if local else 1)),
+                patch.object(release, "update_version_files") as update,
+                self.assertRaisesRegex(release.ReleaseError, "tag already exists"),
+            ):
+                release.command_prepare("0.12.5", "base-sha")
+            update.assert_not_called()
 
     def test_same_version_submit_rejects_changed_main_and_unsuccessful_ci(self):
         for main, checks in [
