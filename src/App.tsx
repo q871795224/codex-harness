@@ -1,3 +1,4 @@
+import { useRouterSummaries } from './core/workspace-router/react'
 import { useSeaTalkSync } from './core/seatalk/react'
 import { RouterFeedbackCard } from './features/conversation/RouterFeedbackCard'
 import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
@@ -79,6 +80,7 @@ const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDial
 export default function App() {
   useEffect(() => { void notifications.initialize() }, [])
   const harness = useUnifiedHarness()
+  useRouterSummaries(harness.workspaces, harness.phase === 'ready')
   useSeaTalkSync(harness)
   const codex = useCodexCore()
   const selectAgentRunThread = useCallback(
@@ -974,6 +976,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                     key={harness.currentRoute.id}
                     record={harness.currentRoute}
                     onFeedback={(accurate, actual) => harness.giveRouteFeedback(harness.currentRoute!.threadId, accurate, actual)}
+                    canCorrect={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
+                    onCorrect={(actual) => harness.correctRouteWorkspace(harness.currentRoute!.threadId, actual)}
                   />}
                   {conversationBanners.map((entry) => <PluginConversationBanner key={entry.instanceId + entry.contribution.id} entry={entry} props={{
                     provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd,

@@ -1150,21 +1150,23 @@ export function useHarness() {
     await startNewThread('clear', '重置')
   }, [notify, startNewThread])
 
-  const changeThreadWorkspace = useCallback(async (threadId: string, checkoutRoot: string) => {
+  const applyThreadWorkspace = useCallback(async (threadId: string, checkoutRoot: string, general = false) => {
     const currentThread = threadsRef.current.find((thread) => thread.id === threadId)
-    if (!currentThread) return
-    if (submittingThreadsRef.current.has(threadId)) return
-    if (!checkoutRoot && unstartedDraftThreadIdsRef.current.has(threadId)) { await setAutomaticWorkspace(threadId, true); return }
-    if (!checkoutRoot) return
-    if (currentThread.cwd === checkoutRoot) { await setAutomaticWorkspace(threadId, false); return }
+    if (!currentThread) return false
+    if (submittingThreadsRef.current.has(threadId)) return false
+    if (!checkoutRoot && unstartedDraftThreadIdsRef.current.has(threadId)) { await setAutomaticWorkspace(threadId, true); return true }
+    if (!checkoutRoot) return false
+    if (currentThread.cwd === checkoutRoot) { await setAutomaticWorkspace(threadId, false); return true }
     if (activeTurnIdsRef.current[threadId]) {
       notify('请先停止或等待当前轮完成，再切换工作目录。', 'warning')
-      return
+      return false
     }
     setBusy((current) => ({ ...current, threadWorkspace: true }))
     try {
-      const mapped = await runtime.mapThreadWorkspaces([checkoutRoot])
-      const workspace = mapped[checkoutRoot]
+      const neutral = general ? await runtime.routerWorkspaceDirectory() : null
+      if (general && neutral !== checkoutRoot) throw new Error('通用会话目录已变化，请重试')
+      const mapped = general ? {} : await runtime.mapThreadWorkspaces([checkoutRoot])
+      const workspace = general ? { root: checkoutRoot, checkoutRoot, branch: null, sha: null } : mapped[checkoutRoot]
       if (!workspace) throw new Error('所选目录不是可用的 Git checkout。')
       const nextCwd = workspace.checkoutRoot
       const detail = detailsRef.current[threadId]
@@ -1222,12 +1224,30 @@ export function useHarness() {
           nextCwd,
         },
       })
+      return true
     } catch (error) {
       notify('无法切换工作区', 'error', error, { threadId })
+      return false
     } finally {
       setBusy((current) => ({ ...current, threadWorkspace: false }))
     }
   }, [notify, rememberNextThreadCwd, setAutomaticWorkspace, updateDetail, updateThread])
+
+  const changeThreadWorkspace = useCallback(async (threadId: string, checkoutRoot: string) => {
+    await applyThreadWorkspace(threadId, checkoutRoot)
+  }, [applyThreadWorkspace])
+
+  const correctRouteWorkspace = useCallback(async (threadId: string, actual: string | null) => {
+    const thread = threadsRef.current.find(t => t.id === threadId)
+    if (!thread || viewMode === 'archived' || activeTurnIdsRef.current[threadId] || submittingThreadsRef.current.has(threadId)) throw new Error('请先停止或等待当前轮完成，再切换工作区')
+    const record = await readRouteRecord(threadId)
+    if (!record || (actual !== null && !record.candidates.some(c => c.root === actual))) throw new Error('路由记录或目标工作区不可用')
+    const target = actual === null ? await runtime.routerWorkspaceDirectory() : workspaces.find(w => w.root === actual)?.checkoutRoot
+    if (!target) throw new Error('目标工作区已移除，请手动选择工作区')
+    await giveRouteFeedback(threadId, false, actual)
+    // Recheck inside applyThreadWorkspace after asynchronous feedback writes.
+    if (!await applyThreadWorkspace(threadId, target, actual === null)) throw new Error('反馈已保存，工作区切换未完成，请检查当前会话')
+  }, [applyThreadWorkspace, giveRouteFeedback, workspaces, viewMode])
 
   const setActiveTurn = useCallback((threadId: string, turnId: string, owned: boolean) => {
     setThreadStarting(threadId, false)
@@ -2606,6 +2626,7 @@ export function useHarness() {
     automaticWorkspace: Boolean(automaticWorkspaces[selectedThreadId ?? '']),
     currentRoute: routeRecords[selectedThreadId ?? ''] ?? null,
     giveRouteFeedback,
+    correctRouteWorkspace,
     draftOrigins,
     onDraftThreadReplaced,
     activeTurnId,

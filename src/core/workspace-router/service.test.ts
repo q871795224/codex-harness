@@ -6,7 +6,7 @@ import { runtime } from '../runtime/bridge'
 import { DEFAULT_ROUTER_SETTINGS, ROUTER_SETTINGS_KEY, saveRouterSettings } from './settings'
 import { completeRouteFeedback, parseRouteChoice, readRouteRecord, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord } from './service'
 vi.mock('../runtime/appServerClient', () => ({ appServer: { readConfig: vi.fn(), startThread: vi.fn(), startTurn: vi.fn(), interruptTurn: vi.fn(), unsubscribeThread: vi.fn() } }))
-vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
+vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
 const storage = new Map<string, string>()
 const workspaces = ['/a', '/b'].map((root) => ({ root, checkoutRoot: `${root}/checkout`, name: root.slice(1), branch: 'main', sha: null, createdAt: 1, lastOpenedAt: 1 })) satisfies Workspace[]
 let handle: (event: AppServerEvent) => void
@@ -23,6 +23,9 @@ beforeEach(() => {
   vi.mocked(runtime.getAppState).mockImplementation(async (key) => storage.get(key) ?? null)
   vi.mocked(runtime.setAppState).mockImplementation(async (key, value) => { storage.set(key, value) })
   vi.mocked(runtime.recordClientDiagnostic).mockResolvedValue(undefined)
+  vi.mocked(runtime.routerSummaries).mockResolvedValue([])
+  vi.mocked(runtime.routerCorrections).mockResolvedValue([])
+  vi.mocked(runtime.buildRouterPrompt).mockImplementation(async input => ({ context: JSON.stringify({ workspaces: input.candidates, corrections: input.examples }), textTokens: 100, examplesUsed: input.examples.length }))
   vi.mocked(runtime.listenEvents).mockImplementation(async (handler) => { handle = handler; return unlisten })
   vi.mocked(appServer.readConfig).mockResolvedValue({ config: { mcp_servers: { company: {} } } } as never)
   vi.mocked(appServer.startThread).mockResolvedValue({ thread: { id: 'router' } } as never)
@@ -69,7 +72,7 @@ it('rejects unknown workspaces and records failure without retaining arbitrary r
   await expect(routeWorkspace('source', '/neutral', [textInput('secret')], workspaces)).rejects.toThrow('未知的工作区')
   expect(await readRouteRecord('source')).toMatchObject({ status: 'failed', errorCode: 'request_failed', choice: null })
   expect([...storage.values()].join('\n')).not.toContain('/invented')
-  expect(appServer.interruptTurn).toHaveBeenCalledWith('router', 'choice')
+  expect(appServer.unsubscribeThread).toHaveBeenCalledWith('router')
 })
 it('times out and cleans up the router without starting a task', async () => {
   vi.useFakeTimers()
@@ -110,4 +113,15 @@ it('closes feedback once on a follow-up, preserves explicit corrections and pers
   expect(closed.history).toEqual(explicit.history)
   expect(await completeRouteFeedback(closed, 'third')).toEqual(closed)
   expect(await readRouteRecord('source')).toEqual(closed)
+})
+it('uses cached descriptions for the prompt without copying model-derived text into SQLite records', async () => {
+  vi.mocked(runtime.routerSummaries).mockResolvedValue([{ root: '/a', checkoutRoot: '/a/checkout', description: 'cached generated synopsis', checkedAt: 1, generatedAt: 1, error: false }])
+  await routeWorkspace('source', '/neutral', [textInput('work')], workspaces)
+  expect(runtime.buildRouterPrompt).toHaveBeenCalledWith(expect.objectContaining({ tokenBudget: 8192, candidates: expect.arrayContaining([expect.objectContaining({ root: '/a', description: 'cached generated synopsis' })]) }))
+  expect([...storage.values()].join('\n')).not.toContain('cached generated synopsis')
+})
+it('enforces the token budget before starting the router model', async () => {
+  vi.mocked(runtime.buildRouterPrompt).mockRejectedValue(new Error('超过Router文本预算'))
+  await expect(routeWorkspace('source', '/neutral', [textInput('large request')], workspaces)).rejects.toThrow('文本预算')
+  expect(appServer.startThread).not.toHaveBeenCalled()
 })

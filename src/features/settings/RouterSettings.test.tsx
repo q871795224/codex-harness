@@ -4,8 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { runtime } from '../../core/runtime/bridge'
 import { ROUTER_SETTINGS_KEY } from '../../core/workspace-router/settings'
 import { RouterSettings } from './RouterSettings'
-vi.mock('../../core/runtime/bridge', () => ({ runtime: { getAppState: vi.fn(), setAppState: vi.fn() } }))
-beforeEach(() => { vi.resetAllMocks(); vi.mocked(runtime.getAppState).mockResolvedValue(null); vi.mocked(runtime.setAppState).mockResolvedValue(undefined) })
+vi.mock('../../core/runtime/bridge', () => ({ runtime: { routerSummaries: vi.fn().mockResolvedValue([]), getAppState: vi.fn(), setAppState: vi.fn() } }))
+beforeEach(() => { vi.resetAllMocks(); vi.mocked(runtime.routerSummaries).mockResolvedValue([]); vi.mocked(runtime.getAppState).mockResolvedValue(null); vi.mocked(runtime.setAppState).mockResolvedValue(undefined) })
 afterEach(cleanup)
 it('keeps the configured default model available and saves workspace descriptions without losing unrelated entries', async () => {
   vi.mocked(runtime.getAppState).mockResolvedValue(JSON.stringify({ descriptions: { '/hidden': 'keep me' } }))
@@ -17,7 +17,7 @@ it('keeps the configured default model available and saves workspace description
   fireEvent.change(screen.getByLabelText('Router 推理强度'), { target: { value: 'low' } })
   fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
   await waitFor(() => expect(screen.getByRole('status').textContent).toBe('已保存，下次路由生效'))
-  expect(runtime.setAppState).toHaveBeenCalledWith(ROUTER_SETTINGS_KEY, JSON.stringify({ model: 'gpt-6.1-terra', effort: 'low', descriptions: { '/hidden': 'keep me', '/a': 'Server implementation' } }))
+  expect(runtime.setAppState).toHaveBeenCalledWith(ROUTER_SETTINGS_KEY, JSON.stringify({ tokenBudget: 8192, model: 'gpt-6.1-terra', effort: 'low', descriptions: { '/hidden': 'keep me', '/a': 'Server implementation' } }))
 })
 it('reports a settings read failure', async () => {
   vi.mocked(runtime.getAppState).mockRejectedValue(new Error('read failed'))

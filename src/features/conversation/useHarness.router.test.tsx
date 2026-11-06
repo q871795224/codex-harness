@@ -8,7 +8,7 @@ import { runtime } from '../../core/runtime/bridge'
 import { readRouteRecord } from '../../core/workspace-router/service'
 import { useHarness } from './useHarness'
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ listen: vi.fn().mockResolvedValue(() => {}) }) }))
-vi.mock('../../core/runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', recordWorkspaceContextDiagnostic: vi.fn(), runtime: {
+vi.mock('../../core/runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', recordWorkspaceContextDiagnostic: vi.fn(), runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(),
   projectDocThreadBinding: vi.fn(), projectDocBindThread: vi.fn(), projectDocLockThreadBinding: vi.fn(), routerWorkspaceDirectory: vi.fn(), recordClientDiagnostic: vi.fn(), listWorkspaces: vi.fn(), listThreadStates: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), setThreadState: vi.fn(),
   mapThreadWorkspaces: vi.fn(), listenEvents: vi.fn(), listenTransport: vi.fn(),
 } }))
@@ -28,6 +28,9 @@ beforeEach(() => {
   vi.mocked(runtime.getAppState).mockImplementation(async (key) => storage.get(key) ?? null)
   vi.mocked(runtime.setAppState).mockImplementation(async (key, value) => { storage.set(key, value) })
   vi.mocked(runtime.recordClientDiagnostic).mockResolvedValue(undefined)
+  vi.mocked(runtime.routerSummaries).mockResolvedValue([])
+  vi.mocked(runtime.routerCorrections).mockResolvedValue([])
+  vi.mocked(runtime.buildRouterPrompt).mockImplementation(async input => ({ context: JSON.stringify({ workspaces: input.candidates, corrections: input.examples }), textTokens: 100, examplesUsed: input.examples.length }))
   vi.mocked(runtime.projectDocThreadBinding).mockResolvedValue(null)
   vi.mocked(runtime.projectDocBindThread).mockResolvedValue(undefined)
   vi.mocked(runtime.projectDocLockThreadBinding).mockResolvedValue(undefined)
@@ -212,4 +215,41 @@ it.each(['accurate', 'inaccurate'] as const)('dismisses the card after a success
   await act(async () => { await second.result.current.selectThread('routed') })
   await waitFor(() => expect(second.result.current.currentRoute?.feedbackDismissedAt).toEqual(expect.any(Number)))
   expect(second.result.current.currentRoute?.feedback).toBe(feedback)
+})
+async function finishExecution() {
+  await act(async () => { for (const listener of [...listeners]) listener({ method: 'turn/completed', params: { threadId: 'routed', turn: { id: 'execution-turn', status: 'completed', items: [] } } }) })
+}
+it('requires an idle turn for correction, then updates cwd without replaying the original task', async () => {
+  const { result } = await ready()
+  await act(async () => { await result.current.createThread() })
+  await act(async () => { await result.current.sendMessage([textInput('work')], 'queue') })
+  await act(async () => { await expect(result.current.correctRouteWorkspace('routed', '/a')).rejects.toThrow('当前轮') })
+  expect(appServer.updateThreadSettings).not.toHaveBeenCalledWith(expect.objectContaining({ cwd: '/a' }))
+  await finishExecution()
+  const calls = vi.mocked(appServer.startTurn).mock.calls.length
+  await act(async () => { await result.current.correctRouteWorkspace('routed', '/a') })
+  expect(appServer.updateThreadSettings).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'routed', cwd: '/a' }))
+  expect(result.current.currentThread?.cwd).toBe('/a')
+  expect((await readRouteRecord('routed'))?.actualWorkspace).toBe('/a')
+  expect(appServer.startTurn).toHaveBeenCalledTimes(calls)
+  expect(appServer.interruptTurn).not.toHaveBeenCalled()
+})
+it('can explicitly correct a routed task to the neutral general workspace', async () => {
+  const { result } = await ready()
+  await act(async () => { await result.current.createThread() })
+  await act(async () => { await result.current.sendMessage([textInput('work')], 'queue') })
+  await finishExecution()
+  await act(async () => { await result.current.correctRouteWorkspace('routed', null) })
+  expect(result.current.currentThread?.cwd).toBe('/neutral')
+  expect((await readRouteRecord('routed'))?.actualWorkspace).toBeNull()
+})
+it('retains the saved feedback when applying the corrected directory fails', async () => {
+  const { result } = await ready()
+  await act(async () => { await result.current.createThread() })
+  await act(async () => { await result.current.sendMessage([textInput('work')], 'queue') })
+  await finishExecution()
+  vi.mocked(appServer.updateThreadSettings).mockRejectedValueOnce(new Error('offline'))
+  await act(async () => { await expect(result.current.correctRouteWorkspace('routed', '/a')).rejects.toThrow('反馈已保存') })
+  expect(result.current.currentThread?.cwd).toBe('/b')
+  expect((await readRouteRecord('routed'))?.actualWorkspace).toBe('/a')
 })

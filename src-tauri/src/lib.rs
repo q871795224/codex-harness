@@ -1,4 +1,5 @@
 mod workspace_router;
+mod workspace_router_context;
 mod async_waits;
 mod runtime_skill;
 mod api_workbench;
@@ -646,6 +647,34 @@ fn record_client_diagnostic(state: State<'_, AppState>, diagnostic: ClientDiagno
 #[tauri::command]
 fn workspace_router_directory() -> Result<String, String> {
     workspace_router::directory_at(&store::harness_data_dir()?)
+}
+
+#[tauri::command]
+async fn workspace_router_corrections(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.router_corrections()).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn workspace_router_summaries(state: State<'_, AppState>, roots: Vec<String>) -> Result<Vec<store::RouterSummary>, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.router_summaries(&roots)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn workspace_router_summary_claim(state: State<'_, AppState>, root: String, checkout_root: String) -> Result<Option<store::SummaryClaim>, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.claim_router_summary(&root, &checkout_root, router_now_ms())).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn workspace_router_summary_finish(state: State<'_, AppState>, root: String, lease: String, description: Option<String>) -> Result<(), String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || store.finish_router_summary(&root, &lease, description.as_deref(), router_now_ms())).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn workspace_router_build_prompt(input: workspace_router_context::PromptInput) -> Result<workspace_router_context::Prompt, String> {
+    tauri::async_runtime::spawn_blocking(move || workspace_router_context::build_prompt(input)).await.map_err(|e| e.to_string())?
+}
+fn router_now_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64
 }
 
 #[tauri::command]
@@ -1550,6 +1579,11 @@ pub fn run() {
             set_claude_session_archived,
             record_client_diagnostic,
             workspace_router_directory,
+            workspace_router_summaries,
+            workspace_router_corrections,
+            workspace_router_summary_claim,
+            workspace_router_summary_finish,
+            workspace_router_build_prompt,
             open_diagnostics_directory,
             runtime_versions,
             codex_update_status,

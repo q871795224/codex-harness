@@ -48,6 +48,11 @@
 - Harness tab 在同一文件树中展示虚拟 `harness` 文档分组和 `memory` 目录；记忆文件经核心 store 读取和编辑，保存时比较读取版本并校验 scope，正文保存与索引重建共用批次写入，插件只消费 `harness.files` 服务。
 - 文件写入由 SQLite 写锁协调，未完成的正文/索引批次在下次记忆操作时恢复。详细范围及当前阶段限制见 `docs/memory/phase-1/README.md`。
 
+## 工作区 Router
+
+- `core/workspace-router/` 准备首条路由输入、后台生成工作区简介并选择人工纠错案例，判断继续经临时 Codex 会话完成。原生 `workspace_router_context.rs` 负责文档读取和文字预算，`store/router.rs` 负责持久缓存索引及跨实例租约；简介正文保存在独立文件，纠错原文只从 Provider 读取。
+- 工作区选择、显式纠正、24小时缓存策略与已确定的后端边界见 [workspace-router.md](workspace-router.md)，修改前先读该文档。
+
 ## Jev 决策服务
 
 - `src-tauri/src/jev.rs` 按需调用固定 Vercel `/v1/evaluate` 端点和 `typesafe-ai/jev`；核心通过 `bridge.ts` 的 `jevStatus`、`jevEvaluate` 接入，领域类型位于 `src/core/domain/jev.ts`。

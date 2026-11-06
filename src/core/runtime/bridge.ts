@@ -1,3 +1,4 @@
+import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection } from '../workspace-router/types'
 import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
 import type { ApprovalRequest } from '../domain/codex'
 import type { QuestionLocator, QuestionNotification } from '../questions/types'
@@ -115,6 +116,11 @@ export const runtime = {
   projectDocPendingOnboardings: () => invoke<Array<OnboardingReceipt & {requestId: string; threadId: string; name: string}>>('project_doc_pending_onboardings'),
   projectDocCommitOnboarding: (input: OnboardingCommit) => invoke<OnboardingReceipt>('project_doc_commit_onboarding', { input }),
   projectDocFinishOnboarding: (requestId: string, threadId: string, workspaceRoot: string) => invoke<string>('project_doc_finish_onboarding', { requestId, threadId, workspaceRoot }),
+  routerCorrections: () => invoke<RouterCorrection[]>('workspace_router_corrections'),
+  routerSummaries: (roots: string[]) => invoke<RouterSummary[]>('workspace_router_summaries', { roots }),
+  claimRouterSummary: (root: string, checkoutRoot: string) => invoke<RouterSummaryClaim | null>('workspace_router_summary_claim', { root, checkoutRoot }),
+  finishRouterSummary: (root: string, lease: string, description: string | null) => invoke<void>('workspace_router_summary_finish', { root, lease, description }),
+  buildRouterPrompt: (input: RouterPromptInput) => invoke<RouterPrompt>('workspace_router_build_prompt', { input }),
   routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),
   listAsyncWaits: () => invoke<AsyncWaitSnapshot>('async_wait_list'),
   createAsyncWait: (input: CreateAsyncWait) => invoke<AsyncWaitTask>('async_wait_create', { input }),

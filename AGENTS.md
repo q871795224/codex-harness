@@ -6,6 +6,7 @@
 
 - 先读 [.harness/README.md](.harness/README.md)，再按任务类型读取对应文档。
 - 项目架构读 [.harness/architecture.md](.harness/architecture.md)。
+- 工作区 Router 的简介缓存、纠错与后端决策读 [.harness/workspace-router.md](.harness/workspace-router.md)。
 - 项目长期记忆读 [.harness/memory.md](.harness/memory.md)。
 - 测试和验证要求读 [.harness/test.md](.harness/test.md)。
 - 已确认的坑点读 [.harness/pitfall.md](.harness/pitfall.md)。
