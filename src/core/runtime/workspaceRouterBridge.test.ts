@@ -31,3 +31,11 @@ it('pages through explicit feedback metadata using the native bridge', async () 
   expect(await runtime.routerFeedback(20, 20)).toEqual({ data: [], hasMore: false })
   expect(invoke).toHaveBeenLastCalledWith('workspace_router_feedback', { offset: 20, limit: 20 })
 })
+
+it('uses native Decision preparation and classification commands with the same input', async () => {
+  const input = { instructions: '', schema: '', userTexts: ['request'], candidates: [], examples: [], tokenBudget: 8192 }
+  await runtime.prepareDecisionPrompt(input)
+  expect(invoke).toHaveBeenLastCalledWith('workspace_router_prepare_decision', { input })
+  await runtime.evaluateRouterDecision(input)
+  expect(invoke).toHaveBeenLastCalledWith('workspace_router_decision', { input })
+})

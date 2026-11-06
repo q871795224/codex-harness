@@ -2,6 +2,8 @@
 
 实测日期：2026-11-06。正式请求返回时间为18:07:50–18:21:40（UTC+8），服务健康复查于18:24:55。已完成并核对112/112次正式请求，全部成功。Chinese Decision 0.8B加两条纠错示例命中15/16、均值2.85秒，是本轮速度与命中率的折中候选；2B加示例16/16、均值5.67秒。Prism为13/16、均值20.16秒，本机CPU部署下不优先。三个新服务已部署到原89测试服务器，正式选型等待用户决定。
 
+选型后续：用户已选择Chinese Decision 2B，当前接入行为、所有模型版本和未来复测规则见[模型档案](../../../../.harness/router-models.md)。本文下面保留选型前112次实验的原始条件；接入后的5050代理入口见[接入核实](router-integration.json)。
+
 ## 环境与输入
 
 主机为48逻辑核 Intel Xeon Silver 4116、250GiB内存、无CUDA。Chinese Decision 0.8B/2B 使用作者发布的Q8_0 GGUF、llama.cpp后端、16线程；Prism使用FP32 Transformers、16线程、batch4。Prism的CPU因果卷积和Gated Delta计算走PyTorch参考实现，耗时描述的是此部署，未用GPU内核。三个服务仅监听服务器127.0.0.1，未修改nginx或现有Laya安装。

@@ -1,4 +1,4 @@
-import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection, RouterFeedbackPage } from '../workspace-router/types'
+import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection, RouterFeedbackPage, DecisionPrompt, DecisionResult } from '../workspace-router/types'
 import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
 import type { ApprovalRequest } from '../domain/codex'
 import type { QuestionLocator, QuestionNotification } from '../questions/types'
@@ -122,6 +122,8 @@ export const runtime = {
   claimRouterSummary: (root: string, checkoutRoot: string, checkNow = false) => invoke<RouterSummaryClaim | null>('workspace_router_summary_claim', { root, checkoutRoot, ...(checkNow ? { checkNow: true } : {}) }),
   finishRouterSummary: (root: string, lease: string, description: string | null) => invoke<void>('workspace_router_summary_finish', { root, lease, description }),
   buildRouterPrompt: (input: RouterPromptInput) => invoke<RouterPrompt>('workspace_router_build_prompt', { input }),
+  prepareDecisionPrompt: (input: RouterPromptInput) => invoke<DecisionPrompt>('workspace_router_prepare_decision', { input }),
+  evaluateRouterDecision: (input: RouterPromptInput) => invoke<DecisionResult>('workspace_router_decision', { input }),
   routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),
   listAsyncWaits: () => invoke<AsyncWaitSnapshot>('async_wait_list'),
   createAsyncWait: (input: CreateAsyncWait) => invoke<AsyncWaitTask>('async_wait_create', { input }),

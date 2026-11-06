@@ -35,3 +35,6 @@ export interface RouterFeedback {
 }
 export interface RouterFeedbackPage { data: RouterFeedback[]; hasMore: boolean }
 export interface RouterFeedbackRow extends RouterFeedback { request: string | null; hasAttachments: boolean }
+
+export interface DecisionPrompt { request: string; textTokens: number; examplesUsed: number }
+export interface DecisionResult { primary: string | null; model: string; inputTokens: number }

@@ -1,4 +1,5 @@
 mod workspace_router;
+mod workspace_router_decision;
 mod workspace_router_context;
 mod async_waits;
 mod runtime_skill;
@@ -677,6 +678,14 @@ async fn workspace_router_summary_finish(state: State<'_, AppState>, root: Strin
 #[tauri::command]
 async fn workspace_router_build_prompt(input: workspace_router_context::PromptInput) -> Result<workspace_router_context::Prompt, String> {
     tauri::async_runtime::spawn_blocking(move || workspace_router_context::build_prompt(input)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn workspace_router_prepare_decision(input: workspace_router_context::PromptInput) -> Result<workspace_router_decision::DecisionPrompt, String> {
+    tauri::async_runtime::spawn_blocking(move || workspace_router_decision::build_prompt(input)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn workspace_router_decision(input: workspace_router_context::PromptInput) -> Result<workspace_router_decision::DecisionResult, String> {
+    workspace_router_decision::evaluate(input).await
 }
 fn router_now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64
@@ -1590,6 +1599,8 @@ pub fn run() {
             workspace_router_summary_claim,
             workspace_router_summary_finish,
             workspace_router_build_prompt,
+            workspace_router_prepare_decision,
+            workspace_router_decision,
             open_diagnostics_directory,
             runtime_versions,
             codex_update_status,

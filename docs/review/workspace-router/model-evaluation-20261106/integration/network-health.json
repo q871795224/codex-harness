@@ -1,0 +1,26 @@
+{
+  "decision": {
+    "status": "ok",
+    "model": "chinese-decision-2b",
+    "temperature": 1.074872374534607,
+    "calibrated": true,
+    "backend": "gguf",
+    "device": "cpu",
+    "max_length": 16384,
+    "step": 4994
+  },
+  "laya": {
+    "status": "ready",
+    "engine": "laya",
+    "models": [
+      "english",
+      "multilingual",
+      "typed-decisions"
+    ],
+    "mode": "eager",
+    "dtype": "fp32",
+    "device": "cpu",
+    "version": "0.2.0"
+  },
+  "observed_at": "2026-11-06T18:44:45.854981+08:00"
+}

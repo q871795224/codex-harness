@@ -5,10 +5,11 @@ import type { AppServerEvent, Thread, Workspace } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
 import { appServer } from '../../core/runtime/appServerClient'
 import { runtime } from '../../core/runtime/bridge'
+import { ROUTER_SETTINGS_KEY } from '../../core/workspace-router/settings'
 import { readRouteRecord } from '../../core/workspace-router/service'
 import { useHarness } from './useHarness'
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ listen: vi.fn().mockResolvedValue(() => {}) }) }))
-vi.mock('../../core/runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', recordWorkspaceContextDiagnostic: vi.fn(), runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(),
+vi.mock('../../core/runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', recordWorkspaceContextDiagnostic: vi.fn(), runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(), evaluateRouterDecision: vi.fn(),
   projectDocThreadBinding: vi.fn(), projectDocBindThread: vi.fn(), projectDocLockThreadBinding: vi.fn(), routerWorkspaceDirectory: vi.fn(), recordClientDiagnostic: vi.fn(), listWorkspaces: vi.fn(), listThreadStates: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), setThreadState: vi.fn(),
   mapThreadWorkspaces: vi.fn(), listenEvents: vi.fn(), listenTransport: vi.fn(),
 } }))
@@ -25,6 +26,7 @@ const accepted = { turn: { id: 'execution-turn', status: 'inProgress', items: []
 let routeChoice: string
 beforeEach(() => {
   vi.resetAllMocks(); storage.clear(); listeners = []; routeChoice = '{"primary":"/b","related":["/a"]}'
+  storage.set(ROUTER_SETTINGS_KEY, JSON.stringify({ backend: 'codex' }))
   vi.mocked(runtime.getAppState).mockImplementation(async (key) => storage.get(key) ?? null)
   vi.mocked(runtime.setAppState).mockImplementation(async (key, value) => { storage.set(key, value) })
   vi.mocked(runtime.recordClientDiagnostic).mockResolvedValue(undefined)
@@ -252,4 +254,16 @@ it('retains the saved feedback when applying the corrected directory fails', asy
   await act(async () => { await expect(result.current.correctRouteWorkspace('routed', '/a')).rejects.toThrow('反馈已保存') })
   expect(result.current.currentThread?.cwd).toBe('/b')
   expect((await readRouteRecord('routed'))?.actualWorkspace).toBe('/a')
+})
+
+it('routes through Decision 2B and starts the original task in its chosen workspace', async () => {
+  storage.delete(ROUTER_SETTINGS_KEY)
+  vi.mocked(runtime.evaluateRouterDecision).mockResolvedValue({ primary: '/b', model: 'chinese-decision-2b', inputTokens: 200 })
+  const { result } = await ready()
+  await act(async () => { await result.current.createThread() })
+  const input = [textInput('original task')]
+  await act(async () => { await result.current.sendMessage(input, 'queue') })
+  expect(result.current.currentThread?.cwd).toBe('/b')
+  expect(appServer.startTurn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ threadId: 'routed', cwd: '/b', input }))
+  expect(await readRouteRecord('routed')).toMatchObject({ backend: 'decision2', model: 'chinese-decision-2b', status: 'started' })
 })

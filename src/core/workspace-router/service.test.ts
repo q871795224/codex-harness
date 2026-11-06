@@ -6,7 +6,7 @@ import { runtime } from '../runtime/bridge'
 import { DEFAULT_ROUTER_SETTINGS, ROUTER_SETTINGS_KEY, saveRouterSettings } from './settings'
 import { completeRouteFeedback, parseRouteChoice, readRouteRecord, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord } from './service'
 vi.mock('../runtime/appServerClient', () => ({ appServer: { readConfig: vi.fn(), startThread: vi.fn(), startTurn: vi.fn(), interruptTurn: vi.fn(), unsubscribeThread: vi.fn() } }))
-vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
+vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(), prepareDecisionPrompt: vi.fn(), evaluateRouterDecision: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
 const storage = new Map<string, string>()
 const workspaces = ['/a', '/b'].map((root) => ({ root, checkoutRoot: `${root}/checkout`, name: root.slice(1), branch: 'main', sha: null, createdAt: 1, lastOpenedAt: 1 })) satisfies Workspace[]
 let handle: (event: AppServerEvent) => void
@@ -20,6 +20,7 @@ function output(text: string) {
 }
 beforeEach(() => {
   vi.resetAllMocks(); storage.clear()
+  storage.set(ROUTER_SETTINGS_KEY, JSON.stringify({ backend: 'codex' }))
   vi.mocked(runtime.getAppState).mockImplementation(async (key) => storage.get(key) ?? null)
   vi.mocked(runtime.setAppState).mockImplementation(async (key, value) => { storage.set(key, value) })
   vi.mocked(runtime.recordClientDiagnostic).mockResolvedValue(undefined)
@@ -35,7 +36,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 it('routes with saved settings in a tool-free ephemeral thread and keeps only routing metadata', async () => {
-  await saveRouterSettings({ model: 'custom', effort: 'high', descriptions: { '/b': 'Client application' } })
+  await saveRouterSettings({ backend: 'codex', model: 'custom', effort: 'high', descriptions: { '/b': 'Client application' } })
   const record = await routeWorkspace('source', '/neutral', [textInput('private request')], workspaces)
   expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({ ephemeral: true, model: 'custom', sandbox: 'read-only', config: expect.objectContaining({ 'features.shell_tool': false, 'mcp_servers.company.enabled': false, project_doc_max_bytes: 0 }) }))
   expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ effort: 'high', turnTrigger: 'workspace-router', input: expect.arrayContaining([textInput('private request')]) }))
@@ -135,4 +136,40 @@ it('previews the same prompt fields used by execution without starting a model',
   expect(runtime.buildRouterPrompt).toHaveBeenCalledWith(expect.objectContaining({ exampleLimit: 5 }))
   expect(appServer.startThread).not.toHaveBeenCalled()
   expect([...storage.values()].join('')).not.toContain('private preview')
+})
+
+it('defaults existing settings to Decision 2B, uses its native IPC and saves no request text', async () => {
+  storage.set(ROUTER_SETTINGS_KEY, JSON.stringify({ model: 'saved-codex', effort: 'high', descriptions: {} }))
+  vi.mocked(runtime.evaluateRouterDecision).mockResolvedValue({ primary: '/b', model: 'chinese-decision-2b', inputTokens: 200 })
+  const record = await routeWorkspace('source', '/neutral', [textInput('private decision request')], workspaces)
+  expect(record).toMatchObject({ backend: 'decision2', model: 'chinese-decision-2b', effort: '', choice: { primary: '/b', related: [] } })
+  expect(runtime.evaluateRouterDecision).toHaveBeenCalledWith(expect.objectContaining({ userTexts: ['private decision request'], candidates: expect.any(Array) }))
+  expect(appServer.startThread).not.toHaveBeenCalled()
+  expect([...storage.values()].join('')).not.toContain('private decision request')
+})
+it('retains failure and never silently spends Codex when Decision is unavailable', async () => {
+  storage.delete(ROUTER_SETTINGS_KEY)
+  vi.mocked(runtime.evaluateRouterDecision).mockRejectedValue(new Error('无法连接Decision 2B'))
+  await expect(routeWorkspace('source', '/neutral', [textInput('secret')], workspaces)).rejects.toThrow('无法连接')
+  expect(await readRouteRecord('source')).toMatchObject({ backend: 'decision2', status: 'failed' })
+  expect(appServer.startThread).not.toHaveBeenCalled()
+})
+it('uses Codex with the original image or full oversized catalog and records the actual backend', async () => {
+  storage.delete(ROUTER_SETTINGS_KEY)
+  const image = { type: 'localImage' as const, path: '/tmp/image.png' }
+  const record = await routeWorkspace('image', '/neutral', [textInput('look'), image], workspaces)
+  expect(record).toMatchObject({ backend: 'codex', fallbackReason: 'image', model: DEFAULT_ROUTER_SETTINGS.model })
+  expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ input: expect.arrayContaining([image]) }))
+  const catalog = Array.from({ length: 26 }, (_, i) => ({ ...workspaces[0], root: `/w${i}` }))
+  output('{"primary":"/w25","related":[]}')
+  expect(await routeWorkspace('many', '/neutral', [textInput('work')], catalog)).toMatchObject({ backend: 'codex', fallbackReason: 'candidate-limit', choice: { primary: '/w25', related: [] } })
+  expect(runtime.evaluateRouterDecision).not.toHaveBeenCalled()
+})
+it('previews exactly the native Decision body without calling either model', async () => {
+  const { prepareRouterPreview } = await import('./service')
+  const request = { state: { 用户需求: '{{用户输入}}' }, questions: { workspace: { type: 'choice' } } }
+  vi.mocked(runtime.prepareDecisionPrompt).mockResolvedValue({ request: JSON.stringify(request), textTokens: 200, examplesUsed: 0 })
+  expect(JSON.parse(await prepareRouterPreview([textInput('{{用户输入}}')], workspaces.map(w => ({ ...w, description: '' })), DEFAULT_ROUTER_SETTINGS))).toEqual(request)
+  expect(runtime.evaluateRouterDecision).not.toHaveBeenCalled()
+  expect(appServer.startThread).not.toHaveBeenCalled()
 })

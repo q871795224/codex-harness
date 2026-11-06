@@ -95,14 +95,14 @@ pub(crate) struct Example {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PromptInput {
-    instructions: String,
-    schema: String,
-    user_texts: Vec<String>,
-    candidates: Vec<Candidate>,
-    examples: Vec<Example>,
-    token_budget: usize,
+    pub instructions: String,
+    pub schema: String,
+    pub user_texts: Vec<String>,
+    pub candidates: Vec<Candidate>,
+    pub examples: Vec<Example>,
+    pub token_budget: usize,
     #[serde(default = "default_example_limit")]
-    example_limit: usize,
+    pub example_limit: usize,
 }
 fn default_example_limit() -> usize {
     3
@@ -123,17 +123,33 @@ fn context(candidates: &[Candidate], examples: &[Example]) -> String {
         .expect("routing context is JSON")
     )
 }
-pub(crate) fn build_prompt(mut input: PromptInput) -> Result<Prompt, String> {
+pub(crate) fn build_prompt(input: PromptInput) -> Result<Prompt, String> {
+    let (input, context, text_tokens) = fit_input(input, |input| {
+        let context = context(&input.candidates, &input.examples);
+        let reserved = count(&input.instructions)
+            + count(&input.schema)
+            + input.user_texts.iter().map(|t| count(t)).sum::<usize>()
+            + 64;
+        let tokens = reserved + count(&context);
+        (context, tokens)
+    })?;
+    Ok(Prompt {
+        context,
+        text_tokens,
+        examples_used: input.examples.len(),
+    })
+}
+
+pub(crate) fn fit_input(
+    mut input: PromptInput,
+    render: impl Fn(&PromptInput) -> (String, usize),
+) -> Result<(PromptInput, String, usize), String> {
     if !(2048..=32768).contains(&input.token_budget) {
         return Err("Router文本预算应为2048–32768 tokens".into());
     }
     if input.example_limit > 10 {
         return Err("纠错引用条数应为0–10".into());
     }
-    let reserved = count(&input.instructions)
-        + count(&input.schema)
-        + input.user_texts.iter().map(|t| count(t)).sum::<usize>()
-        + 64;
     for candidate in &mut input.candidates {
         candidate.description = truncate(&candidate.description, 192);
     }
@@ -150,14 +166,9 @@ pub(crate) fn build_prompt(mut input: PromptInput) -> Result<Prompt, String> {
         e.request = truncate(&e.request, 256);
     }
     loop {
-        let context = context(&input.candidates, &input.examples);
-        let tokens = reserved + count(&context);
+        let (context, tokens) = render(&input);
         if tokens <= input.token_budget {
-            return Ok(Prompt {
-                context,
-                text_tokens: tokens,
-                examples_used: input.examples.len(),
-            });
+            return Ok((input, context, tokens));
         }
         if input.examples.pop().is_some() {
             continue;

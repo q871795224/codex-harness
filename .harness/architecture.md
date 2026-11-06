@@ -25,7 +25,7 @@
 ## 工作区 Router
 
 - 新 Codex 会话默认未选工作区，空白 thread 使用 `~/.codex-harness/workspaces/general`，不继承其他会话或 daemon 的 cwd；手动选工作区后跳过 Router，重置会话保留当前 cwd。
-- `core/workspace-router` 在首次发送前使用只读、禁工具和 MCP 的 ephemeral App Server thread 选择主工作区及相关工作区；默认 `gpt-6.1-terra` / `medium`，设置页管理模型、强度和按完整 root 绑定的用途说明。每次路由读取一次配置快照，解析结果必须属于候选目录。
+- `core/workspace-router` 在首次发送前默认通过固定89服务的Chinese Decision 2B选择纯文字主工作区；图片或超过25工作区使用只读、禁工具和MCP的ephemeral App Server thread，Codex配置默认 `gpt-6.1-terra` / `medium`，设置页管理模型、强度和按完整 root 绑定的用途说明。每次路由读取一次配置快照，解析结果必须属于候选目录。
 - 选择后在最终 cwd 重建尚未发送的 thread，保留执行设置、未发送草稿及项目绑定；项目机器标识同步到新 thread，附件引用区间随之修正。原始需求完整转交，相关工作区另附路径提示。路由失败保留草稿，不在猜测的目录自动执行；通用请求沿用专用目录。切换到其他会话不打断路由，也不得被后台完成抢回选择。
 - 反馈卡片独立于执行，点击“不准”并保存实际工作区只记纠错，不切换 cwd、插话或中断。成功发送后续用户消息才记默认准；首次发送、失败发送和系统继续不计。明确反馈可覆盖默认准，历史保留。
 - 设置、候选配置快照、选择、来源 thread/client message/turn ID、耗时与反馈历史经已有 appState 接口持久化；每次尝试独立留存，路由重试不覆盖旧尝试。用户正文、图片和原始模型回复不复制进状态库或日志。诊断来源为 `workspace-router`，实际模型 usage 仍由核心账本采集。
@@ -50,7 +50,7 @@
 
 ## 工作区 Router
 
-- `core/workspace-router/` 准备首条路由输入、后台生成工作区简介并选择人工纠错案例，判断继续经临时 Codex 会话完成。原生 `workspace_router_context.rs` 负责文档读取和文字预算，`store/router.rs` 负责持久缓存索引及跨实例租约；简介正文保存在独立文件，纠错原文只从 Provider 读取。
+- `core/workspace-router/` 准备首条路由输入、后台生成工作区简介并选择人工纠错案例，判断默认经原生`workspace_router_decision.rs`固定HTTP客户端调用Chinese Decision 2B，Codex分支和简介生成继续使用临时会话。原生 `workspace_router_context.rs` 负责文档读取和文字预算，`store/router.rs` 负责持久缓存索引及跨实例租约；简介正文保存在独立文件，纠错原文只从 Provider 读取。
 - 工作区选择、显式纠正、24小时缓存策略与已确定的后端边界见 [workspace-router.md](workspace-router.md)，修改前先读该文档。
 
 ## Jev 决策服务
