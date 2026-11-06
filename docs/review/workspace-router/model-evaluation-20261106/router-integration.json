@@ -1,0 +1,112 @@
+{
+  "observed_at": "2026-11-06T18:44:28.622592+08:00",
+  "endpoint": "http://10.251.137.89:5050/harness-router/decision2",
+  "decision_health": {
+    "status": "ok",
+    "model": "chinese-decision-2b",
+    "temperature": 1.074872374534607,
+    "calibrated": true,
+    "backend": "gguf",
+    "device": "cpu",
+    "max_length": 16384,
+    "step": 4994
+  },
+  "laya_readyz": {
+    "status": "ready",
+    "engine": "laya",
+    "models": [
+      "english",
+      "multilingual",
+      "typed-decisions"
+    ],
+    "mode": "eager",
+    "dtype": "fp32",
+    "device": "cpu",
+    "version": "0.2.0"
+  },
+  "nginx_before_sha256": "479482e54a1fc7a655eb64671ea77ac6c9ef0c326f7eade8d28df7a1c7479ead",
+  "nginx_after_sha256": "ca4aa2d4eae14a2686419d7277d599d210c84677df7c5c150fe4b3c8b524a79f",
+  "services_current": {
+    "decision08": {
+      "pid": 114561,
+      "port": 16601,
+      "args": [
+        "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+        "/home/toc/SSE/harness-router-eval-20261106/chinese-decision/scripts/serve.py",
+        "--base",
+        "/home/toc/SSE/harness-router-eval-20261106/models/decision08",
+        "--backend",
+        "gguf",
+        "--gguf",
+        "/home/toc/SSE/harness-router-eval-20261106/models/decision08/chinese-decision-0.8b-Q8_0.gguf",
+        "--threads",
+        "16",
+        "--context-size",
+        "16384",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "16601"
+      ],
+      "health": {
+        "status": "ok",
+        "model": "chinese-decision-0.8b",
+        "temperature": 1.10813307762146,
+        "calibrated": true,
+        "backend": "gguf",
+        "device": "cpu",
+        "max_length": 16384,
+        "step": null
+      }
+    },
+    "decision2": {
+      "pid": 213688,
+      "port": 16602,
+      "args": [
+        "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+        "/home/toc/SSE/harness-router-eval-20261106/chinese-decision/scripts/serve.py",
+        "--base",
+        "/home/toc/SSE/harness-router-eval-20261106/models/decision2",
+        "--backend",
+        "gguf",
+        "--gguf",
+        "/home/toc/SSE/harness-router-eval-20261106/models/decision2/chinese-decision-2b-Q8_0.gguf",
+        "--threads",
+        "16",
+        "--context-size",
+        "16384",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "16602"
+      ],
+      "health": {
+        "status": "ok",
+        "model": "chinese-decision-2b",
+        "temperature": 1.074872374534607,
+        "calibrated": true,
+        "backend": "gguf",
+        "device": "cpu",
+        "max_length": 16384,
+        "step": 4994
+      }
+    },
+    "prism08": {
+      "pid": 128413,
+      "port": 16603,
+      "args": [
+        "/home/toc/SSE/harness-router-eval-20261106/venv/bin/python",
+        "/home/toc/SSE/harness-router-eval-20261106/prism_server.py"
+      ],
+      "health": {
+        "status": "ok",
+        "model": "Prism-Qwen3.5-Reranker-0.8B",
+        "dtype": "fp32",
+        "device": "cpu",
+        "threads": 16,
+        "max_length": 10000,
+        "batch_size": 4
+      }
+    }
+  }
+}

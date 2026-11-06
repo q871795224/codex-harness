@@ -1,0 +1,576 @@
+{
+  "frozen_at": "2026-11-06T18:11:54.516229+08:00",
+  "case_count": 16,
+  "catalog_size": 23,
+  "calls": [
+    {
+      "case": "H7",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H1",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H6",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H4",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S06",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S01",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S07",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S09",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S01",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S02",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S08",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "H6",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "H1",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S02",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H1",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S05",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "H6",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S02",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S05",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H4",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S05",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "H4",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S01",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H6",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S11",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "H4",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S02",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H4",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S05",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S11",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S06",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "H7",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "H3",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S07",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "H7",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S07",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "H3",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H6",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S07",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H4",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S09",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S04",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S07",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S06",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H7",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S06",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H1",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S10",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S01",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S09",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S07",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S04",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S05",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S03",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S07",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S10",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H4",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S08",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S04",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S10",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S03",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S08",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H7",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S01",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H1",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S02",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H3",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S08",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S05",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S11",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H3",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S06",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S04",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S11",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "H3",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S05",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S09",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S11",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H6",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S04",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S03",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S03",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "H6",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S02",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S06",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S08",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S09",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S10",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S09",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "H7",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S10",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S04",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S03",
+      "model": "decision2",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S10",
+      "model": "prism08",
+      "mode": "native"
+    },
+    {
+      "case": "S11",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S02",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "H1",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "H3",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S08",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S10",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H3",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S03",
+      "model": "laya-multilingual",
+      "mode": "native"
+    },
+    {
+      "case": "S08",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S09",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    },
+    {
+      "case": "S11",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H1",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S06",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S03",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S01",
+      "model": "decision2",
+      "mode": "two-examples"
+    },
+    {
+      "case": "H7",
+      "model": "decision08",
+      "mode": "no-examples"
+    },
+    {
+      "case": "S04",
+      "model": "decision08",
+      "mode": "two-examples"
+    },
+    {
+      "case": "S01",
+      "model": "laya-typed-decisions",
+      "mode": "native"
+    }
+  ],
+  "dataset_sha256": "cb0f2a1c8b0c505c7ec6fd5a4c39c6288904c0821bbba3a55f337498a793677a",
+  "notes": [
+    "Same 5 historical and 11 authored synthetic cases as preceding experiment.",
+    "All new models use full 22 workspace descriptions plus general (23 options).",
+    "Decision variants differ only in inclusion of two fixed synthetic demonstrations.",
+    "Prism uses 23 query/document pairs per request, score-only, native fixed author template.",
+    "Existing Laya baseline retains its previously tested request-only/name-only native format; information differs from new described candidates.",
+    "Timing is server-local HTTP request to full response; single caller; no retries."
+  ]
+}

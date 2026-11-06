@@ -1,0 +1,127 @@
+{
+  "observed_at": "2026-11-06T17:11:53.266949+08:00",
+  "base_url": "http://10.251.137.89:5050/laya",
+  "server_model_revision": "1c5edc17a7acd8701df6fc341c0d179f1c62c982",
+  "serving_mode": "CPU FP32 eager",
+  "fixed_models": [
+    "laya-multilingual",
+    "laya-typed-decisions"
+  ],
+  "language_scope": "instructions, workspace descriptions, headings; user requests unchanged",
+  "timeout_s": 30,
+  "concurrency": 1,
+  "retries": 0,
+  "tokenizer_sha256": {
+    "multilingual.json": "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f",
+    "typed-decisions.json": "6c8aaa9a542084f2457eab775d4eeb51f92a70c0fd9de28d5edb0ddec3c08d30"
+  },
+  "artifact_sha256": {
+    "dataset.json": "cb0f2a1c8b0c505c7ec6fd5a4c39c6288904c0821bbba3a55f337498a793677a",
+    "plan.json": "8be93be120dd3c05a477d96027461225870af90795fdaf9ed446b282008fa779",
+    "prepare.py": "62c4780177524abea28b34845c458f4e125fe4abdba4f74bc30f08000b96fef8",
+    "measure.py": "a5dc5fdc01f37a82c479109657a159e560655ce3edb131bedb203f7e3c80f814",
+    "run.py": "e4f31fadae69b2c7f3f21c87137a04d77226d598b3d10ba8e703949c60316be8",
+    "baseline.py": "0999f9536b2999767a556d68f6424e3dcb5442a209ced66301ebea86d6745d4c",
+    "report.py": "7957e47eb1d9a15de6ab237a71f090e98a00e28014a471f4e52190d3183ea925"
+  },
+  "python_packages": "tiktoken 0.14.0; tokenizers 0.23.3",
+  "/readyz": {
+    "status": "ready",
+    "engine": "laya",
+    "models": [
+      "english",
+      "multilingual",
+      "typed-decisions"
+    ],
+    "mode": "eager",
+    "dtype": "fp32",
+    "device": "cpu",
+    "version": "0.2.0"
+  },
+  "/v1/models": {
+    "object": "list",
+    "data": [
+      {
+        "id": "laya-english",
+        "object": "model",
+        "created": 1793956313,
+        "owned_by": "convaiinnovations",
+        "aliases": [
+          "en",
+          "english",
+          "laya-english"
+        ]
+      },
+      {
+        "id": "laya-multilingual",
+        "object": "model",
+        "created": 1793956313,
+        "owned_by": "convaiinnovations",
+        "aliases": [
+          "laya-multilingual",
+          "multi",
+          "multilingual"
+        ]
+      },
+      {
+        "id": "laya-typed-decisions",
+        "object": "model",
+        "created": 1793956313,
+        "owned_by": "convaiinnovations",
+        "aliases": [
+          "laya-typed-decisions",
+          "typed",
+          "typed-decisions",
+          "typed_decisions"
+        ]
+      },
+      {
+        "id": "jev-latest",
+        "object": "model",
+        "created": 1793956313,
+        "owned_by": "arbiter",
+        "aliases": [
+          "auto",
+          "default",
+          "jev",
+          "jev-latest",
+          "laya"
+        ],
+        "description": "automatic routing across the loaded checkpoints"
+      }
+    ]
+  },
+  "service_build": [
+    "5a178dd964811df4c5d8b2f2984d1cc8021a8bb9",
+    "f948ee606abe2ed2463f830c051f1a60dccc1b9f5ca1fdc15635cfcbe0cff7b2  /home/toc/SDE/laya-service/venv/lib/python3.12/site-packages/laya/common.py",
+    "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6  /home/toc/SDE/laya-service/models/laya/multilingual/rl_agent_config.json",
+    "ebf0cd524d92342a6be5e48e9fca3d7c2babfb5a56ccd79d2171ef5d8c7f7be8  /home/toc/SDE/laya-service/models/laya/typed-decisions/rl_agent_config.json"
+  ],
+  "source_scope": "Read-only inspection of deployed Laya SDK shaping, config and tokenizers; server not modified.",
+  "harness_checkout_commit": "c122090",
+  "model_input_limit": {
+    "multilingual": {
+      "max_len": 1024,
+      "head_max_len": 256
+    },
+    "typed-decisions": {
+      "max_len": 1024,
+      "head_max_len": 256
+    },
+    "english": {
+      "max_len": 512,
+      "head_max_len": 192,
+      "inference_tested": false
+    }
+  },
+  "verification": {
+    "main_requests": 256,
+    "baseline_requests": 32,
+    "errors": 0,
+    "usage_matches": 288,
+    "main_start": "2026-11-06T17:07:45.482953+08:00",
+    "main_end": "2026-11-06T17:24:37.561019+08:00",
+    "baseline_end": "2026-11-06T17:25:28.561664+08:00",
+    "not_in_metrics": "two model warmups and one earlier connectivity smoke request"
+  }
+}

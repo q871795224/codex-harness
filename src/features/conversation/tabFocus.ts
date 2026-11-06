@@ -5,6 +5,7 @@ export function conversationTabSupportsFocus(contribution: ConversationTabContri
 }
 
 export function conversationComposerState(tab: string, active: boolean, contribution: ConversationTabContribution | null, collapsed: boolean) {
+  if (tab === 'router') return { collapsible: false, visible: false }
   const collapsible = tab !== 'chat'
   return { collapsible, visible: active && !contribution?.hideComposer && !(collapsible && collapsed) }
 }

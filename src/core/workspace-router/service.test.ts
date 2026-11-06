@@ -6,7 +6,7 @@ import { runtime } from '../runtime/bridge'
 import { DEFAULT_ROUTER_SETTINGS, ROUTER_SETTINGS_KEY, saveRouterSettings } from './settings'
 import { completeRouteFeedback, parseRouteChoice, readRouteRecord, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord } from './service'
 vi.mock('../runtime/appServerClient', () => ({ appServer: { readConfig: vi.fn(), startThread: vi.fn(), startTurn: vi.fn(), interruptTurn: vi.fn(), unsubscribeThread: vi.fn() } }))
-vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
+vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(), prepareDecisionPrompt: vi.fn(), evaluateRouterDecision: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
 const storage = new Map<string, string>()
 const workspaces = ['/a', '/b'].map((root) => ({ root, checkoutRoot: `${root}/checkout`, name: root.slice(1), branch: 'main', sha: null, createdAt: 1, lastOpenedAt: 1 })) satisfies Workspace[]
 let handle: (event: AppServerEvent) => void
@@ -20,9 +20,13 @@ function output(text: string) {
 }
 beforeEach(() => {
   vi.resetAllMocks(); storage.clear()
+  storage.set(ROUTER_SETTINGS_KEY, JSON.stringify({ backend: 'codex' }))
   vi.mocked(runtime.getAppState).mockImplementation(async (key) => storage.get(key) ?? null)
   vi.mocked(runtime.setAppState).mockImplementation(async (key, value) => { storage.set(key, value) })
   vi.mocked(runtime.recordClientDiagnostic).mockResolvedValue(undefined)
+  vi.mocked(runtime.routerSummaries).mockResolvedValue([])
+  vi.mocked(runtime.routerCorrections).mockResolvedValue([])
+  vi.mocked(runtime.buildRouterPrompt).mockImplementation(async input => ({ context: JSON.stringify({ workspaces: input.candidates, corrections: input.examples }), textTokens: 100, examplesUsed: input.examples.length }))
   vi.mocked(runtime.listenEvents).mockImplementation(async (handler) => { handle = handler; return unlisten })
   vi.mocked(appServer.readConfig).mockResolvedValue({ config: { mcp_servers: { company: {} } } } as never)
   vi.mocked(appServer.startThread).mockResolvedValue({ thread: { id: 'router' } } as never)
@@ -32,7 +36,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 it('routes with saved settings in a tool-free ephemeral thread and keeps only routing metadata', async () => {
-  await saveRouterSettings({ model: 'custom', effort: 'high', descriptions: { '/b': 'Client application' } })
+  await saveRouterSettings({ backend: 'codex', model: 'custom', effort: 'high', descriptions: { '/b': 'Client application' } })
   const record = await routeWorkspace('source', '/neutral', [textInput('private request')], workspaces)
   expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({ ephemeral: true, model: 'custom', sandbox: 'read-only', config: expect.objectContaining({ 'features.shell_tool': false, 'mcp_servers.company.enabled': false, project_doc_max_bytes: 0 }) }))
   expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ effort: 'high', turnTrigger: 'workspace-router', input: expect.arrayContaining([textInput('private request')]) }))
@@ -69,7 +73,7 @@ it('rejects unknown workspaces and records failure without retaining arbitrary r
   await expect(routeWorkspace('source', '/neutral', [textInput('secret')], workspaces)).rejects.toThrow('未知的工作区')
   expect(await readRouteRecord('source')).toMatchObject({ status: 'failed', errorCode: 'request_failed', choice: null })
   expect([...storage.values()].join('\n')).not.toContain('/invented')
-  expect(appServer.interruptTurn).toHaveBeenCalledWith('router', 'choice')
+  expect(appServer.unsubscribeThread).toHaveBeenCalledWith('router')
 })
 it('times out and cleans up the router without starting a task', async () => {
   vi.useFakeTimers()
@@ -110,4 +114,62 @@ it('closes feedback once on a follow-up, preserves explicit corrections and pers
   expect(closed.history).toEqual(explicit.history)
   expect(await completeRouteFeedback(closed, 'third')).toEqual(closed)
   expect(await readRouteRecord('source')).toEqual(closed)
+})
+it('uses cached descriptions for the prompt without copying model-derived text into SQLite records', async () => {
+  vi.mocked(runtime.routerSummaries).mockResolvedValue([{ root: '/a', checkoutRoot: '/a/checkout', description: 'cached generated synopsis', checkedAt: 1, generatedAt: 1, error: false }])
+  await routeWorkspace('source', '/neutral', [textInput('work')], workspaces)
+  expect(runtime.buildRouterPrompt).toHaveBeenCalledWith(expect.objectContaining({ tokenBudget: 8192, candidates: expect.arrayContaining([expect.objectContaining({ root: '/a', description: 'cached generated synopsis' })]) }))
+  expect([...storage.values()].join('\n')).not.toContain('cached generated synopsis')
+})
+it('enforces the token budget before starting the router model', async () => {
+  vi.mocked(runtime.buildRouterPrompt).mockRejectedValue(new Error('超过Router文本预算'))
+  await expect(routeWorkspace('source', '/neutral', [textInput('large request')], workspaces)).rejects.toThrow('文本预算')
+  expect(appServer.startThread).not.toHaveBeenCalled()
+})
+it('previews the same prompt fields used by execution without starting a model', async () => {
+  const { prepareRouterPrompt, routingCandidates } = await import('./service')
+  const settings = { ...DEFAULT_ROUTER_SETTINGS, feedbackCount: 5, feedbackRule: 'recent' as const }
+  const candidates = await routingCandidates(workspaces, settings)
+  const prepared = await prepareRouterPrompt([textInput('private preview')], candidates, settings)
+  expect(prepared.input.at(-1)).toEqual(textInput('private preview'))
+  expect(prepared.developerInstructions).toContain('你是工作区选择助手')
+  expect(runtime.buildRouterPrompt).toHaveBeenCalledWith(expect.objectContaining({ exampleLimit: 5 }))
+  expect(appServer.startThread).not.toHaveBeenCalled()
+  expect([...storage.values()].join('')).not.toContain('private preview')
+})
+
+it('defaults existing settings to Decision 2B, uses its native IPC and saves no request text', async () => {
+  storage.set(ROUTER_SETTINGS_KEY, JSON.stringify({ model: 'saved-codex', effort: 'high', descriptions: {} }))
+  vi.mocked(runtime.evaluateRouterDecision).mockResolvedValue({ primary: '/b', model: 'chinese-decision-2b', inputTokens: 200 })
+  const record = await routeWorkspace('source', '/neutral', [textInput('private decision request')], workspaces)
+  expect(record).toMatchObject({ backend: 'decision2', model: 'chinese-decision-2b', effort: '', choice: { primary: '/b', related: [] } })
+  expect(runtime.evaluateRouterDecision).toHaveBeenCalledWith(expect.objectContaining({ userTexts: ['private decision request'], candidates: expect.any(Array) }))
+  expect(appServer.startThread).not.toHaveBeenCalled()
+  expect([...storage.values()].join('')).not.toContain('private decision request')
+})
+it('retains failure and never silently spends Codex when Decision is unavailable', async () => {
+  storage.delete(ROUTER_SETTINGS_KEY)
+  vi.mocked(runtime.evaluateRouterDecision).mockRejectedValue(new Error('无法连接Decision 2B'))
+  await expect(routeWorkspace('source', '/neutral', [textInput('secret')], workspaces)).rejects.toThrow('无法连接')
+  expect(await readRouteRecord('source')).toMatchObject({ backend: 'decision2', status: 'failed' })
+  expect(appServer.startThread).not.toHaveBeenCalled()
+})
+it('uses Codex with the original image or full oversized catalog and records the actual backend', async () => {
+  storage.delete(ROUTER_SETTINGS_KEY)
+  const image = { type: 'localImage' as const, path: '/tmp/image.png' }
+  const record = await routeWorkspace('image', '/neutral', [textInput('look'), image], workspaces)
+  expect(record).toMatchObject({ backend: 'codex', fallbackReason: 'image', model: DEFAULT_ROUTER_SETTINGS.model })
+  expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ input: expect.arrayContaining([image]) }))
+  const catalog = Array.from({ length: 26 }, (_, i) => ({ ...workspaces[0], root: `/w${i}` }))
+  output('{"primary":"/w25","related":[]}')
+  expect(await routeWorkspace('many', '/neutral', [textInput('work')], catalog)).toMatchObject({ backend: 'codex', fallbackReason: 'candidate-limit', choice: { primary: '/w25', related: [] } })
+  expect(runtime.evaluateRouterDecision).not.toHaveBeenCalled()
+})
+it('previews exactly the native Decision body without calling either model', async () => {
+  const { prepareRouterPreview } = await import('./service')
+  const request = { state: { 用户需求: '{{用户输入}}' }, questions: { workspace: { type: 'choice' } } }
+  vi.mocked(runtime.prepareDecisionPrompt).mockResolvedValue({ request: JSON.stringify(request), textTokens: 200, examplesUsed: 0 })
+  expect(JSON.parse(await prepareRouterPreview([textInput('{{用户输入}}')], workspaces.map(w => ({ ...w, description: '' })), DEFAULT_ROUTER_SETTINGS))).toEqual(request)
+  expect(runtime.evaluateRouterDecision).not.toHaveBeenCalled()
+  expect(appServer.startThread).not.toHaveBeenCalled()
 })

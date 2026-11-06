@@ -1,3 +1,5 @@
+import { RouterSettings } from './features/settings/RouterSettings'
+import { useRouterSummaries } from './core/workspace-router/react'
 import { useSeaTalkSync } from './core/seatalk/react'
 import { RouterFeedbackCard } from './features/conversation/RouterFeedbackCard'
 import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
@@ -19,7 +21,7 @@ import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter } from './features/notifications/Notifications'
 import { useReleaseNotifications } from './features/notifications/useReleaseNotifications'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, Clock3, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
+import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, Clock3, GitBranch, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
 import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
@@ -69,6 +71,7 @@ import { archiveStore } from './plugins/project-doc/archiveStore'
 const TeamMode = lazy(() => import('./features/teams/TeamMode').then((module) => ({ default: module.TeamMode })))
 
 const ASYNC_WAIT_TAB_KEY = 'async-waits'
+const ROUTER_TAB_KEY = 'router'
 const CONVERSATION_TAB_ORDER_KEY = 'conversationTabOrder'
 // 项目文档服务是无状态桥接封装，模块级单例即可（绑定走 appState，读写直连 Rust store）。
 const projectDocs = createProjectDocService()
@@ -79,6 +82,7 @@ const PluginSettingsDialog = lazy(() => import('./features/settings/SettingsDial
 export default function App() {
   useEffect(() => { void notifications.initialize() }, [])
   const harness = useUnifiedHarness()
+  useRouterSummaries(harness.workspaces, harness.phase === 'ready')
   useSeaTalkSync(harness)
   const codex = useCodexCore()
   const selectAgentRunThread = useCallback(
@@ -491,13 +495,13 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const quickPanelsVisible = shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
 
   useEffect(() => {
-    if (tab !== 'chat' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab) {
+    if (tab !== 'chat' && tab !== ASYNC_WAIT_TAB_KEY && tab !== ROUTER_TAB_KEY && !selectedPluginTab) {
       setTab('chat')
       setFocusedTab(null)
     }
   }, [selectedPluginTab, tab])
   const orderedTabIds = orderConversationTabs(
-    ['chat', ASYNC_WAIT_TAB_KEY, ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
+    ['chat', ASYNC_WAIT_TAB_KEY, ROUTER_TAB_KEY, ...pluginTabs.map((entry) => pluginTabKey(entry.pluginId, entry.contribution.id))],
     tabOrder,
   )
   const ctrlPressed = useModifierKey('Control')
@@ -556,7 +560,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   }, [])
 
   useEffect(() => {
-    if (tab !== 'chat' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab) setTab('chat')
+    if (tab !== 'chat' && tab !== ASYNC_WAIT_TAB_KEY && tab !== ROUTER_TAB_KEY && !selectedPluginTab) setTab('chat')
   }, [selectedPluginTab, tab])
 
   useEffect(() => {
@@ -878,9 +882,9 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                   const entry = tabId === 'chat'
                     ? null
                     : pluginTabs.find((candidate) => pluginTabKey(candidate.pluginId, candidate.contribution.id) === tabId)
-                  if (tabId !== 'chat' && tabId !== ASYNC_WAIT_TAB_KEY && !entry) return null
-                  const label = tabId === ASYNC_WAIT_TAB_KEY ? '异步任务' : entry?.contribution.label ?? '对话'
-                  const Icon = tabId === ASYNC_WAIT_TAB_KEY ? Clock3 : entry?.contribution.icon ?? MessageSquareText
+                  if (tabId !== 'chat' && tabId !== ASYNC_WAIT_TAB_KEY && tabId !== ROUTER_TAB_KEY && !entry) return null
+                  const label = tabId === ROUTER_TAB_KEY ? 'Router' : tabId === ASYNC_WAIT_TAB_KEY ? '异步任务' : entry?.contribution.label ?? '对话'
+                  const Icon = tabId === ROUTER_TAB_KEY ? GitBranch : tabId === ASYNC_WAIT_TAB_KEY ? Clock3 : entry?.contribution.icon ?? MessageSquareText
                   return (
                     <button
                       key={tabId}
@@ -975,6 +979,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                     key={harness.currentRoute.id}
                     record={harness.currentRoute}
                     onFeedback={(accurate, actual) => harness.giveRouteFeedback(harness.currentRoute!.threadId, accurate, actual)}
+                    canCorrect={canMutate && !harness.isCurrentWorking && harness.viewMode !== 'archived'}
+                    onCorrect={(actual) => harness.correctRouteWorkspace(harness.currentRoute!.threadId, actual)}
                   />}
                   {conversationBanners.map((entry) => <PluginConversationBanner key={entry.instanceId + entry.contribution.id} entry={entry} props={{
                     provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd,
@@ -995,6 +1001,9 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                 view="page"
                 onOpenThread={(id) => { setTab('chat'); void harness.selectThread(id) }}
               />
+            </RetainedTab>
+            <RetainedTab active={tab === ROUTER_TAB_KEY}>
+              <RouterSettings models={codex.models} workspaces={harness.workspaces} initialSection="workspaces" standalone />
             </RetainedTab>
             {pluginTabs.map((entry) => (
               <RetainedTab key={`${entry.instanceId}:${entry.contribution.id}`} active={selectedPluginTab === entry}>

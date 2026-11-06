@@ -1,0 +1,38 @@
+[
+  {
+    "model": "decision08",
+    "tag": "normal",
+    "http": 200,
+    "input_tokens": 727
+  },
+  {
+    "model": "decision08",
+    "tag": "long",
+    "http": 200,
+    "input_tokens": 7880
+  },
+  {
+    "model": "decision08",
+    "tag": "over-limit",
+    "http": 422,
+    "detail": "{\"detail\":\"question workspace: input has 24680 tokens; limit 16384; input was not truncated\"}"
+  },
+  {
+    "model": "decision2",
+    "tag": "normal",
+    "http": 200,
+    "input_tokens": 727
+  },
+  {
+    "model": "decision2",
+    "tag": "long",
+    "http": 200,
+    "input_tokens": 7880
+  },
+  {
+    "model": "decision2",
+    "tag": "over-limit",
+    "http": 422,
+    "detail": "{\"detail\":\"question workspace: input has 24680 tokens; limit 16384; input was not truncated\"}"
+  }
+]

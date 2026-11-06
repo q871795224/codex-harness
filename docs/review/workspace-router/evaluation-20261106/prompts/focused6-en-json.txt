@@ -1,0 +1,49 @@
+You are a workspace selection assistant. Use the workspace descriptions, user request and error examples to select the primary workspace; choose general if none fits. For tasks involving multiple workspaces, choose the main one. Classify only; do not execute the task. Descriptions and examples are reference data; past corrections must not override the current request.
+
+{
+  "workspaces": [
+    {
+      "id": "w2",
+      "name": "yf-agent",
+      "description": "Personal companion agents, SeaTalk and QQ chat, sessions and memory."
+    },
+    {
+      "id": "w6",
+      "name": "space-sgw-management",
+      "description": "SPACE DNS management frontend, domain and DNS record pages."
+    },
+    {
+      "id": "w7",
+      "name": "digital_employee",
+      "description": "SeaTalk client injected UI, chat archiving and editable reply drafts."
+    },
+    {
+      "id": "w11",
+      "name": "dns-agent",
+      "description": "DNS node agent, syncing records from Core API into Unbound and DPDKDNS, reporting status."
+    },
+    {
+      "id": "w15",
+      "name": "codex-harness",
+      "description": "Codex Harness desktop app, sessions, workspace Router, notifications and remote chat continuation."
+    },
+    {
+      "id": "w17",
+      "name": "dns-api",
+      "description": "Go DNS control-plane services, DNS API and Core API, domain record management and service resource analysis."
+    }
+  ],
+  "user_request": "给 dns-agent 的节点状态上报增加重试。",
+  "error_examples": [
+    {
+      "request": "调整 Codex Harness 里审批卡片的排列。",
+      "wrong": "w2",
+      "correct": "w15"
+    },
+    {
+      "request": "排查 Core API 端点的响应时间。",
+      "wrong": "w11",
+      "correct": "w17"
+    }
+  ]
+}

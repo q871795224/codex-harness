@@ -19,3 +19,9 @@ CHOKIDAR_USEPOLLING=1 pnpm exec vite --host 127.0.0.1 --port 1435 --strictPort
 使用独立 Playwright session 运行 `run-code --filename tests/visual/verify-conversation-feedback.js`，自动检查选中态、发送清空、卡片隐藏、Shift+Enter、自动增高、深浅主题，以及包含侧栏与多个 tab 的最小窗口边界。截图输出到 `output/playwright/`；`screenshots/` 保存本次 PR 的四项实际浏览器截图。
 
 发送中切走并返回、失败保留草稿、后续草稿保护、路由反馈持久化与重开等异步行为由对应 Vitest 覆盖；此页不替代原生应用端到端验证。
+
+## 工作区简介与纠正
+
+启动 `pnpm exec vite --host 127.0.0.1 --port 1439 --strictPort`，打开 `/tests/visual/router-context.html`。
+该页用真实 RouterSettings 和 RouterFeedbackCard，加内存数据替代 native 调用，不访问真实缓存或模型。
+用独立 Playwright session 执行 `run-code --filename tests/visual/verify-router-context.js`，检查精简标题行、状态颜色与倒计时位置、立即更新、Decision 2B默认激活与其他API禁用、反馈引用规则保存、最终 Prompt 自动只读展示与逐条反馈、深浅主题和640px窄窗口。使用 `?scenario=correction` 仍可手工复查原纠正卡片。截图在 `docs/review/workspace-router/`；不代表原生应用和真实模型端到端验收。

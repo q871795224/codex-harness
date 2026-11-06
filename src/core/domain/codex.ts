@@ -13,6 +13,7 @@ export type CodexTurnTrigger =
   | 'return-to-parent'
   | 'thread-title'
   | 'workspace-router'
+  | 'workspace-router-summary'
 
 export interface Workspace {
   root: string

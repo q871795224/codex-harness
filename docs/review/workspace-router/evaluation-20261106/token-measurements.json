@@ -1,0 +1,5634 @@
+[
+  {
+    "scope": "focused6",
+    "case": "H1",
+    "variant": "zh-json",
+    "prompt_o200k": 503,
+    "o200k": 569,
+    "chars": 1363,
+    "utf8_bytes": 1987,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 719,
+        "sequence_tokens_without_truncation": 719,
+        "state_tokens": 589,
+        "state_kept": 589,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 838,
+        "sequence_tokens_without_truncation": 838,
+        "state_tokens": 632,
+        "state_kept": 632,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 838,
+        "state_tokens": 632,
+        "state_kept": 316,
+        "state_dropped": 316,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H1",
+    "variant": "zh-text",
+    "prompt_o200k": 358,
+    "o200k": 425,
+    "chars": 852,
+    "utf8_bytes": 1532,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 411,
+        "sequence_tokens_without_truncation": 411,
+        "state_tokens": 281,
+        "state_kept": 281,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 680,
+        "sequence_tokens_without_truncation": 680,
+        "state_tokens": 474,
+        "state_kept": 474,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 680,
+        "state_tokens": 474,
+        "state_kept": 316,
+        "state_dropped": 158,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "partial",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H1",
+    "variant": "en-json",
+    "prompt_o200k": 470,
+    "o200k": 534,
+    "chars": 1939,
+    "utf8_bytes": 2093,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 713,
+        "sequence_tokens_without_truncation": 713,
+        "state_tokens": 581,
+        "state_kept": 581,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 654,
+        "sequence_tokens_without_truncation": 654,
+        "state_tokens": 519,
+        "state_kept": 519,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 654,
+        "state_tokens": 519,
+        "state_kept": 377,
+        "state_dropped": 142,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "partial",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H1",
+    "variant": "en-text",
+    "prompt_o200k": 324,
+    "o200k": 389,
+    "chars": 1500,
+    "utf8_bytes": 1654,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 397,
+        "sequence_tokens_without_truncation": 397,
+        "state_tokens": 265,
+        "state_kept": 265,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 472,
+        "sequence_tokens_without_truncation": 472,
+        "state_tokens": 337,
+        "state_kept": 337,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 472,
+        "sequence_tokens_without_truncation": 472,
+        "state_tokens": 337,
+        "state_kept": 337,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H3",
+    "variant": "zh-json",
+    "prompt_o200k": 474,
+    "o200k": 540,
+    "chars": 1310,
+    "utf8_bytes": 1858,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 693,
+        "sequence_tokens_without_truncation": 693,
+        "state_tokens": 563,
+        "state_kept": 563,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 790,
+        "sequence_tokens_without_truncation": 790,
+        "state_tokens": 584,
+        "state_kept": 584,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 790,
+        "state_tokens": 584,
+        "state_kept": 316,
+        "state_dropped": 268,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H3",
+    "variant": "zh-text",
+    "prompt_o200k": 329,
+    "o200k": 396,
+    "chars": 799,
+    "utf8_bytes": 1403,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 384,
+        "sequence_tokens_without_truncation": 384,
+        "state_tokens": 254,
+        "state_kept": 254,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 632,
+        "sequence_tokens_without_truncation": 632,
+        "state_tokens": 426,
+        "state_kept": 426,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 632,
+        "state_tokens": 426,
+        "state_kept": 316,
+        "state_dropped": 110,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H3",
+    "variant": "en-json",
+    "prompt_o200k": 441,
+    "o200k": 505,
+    "chars": 1886,
+    "utf8_bytes": 1964,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 687,
+        "sequence_tokens_without_truncation": 687,
+        "state_tokens": 555,
+        "state_kept": 555,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 606,
+        "sequence_tokens_without_truncation": 606,
+        "state_tokens": 471,
+        "state_kept": 471,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 606,
+        "state_tokens": 471,
+        "state_kept": 377,
+        "state_dropped": 94,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H3",
+    "variant": "en-text",
+    "prompt_o200k": 295,
+    "o200k": 360,
+    "chars": 1447,
+    "utf8_bytes": 1525,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 370,
+        "sequence_tokens_without_truncation": 370,
+        "state_tokens": 238,
+        "state_kept": 238,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 424,
+        "sequence_tokens_without_truncation": 424,
+        "state_tokens": 289,
+        "state_kept": 289,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 424,
+        "sequence_tokens_without_truncation": 424,
+        "state_tokens": 289,
+        "state_kept": 289,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H4",
+    "variant": "zh-json",
+    "prompt_o200k": 489,
+    "o200k": 555,
+    "chars": 1348,
+    "utf8_bytes": 1934,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 706,
+        "sequence_tokens_without_truncation": 706,
+        "state_tokens": 576,
+        "state_kept": 576,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 810,
+        "sequence_tokens_without_truncation": 810,
+        "state_tokens": 604,
+        "state_kept": 604,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 810,
+        "state_tokens": 604,
+        "state_kept": 316,
+        "state_dropped": 288,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H4",
+    "variant": "zh-text",
+    "prompt_o200k": 344,
+    "o200k": 411,
+    "chars": 836,
+    "utf8_bytes": 1478,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 399,
+        "sequence_tokens_without_truncation": 399,
+        "state_tokens": 269,
+        "state_kept": 269,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 653,
+        "sequence_tokens_without_truncation": 653,
+        "state_tokens": 447,
+        "state_kept": 447,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 653,
+        "state_tokens": 447,
+        "state_kept": 316,
+        "state_dropped": 131,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "partial",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H4",
+    "variant": "en-json",
+    "prompt_o200k": 456,
+    "o200k": 520,
+    "chars": 1924,
+    "utf8_bytes": 2040,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 700,
+        "sequence_tokens_without_truncation": 700,
+        "state_tokens": 568,
+        "state_kept": 568,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 626,
+        "sequence_tokens_without_truncation": 626,
+        "state_tokens": 491,
+        "state_kept": 491,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 626,
+        "state_tokens": 491,
+        "state_kept": 377,
+        "state_dropped": 114,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H4",
+    "variant": "en-text",
+    "prompt_o200k": 310,
+    "o200k": 375,
+    "chars": 1484,
+    "utf8_bytes": 1600,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 385,
+        "sequence_tokens_without_truncation": 385,
+        "state_tokens": 253,
+        "state_kept": 253,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 445,
+        "sequence_tokens_without_truncation": 445,
+        "state_tokens": 310,
+        "state_kept": 310,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 445,
+        "sequence_tokens_without_truncation": 445,
+        "state_tokens": 310,
+        "state_kept": 310,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H6",
+    "variant": "zh-json",
+    "prompt_o200k": 657,
+    "o200k": 723,
+    "chars": 1586,
+    "utf8_bytes": 2600,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 851,
+        "sequence_tokens_without_truncation": 851,
+        "state_tokens": 721,
+        "state_kept": 721,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1112,
+        "state_tokens": 906,
+        "state_kept": 818,
+        "state_dropped": 88,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1112,
+        "state_tokens": 906,
+        "state_kept": 316,
+        "state_dropped": 590,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H6",
+    "variant": "zh-text",
+    "prompt_o200k": 504,
+    "o200k": 571,
+    "chars": 1068,
+    "utf8_bytes": 2138,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 538,
+        "sequence_tokens_without_truncation": 538,
+        "state_tokens": 408,
+        "state_kept": 408,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 947,
+        "sequence_tokens_without_truncation": 947,
+        "state_tokens": 741,
+        "state_kept": 741,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 947,
+        "state_tokens": 741,
+        "state_kept": 316,
+        "state_dropped": 425,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "partial",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H6",
+    "variant": "en-json",
+    "prompt_o200k": 624,
+    "o200k": 688,
+    "chars": 2162,
+    "utf8_bytes": 2706,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 845,
+        "sequence_tokens_without_truncation": 845,
+        "state_tokens": 713,
+        "state_kept": 713,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 928,
+        "sequence_tokens_without_truncation": 928,
+        "state_tokens": 793,
+        "state_kept": 793,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 928,
+        "state_tokens": 793,
+        "state_kept": 377,
+        "state_dropped": 416,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "partial",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H6",
+    "variant": "en-text",
+    "prompt_o200k": 470,
+    "o200k": 535,
+    "chars": 1716,
+    "utf8_bytes": 2260,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 524,
+        "sequence_tokens_without_truncation": 524,
+        "state_tokens": 392,
+        "state_kept": 392,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 739,
+        "sequence_tokens_without_truncation": 739,
+        "state_tokens": 604,
+        "state_kept": 604,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 739,
+        "state_tokens": 604,
+        "state_kept": 377,
+        "state_dropped": 227,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "partial",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H7",
+    "variant": "zh-json",
+    "prompt_o200k": 523,
+    "o200k": 589,
+    "chars": 1386,
+    "utf8_bytes": 2104,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 741,
+        "sequence_tokens_without_truncation": 741,
+        "state_tokens": 611,
+        "state_kept": 611,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 883,
+        "sequence_tokens_without_truncation": 883,
+        "state_tokens": 677,
+        "state_kept": 677,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 883,
+        "state_tokens": 677,
+        "state_kept": 316,
+        "state_dropped": 361,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H7",
+    "variant": "zh-text",
+    "prompt_o200k": 376,
+    "o200k": 443,
+    "chars": 873,
+    "utf8_bytes": 1647,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 430,
+        "sequence_tokens_without_truncation": 430,
+        "state_tokens": 300,
+        "state_kept": 300,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 723,
+        "sequence_tokens_without_truncation": 723,
+        "state_tokens": 517,
+        "state_kept": 517,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 723,
+        "state_tokens": 517,
+        "state_kept": 316,
+        "state_dropped": 201,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "partial",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H7",
+    "variant": "en-json",
+    "prompt_o200k": 490,
+    "o200k": 554,
+    "chars": 1962,
+    "utf8_bytes": 2210,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 735,
+        "sequence_tokens_without_truncation": 735,
+        "state_tokens": 603,
+        "state_kept": 603,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 699,
+        "sequence_tokens_without_truncation": 699,
+        "state_tokens": 564,
+        "state_kept": 564,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 699,
+        "state_tokens": 564,
+        "state_kept": 377,
+        "state_dropped": 187,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "partial",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "H7",
+    "variant": "en-text",
+    "prompt_o200k": 342,
+    "o200k": 407,
+    "chars": 1521,
+    "utf8_bytes": 1769,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 416,
+        "sequence_tokens_without_truncation": 416,
+        "state_tokens": 284,
+        "state_kept": 284,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 515,
+        "sequence_tokens_without_truncation": 515,
+        "state_tokens": 380,
+        "state_kept": 380,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 515,
+        "state_tokens": 380,
+        "state_kept": 377,
+        "state_dropped": 3,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S01",
+    "variant": "zh-json",
+    "prompt_o200k": 468,
+    "o200k": 534,
+    "chars": 1302,
+    "utf8_bytes": 1868,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 688,
+        "sequence_tokens_without_truncation": 688,
+        "state_tokens": 558,
+        "state_kept": 558,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 791,
+        "sequence_tokens_without_truncation": 791,
+        "state_tokens": 585,
+        "state_kept": 585,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 791,
+        "state_tokens": 585,
+        "state_kept": 316,
+        "state_dropped": 269,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S01",
+    "variant": "zh-text",
+    "prompt_o200k": 323,
+    "o200k": 390,
+    "chars": 791,
+    "utf8_bytes": 1413,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 379,
+        "sequence_tokens_without_truncation": 379,
+        "state_tokens": 249,
+        "state_kept": 249,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 633,
+        "sequence_tokens_without_truncation": 633,
+        "state_tokens": 427,
+        "state_kept": 427,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 633,
+        "state_tokens": 427,
+        "state_kept": 316,
+        "state_dropped": 111,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S01",
+    "variant": "en-json",
+    "prompt_o200k": 435,
+    "o200k": 499,
+    "chars": 1878,
+    "utf8_bytes": 1974,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 682,
+        "sequence_tokens_without_truncation": 682,
+        "state_tokens": 550,
+        "state_kept": 550,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 607,
+        "sequence_tokens_without_truncation": 607,
+        "state_tokens": 472,
+        "state_kept": 472,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 607,
+        "state_tokens": 472,
+        "state_kept": 377,
+        "state_dropped": 95,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S01",
+    "variant": "en-text",
+    "prompt_o200k": 289,
+    "o200k": 354,
+    "chars": 1439,
+    "utf8_bytes": 1535,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 365,
+        "sequence_tokens_without_truncation": 365,
+        "state_tokens": 233,
+        "state_kept": 233,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 425,
+        "sequence_tokens_without_truncation": 425,
+        "state_tokens": 290,
+        "state_kept": 290,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 425,
+        "sequence_tokens_without_truncation": 425,
+        "state_tokens": 290,
+        "state_kept": 290,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S02",
+    "variant": "zh-json",
+    "prompt_o200k": 474,
+    "o200k": 540,
+    "chars": 1314,
+    "utf8_bytes": 1870,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 694,
+        "sequence_tokens_without_truncation": 694,
+        "state_tokens": 564,
+        "state_kept": 564,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 794,
+        "sequence_tokens_without_truncation": 794,
+        "state_tokens": 588,
+        "state_kept": 588,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 794,
+        "state_tokens": 588,
+        "state_kept": 316,
+        "state_dropped": 272,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S02",
+    "variant": "zh-text",
+    "prompt_o200k": 329,
+    "o200k": 396,
+    "chars": 803,
+    "utf8_bytes": 1415,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 385,
+        "sequence_tokens_without_truncation": 385,
+        "state_tokens": 255,
+        "state_kept": 255,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 636,
+        "sequence_tokens_without_truncation": 636,
+        "state_tokens": 430,
+        "state_kept": 430,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 636,
+        "state_tokens": 430,
+        "state_kept": 316,
+        "state_dropped": 114,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "partial",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S02",
+    "variant": "en-json",
+    "prompt_o200k": 441,
+    "o200k": 505,
+    "chars": 1890,
+    "utf8_bytes": 1976,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 688,
+        "sequence_tokens_without_truncation": 688,
+        "state_tokens": 556,
+        "state_kept": 556,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 610,
+        "sequence_tokens_without_truncation": 610,
+        "state_tokens": 475,
+        "state_kept": 475,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 610,
+        "state_tokens": 475,
+        "state_kept": 377,
+        "state_dropped": 98,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S02",
+    "variant": "en-text",
+    "prompt_o200k": 295,
+    "o200k": 360,
+    "chars": 1451,
+    "utf8_bytes": 1537,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 371,
+        "sequence_tokens_without_truncation": 371,
+        "state_tokens": 239,
+        "state_kept": 239,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 428,
+        "sequence_tokens_without_truncation": 428,
+        "state_tokens": 293,
+        "state_kept": 293,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 428,
+        "sequence_tokens_without_truncation": 428,
+        "state_tokens": 293,
+        "state_kept": 293,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S03",
+    "variant": "zh-json",
+    "prompt_o200k": 463,
+    "o200k": 529,
+    "chars": 1297,
+    "utf8_bytes": 1841,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 682,
+        "sequence_tokens_without_truncation": 682,
+        "state_tokens": 552,
+        "state_kept": 552,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 781,
+        "sequence_tokens_without_truncation": 781,
+        "state_tokens": 575,
+        "state_kept": 575,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 781,
+        "state_tokens": 575,
+        "state_kept": 316,
+        "state_dropped": 259,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S03",
+    "variant": "zh-text",
+    "prompt_o200k": 318,
+    "o200k": 385,
+    "chars": 786,
+    "utf8_bytes": 1386,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 374,
+        "sequence_tokens_without_truncation": 374,
+        "state_tokens": 244,
+        "state_kept": 244,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 623,
+        "sequence_tokens_without_truncation": 623,
+        "state_tokens": 417,
+        "state_kept": 417,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 623,
+        "state_tokens": 417,
+        "state_kept": 316,
+        "state_dropped": 101,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S03",
+    "variant": "en-json",
+    "prompt_o200k": 430,
+    "o200k": 494,
+    "chars": 1873,
+    "utf8_bytes": 1947,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 676,
+        "sequence_tokens_without_truncation": 676,
+        "state_tokens": 544,
+        "state_kept": 544,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 597,
+        "sequence_tokens_without_truncation": 597,
+        "state_tokens": 462,
+        "state_kept": 462,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 597,
+        "state_tokens": 462,
+        "state_kept": 377,
+        "state_dropped": 85,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S03",
+    "variant": "en-text",
+    "prompt_o200k": 284,
+    "o200k": 349,
+    "chars": 1434,
+    "utf8_bytes": 1508,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 360,
+        "sequence_tokens_without_truncation": 360,
+        "state_tokens": 228,
+        "state_kept": 228,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 415,
+        "sequence_tokens_without_truncation": 415,
+        "state_tokens": 280,
+        "state_kept": 280,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 415,
+        "sequence_tokens_without_truncation": 415,
+        "state_tokens": 280,
+        "state_kept": 280,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S04",
+    "variant": "zh-json",
+    "prompt_o200k": 465,
+    "o200k": 531,
+    "chars": 1300,
+    "utf8_bytes": 1846,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 688,
+        "sequence_tokens_without_truncation": 688,
+        "state_tokens": 558,
+        "state_kept": 558,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 787,
+        "sequence_tokens_without_truncation": 787,
+        "state_tokens": 581,
+        "state_kept": 581,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 787,
+        "state_tokens": 581,
+        "state_kept": 316,
+        "state_dropped": 265,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S04",
+    "variant": "zh-text",
+    "prompt_o200k": 320,
+    "o200k": 387,
+    "chars": 789,
+    "utf8_bytes": 1391,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 379,
+        "sequence_tokens_without_truncation": 379,
+        "state_tokens": 249,
+        "state_kept": 249,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 629,
+        "sequence_tokens_without_truncation": 629,
+        "state_tokens": 423,
+        "state_kept": 423,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 629,
+        "state_tokens": 423,
+        "state_kept": 316,
+        "state_dropped": 107,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S04",
+    "variant": "en-json",
+    "prompt_o200k": 432,
+    "o200k": 496,
+    "chars": 1876,
+    "utf8_bytes": 1952,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 682,
+        "sequence_tokens_without_truncation": 682,
+        "state_tokens": 550,
+        "state_kept": 550,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 603,
+        "sequence_tokens_without_truncation": 603,
+        "state_tokens": 468,
+        "state_kept": 468,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 603,
+        "state_tokens": 468,
+        "state_kept": 377,
+        "state_dropped": 91,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S04",
+    "variant": "en-text",
+    "prompt_o200k": 286,
+    "o200k": 351,
+    "chars": 1437,
+    "utf8_bytes": 1513,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 365,
+        "sequence_tokens_without_truncation": 365,
+        "state_tokens": 233,
+        "state_kept": 233,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 421,
+        "sequence_tokens_without_truncation": 421,
+        "state_tokens": 286,
+        "state_kept": 286,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 421,
+        "sequence_tokens_without_truncation": 421,
+        "state_tokens": 286,
+        "state_kept": 286,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S05",
+    "variant": "zh-json",
+    "prompt_o200k": 474,
+    "o200k": 540,
+    "chars": 1317,
+    "utf8_bytes": 1883,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 692,
+        "sequence_tokens_without_truncation": 692,
+        "state_tokens": 562,
+        "state_kept": 562,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 804,
+        "sequence_tokens_without_truncation": 804,
+        "state_tokens": 598,
+        "state_kept": 598,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 804,
+        "state_tokens": 598,
+        "state_kept": 316,
+        "state_dropped": 282,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S05",
+    "variant": "zh-text",
+    "prompt_o200k": 329,
+    "o200k": 396,
+    "chars": 806,
+    "utf8_bytes": 1428,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 384,
+        "sequence_tokens_without_truncation": 384,
+        "state_tokens": 254,
+        "state_kept": 254,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 646,
+        "sequence_tokens_without_truncation": 646,
+        "state_tokens": 440,
+        "state_kept": 440,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 646,
+        "state_tokens": 440,
+        "state_kept": 316,
+        "state_dropped": 124,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "partial",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S05",
+    "variant": "en-json",
+    "prompt_o200k": 441,
+    "o200k": 505,
+    "chars": 1893,
+    "utf8_bytes": 1989,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 686,
+        "sequence_tokens_without_truncation": 686,
+        "state_tokens": 554,
+        "state_kept": 554,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 620,
+        "sequence_tokens_without_truncation": 620,
+        "state_tokens": 485,
+        "state_kept": 485,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 620,
+        "state_tokens": 485,
+        "state_kept": 377,
+        "state_dropped": 108,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S05",
+    "variant": "en-text",
+    "prompt_o200k": 295,
+    "o200k": 360,
+    "chars": 1454,
+    "utf8_bytes": 1550,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 370,
+        "sequence_tokens_without_truncation": 370,
+        "state_tokens": 238,
+        "state_kept": 238,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 438,
+        "sequence_tokens_without_truncation": 438,
+        "state_tokens": 303,
+        "state_kept": 303,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 438,
+        "sequence_tokens_without_truncation": 438,
+        "state_tokens": 303,
+        "state_kept": 303,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S06",
+    "variant": "zh-json",
+    "prompt_o200k": 466,
+    "o200k": 532,
+    "chars": 1299,
+    "utf8_bytes": 1853,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 685,
+        "sequence_tokens_without_truncation": 685,
+        "state_tokens": 555,
+        "state_kept": 555,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 786,
+        "sequence_tokens_without_truncation": 786,
+        "state_tokens": 580,
+        "state_kept": 580,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 786,
+        "state_tokens": 580,
+        "state_kept": 316,
+        "state_dropped": 264,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S06",
+    "variant": "zh-text",
+    "prompt_o200k": 321,
+    "o200k": 388,
+    "chars": 788,
+    "utf8_bytes": 1398,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 376,
+        "sequence_tokens_without_truncation": 376,
+        "state_tokens": 246,
+        "state_kept": 246,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 628,
+        "sequence_tokens_without_truncation": 628,
+        "state_tokens": 422,
+        "state_kept": 422,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 628,
+        "state_tokens": 422,
+        "state_kept": 316,
+        "state_dropped": 106,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S06",
+    "variant": "en-json",
+    "prompt_o200k": 433,
+    "o200k": 497,
+    "chars": 1875,
+    "utf8_bytes": 1959,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 679,
+        "sequence_tokens_without_truncation": 679,
+        "state_tokens": 547,
+        "state_kept": 547,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 602,
+        "sequence_tokens_without_truncation": 602,
+        "state_tokens": 467,
+        "state_kept": 467,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 602,
+        "state_tokens": 467,
+        "state_kept": 377,
+        "state_dropped": 90,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S06",
+    "variant": "en-text",
+    "prompt_o200k": 287,
+    "o200k": 352,
+    "chars": 1436,
+    "utf8_bytes": 1520,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 362,
+        "sequence_tokens_without_truncation": 362,
+        "state_tokens": 230,
+        "state_kept": 230,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 420,
+        "sequence_tokens_without_truncation": 420,
+        "state_tokens": 285,
+        "state_kept": 285,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 420,
+        "sequence_tokens_without_truncation": 420,
+        "state_tokens": 285,
+        "state_kept": 285,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S07",
+    "variant": "zh-json",
+    "prompt_o200k": 469,
+    "o200k": 535,
+    "chars": 1307,
+    "utf8_bytes": 1865,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 693,
+        "sequence_tokens_without_truncation": 693,
+        "state_tokens": 563,
+        "state_kept": 563,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 785,
+        "sequence_tokens_without_truncation": 785,
+        "state_tokens": 579,
+        "state_kept": 579,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 785,
+        "state_tokens": 579,
+        "state_kept": 316,
+        "state_dropped": 263,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S07",
+    "variant": "zh-text",
+    "prompt_o200k": 324,
+    "o200k": 391,
+    "chars": 796,
+    "utf8_bytes": 1410,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 384,
+        "sequence_tokens_without_truncation": 384,
+        "state_tokens": 254,
+        "state_kept": 254,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 627,
+        "sequence_tokens_without_truncation": 627,
+        "state_tokens": 421,
+        "state_kept": 421,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 627,
+        "state_tokens": 421,
+        "state_kept": 316,
+        "state_dropped": 105,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S07",
+    "variant": "en-json",
+    "prompt_o200k": 436,
+    "o200k": 500,
+    "chars": 1883,
+    "utf8_bytes": 1971,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 687,
+        "sequence_tokens_without_truncation": 687,
+        "state_tokens": 555,
+        "state_kept": 555,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 601,
+        "sequence_tokens_without_truncation": 601,
+        "state_tokens": 466,
+        "state_kept": 466,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 601,
+        "state_tokens": 466,
+        "state_kept": 377,
+        "state_dropped": 89,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S07",
+    "variant": "en-text",
+    "prompt_o200k": 290,
+    "o200k": 355,
+    "chars": 1444,
+    "utf8_bytes": 1532,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 370,
+        "sequence_tokens_without_truncation": 370,
+        "state_tokens": 238,
+        "state_kept": 238,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 419,
+        "sequence_tokens_without_truncation": 419,
+        "state_tokens": 284,
+        "state_kept": 284,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 419,
+        "sequence_tokens_without_truncation": 419,
+        "state_tokens": 284,
+        "state_kept": 284,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S08",
+    "variant": "zh-json",
+    "prompt_o200k": 461,
+    "o200k": 527,
+    "chars": 1294,
+    "utf8_bytes": 1832,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 684,
+        "sequence_tokens_without_truncation": 684,
+        "state_tokens": 554,
+        "state_kept": 554,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 777,
+        "sequence_tokens_without_truncation": 777,
+        "state_tokens": 571,
+        "state_kept": 571,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 777,
+        "state_tokens": 571,
+        "state_kept": 316,
+        "state_dropped": 255,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S08",
+    "variant": "zh-text",
+    "prompt_o200k": 316,
+    "o200k": 383,
+    "chars": 783,
+    "utf8_bytes": 1377,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 375,
+        "sequence_tokens_without_truncation": 375,
+        "state_tokens": 245,
+        "state_kept": 245,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 619,
+        "sequence_tokens_without_truncation": 619,
+        "state_tokens": 413,
+        "state_kept": 413,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 619,
+        "state_tokens": 413,
+        "state_kept": 316,
+        "state_dropped": 97,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S08",
+    "variant": "en-json",
+    "prompt_o200k": 428,
+    "o200k": 492,
+    "chars": 1870,
+    "utf8_bytes": 1938,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 678,
+        "sequence_tokens_without_truncation": 678,
+        "state_tokens": 546,
+        "state_kept": 546,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 593,
+        "sequence_tokens_without_truncation": 593,
+        "state_tokens": 458,
+        "state_kept": 458,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 593,
+        "state_tokens": 458,
+        "state_kept": 377,
+        "state_dropped": 81,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S08",
+    "variant": "en-text",
+    "prompt_o200k": 282,
+    "o200k": 347,
+    "chars": 1431,
+    "utf8_bytes": 1499,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 361,
+        "sequence_tokens_without_truncation": 361,
+        "state_tokens": 229,
+        "state_kept": 229,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 411,
+        "sequence_tokens_without_truncation": 411,
+        "state_tokens": 276,
+        "state_kept": 276,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 411,
+        "sequence_tokens_without_truncation": 411,
+        "state_tokens": 276,
+        "state_kept": 276,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S09",
+    "variant": "zh-json",
+    "prompt_o200k": 466,
+    "o200k": 532,
+    "chars": 1303,
+    "utf8_bytes": 1857,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 686,
+        "sequence_tokens_without_truncation": 686,
+        "state_tokens": 556,
+        "state_kept": 556,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 785,
+        "sequence_tokens_without_truncation": 785,
+        "state_tokens": 579,
+        "state_kept": 579,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 785,
+        "state_tokens": 579,
+        "state_kept": 316,
+        "state_dropped": 263,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S09",
+    "variant": "zh-text",
+    "prompt_o200k": 321,
+    "o200k": 388,
+    "chars": 792,
+    "utf8_bytes": 1402,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 377,
+        "sequence_tokens_without_truncation": 377,
+        "state_tokens": 247,
+        "state_kept": 247,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 627,
+        "sequence_tokens_without_truncation": 627,
+        "state_tokens": 421,
+        "state_kept": 421,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 627,
+        "state_tokens": 421,
+        "state_kept": 316,
+        "state_dropped": 105,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S09",
+    "variant": "en-json",
+    "prompt_o200k": 433,
+    "o200k": 497,
+    "chars": 1879,
+    "utf8_bytes": 1963,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 680,
+        "sequence_tokens_without_truncation": 680,
+        "state_tokens": 548,
+        "state_kept": 548,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 601,
+        "sequence_tokens_without_truncation": 601,
+        "state_tokens": 466,
+        "state_kept": 466,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 601,
+        "state_tokens": 466,
+        "state_kept": 377,
+        "state_dropped": 89,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S09",
+    "variant": "en-text",
+    "prompt_o200k": 287,
+    "o200k": 352,
+    "chars": 1440,
+    "utf8_bytes": 1524,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 363,
+        "sequence_tokens_without_truncation": 363,
+        "state_tokens": 231,
+        "state_kept": 231,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 419,
+        "sequence_tokens_without_truncation": 419,
+        "state_tokens": 284,
+        "state_kept": 284,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 419,
+        "sequence_tokens_without_truncation": 419,
+        "state_tokens": 284,
+        "state_kept": 284,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S10",
+    "variant": "zh-json",
+    "prompt_o200k": 457,
+    "o200k": 523,
+    "chars": 1284,
+    "utf8_bytes": 1814,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 678,
+        "sequence_tokens_without_truncation": 678,
+        "state_tokens": 548,
+        "state_kept": 548,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 766,
+        "sequence_tokens_without_truncation": 766,
+        "state_tokens": 560,
+        "state_kept": 560,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 766,
+        "state_tokens": 560,
+        "state_kept": 316,
+        "state_dropped": 244,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S10",
+    "variant": "zh-text",
+    "prompt_o200k": 312,
+    "o200k": 379,
+    "chars": 773,
+    "utf8_bytes": 1359,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 370,
+        "sequence_tokens_without_truncation": 370,
+        "state_tokens": 240,
+        "state_kept": 240,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 608,
+        "sequence_tokens_without_truncation": 608,
+        "state_tokens": 402,
+        "state_kept": 402,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 608,
+        "state_tokens": 402,
+        "state_kept": 316,
+        "state_dropped": 86,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S10",
+    "variant": "en-json",
+    "prompt_o200k": 424,
+    "o200k": 488,
+    "chars": 1860,
+    "utf8_bytes": 1920,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 672,
+        "sequence_tokens_without_truncation": 672,
+        "state_tokens": 540,
+        "state_kept": 540,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 582,
+        "sequence_tokens_without_truncation": 582,
+        "state_tokens": 447,
+        "state_kept": 447,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 582,
+        "state_tokens": 447,
+        "state_kept": 377,
+        "state_dropped": 70,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S10",
+    "variant": "en-text",
+    "prompt_o200k": 278,
+    "o200k": 343,
+    "chars": 1421,
+    "utf8_bytes": 1481,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 356,
+        "sequence_tokens_without_truncation": 356,
+        "state_tokens": 224,
+        "state_kept": 224,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 400,
+        "sequence_tokens_without_truncation": 400,
+        "state_tokens": 265,
+        "state_kept": 265,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 400,
+        "sequence_tokens_without_truncation": 400,
+        "state_tokens": 265,
+        "state_kept": 265,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S11",
+    "variant": "zh-json",
+    "prompt_o200k": 461,
+    "o200k": 527,
+    "chars": 1285,
+    "utf8_bytes": 1827,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 681,
+        "sequence_tokens_without_truncation": 681,
+        "state_tokens": 551,
+        "state_kept": 551,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 774,
+        "sequence_tokens_without_truncation": 774,
+        "state_tokens": 568,
+        "state_kept": 568,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 774,
+        "state_tokens": 568,
+        "state_kept": 316,
+        "state_dropped": 252,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "missing",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S11",
+    "variant": "zh-text",
+    "prompt_o200k": 316,
+    "o200k": 383,
+    "chars": 774,
+    "utf8_bytes": 1372,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 372,
+        "sequence_tokens_without_truncation": 372,
+        "state_tokens": 242,
+        "state_kept": 242,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 616,
+        "sequence_tokens_without_truncation": 616,
+        "state_tokens": 410,
+        "state_kept": 410,
+        "state_dropped": 0,
+        "instruction_tokens": 134,
+        "instructions_kept": 134,
+        "request_visibility": "full",
+        "options_tokens": 68
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 616,
+        "state_tokens": 410,
+        "state_kept": 316,
+        "state_dropped": 94,
+        "instruction_tokens": 134,
+        "instructions_kept": 124,
+        "request_visibility": "full",
+        "options_tokens": 68
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S11",
+    "variant": "en-json",
+    "prompt_o200k": 428,
+    "o200k": 492,
+    "chars": 1861,
+    "utf8_bytes": 1933,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 675,
+        "sequence_tokens_without_truncation": 675,
+        "state_tokens": 543,
+        "state_kept": 543,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 590,
+        "sequence_tokens_without_truncation": 590,
+        "state_tokens": 455,
+        "state_kept": 455,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 590,
+        "state_tokens": 455,
+        "state_kept": 377,
+        "state_dropped": 78,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "focused6",
+    "case": "S11",
+    "variant": "en-text",
+    "prompt_o200k": 282,
+    "o200k": 347,
+    "chars": 1422,
+    "utf8_bytes": 1494,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 358,
+        "sequence_tokens_without_truncation": 358,
+        "state_tokens": 226,
+        "state_kept": 226,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 58
+      },
+      "typed-decisions": {
+        "input_tokens": 408,
+        "sequence_tokens_without_truncation": 408,
+        "state_tokens": 273,
+        "state_kept": 273,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      },
+      "english": {
+        "input_tokens": 408,
+        "sequence_tokens_without_truncation": 408,
+        "state_tokens": 273,
+        "state_kept": 273,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 71,
+        "request_visibility": "full",
+        "options_tokens": 60
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H1",
+    "variant": "zh-json",
+    "prompt_o200k": 1114,
+    "o200k": 1324,
+    "chars": 3311,
+    "utf8_bytes": 4299,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1778,
+        "state_tokens": 1520,
+        "state_kept": 766,
+        "state_dropped": 754,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1814,
+        "state_tokens": 1473,
+        "state_kept": 764,
+        "state_dropped": 709,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1814,
+        "state_tokens": 1473,
+        "state_kept": 316,
+        "state_dropped": 1157,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H1",
+    "variant": "zh-text",
+    "prompt_o200k": 655,
+    "o200k": 866,
+    "chars": 1760,
+    "utf8_bytes": 2804,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 849,
+        "sequence_tokens_without_truncation": 849,
+        "state_tokens": 591,
+        "state_kept": 591,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1281,
+        "state_tokens": 940,
+        "state_kept": 764,
+        "state_dropped": 176,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1281,
+        "state_tokens": 940,
+        "state_kept": 316,
+        "state_dropped": 624,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H1",
+    "variant": "en-json",
+    "prompt_o200k": 1039,
+    "o200k": 1247,
+    "chars": 4335,
+    "utf8_bytes": 4497,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1759,
+        "state_tokens": 1499,
+        "state_kept": 764,
+        "state_dropped": 735,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1471,
+        "state_tokens": 1201,
+        "state_kept": 764,
+        "state_dropped": 437,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1471,
+        "state_tokens": 1201,
+        "state_kept": 316,
+        "state_dropped": 885,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H1",
+    "variant": "en-text",
+    "prompt_o200k": 589,
+    "o200k": 798,
+    "chars": 2856,
+    "utf8_bytes": 3018,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 819,
+        "sequence_tokens_without_truncation": 819,
+        "state_tokens": 559,
+        "state_kept": 559,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 910,
+        "sequence_tokens_without_truncation": 920,
+        "state_tokens": 650,
+        "state_kept": 650,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 920,
+        "state_tokens": 650,
+        "state_kept": 316,
+        "state_dropped": 334,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H3",
+    "variant": "zh-json",
+    "prompt_o200k": 1085,
+    "o200k": 1295,
+    "chars": 3258,
+    "utf8_bytes": 4170,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1752,
+        "state_tokens": 1494,
+        "state_kept": 766,
+        "state_dropped": 728,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1766,
+        "state_tokens": 1425,
+        "state_kept": 764,
+        "state_dropped": 661,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1766,
+        "state_tokens": 1425,
+        "state_kept": 316,
+        "state_dropped": 1109,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H3",
+    "variant": "zh-text",
+    "prompt_o200k": 626,
+    "o200k": 837,
+    "chars": 1707,
+    "utf8_bytes": 2675,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 822,
+        "sequence_tokens_without_truncation": 822,
+        "state_tokens": 564,
+        "state_kept": 564,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1233,
+        "state_tokens": 892,
+        "state_kept": 764,
+        "state_dropped": 128,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1233,
+        "state_tokens": 892,
+        "state_kept": 316,
+        "state_dropped": 576,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H3",
+    "variant": "en-json",
+    "prompt_o200k": 1010,
+    "o200k": 1218,
+    "chars": 4282,
+    "utf8_bytes": 4368,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1733,
+        "state_tokens": 1473,
+        "state_kept": 764,
+        "state_dropped": 709,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1423,
+        "state_tokens": 1153,
+        "state_kept": 764,
+        "state_dropped": 389,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1423,
+        "state_tokens": 1153,
+        "state_kept": 316,
+        "state_dropped": 837,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H3",
+    "variant": "en-text",
+    "prompt_o200k": 560,
+    "o200k": 769,
+    "chars": 2803,
+    "utf8_bytes": 2889,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 792,
+        "sequence_tokens_without_truncation": 792,
+        "state_tokens": 532,
+        "state_kept": 532,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 862,
+        "sequence_tokens_without_truncation": 872,
+        "state_tokens": 602,
+        "state_kept": 602,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 872,
+        "state_tokens": 602,
+        "state_kept": 316,
+        "state_dropped": 286,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H4",
+    "variant": "zh-json",
+    "prompt_o200k": 1100,
+    "o200k": 1310,
+    "chars": 3296,
+    "utf8_bytes": 4246,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1765,
+        "state_tokens": 1507,
+        "state_kept": 766,
+        "state_dropped": 741,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1786,
+        "state_tokens": 1445,
+        "state_kept": 764,
+        "state_dropped": 681,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1786,
+        "state_tokens": 1445,
+        "state_kept": 316,
+        "state_dropped": 1129,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H4",
+    "variant": "zh-text",
+    "prompt_o200k": 641,
+    "o200k": 852,
+    "chars": 1744,
+    "utf8_bytes": 2750,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 837,
+        "sequence_tokens_without_truncation": 837,
+        "state_tokens": 579,
+        "state_kept": 579,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1254,
+        "state_tokens": 913,
+        "state_kept": 764,
+        "state_dropped": 149,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1254,
+        "state_tokens": 913,
+        "state_kept": 316,
+        "state_dropped": 597,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H4",
+    "variant": "en-json",
+    "prompt_o200k": 1025,
+    "o200k": 1233,
+    "chars": 4320,
+    "utf8_bytes": 4444,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1746,
+        "state_tokens": 1486,
+        "state_kept": 764,
+        "state_dropped": 722,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1443,
+        "state_tokens": 1173,
+        "state_kept": 764,
+        "state_dropped": 409,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1443,
+        "state_tokens": 1173,
+        "state_kept": 316,
+        "state_dropped": 857,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H4",
+    "variant": "en-text",
+    "prompt_o200k": 575,
+    "o200k": 784,
+    "chars": 2840,
+    "utf8_bytes": 2964,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 807,
+        "sequence_tokens_without_truncation": 807,
+        "state_tokens": 547,
+        "state_kept": 547,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 883,
+        "sequence_tokens_without_truncation": 893,
+        "state_tokens": 623,
+        "state_kept": 623,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 893,
+        "state_tokens": 623,
+        "state_kept": 316,
+        "state_dropped": 307,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H6",
+    "variant": "zh-json",
+    "prompt_o200k": 1268,
+    "o200k": 1478,
+    "chars": 3534,
+    "utf8_bytes": 4912,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1910,
+        "state_tokens": 1652,
+        "state_kept": 766,
+        "state_dropped": 886,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 2088,
+        "state_tokens": 1747,
+        "state_kept": 764,
+        "state_dropped": 983,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 2088,
+        "state_tokens": 1747,
+        "state_kept": 316,
+        "state_dropped": 1431,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H6",
+    "variant": "zh-text",
+    "prompt_o200k": 801,
+    "o200k": 1012,
+    "chars": 1976,
+    "utf8_bytes": 3410,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 976,
+        "sequence_tokens_without_truncation": 976,
+        "state_tokens": 718,
+        "state_kept": 718,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1548,
+        "state_tokens": 1207,
+        "state_kept": 764,
+        "state_dropped": 443,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1548,
+        "state_tokens": 1207,
+        "state_kept": 316,
+        "state_dropped": 891,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H6",
+    "variant": "en-json",
+    "prompt_o200k": 1193,
+    "o200k": 1401,
+    "chars": 4558,
+    "utf8_bytes": 5110,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1891,
+        "state_tokens": 1631,
+        "state_kept": 764,
+        "state_dropped": 867,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1745,
+        "state_tokens": 1475,
+        "state_kept": 764,
+        "state_dropped": 711,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1745,
+        "state_tokens": 1475,
+        "state_kept": 316,
+        "state_dropped": 1159,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H6",
+    "variant": "en-text",
+    "prompt_o200k": 735,
+    "o200k": 944,
+    "chars": 3072,
+    "utf8_bytes": 3624,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 946,
+        "sequence_tokens_without_truncation": 946,
+        "state_tokens": 686,
+        "state_kept": 686,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1187,
+        "state_tokens": 917,
+        "state_kept": 764,
+        "state_dropped": 153,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "partial",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1187,
+        "state_tokens": 917,
+        "state_kept": 316,
+        "state_dropped": 601,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H7",
+    "variant": "zh-json",
+    "prompt_o200k": 1134,
+    "o200k": 1344,
+    "chars": 3334,
+    "utf8_bytes": 4416,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1800,
+        "state_tokens": 1542,
+        "state_kept": 766,
+        "state_dropped": 776,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1859,
+        "state_tokens": 1518,
+        "state_kept": 764,
+        "state_dropped": 754,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1859,
+        "state_tokens": 1518,
+        "state_kept": 316,
+        "state_dropped": 1202,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H7",
+    "variant": "zh-text",
+    "prompt_o200k": 673,
+    "o200k": 884,
+    "chars": 1781,
+    "utf8_bytes": 2919,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 868,
+        "sequence_tokens_without_truncation": 868,
+        "state_tokens": 610,
+        "state_kept": 610,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1324,
+        "state_tokens": 983,
+        "state_kept": 764,
+        "state_dropped": 219,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1324,
+        "state_tokens": 983,
+        "state_kept": 316,
+        "state_dropped": 667,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H7",
+    "variant": "en-json",
+    "prompt_o200k": 1059,
+    "o200k": 1267,
+    "chars": 4358,
+    "utf8_bytes": 4614,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1781,
+        "state_tokens": 1521,
+        "state_kept": 764,
+        "state_dropped": 757,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1516,
+        "state_tokens": 1246,
+        "state_kept": 764,
+        "state_dropped": 482,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1516,
+        "state_tokens": 1246,
+        "state_kept": 316,
+        "state_dropped": 930,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "H7",
+    "variant": "en-text",
+    "prompt_o200k": 607,
+    "o200k": 816,
+    "chars": 2877,
+    "utf8_bytes": 3133,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 838,
+        "sequence_tokens_without_truncation": 838,
+        "state_tokens": 578,
+        "state_kept": 578,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 953,
+        "sequence_tokens_without_truncation": 963,
+        "state_tokens": 693,
+        "state_kept": 693,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 963,
+        "state_tokens": 693,
+        "state_kept": 316,
+        "state_dropped": 377,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S01",
+    "variant": "zh-json",
+    "prompt_o200k": 1079,
+    "o200k": 1289,
+    "chars": 3250,
+    "utf8_bytes": 4180,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1747,
+        "state_tokens": 1489,
+        "state_kept": 766,
+        "state_dropped": 723,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1767,
+        "state_tokens": 1426,
+        "state_kept": 764,
+        "state_dropped": 662,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1767,
+        "state_tokens": 1426,
+        "state_kept": 316,
+        "state_dropped": 1110,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S01",
+    "variant": "zh-text",
+    "prompt_o200k": 620,
+    "o200k": 831,
+    "chars": 1699,
+    "utf8_bytes": 2685,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 817,
+        "sequence_tokens_without_truncation": 817,
+        "state_tokens": 559,
+        "state_kept": 559,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1234,
+        "state_tokens": 893,
+        "state_kept": 764,
+        "state_dropped": 129,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1234,
+        "state_tokens": 893,
+        "state_kept": 316,
+        "state_dropped": 577,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S01",
+    "variant": "en-json",
+    "prompt_o200k": 1004,
+    "o200k": 1212,
+    "chars": 4274,
+    "utf8_bytes": 4378,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1728,
+        "state_tokens": 1468,
+        "state_kept": 764,
+        "state_dropped": 704,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1424,
+        "state_tokens": 1154,
+        "state_kept": 764,
+        "state_dropped": 390,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1424,
+        "state_tokens": 1154,
+        "state_kept": 316,
+        "state_dropped": 838,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S01",
+    "variant": "en-text",
+    "prompt_o200k": 554,
+    "o200k": 763,
+    "chars": 2795,
+    "utf8_bytes": 2899,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 787,
+        "sequence_tokens_without_truncation": 787,
+        "state_tokens": 527,
+        "state_kept": 527,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 863,
+        "sequence_tokens_without_truncation": 873,
+        "state_tokens": 603,
+        "state_kept": 603,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 873,
+        "state_tokens": 603,
+        "state_kept": 316,
+        "state_dropped": 287,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S02",
+    "variant": "zh-json",
+    "prompt_o200k": 1085,
+    "o200k": 1295,
+    "chars": 3262,
+    "utf8_bytes": 4182,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1753,
+        "state_tokens": 1495,
+        "state_kept": 766,
+        "state_dropped": 729,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1770,
+        "state_tokens": 1429,
+        "state_kept": 764,
+        "state_dropped": 665,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1770,
+        "state_tokens": 1429,
+        "state_kept": 316,
+        "state_dropped": 1113,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S02",
+    "variant": "zh-text",
+    "prompt_o200k": 626,
+    "o200k": 837,
+    "chars": 1711,
+    "utf8_bytes": 2687,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 823,
+        "sequence_tokens_without_truncation": 823,
+        "state_tokens": 565,
+        "state_kept": 565,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1237,
+        "state_tokens": 896,
+        "state_kept": 764,
+        "state_dropped": 132,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1237,
+        "state_tokens": 896,
+        "state_kept": 316,
+        "state_dropped": 580,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S02",
+    "variant": "en-json",
+    "prompt_o200k": 1010,
+    "o200k": 1218,
+    "chars": 4286,
+    "utf8_bytes": 4380,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1734,
+        "state_tokens": 1474,
+        "state_kept": 764,
+        "state_dropped": 710,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1427,
+        "state_tokens": 1157,
+        "state_kept": 764,
+        "state_dropped": 393,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1427,
+        "state_tokens": 1157,
+        "state_kept": 316,
+        "state_dropped": 841,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S02",
+    "variant": "en-text",
+    "prompt_o200k": 560,
+    "o200k": 769,
+    "chars": 2807,
+    "utf8_bytes": 2901,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 793,
+        "sequence_tokens_without_truncation": 793,
+        "state_tokens": 533,
+        "state_kept": 533,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 866,
+        "sequence_tokens_without_truncation": 876,
+        "state_tokens": 606,
+        "state_kept": 606,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 876,
+        "state_tokens": 606,
+        "state_kept": 316,
+        "state_dropped": 290,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S03",
+    "variant": "zh-json",
+    "prompt_o200k": 1074,
+    "o200k": 1284,
+    "chars": 3245,
+    "utf8_bytes": 4153,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1741,
+        "state_tokens": 1483,
+        "state_kept": 766,
+        "state_dropped": 717,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1757,
+        "state_tokens": 1416,
+        "state_kept": 764,
+        "state_dropped": 652,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1757,
+        "state_tokens": 1416,
+        "state_kept": 316,
+        "state_dropped": 1100,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S03",
+    "variant": "zh-text",
+    "prompt_o200k": 615,
+    "o200k": 826,
+    "chars": 1694,
+    "utf8_bytes": 2658,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 812,
+        "sequence_tokens_without_truncation": 812,
+        "state_tokens": 554,
+        "state_kept": 554,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1224,
+        "state_tokens": 883,
+        "state_kept": 764,
+        "state_dropped": 119,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1224,
+        "state_tokens": 883,
+        "state_kept": 316,
+        "state_dropped": 567,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S03",
+    "variant": "en-json",
+    "prompt_o200k": 999,
+    "o200k": 1207,
+    "chars": 4269,
+    "utf8_bytes": 4351,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1722,
+        "state_tokens": 1462,
+        "state_kept": 764,
+        "state_dropped": 698,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1414,
+        "state_tokens": 1144,
+        "state_kept": 764,
+        "state_dropped": 380,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1414,
+        "state_tokens": 1144,
+        "state_kept": 316,
+        "state_dropped": 828,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S03",
+    "variant": "en-text",
+    "prompt_o200k": 549,
+    "o200k": 758,
+    "chars": 2790,
+    "utf8_bytes": 2872,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 782,
+        "sequence_tokens_without_truncation": 782,
+        "state_tokens": 522,
+        "state_kept": 522,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 853,
+        "sequence_tokens_without_truncation": 863,
+        "state_tokens": 593,
+        "state_kept": 593,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 863,
+        "state_tokens": 593,
+        "state_kept": 316,
+        "state_dropped": 277,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S04",
+    "variant": "zh-json",
+    "prompt_o200k": 1076,
+    "o200k": 1286,
+    "chars": 3248,
+    "utf8_bytes": 4158,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1747,
+        "state_tokens": 1489,
+        "state_kept": 766,
+        "state_dropped": 723,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1763,
+        "state_tokens": 1422,
+        "state_kept": 764,
+        "state_dropped": 658,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1763,
+        "state_tokens": 1422,
+        "state_kept": 316,
+        "state_dropped": 1106,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S04",
+    "variant": "zh-text",
+    "prompt_o200k": 617,
+    "o200k": 828,
+    "chars": 1697,
+    "utf8_bytes": 2663,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 817,
+        "sequence_tokens_without_truncation": 817,
+        "state_tokens": 559,
+        "state_kept": 559,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1230,
+        "state_tokens": 889,
+        "state_kept": 764,
+        "state_dropped": 125,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1230,
+        "state_tokens": 889,
+        "state_kept": 316,
+        "state_dropped": 573,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S04",
+    "variant": "en-json",
+    "prompt_o200k": 1001,
+    "o200k": 1209,
+    "chars": 4272,
+    "utf8_bytes": 4356,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1728,
+        "state_tokens": 1468,
+        "state_kept": 764,
+        "state_dropped": 704,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1420,
+        "state_tokens": 1150,
+        "state_kept": 764,
+        "state_dropped": 386,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1420,
+        "state_tokens": 1150,
+        "state_kept": 316,
+        "state_dropped": 834,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S04",
+    "variant": "en-text",
+    "prompt_o200k": 551,
+    "o200k": 760,
+    "chars": 2793,
+    "utf8_bytes": 2877,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 787,
+        "sequence_tokens_without_truncation": 787,
+        "state_tokens": 527,
+        "state_kept": 527,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 859,
+        "sequence_tokens_without_truncation": 869,
+        "state_tokens": 599,
+        "state_kept": 599,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 869,
+        "state_tokens": 599,
+        "state_kept": 316,
+        "state_dropped": 283,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S05",
+    "variant": "zh-json",
+    "prompt_o200k": 1085,
+    "o200k": 1295,
+    "chars": 3265,
+    "utf8_bytes": 4195,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1751,
+        "state_tokens": 1493,
+        "state_kept": 766,
+        "state_dropped": 727,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1780,
+        "state_tokens": 1439,
+        "state_kept": 764,
+        "state_dropped": 675,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1780,
+        "state_tokens": 1439,
+        "state_kept": 316,
+        "state_dropped": 1123,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S05",
+    "variant": "zh-text",
+    "prompt_o200k": 626,
+    "o200k": 837,
+    "chars": 1714,
+    "utf8_bytes": 2700,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 822,
+        "sequence_tokens_without_truncation": 822,
+        "state_tokens": 564,
+        "state_kept": 564,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1247,
+        "state_tokens": 906,
+        "state_kept": 764,
+        "state_dropped": 142,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1247,
+        "state_tokens": 906,
+        "state_kept": 316,
+        "state_dropped": 590,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S05",
+    "variant": "en-json",
+    "prompt_o200k": 1010,
+    "o200k": 1218,
+    "chars": 4289,
+    "utf8_bytes": 4393,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1732,
+        "state_tokens": 1472,
+        "state_kept": 764,
+        "state_dropped": 708,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1437,
+        "state_tokens": 1167,
+        "state_kept": 764,
+        "state_dropped": 403,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1437,
+        "state_tokens": 1167,
+        "state_kept": 316,
+        "state_dropped": 851,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S05",
+    "variant": "en-text",
+    "prompt_o200k": 560,
+    "o200k": 769,
+    "chars": 2810,
+    "utf8_bytes": 2914,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 792,
+        "sequence_tokens_without_truncation": 792,
+        "state_tokens": 532,
+        "state_kept": 532,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 876,
+        "sequence_tokens_without_truncation": 886,
+        "state_tokens": 616,
+        "state_kept": 616,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 886,
+        "state_tokens": 616,
+        "state_kept": 316,
+        "state_dropped": 300,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S06",
+    "variant": "zh-json",
+    "prompt_o200k": 1077,
+    "o200k": 1287,
+    "chars": 3247,
+    "utf8_bytes": 4165,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1744,
+        "state_tokens": 1486,
+        "state_kept": 766,
+        "state_dropped": 720,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1762,
+        "state_tokens": 1421,
+        "state_kept": 764,
+        "state_dropped": 657,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1762,
+        "state_tokens": 1421,
+        "state_kept": 316,
+        "state_dropped": 1105,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S06",
+    "variant": "zh-text",
+    "prompt_o200k": 618,
+    "o200k": 829,
+    "chars": 1696,
+    "utf8_bytes": 2670,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 814,
+        "sequence_tokens_without_truncation": 814,
+        "state_tokens": 556,
+        "state_kept": 556,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1229,
+        "state_tokens": 888,
+        "state_kept": 764,
+        "state_dropped": 124,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1229,
+        "state_tokens": 888,
+        "state_kept": 316,
+        "state_dropped": 572,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S06",
+    "variant": "en-json",
+    "prompt_o200k": 1002,
+    "o200k": 1210,
+    "chars": 4271,
+    "utf8_bytes": 4363,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1725,
+        "state_tokens": 1465,
+        "state_kept": 764,
+        "state_dropped": 701,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1419,
+        "state_tokens": 1149,
+        "state_kept": 764,
+        "state_dropped": 385,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1419,
+        "state_tokens": 1149,
+        "state_kept": 316,
+        "state_dropped": 833,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S06",
+    "variant": "en-text",
+    "prompt_o200k": 552,
+    "o200k": 761,
+    "chars": 2792,
+    "utf8_bytes": 2884,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 784,
+        "sequence_tokens_without_truncation": 784,
+        "state_tokens": 524,
+        "state_kept": 524,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 858,
+        "sequence_tokens_without_truncation": 868,
+        "state_tokens": 598,
+        "state_kept": 598,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 868,
+        "state_tokens": 598,
+        "state_kept": 316,
+        "state_dropped": 282,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S07",
+    "variant": "zh-json",
+    "prompt_o200k": 1080,
+    "o200k": 1290,
+    "chars": 3255,
+    "utf8_bytes": 4177,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1752,
+        "state_tokens": 1494,
+        "state_kept": 766,
+        "state_dropped": 728,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1761,
+        "state_tokens": 1420,
+        "state_kept": 764,
+        "state_dropped": 656,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1761,
+        "state_tokens": 1420,
+        "state_kept": 316,
+        "state_dropped": 1104,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S07",
+    "variant": "zh-text",
+    "prompt_o200k": 621,
+    "o200k": 832,
+    "chars": 1704,
+    "utf8_bytes": 2682,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 822,
+        "sequence_tokens_without_truncation": 822,
+        "state_tokens": 564,
+        "state_kept": 564,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1228,
+        "state_tokens": 887,
+        "state_kept": 764,
+        "state_dropped": 123,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1228,
+        "state_tokens": 887,
+        "state_kept": 316,
+        "state_dropped": 571,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S07",
+    "variant": "en-json",
+    "prompt_o200k": 1005,
+    "o200k": 1213,
+    "chars": 4279,
+    "utf8_bytes": 4375,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1733,
+        "state_tokens": 1473,
+        "state_kept": 764,
+        "state_dropped": 709,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1418,
+        "state_tokens": 1148,
+        "state_kept": 764,
+        "state_dropped": 384,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1418,
+        "state_tokens": 1148,
+        "state_kept": 316,
+        "state_dropped": 832,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S07",
+    "variant": "en-text",
+    "prompt_o200k": 555,
+    "o200k": 764,
+    "chars": 2800,
+    "utf8_bytes": 2896,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 792,
+        "sequence_tokens_without_truncation": 792,
+        "state_tokens": 532,
+        "state_kept": 532,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 857,
+        "sequence_tokens_without_truncation": 867,
+        "state_tokens": 597,
+        "state_kept": 597,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 867,
+        "state_tokens": 597,
+        "state_kept": 316,
+        "state_dropped": 281,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S08",
+    "variant": "zh-json",
+    "prompt_o200k": 1072,
+    "o200k": 1282,
+    "chars": 3242,
+    "utf8_bytes": 4144,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1743,
+        "state_tokens": 1485,
+        "state_kept": 766,
+        "state_dropped": 719,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1753,
+        "state_tokens": 1412,
+        "state_kept": 764,
+        "state_dropped": 648,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1753,
+        "state_tokens": 1412,
+        "state_kept": 316,
+        "state_dropped": 1096,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S08",
+    "variant": "zh-text",
+    "prompt_o200k": 613,
+    "o200k": 824,
+    "chars": 1691,
+    "utf8_bytes": 2649,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 813,
+        "sequence_tokens_without_truncation": 813,
+        "state_tokens": 555,
+        "state_kept": 555,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1220,
+        "state_tokens": 879,
+        "state_kept": 764,
+        "state_dropped": 115,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1220,
+        "state_tokens": 879,
+        "state_kept": 316,
+        "state_dropped": 563,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S08",
+    "variant": "en-json",
+    "prompt_o200k": 997,
+    "o200k": 1205,
+    "chars": 4266,
+    "utf8_bytes": 4342,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1724,
+        "state_tokens": 1464,
+        "state_kept": 764,
+        "state_dropped": 700,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1410,
+        "state_tokens": 1140,
+        "state_kept": 764,
+        "state_dropped": 376,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1410,
+        "state_tokens": 1140,
+        "state_kept": 316,
+        "state_dropped": 824,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S08",
+    "variant": "en-text",
+    "prompt_o200k": 547,
+    "o200k": 756,
+    "chars": 2787,
+    "utf8_bytes": 2863,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 783,
+        "sequence_tokens_without_truncation": 783,
+        "state_tokens": 523,
+        "state_kept": 523,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 849,
+        "sequence_tokens_without_truncation": 859,
+        "state_tokens": 589,
+        "state_kept": 589,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 859,
+        "state_tokens": 589,
+        "state_kept": 316,
+        "state_dropped": 273,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S09",
+    "variant": "zh-json",
+    "prompt_o200k": 1077,
+    "o200k": 1287,
+    "chars": 3251,
+    "utf8_bytes": 4169,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1745,
+        "state_tokens": 1487,
+        "state_kept": 766,
+        "state_dropped": 721,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1761,
+        "state_tokens": 1420,
+        "state_kept": 764,
+        "state_dropped": 656,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1761,
+        "state_tokens": 1420,
+        "state_kept": 316,
+        "state_dropped": 1104,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S09",
+    "variant": "zh-text",
+    "prompt_o200k": 618,
+    "o200k": 829,
+    "chars": 1700,
+    "utf8_bytes": 2674,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 815,
+        "sequence_tokens_without_truncation": 815,
+        "state_tokens": 557,
+        "state_kept": 557,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1228,
+        "state_tokens": 887,
+        "state_kept": 764,
+        "state_dropped": 123,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "partial",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1228,
+        "state_tokens": 887,
+        "state_kept": 316,
+        "state_dropped": 571,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S09",
+    "variant": "en-json",
+    "prompt_o200k": 1002,
+    "o200k": 1210,
+    "chars": 4275,
+    "utf8_bytes": 4367,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1726,
+        "state_tokens": 1466,
+        "state_kept": 764,
+        "state_dropped": 702,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1418,
+        "state_tokens": 1148,
+        "state_kept": 764,
+        "state_dropped": 384,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1418,
+        "state_tokens": 1148,
+        "state_kept": 316,
+        "state_dropped": 832,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S09",
+    "variant": "en-text",
+    "prompt_o200k": 552,
+    "o200k": 761,
+    "chars": 2796,
+    "utf8_bytes": 2888,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 785,
+        "sequence_tokens_without_truncation": 785,
+        "state_tokens": 525,
+        "state_kept": 525,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 857,
+        "sequence_tokens_without_truncation": 867,
+        "state_tokens": 597,
+        "state_kept": 597,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 867,
+        "state_tokens": 597,
+        "state_kept": 316,
+        "state_dropped": 281,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S10",
+    "variant": "zh-json",
+    "prompt_o200k": 1068,
+    "o200k": 1278,
+    "chars": 3232,
+    "utf8_bytes": 4126,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1737,
+        "state_tokens": 1479,
+        "state_kept": 766,
+        "state_dropped": 713,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1742,
+        "state_tokens": 1401,
+        "state_kept": 764,
+        "state_dropped": 637,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1742,
+        "state_tokens": 1401,
+        "state_kept": 316,
+        "state_dropped": 1085,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S10",
+    "variant": "zh-text",
+    "prompt_o200k": 609,
+    "o200k": 820,
+    "chars": 1681,
+    "utf8_bytes": 2631,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 808,
+        "sequence_tokens_without_truncation": 808,
+        "state_tokens": 550,
+        "state_kept": 550,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1209,
+        "state_tokens": 868,
+        "state_kept": 764,
+        "state_dropped": 104,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "full",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1209,
+        "state_tokens": 868,
+        "state_kept": 316,
+        "state_dropped": 552,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S10",
+    "variant": "en-json",
+    "prompt_o200k": 993,
+    "o200k": 1201,
+    "chars": 4256,
+    "utf8_bytes": 4324,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1718,
+        "state_tokens": 1458,
+        "state_kept": 764,
+        "state_dropped": 694,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1399,
+        "state_tokens": 1129,
+        "state_kept": 764,
+        "state_dropped": 365,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1399,
+        "state_tokens": 1129,
+        "state_kept": 316,
+        "state_dropped": 813,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S10",
+    "variant": "en-text",
+    "prompt_o200k": 543,
+    "o200k": 752,
+    "chars": 2777,
+    "utf8_bytes": 2845,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 778,
+        "sequence_tokens_without_truncation": 778,
+        "state_tokens": 518,
+        "state_kept": 518,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 838,
+        "sequence_tokens_without_truncation": 848,
+        "state_tokens": 578,
+        "state_kept": 578,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 848,
+        "state_tokens": 578,
+        "state_kept": 316,
+        "state_dropped": 262,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S11",
+    "variant": "zh-json",
+    "prompt_o200k": 1072,
+    "o200k": 1282,
+    "chars": 3233,
+    "utf8_bytes": 4139,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1740,
+        "state_tokens": 1482,
+        "state_kept": 766,
+        "state_dropped": 716,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1750,
+        "state_tokens": 1409,
+        "state_kept": 764,
+        "state_dropped": 645,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "missing",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1750,
+        "state_tokens": 1409,
+        "state_kept": 316,
+        "state_dropped": 1093,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S11",
+    "variant": "zh-text",
+    "prompt_o200k": 613,
+    "o200k": 824,
+    "chars": 1682,
+    "utf8_bytes": 2644,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 810,
+        "sequence_tokens_without_truncation": 810,
+        "state_tokens": 552,
+        "state_kept": 552,
+        "state_dropped": 0,
+        "instruction_tokens": 68,
+        "instructions_kept": 68,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1217,
+        "state_tokens": 876,
+        "state_kept": 764,
+        "state_dropped": 112,
+        "instruction_tokens": 134,
+        "instructions_kept": 53,
+        "request_visibility": "full",
+        "options_tokens": 203
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1217,
+        "state_tokens": 876,
+        "state_kept": 316,
+        "state_dropped": 560,
+        "instruction_tokens": 134,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S11",
+    "variant": "en-json",
+    "prompt_o200k": 997,
+    "o200k": 1205,
+    "chars": 4257,
+    "utf8_bytes": 4337,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1721,
+        "state_tokens": 1461,
+        "state_kept": 764,
+        "state_dropped": 697,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "missing",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 1024,
+        "sequence_tokens_without_truncation": 1407,
+        "state_tokens": 1137,
+        "state_kept": 764,
+        "state_dropped": 373,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "missing",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 1407,
+        "state_tokens": 1137,
+        "state_kept": 316,
+        "state_dropped": 821,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  },
+  {
+    "scope": "full22",
+    "case": "S11",
+    "variant": "en-text",
+    "prompt_o200k": 547,
+    "o200k": 756,
+    "chars": 2778,
+    "utf8_bytes": 2858,
+    "laya": {
+      "multilingual": {
+        "input_tokens": 780,
+        "sequence_tokens_without_truncation": 780,
+        "state_tokens": 520,
+        "state_kept": 520,
+        "state_dropped": 0,
+        "instruction_tokens": 70,
+        "instructions_kept": 70,
+        "request_visibility": "full",
+        "options_tokens": 186
+      },
+      "typed-decisions": {
+        "input_tokens": 846,
+        "sequence_tokens_without_truncation": 856,
+        "state_tokens": 586,
+        "state_kept": 586,
+        "state_dropped": 0,
+        "instruction_tokens": 71,
+        "instructions_kept": 61,
+        "request_visibility": "full",
+        "options_tokens": 195
+      },
+      "english": {
+        "input_tokens": 512,
+        "sequence_tokens_without_truncation": 856,
+        "state_tokens": 586,
+        "state_kept": 316,
+        "state_dropped": 270,
+        "instruction_tokens": 71,
+        "instructions_kept": 34,
+        "request_visibility": "missing",
+        "options_tokens": 158
+      }
+    }
+  }
+]
