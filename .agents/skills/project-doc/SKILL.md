@@ -23,12 +23,12 @@ PROJECT_DOC_CLI="<本次加载的 Skill 目录>/bin/project-doc"
 
 ## 从当前会话新建或加入项目
 
-未绑定会话也可以申请。来源会话 ID 使用 `CODEX_THREAD_ID` 或上下文中的 `<!-- harness-session: thread_id=... -->`，不从当前选中的会话推断。
+未绑定会话也可以申请。命令默认读取来源会话环境 `CODEX_THREAD_ID`（Codex）或 `CODEX_HARNESS_THREAD_ID`（Claude）；也可显式使用上下文中的 `<!-- harness-session: thread_id=... -->`，不从当前选中的会话推断。
 
 ```bash
 "$PROJECT_DOC_CLI" projects
-"$PROJECT_DOC_CLI" request-create --thread-id "$THREAD_ID" --name '项目名称'
-"$PROJECT_DOC_CLI" request-join --thread-id "$THREAD_ID" --project-id "$PROJECT_ID"
+"$PROJECT_DOC_CLI" request-create --name '项目名称'
+"$PROJECT_DOC_CLI" request-join --project-id "$PROJECT_ID"
 ```
 
 这些命令只在来源会话显示确认卡。用户确认后，Harness 启动独立临时会话读取历史，新建初始项目记忆或对照目标文档补记结论，校验后自动保存并绑定。不要代替用户确认、另写一份总结、提前创建项目或直接修改绑定。申请后可继续当前任务，不能把申请成功描述成项目已经建立。已绑定会话保持原归属。

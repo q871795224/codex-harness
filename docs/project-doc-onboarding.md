@@ -30,7 +30,7 @@
 
 ## Skill 与管理接口
 
-未绑定会话也可原生发现 project-doc Skill，维护正文仅在绑定后主动加载。Codex 在原生 Skill 列表发现应用副本；Claude 为会话和 Skill 列表查询提供本地插件。首次准备时附带来源会话标记，命令不能用当前选中会话替代来源。
+未绑定会话也可原生发现 project-doc Skill，维护正文仅在绑定后主动加载。Codex 在原生 Skill 列表发现应用副本；Claude 为会话和 Skill 列表查询提供本地插件。首次准备时附带来源会话标记；命令也读取当前进程的来源环境，Claude query 由宿主设置 `CODEX_HARNESS_THREAD_ID`，避免长会话压缩后丢失来源。命令不能用当前选中会话替代来源。
 
 管理入口仅新增 `projects.list` 和 `projects.requestOnboarding`，后者检查来源会话与插件卡片是否可用。没有远程确认或直接提交接口。保存和绑定通过 Rust IPC、bridge 和核心服务执行。
 

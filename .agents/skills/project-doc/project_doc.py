@@ -160,7 +160,7 @@ def cmd_onboarding(args: argparse.Namespace) -> int:
     params = {}
     method = "projects.list"
     if args.command != "projects":
-        if not args.thread_id: raise ProjectDocError("需要来源 --thread-id 或 CODEX_THREAD_ID，不能使用当前选中会话代替")
+        if not args.thread_id: raise ProjectDocError("需要来源 --thread-id 或会话环境标记，不能使用当前选中会话代替")
         params = {"threadId": args.thread_id, "mode": "create" if args.command == "request-create" else "join"}
         if args.command == "request-create": params["name"] = args.name
         else: params["projectId"] = args.project_id
@@ -192,7 +192,7 @@ def build_parser() -> argparse.ArgumentParser:
     projects.set_defaults(func=cmd_onboarding)
     for action in ("request-create", "request-join"):
         command = sub.add_parser(action, help="申请新建/加入项目，仅显示确认卡，不直接写入")
-        command.add_argument("--thread-id", default=os.environ.get("CODEX_THREAD_ID"))
+        command.add_argument("--thread-id", default=os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_HARNESS_THREAD_ID"))
         if action == "request-create": command.add_argument("--name", required=True)
         else: command.add_argument("--project-id", required=True)
         command.set_defaults(func=cmd_onboarding)

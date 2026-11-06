@@ -134,7 +134,7 @@ export function query({prompt, options}) {
     for await (const message of prompt) {
       yield {type:'result', subtype:'success', session_id:'native-session', user_message_uuid:message.uuid,
         result:JSON.stringify({plugins:options.plugins ?? [], resume:options.resume ?? null,
-          sources:options.settingSources, content:message.message.content, queryNumber})}
+          sources:options.settingSources, source:options.env.CODEX_HARNESS_THREAD_ID, content:message.message.content, queryNumber})}
       yield {type:'system', subtype:'session_state_changed', state:'idle'}
     }
   } }
@@ -157,6 +157,7 @@ export function query({prompt, options}) {
   const first = await turn({projectDocSkill:config, input:originalInput})
   assert.deepEqual(first.plugins, [{type:'local', path:config.pluginRoot}])
   assert.deepEqual(first.sources, ['user','project','local'])
+  assert.equal(first.source, 'bound')
   assert.deepEqual(first.content, [
     {type:'image', source:{type:'base64', media_type:'image/png', data:png}},
     {type:'text', text:'/harness-project-doc:project-doc project background\n\nuser request'},
@@ -174,6 +175,7 @@ export function query({prompt, options}) {
   const discovery = await turn({sessionId:'unbound-native',input:[{type:'text',text:'plain'}],
     projectDocSkill:{...config,invoke:false,sourceThreadId:'claude:unbound-native'}})
   assert.deepEqual(discovery.plugins, first.plugins)
+  assert.equal(discovery.source, 'unbound-native')
   assert.equal(discovery.content, 'plain\n\n<!-- harness-session: thread_id=claude:unbound-native -->')
   const userEvent = daemon.messages.find(message => message.method === 'message/user')
   assert.deepEqual(userEvent.params.content, originalInput)

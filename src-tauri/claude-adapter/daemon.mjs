@@ -623,7 +623,8 @@ async function startTurn(params) {
         ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true }
           : { canUseTool: (toolName, input, context) => approvalRequest(sessionId,
             activeTurns.get(sessionId)?.turnId ?? runtime.lastTurnId, toolName, input, context) }),
-        maxTurns: settings.maxTurns, includePartialMessages: true, abortController, env,
+        maxTurns: settings.maxTurns, includePartialMessages: true, abortController,
+        env: { ...env, CODEX_HARNESS_THREAD_ID: sessionId },
       } })
       sessionQueries.set(sessionId, runtime)
       active.runtime = runtime
@@ -801,7 +802,7 @@ async function handle(client, request) {
   const { id, method, params = {} } = request
   if (method === 'initialize') {
     const lastEventSeq = Number.isSafeInteger(params.lastEventSeq) ? params.lastEventSeq : 0
-    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.3.0', ...runtimeSnapshot() })
+    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.4.0', ...runtimeSnapshot() })
     for (const event of replayEvents) {
       if (event.seq > lastEventSeq) send(client, { ...event, replayed: true })
     }

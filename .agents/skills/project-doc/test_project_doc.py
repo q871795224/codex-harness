@@ -69,6 +69,15 @@ class CliTests(unittest.TestCase):
         self.assertIn("等待用户确认", self.output.getvalue())
         self.assertNotIn(endpoint["token"], self.output.getvalue())
 
+    def test_claude_request_uses_its_query_environment_after_context_compaction(self):
+        endpoint = {"protocolVersion": 1, "baseUrl": self.base, "token": "test-token-" * 8}
+        self.response = {"result": {"requestId": "card", "phase": "confirm"}}
+        with patch.object(Path, "read_text", return_value=json.dumps(endpoint)):
+            with patch.dict(cli.os.environ, {"CODEX_THREAD_ID": "", "CODEX_HARNESS_THREAD_ID": "claude:source"}):
+                with contextlib.redirect_stdout(self.output):
+                    self.assertEqual(cli.main(["request-join", "--project-id", "p"]), 0)
+        self.assertEqual(self.requests[0][1]["params"]["threadId"], "claude:source")
+
     def test_supersede_is_one_versioned_http_operation(self):
         self.assertEqual(self.run_cli('supersede', '--id', 'D-one', '--revision', '3', '--reason', '用户改规则', '--content', '只补缺失项'), 0)
         self.assertEqual(self.requests, [('/entries', {'threadId': 't', 'projectId': 'p', 'mutation': {'action': 'supersede', 'id': 'D-one', 'revision': 3, 'reason': '用户改规则', 'content': '只补缺失项'}})])
