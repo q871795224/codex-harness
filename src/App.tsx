@@ -47,7 +47,7 @@ import { useCodexCore } from './features/codex/useCodexCore'
 import { useCodexUpdate } from './features/codex/useCodexUpdate'
 import { CodexUpdatePanel } from './features/codex/CodexUpdatePanel'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
-import { conversationTabSupportsFocus } from './features/conversation/tabFocus'
+import { conversationComposerState, conversationTabSupportsFocus } from './features/conversation/tabFocus'
 import { actionForShortcut, tabIndexForAction, threadIndexForAction } from './features/actions/harnessActions'
 import { NumberBadge } from './components/NumberBadge'
 import { useModifierKey } from './hooks/useModifierKey'
@@ -453,10 +453,9 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
   const tabFocusable = conversationTabSupportsFocus(selectedPluginTab?.contribution ?? null)
   const tabFocused = focusedTab === tab && tabFocusable
-  const composerCollapsible = selectedPluginTab !== null
   const composerCollapseKey = `${harness.selectedThreadId ?? 'none'}:${tab}`
+  const { collapsible: composerCollapsible, visible: composerVisible } = conversationComposerState(tab, harness.viewMode === 'active', selectedPluginTab?.contribution ?? null, Boolean(collapsedComposerKeys[composerCollapseKey]))
   const composerCollapsed = composerCollapsible && Boolean(collapsedComposerKeys[composerCollapseKey])
-  const composerVisible = harness.viewMode === 'active' && tab !== ASYNC_WAIT_TAB_KEY && !selectedPluginTab?.contribution.hideComposer && !composerCollapsed
   const quickPanelBottom = resolveQuickPanelAnchor(composerVisible, quickActionBottom)
   const quickPanelsVisible = shouldShowQuickPanels(Boolean(harness.currentThread && harness.viewMode === 'active'), composerVisible)
 

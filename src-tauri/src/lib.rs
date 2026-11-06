@@ -1,5 +1,6 @@
 mod workspace_router;
 mod async_waits;
+mod runtime_skill;
 mod api_workbench;
 mod app_launcher;
 mod app_server;
@@ -1419,6 +1420,7 @@ pub fn run() {
                 diagnostics.clone(),
                 analytics.clone(),
                 ownership,
+                crate::runtime_skill::RuntimeSkill::new(store.clone()),
                 project_skill.clone(),
                 app_server::history_response_limit(
                     store.get_app_state("conversationHistoryPreferences")?.as_deref(),
