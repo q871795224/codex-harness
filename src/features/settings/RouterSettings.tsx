@@ -10,7 +10,7 @@ import { RouterFeedbackPanel } from '../router/RouterFeedbackPanel'
 import './RouterSettings.css'
 
 type RouterSection = 'workspaces' | 'prompt' | 'configuration' | 'feedback'
-const SECTIONS: Array<{ id: RouterSection; label: string }> = [{ id: 'workspaces', label: '工作区' }, { id: 'prompt', label: '最终 Prompt' }, { id: 'configuration', label: '设置' }, { id: 'feedback', label: '反馈' }]
+const SECTIONS: Array<{ id: RouterSection; label: string }> = [{ id: 'workspaces', label: '工作区' }, { id: 'prompt', label: '最终 Prompt' }, { id: 'feedback', label: '反馈' }, { id: 'configuration', label: '设置' }]
 const DAY = 24 * 60 * 60_000
 export function routerNextCheck(summary: RouterSummary | undefined, now: number): string {
   if (summary?.updating) return '正在更新介绍'
@@ -133,7 +133,7 @@ export function RouterSettings({ models, workspaces, initialSection = 'configura
         </article>}
       </div>
     </section>
-    <section id={`${id}-prompt`} role="tabpanel" aria-labelledby={`${id}-prompt-tab`} hidden={section !== 'prompt'}>{visited.has('prompt') && <RouterPromptPanel workspaces={workspaces} settingsVersion={settingsVersion} />}</section>
+    <section id={`${id}-prompt`} role="tabpanel" aria-labelledby={`${id}-prompt-tab`} hidden={section !== 'prompt'}>{visited.has('prompt') && <RouterPromptPanel workspaces={workspaces} settingsVersion={settingsVersion} active={section === 'prompt'} cacheVersion={summaries.map(s => `${s.root}:${s.generatedAt}:${s.description}`).join('|')} />}</section>
     <section id={`${id}-configuration`} role="tabpanel" aria-labelledby={`${id}-configuration-tab`} hidden={section !== 'configuration'} className="router-configuration">
       <div className="router-backend active"><h3><label><input type="radio" name={`${id}-backend`} checked readOnly />Codex 临时会话</label></h3>
         <div className="router-setting-rows">

@@ -24,4 +24,4 @@ CHOKIDAR_USEPOLLING=1 pnpm exec vite --host 127.0.0.1 --port 1435 --strictPort
 
 启动 `pnpm exec vite --host 127.0.0.1 --port 1439 --strictPort`，打开 `/tests/visual/router-context.html`。
 该页用真实 RouterSettings 和 RouterFeedbackCard，加内存数据替代 native 调用，不访问真实缓存或模型。
-用独立 Playwright session 执行 `run-code --filename tests/visual/verify-router-context.js`，检查精简标题行、状态颜色与倒计时位置、立即更新、禁用后端、反馈引用规则保存、最终 Prompt 生成与逐条反馈、深浅主题和640px窄窗口。使用 `?scenario=correction` 仍可手工复查原纠正卡片。截图在 `docs/review/workspace-router/`；不代表原生应用和真实模型端到端验收。
+用独立 Playwright session 执行 `run-code --filename tests/visual/verify-router-context.js`，检查精简标题行、状态颜色与倒计时位置、立即更新、禁用后端、反馈引用规则保存、最终 Prompt 自动只读展示与逐条反馈、深浅主题和640px窄窗口。使用 `?scenario=correction` 仍可手工复查原纠正卡片。截图在 `docs/review/workspace-router/`；不代表原生应用和真实模型端到端验收。

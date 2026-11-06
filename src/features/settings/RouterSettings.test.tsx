@@ -64,7 +64,7 @@ it('supports keyboard switching between materials and judgement settings', async
   fireEvent.keyDown(materials, { key: 'ArrowRight' })
   const prompt = screen.getByRole('tab', { name: '最终 Prompt' })
   expect(prompt.getAttribute('aria-selected')).toBe('true')
-  fireEvent.keyDown(prompt, { key: 'ArrowRight' })
+  fireEvent.keyDown(prompt, { key: 'End' })
   const settings = screen.getByRole('tab', { name: '设置' })
   expect(settings.getAttribute('aria-selected')).toBe('true')
   expect(document.activeElement).toBe(settings)
