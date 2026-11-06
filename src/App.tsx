@@ -222,7 +222,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const [tab, setTab] = useState('chat')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [selectedNotificationId, setSelectedNotificationId] = useState<string | undefined>()
-  const openNotifications = (id?: string) => { setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
+  const openNotifications = (id?: string) => { selectMode('conversation'); setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
   const [focusedTab, setFocusedTab] = useState<string | null>(null)
   const [tabOrder, setTabOrder] = useState<string[]>([])
   const tabOrderRef = useRef<string[]>([])
