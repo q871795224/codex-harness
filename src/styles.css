@@ -610,8 +610,8 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .user-input-option strong { color: #404b64; font-size: 11px; font-weight: 620; }
 .user-input-option small { color: #838b99; font-size: 10px; line-height: 1.4; }
 .user-input-other { cursor: text; }
-.user-input-other-label { flex: 0 0 auto; color: #404b64; font-size: 11px; font-weight: 620; }
-.user-input-other-field { flex: 1; min-width: 80px; height: 27px; padding: 4px 7px; border: 0; border-radius: 0; outline: 0; background: transparent; color: #343b47; font: inherit; font-size: 11px; }
+.user-input-other-label { flex: 0 0 auto; color: #404b64; font-size: 11px; font-weight: 620; line-height: 19px; }
+.user-input-other-field { flex: 1; min-width: 80px; height: 19px; padding: 0 7px; border: 0; border-radius: 0; outline: 0; background: transparent; color: #343b47; font: inherit; font-size: 11px; line-height: 19px; }
 .user-input-other-field:focus-visible { outline: none; box-shadow: none; }
 .user-input-freeform:focus-visible { border-color: #8fa2d4; box-shadow: 0 0 0 3px rgba(99, 121, 194, .12); }
 .user-input-freeform { box-sizing: border-box; width: 100%; height: 35px; padding: 7px 9px; border: 1px solid #dfe3ed; border-radius: 7px; outline: 0; background: #fff; color: #343b47; font: inherit; font-size: 11px; }
@@ -1969,7 +1969,10 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .project-history-preview { max-height: 380px; overflow: auto; }
 
 /* Question answer links append multiline drafts without touching the chat composer. */
-textarea.user-input-freeform, textarea.user-input-other-field { min-height: 35px; max-height: 160px; height: auto; resize: none; overflow-y: auto; line-height: 19px; }
+textarea.user-input-freeform, textarea.user-input-other-field { max-height: 160px; height: auto; resize: none; overflow-y: auto; line-height: 19px; }
+textarea.user-input-freeform { min-height: 35px; }
+/* Match the option number and label on one line; AnswerField grows for multiline text. */
+textarea.user-input-other-field { min-height: 19px; }
 
 .router-feedback-card .recap-banner-body { flex: 1; }
 .router-feedback-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
