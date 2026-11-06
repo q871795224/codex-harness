@@ -108,6 +108,16 @@ describe('UserInputRequestCard', () => {
     }))
   })
 
+  it('starts freeform answers at one row and allows Shift+Enter without submitting', () => {
+    const onAnswer = vi.fn()
+    render(<UserInputRequestCard request={request({ questions: [{ id: 'free', header: '说明', question: '补充说明？' }] })} sendShortcut="mod-enter" onAnswer={onAnswer} />)
+    const field = screen.getByLabelText('说明回答') as HTMLTextAreaElement
+    expect(field.rows).toBe(1)
+    fireEvent.change(field, { target: { value: '第一行' } })
+    expect(fireEvent.keyDown(field, { key: 'Enter', shiftKey: true })).toBe(true)
+    expect(onAnswer).not.toHaveBeenCalled()
+  })
+
   it('uses a multiline field for a custom answer and keeps secret answers masked', async () => {
     const serverRequest = request()
     const onAnswer = vi.fn()
@@ -115,6 +125,7 @@ describe('UserInputRequestCard', () => {
 
     const custom = screen.getByLabelText('方案的其他回答') as HTMLTextAreaElement
     expect(custom.tagName).toBe('TEXTAREA')
+    expect(custom.rows).toBe(1)
     fireEvent.change(custom, { target: { value: '保留现有接口' } })
     fireEvent.click(screen.getByRole('button', { name: '下一题' }))
     const secret = screen.getByLabelText('凭据回答') as HTMLInputElement

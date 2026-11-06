@@ -27,6 +27,7 @@ import {
   titleSourceText,
   type CollapsedPaste,
 } from './composerInput'
+import { sameComposerDraft } from './composerDraftStorage'
 import { findProjectCard, projectCardLabel } from '../project-doc/projectCard'
 import { parseComposerCommand, type ComposerCommand } from './composerCommands'
 import { fastServiceTier, fastServiceTierTooltip } from '../codex/serviceTier'
@@ -43,6 +44,7 @@ export interface ComposerProjectCard {
 interface ComposerProps {
   provider?: 'codex' | 'claude'
   initialDraft?: ComposerDraft
+  consumedDraft?: ComposerDraft
   /** 第 0 轮的项目背景卡意图；非空时 Composer 在输入框第一行维护一张对应折叠卡。 */
   projectCard?: ComposerProjectCard | null
   /** 用户手动删掉项目背景卡时回调（用于解绑）。 */
@@ -113,7 +115,7 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ provider = 'codex', initialDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const busy = externallyBusy || submitting
@@ -260,6 +262,19 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
     onDraftChangeRef.current?.({ text, collapsedPastes, attachments }, hasContent)
   }, [attachments, collapsedPastes, hasContent, text])
 
+  const currentDraftRef = useRef<ComposerDraft>({ text, collapsedPastes, attachments })
+  useLayoutEffect(() => { currentDraftRef.current = { text, collapsedPastes, attachments } }, [text, collapsedPastes, attachments])
+  const previousConsumedDraft = useRef(consumedDraft)
+  useLayoutEffect(() => {
+    if (previousConsumedDraft.current === consumedDraft) return
+    previousConsumedDraft.current = consumedDraft
+    if (!sameComposerDraft(currentDraftRef.current, consumedDraft)) return
+    setText('')
+    setCollapsedPastes([])
+    setAttachments([])
+    setCursor(0)
+  }, [consumedDraft])
+
   useEffect(() => { if (autoFocus) ref.current?.focus() }, [autoFocus, disabled])
   useEffect(() => {
     const explicitlyRequested = focusRequest !== previousFocusRequestRef.current
@@ -379,6 +394,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
 
   const submitDraft = async () => {
     if (!hasContent || disabled || busy || imageUnsupported) return
+    const sentDraft = currentDraftRef.current
     const command = parseComposerCommand(expandedText, attachments.length > 0)
     if (command) {
       if (settingsLocked && ['model', 'reasoning', 'permissions'].includes(command.name)) {
@@ -408,6 +424,7 @@ export function Composer({ provider = 'codex', initialDraft, projectCard = null,
         return
       }
     }
+    if (!sameComposerDraft(currentDraftRef.current, sentDraft)) return
     setText('')
     setCollapsedPastes([])
     setAttachments([])

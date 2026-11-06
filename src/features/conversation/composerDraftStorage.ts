@@ -1,5 +1,6 @@
 import type { PersistedComposerDraftRecord } from '../../core/runtime/bridge'
 import type { ComposerDraft } from './Composer'
+import { reconcileCollapsedPastes } from './composerInput'
 
 const DRAFT_VERSION = 1
 
@@ -26,6 +27,22 @@ export function storedComposerDraft(draft: ComposerDraft): StoredComposerDraft {
 
 export function composerDraftHasContent(draft: ComposerDraft): boolean {
   return Boolean(draft.text.trim() || draft.attachments.length)
+}
+
+export function sameComposerDraft(left: ComposerDraft | undefined, right: ComposerDraft | undefined): boolean {
+  if (!left || !right) return false
+  const a = withoutProjectCard(left)
+  const b = withoutProjectCard(right)
+  return a.text === b.text && JSON.stringify(a.collapsedPastes) === JSON.stringify(b.collapsedPastes)
+    && JSON.stringify(a.attachments) === JSON.stringify(b.attachments)
+}
+
+// Project locking can remove this programmatic projection before sending settles.
+function withoutProjectCard(draft: ComposerDraft): ComposerDraft {
+  const card = draft.collapsedPastes.find(paste => paste.origin?.kind === 'project-doc')
+  if (!card) return draft
+  const text = `${draft.text.slice(0, card.start)}${draft.text.slice(card.end)}`
+  return { ...draft, text, collapsedPastes: reconcileCollapsedPastes(draft.text, text, draft.collapsedPastes) }
 }
 
 export class ComposerDraftWriter {

@@ -36,7 +36,7 @@ import { Sidebar } from './features/navigation/Sidebar'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
 import { DelegationReturnCard } from './features/conversation/DelegationReturnCard'
 import { insertComposerPrompt } from './features/conversation/composerInput'
-import { ComposerDraftWriter, restoreComposerDrafts } from './features/conversation/composerDraftStorage'
+import { ComposerDraftWriter, restoreComposerDrafts, sameComposerDraft } from './features/conversation/composerDraftStorage'
 import { useHandover } from './features/handover/useHandover'
 import { ConversationStats, turnStartedAtMilliseconds } from './features/conversation/ConversationStats'
 import { RetainedTab } from './features/conversation/RetainedTab'
@@ -262,6 +262,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
     return next
   })
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
+  const [consumedComposerDrafts, setConsumedComposerDrafts] = useState<Record<string, ComposerDraft>>({})
   const [composerDraftsLoaded, setComposerDraftsLoaded] = useState(false)
   const composerDraftWriterRef = useRef<ComposerDraftWriter | null>(null)
   const queuedComposerDraftsRef = useRef<Record<string, ComposerDraft>>({})
@@ -783,7 +784,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
         onToggleWorkspacePinned={harness.toggleWorkspacePinned}
         onSidebarWidth={harness.setSidebarWidth}
         onSidebarListSplitRatio={harness.setSidebarListSplitRatio}
-        onOpenNotifications={() => setRemindersOpen((current) => !current)}
+        onOpenNotifications={() => openNotifications()}
         onMarkAllNotificationsRead={() => notifications.markRead()}
         notificationsOpen={notificationsOpen || remindersOpen}
         unreadNotifications={unreadNotifications}
@@ -880,7 +881,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                 })}
               </div>
               <div className="notification-tab-tools">
-              <button type="button" className="notification-bell" data-notification-toggle aria-label="打开通知提醒" title="通知提醒" onClick={() => setRemindersOpen((current) => !current)}><Bell size={16} />{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>
+              <button type="button" className="notification-bell" data-notification-toggle aria-expanded={remindersOpen} aria-controls="notification-reminder-rail" aria-label="打开通知提醒" title="通知提醒" onClick={() => setRemindersOpen((current) => !current)}><Bell size={16} />{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>
               <span className={`connection-state ${codexConversation ? '' : 'claude'}`}><span />{codexConversation ? '本机 App Server' : 'Claude · Agent SDK'}</span>
               </div>
             </div>
@@ -1035,6 +1036,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                   key={harness.draftOrigins?.[harness.currentThread.id] ?? harness.currentThread.id}
                   provider={harness.selectedProvider}
                   initialDraft={composerDrafts[harness.currentThread.id]}
+                  consumedDraft={consumedComposerDrafts[harness.currentThread.id]}
                   projectCard={projectCard}
                   onProjectCardDismissed={() => {
                     void projectBinding.unbind().catch((error) => {
@@ -1071,7 +1073,8 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
                     await harness.sendMessage(input, mode, references, titleSource)
                     const targetId = draftReplacementIdsRef.current[threadId] ?? threadId
-                    if (submittedDraft && queuedComposerDraftsRef.current[targetId] === submittedDraft) {
+                    if (submittedDraft) setConsumedComposerDrafts((current) => ({ ...current, [targetId]: submittedDraft }))
+                    if (sameComposerDraft(queuedComposerDraftsRef.current[targetId], submittedDraft)) {
                       const empty: ComposerDraft = { text: '', collapsedPastes: [], attachments: [] }
                       queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [targetId]: empty }
                       composerDraftWriterRef.current?.update(targetId, empty)
@@ -1158,6 +1161,11 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
         ) : <EmptyState hasWorkspaces={harness.workspaces.length > 0} onNewThread={() => void harness.createThread(harness.newThreadProvider)} onWorkspace={() => void harness.chooseWorkspace()} />}
         </div>
       </main>
+      <NotificationViewport
+        store={notifications} onOpen={openNotifications} open={remindersOpen} onToggle={setRemindersOpen} onAction={handleNotificationAction}
+        currentThread={harness.currentThread ? { id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd } : null}
+        focusedThreadId={mode === 'conversation' && tab === 'chat' && !notificationsOpen && !settingsOpen && !pluginsOpen ? harness.selectedThreadId : null}
+      />
       {quickPanelsVisible && harness.currentThread && (
         <div className="notification-quick-panels" hidden={notificationsOpen}>
           <QuickCommandPanel workspaceRoot={workspace?.root} threadId={harness.selectedThreadId} commands={quickCommands} release={workspaceRelease} anchorBottom={quickPanelBottom} />
@@ -1176,11 +1184,6 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
           />
         </div>
       )}
-      <NotificationViewport
-        store={notifications} onOpen={openNotifications} open={remindersOpen} onToggle={setRemindersOpen} onAction={handleNotificationAction}
-        currentThread={harness.currentThread ? { id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd } : null}
-        focusedThreadId={mode === 'conversation' && tab === 'chat' && !notificationsOpen && !settingsOpen && !pluginsOpen ? harness.selectedThreadId : null}
-      />
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
           codexUpdate={codexUpdate}

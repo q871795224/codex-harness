@@ -14,7 +14,7 @@ export interface RouteRecord {
   createdAt: number; completedAt: number | null; durationMs: number | null
   model: string; effort: string; promptVersion: number; candidates: RouteCandidate[]
   choice: RouteChoice | null; status: 'routing' | 'selected' | 'started' | 'failed'; errorCode?: string
-  feedback: RouteFeedback; actualWorkspace: string | null
+  feedback: RouteFeedback; actualWorkspace: string | null; feedbackDismissedAt?: number
   history: Array<{ at: number; feedback: RouteFeedback; actualWorkspace: string | null; messageId?: string }>
 }
 const activeThreads = new Set<string>()
@@ -54,6 +54,16 @@ export async function recordRouteFeedback(record: RouteRecord, feedback: Exclude
   })
   void runtime.recordClientDiagnostic({ level: 'info', area: 'workspace-router', event: 'feedback.saved', threadId: saved.threadId, attemptId: saved.id, status: saved.feedback }).catch(() => undefined)
   return saved
+}
+// Continuing the conversation closes the feedback UI without overwriting an explicit vote.
+export function completeRouteFeedback(record: RouteRecord, messageId: string): Promise<RouteRecord> {
+  return updateRouteRecord(record.id, (latest) => {
+    if (latest.status !== 'started' || latest.feedbackDismissedAt) return latest
+    const at = Date.now()
+    if (latest.feedback !== 'pending') return { ...latest, feedbackDismissedAt: at }
+    return { ...latest, feedbackDismissedAt: at, feedback: 'implicit-accurate',
+      history: [...latest.history, { at, feedback: 'implicit-accurate', actualWorkspace: null, messageId }] }
+  })
 }
 export function parseRouteChoice(text: string, candidates: RouteCandidate[]): RouteChoice {
   let value: unknown

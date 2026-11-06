@@ -4,7 +4,7 @@ import { textInput } from '../domain/codex'
 import { appServer } from '../runtime/appServerClient'
 import { runtime } from '../runtime/bridge'
 import { DEFAULT_ROUTER_SETTINGS, ROUTER_SETTINGS_KEY, saveRouterSettings } from './settings'
-import { parseRouteChoice, readRouteRecord, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord } from './service'
+import { completeRouteFeedback, parseRouteChoice, readRouteRecord, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord } from './service'
 vi.mock('../runtime/appServerClient', () => ({ appServer: { readConfig: vi.fn(), startThread: vi.fn(), startTurn: vi.fn(), interruptTurn: vi.fn(), unsubscribeThread: vi.fn() } }))
 vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
 const storage = new Map<string, string>()
@@ -99,4 +99,15 @@ it('rejects broken persisted settings rather than silently changing models', asy
   storage.set(ROUTER_SETTINGS_KEY, '{broken')
   await expect(routeWorkspace('source', '/neutral', [textInput('do work')], workspaces)).rejects.toThrow()
   expect(appServer.startThread).not.toHaveBeenCalled()
+})
+
+it('closes feedback once on a follow-up, preserves explicit corrections and persists closure', async () => {
+  const selected = await routeWorkspace('source', '/neutral', [textInput('work')], workspaces)
+  const started = await updateRouteRecord(selected.id, record => ({ ...record, status: 'started' }))
+  const explicit = await recordRouteFeedback(started, 'inaccurate', '/a')
+  const closed = await completeRouteFeedback(explicit, 'second')
+  expect(closed).toMatchObject({ feedback: 'inaccurate', actualWorkspace: '/a', feedbackDismissedAt: expect.any(Number) })
+  expect(closed.history).toEqual(explicit.history)
+  expect(await completeRouteFeedback(closed, 'third')).toEqual(closed)
+  expect(await readRouteRecord('source')).toEqual(closed)
 })

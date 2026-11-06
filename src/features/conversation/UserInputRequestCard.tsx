@@ -1,6 +1,6 @@
 import type { DraftAnswer, QuestionAnswers } from '../../core/questions/drafts'
 import type { QuestionNavigation } from '../../core/questions/types'
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
 import { ChevronLeft, ChevronRight, CircleHelp, LockKeyhole } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -119,7 +119,7 @@ export function UserInputRequestCard({ request, sendShortcut, onAnswer, draftAns
     }
 
     const textEntry = isTextEntryTarget(event.target)
-    if (event.key === 'Enter' && textEntry && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+    if (event.key === 'Enter' && textEntry && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
       event.preventDefault()
       return
     }
@@ -310,7 +310,14 @@ function AnswerField({ secret, inputRef, onChange, ...props }: {
   onFocus?: () => void
   onChange: (value: string) => void
 }) {
+  const localRef = useRef<HTMLTextAreaElement | null>(null)
+  useLayoutEffect(() => {
+    const field = localRef.current
+    if (!field) return
+    field.style.height = '0px'
+    field.style.height = `${field.scrollHeight + field.offsetHeight - field.clientHeight}px`
+  }, [props.value])
   return secret
     ? <input {...props} ref={inputRef as RefObject<HTMLInputElement>} type="password" autoComplete="new-password" onChange={event => onChange(event.target.value)} />
-    : <textarea {...props} ref={inputRef as RefObject<HTMLTextAreaElement>} rows={2} autoComplete="off" onChange={event => onChange(event.target.value)} />
+    : <textarea {...props} ref={(field) => { localRef.current = field; if (inputRef) (inputRef as { current: HTMLInputElement | HTMLTextAreaElement | null }).current = field }} rows={1} autoComplete="off" onChange={event => onChange(event.target.value)} />
 }
