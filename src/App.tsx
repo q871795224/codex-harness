@@ -1,7 +1,5 @@
 import { useSeaTalkSync } from './core/seatalk/react'
 import { RouterFeedbackCard } from './features/conversation/RouterFeedbackCard'
-import { useReminderSources } from './features/notifications/useReminderSources'
-import { attentionGroups } from './core/notifications/store'
 import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
 import { useQuestionLinks } from './features/conversation/useQuestionLinks'
 import type { QuestionNotificationService } from './core/questions/types'
@@ -17,7 +15,7 @@ import { appServer } from './core/runtime/appServerClient'
 import type { ProjectOnboardingService } from './core/project-onboarding/types'
 import { notifications } from './core/notifications/service'
 import type { NotificationAction } from './core/notifications/store'
-import { NotificationCenter, NotificationViewport } from './features/notifications/Notifications'
+import { NotificationCenter } from './features/notifications/Notifications'
 import { useReleaseNotifications } from './features/notifications/useReleaseNotifications'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, Clock3, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
@@ -251,13 +249,9 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
   useManagement({ harness, codex, plugins, flavor, onboarding })
   const [tab, setTab] = useState('chat')
-  useReminderSources(harness)
-  const [remindersOpen, setRemindersOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [selectedNotificationId, setSelectedNotificationId] = useState<string | undefined>()
-  const notificationState = useSyncExternalStore(notifications.subscribe, notifications.snapshot)
-  const unreadNotifications = attentionGroups(notificationState.records).length
-  const openNotifications = (id?: string) => { setRemindersOpen(false); setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
+  const openNotifications = (id?: string) => { selectMode('conversation'); setSelectedNotificationId(id); setFocusedTab(null); setNotificationsOpen(true) }
   const [focusedTab, setFocusedTab] = useState<string | null>(null)
   const [tabOrder, setTabOrder] = useState<string[]>([])
   const tabOrderRef = useRef<string[]>([])
@@ -768,8 +762,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
             }).catch((error) => harness.notify('无法打开成员会话', 'error', error))
           }}
           onSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
-          onNotifications={() => setRemindersOpen(true)}
-          unreadNotifications={unreadNotifications}
+          onNotifications={() => openNotifications()}
+          unreadNotifications={0}
         /></Suspense>
       </div>}
       <Sidebar
@@ -812,10 +806,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
         onToggleWorkspacePinned={harness.toggleWorkspacePinned}
         onSidebarWidth={harness.setSidebarWidth}
         onSidebarListSplitRatio={harness.setSidebarListSplitRatio}
-        onOpenNotifications={() => setRemindersOpen((current) => !current)}
-        onMarkAllNotificationsRead={() => notifications.markRead()}
-        notificationsOpen={notificationsOpen || remindersOpen}
-        unreadNotifications={unreadNotifications}
+        onOpenNotifications={() => openNotifications()}
+        notificationsOpen={notificationsOpen}
         onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
         onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
         onVisibleThreadOrder={setVisibleThreadIds}
@@ -909,7 +901,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                 })}
               </div>
               <div className="notification-tab-tools">
-              <button type="button" className="notification-bell" data-notification-toggle aria-label="打开通知提醒" title="通知提醒" onClick={() => setRemindersOpen((current) => !current)}><Bell size={16} />{unreadNotifications > 0 && <b>{unreadNotifications}</b>}</button>
+              <button type="button" className="notification-bell" aria-label="打开通知中心" title="通知中心" onClick={() => openNotifications()}><Bell size={16} /></button>
               <span className={`connection-state ${codexConversation ? '' : 'claude'}`}><span />{codexConversation ? '本机 App Server' : 'Claude · Agent SDK'}</span>
               </div>
             </div>
@@ -1205,11 +1197,6 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
           />
         </div>
       )}
-      <NotificationViewport
-        store={notifications} onOpen={openNotifications} open={remindersOpen} onToggle={setRemindersOpen} onAction={handleNotificationAction}
-        currentThread={harness.currentThread ? { id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd } : null}
-        focusedThreadId={mode === 'conversation' && tab === 'chat' && !notificationsOpen && !settingsOpen && !pluginsOpen ? harness.selectedThreadId : null}
-      />
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
           codexUpdate={codexUpdate}
