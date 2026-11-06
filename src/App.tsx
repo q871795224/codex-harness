@@ -11,6 +11,10 @@ import type { TeamsService } from './core/teams/types'
 import { useTeamsService } from './core/teams/react'
 import { MemoryButton } from './features/memory/MemoryButton'
 import { createMemoryService } from './core/memory/service'
+import { createProjectOnboarding } from './core/project-onboarding/service'
+import { onboardingHistory } from './core/project-onboarding/history'
+import { appServer } from './core/runtime/appServerClient'
+import type { ProjectOnboardingService } from './core/project-onboarding/types'
 import { notifications } from './core/notifications/service'
 import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter, NotificationViewport } from './features/notifications/Notifications'
@@ -83,6 +87,29 @@ export default function App() {
     [harness.selectThread],
   )
   const agentRuns = useAgentRunService(selectAgentRunThread, harness.startTurnInThread)
+  const onboardingHarness = useRef(harness)
+  onboardingHarness.current = harness
+  const onboarding = useMemo(() => createProjectOnboarding({
+    saved: runtime.projectDocPendingOnboardings,
+    source: async threadId => {
+      let thread = onboardingHarness.current.threads.find(t => t.id === threadId)
+      if (!thread && threadId.startsWith('claude:')) {
+        const session = (await runtime.listClaudeSessions()).find(s => s.id === threadId)
+        if (session) return { threadId, title: session.title, cwd: session.cwd }
+      }
+      if (!thread && !threadId.startsWith('claude:')) thread = (await appServer.readThread({ threadId, includeTurns: false })).thread
+      if (!thread?.cwd) throw new Error('来源会话不存在或缺少工作目录')
+      return { threadId, title: threadTitle(thread), cwd: thread.cwd }
+    },
+    busy: threadId => Boolean(onboardingHarness.current.workingThreadIds[threadId]),
+    history: onboardingHistory,
+    project: projectDocs.read,
+    binding: projectDocs.threadBinding,
+    commit: projectDocs.commitOnboarding,
+    finish: projectDocs.finishOnboarding,
+  }, projectDocs, agentRuns), [agentRuns])
+  useEffect(() => { void onboarding.resumeBindings() }, [onboarding, harness.workingThreadIds])
+  useEffect(() => { if (harness.phase === 'ready') void onboarding.restoreSaved().catch(() => {}) }, [onboarding, harness.phase])
   const teams = useTeamsService(agentRuns)
   const harnessInstructionConfig = useRef(resolveHarnessInstructionConfig(codex.config))
   harnessInstructionConfig.current = resolveHarnessInstructionConfig(codex.config)
@@ -91,6 +118,7 @@ export default function App() {
     'harness.teams': teams,
     'harness.notifications': notifications,
     'harness.projectDocs': projectDocs,
+    'harness.projectOnboarding': onboarding,
     'harness.localConnectors': {
       health: runtime.localConnectorHealth,
       listMessages: runtime.localConnectorListMessages,
@@ -184,7 +212,7 @@ export default function App() {
       deliveryContext: runtime.workspaceDeliveryContext,
       openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
-  }), [teams, agentRuns, harness.onTurnCompleted, harness.onMessageSubmitted, harness.onUserInputRequested, harness.selectThread])
+  }), [teams, agentRuns, onboarding, harness.onTurnCompleted, harness.onMessageSubmitted, harness.onUserInputRequested, harness.selectThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {
@@ -205,12 +233,13 @@ export default function App() {
 
   return (
     <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances} services={services}>
-      <HarnessShell harness={harness} agentRuns={agentRuns} teams={teams} codex={codex} />
+      <HarnessShell harness={harness} agentRuns={agentRuns} teams={teams} codex={codex} onboarding={onboarding} />
     </PluginHostProvider>
   )
 }
 
-function HarnessShell({ harness, agentRuns, teams, codex }: {
+function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
+  onboarding: ProjectOnboardingService
   harness: ReturnType<typeof useUnifiedHarness>
   agentRuns: AgentRunService
   teams: TeamsService
@@ -220,7 +249,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
   const plugins = usePluginHost()
   const codexUpdate = useCodexUpdate(harness.selectedProvider === 'codex' ? harness.selectedThreadId : null, codex.reload)
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
-  useManagement({ harness, codex, plugins, flavor })
+  useManagement({ harness, codex, plugins, flavor, onboarding })
   const [tab, setTab] = useState('chat')
   useReminderSources(harness)
   const [remindersOpen, setRemindersOpen] = useState(false)
@@ -1077,7 +1106,7 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                       composerDraftWriterRef.current?.update(targetId, empty)
                       setComposerDrafts((current) => ({ ...current, [targetId]: empty }))
                     }
-                    // 第 1 轮发送成功：绑定 pending → locked，此后只读、不再注入项目卡。
+                    // 绑定后的背景消息发送成功：pending → locked，此后只读、不再注入项目卡。
                     try {
                       await projectBinding.lockOnSend()
                     } catch (error) {

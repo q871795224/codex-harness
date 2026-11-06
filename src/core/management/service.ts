@@ -6,8 +6,10 @@ import type { PluginInstanceRecord, PluginScope, PluginViewContext } from '../..
 import { runtime } from '../runtime/bridge'
 import { appServer } from '../runtime/appServerClient'
 import { managementMethods, type ManagementRequest } from './types'
+import type { ProjectOnboardingService } from '../project-onboarding/types'
 
 export interface ManagementContext {
+  onboarding?: ProjectOnboardingService
   harness: ReturnType<typeof useUnifiedHarness>
   codex: ReturnType<typeof useCodexCore>
   plugins: ReturnType<typeof usePluginHost>
@@ -86,6 +88,25 @@ export function createManagementHandler(get: () => ManagementContext) {
       throw new Error('应用目录尚未加载完成，请稍后查询')
     }
     switch (method) {
+      case 'projects.list':
+        if (!get().onboarding) throw new Error('项目会话接入服务不可用')
+        return { data: await get().onboarding!.listProjects() }
+      case 'projects.requestOnboarding': {
+        const service = get().onboarding
+        if (!service) throw new Error('项目会话接入服务不可用')
+        const mode = text(p, 'mode')
+        if (mode !== 'create' && mode !== 'join') throw new Error('mode 必须是 create 或 join')
+        const threadId = text(p, 'threadId')
+        const thread = h.threads.find(t => t.id === threadId)
+        if (!thread) throw new Error('请先在 Harness 打开来源会话')
+        const context: PluginViewContext = { threadId, provider: threadId.startsWith('claude:') ? 'claude' : 'codex',
+          threadCwd: thread.cwd, workspaceRoot: h.threadRoots[threadId] ?? thread.cwd }
+        if (!plugins.resolvedConversationBanners(context).some(b => b.pluginId === 'builtin.project-doc' && b.contribution.id === 'project-onboarding')) {
+          throw new Error('来源会话的项目文档插件未启用，无法显示确认卡')
+        }
+        return service.request(threadId, { mode, requestedBy: 'agent',
+          name: typeof p.name === 'string' ? p.name : undefined, projectId: mode === 'join' ? text(p, 'projectId') : undefined })
+      }
       case 'capabilities':
         return { protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),
           pluginSystem: 'Harness PluginHost（与 Codex/Claude 插件各自独立）', scope: '运行中的 Harness 实例；异步等待就绪后按已登记动作启动原会话轮次' }

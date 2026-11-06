@@ -6,6 +6,10 @@
 
 Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnessctl.py ...`。仓库开发时使用 `python3 .agents/skills/harness-runtime/harnessctl.py ...`。旧私有安装可继续调用兼容管理接口，但不再是本功能的运行依赖。
 
+## 会话中途新建或加入项目
+
+`projects.list` 返回项目元数据；`projects.requestOnboarding` 接受 `threadId`、`mode`（create/join）、`name`（新建）或 `projectId`（加入）。来源会话必须存在，且项目文档插件的确认卡在该作用域启用。此接口只申请显示确认卡，不启动任务、创建项目、写文档或改变绑定；必须由用户在界面确认。申请返回 `requestId` 和 `phase`，不能把确认卡已显示当作操作已完成。流程见 [从会话建立项目记忆](project-doc-onboarding.md)。
+
 ## 连接与执行
 
 应用 setup 复用现有 loopback HTTP listener，另外原子发布 `~/.codex-harness/management-server.json`（0600）。文件包含 `baseUrl`、随机 `token`、`pid`、`protocolVersion: 1`、`harnessVersion`。稳定版/开发版沿用最后启动实例发布端点的规则；退出只清除自己的注册。不要打印 token。CLI 不走代理或跟随重定向。

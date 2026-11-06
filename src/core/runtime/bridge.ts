@@ -43,6 +43,7 @@ import type { ProjectDocProposal } from '../project-docs/types'
 import type { SectionKey } from '../../features/project-doc/document'
 import { createThreadPermissionRequest } from './threadPermissions'
 import type { ManagementRequest } from '../management/types'
+import type { OnboardingCommit, OnboardingReceipt } from '../project-onboarding/types'
 
 const requestWithThreadPermissions = createThreadPermissionRequest({
   request: (method, params) => invoke('app_server_request', { method, params }),
@@ -110,6 +111,9 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
 }
 
 export const runtime = {
+  projectDocPendingOnboardings: () => invoke<Array<OnboardingReceipt & {requestId: string; threadId: string; name: string}>>('project_doc_pending_onboardings'),
+  projectDocCommitOnboarding: (input: OnboardingCommit) => invoke<OnboardingReceipt>('project_doc_commit_onboarding', { input }),
+  projectDocFinishOnboarding: (requestId: string, threadId: string, workspaceRoot: string) => invoke<string>('project_doc_finish_onboarding', { requestId, threadId, workspaceRoot }),
   routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),
   listAsyncWaits: () => invoke<AsyncWaitSnapshot>('async_wait_list'),
   createAsyncWait: (input: CreateAsyncWait) => invoke<AsyncWaitTask>('async_wait_create', { input }),

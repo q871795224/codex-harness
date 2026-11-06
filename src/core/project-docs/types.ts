@@ -4,6 +4,7 @@
  */
 
 import type { SectionKey } from '../../features/project-doc/document'
+import type { OnboardingCommit, OnboardingReceipt } from '../project-onboarding/types'
 import type {
   DocumentMeasure, CompactionInput, CompactionResult,
   ProjectDocSnapshot,
@@ -14,8 +15,8 @@ import type {
 
 /**
  * 会话 ↔ 项目绑定的生命周期（方案乙，见 .harness/project-doc-plugin-plan.md 第 1 节）。
- * - pending：第 0 轮草稿态，可改可取消，发送第 1 轮才转 locked。
- * - locked：第 1 轮已发送，绑定锁死，只读不可改。
+ * - pending：项目背景尚未随绑定后的消息发送；支持新会话选择或中途确认接入。
+ * - locked：绑定后的背景消息已发送，归属固定，只读不可改。
  * 旧的纯 projectId 字符串记录一律视为 locked（它们产生于即绑即锁的老逻辑）。
  */
 export type ThreadProjectBindingPhase = 'pending' | 'locked'
@@ -37,6 +38,8 @@ export interface ProjectDocProposal {
 }
 
 export interface ProjectDocService {
+  commitOnboarding(input: OnboardingCommit): Promise<OnboardingReceipt>
+  finishOnboarding(requestId: string, threadId: string, workspaceRoot: string): Promise<string>
   context(projectId: string, threshold: number): Promise<import('../../features/project-doc/types').ProjectContext>
   mutateEntry(projectId: string, mutation: import('../../features/project-doc/types').EntryMutation): Promise<ProjectDocWriteOutcome>
   measure(projectId: string): Promise<DocumentMeasure>

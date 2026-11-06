@@ -886,6 +886,44 @@ fn project_doc_thread_binding(
 }
 
 #[tauri::command]
+fn project_doc_pending_onboardings(state: State<'_, AppState>) -> Result<Vec<project_doc_store::SavedOnboarding>, String> {
+    let saved = project_docs(&state)?.as_ref().unwrap().saved_onboardings()?;
+    let mut pending = Vec::new();
+    for card in saved {
+        if state.store.get_app_state(&format!("projectOnboardingFinished:{}", card.request_id))?.is_none() { pending.push(card); }
+    }
+    Ok(pending)
+}
+
+#[tauri::command]
+fn project_doc_commit_onboarding(state: State<'_, AppState>, input: project_doc_store::OnboardingCommit) -> Result<project_doc_store::OnboardingReceipt, String> {
+    if let Some(binding) = state.store.project_thread_binding(&input.thread_id)? {
+        let docs = project_docs(&state)?;
+        let receipt = docs.as_ref().unwrap().onboarding_receipt(&input.request_id, &input.thread_id)?;
+        if binding.project_id != input.project_id || receipt.is_none() { return Err("会话已加入项目，请刷新后重试".into()); }
+    }
+    project_docs(&state)?.as_ref().unwrap().commit_onboarding(&input)
+}
+
+#[tauri::command]
+async fn project_doc_finish_onboarding(state: State<'_, AppState>, request_id: String, thread_id: String, workspace_root: String) -> Result<String, String> {
+    if thread_id.starts_with("claude:") {
+        let status = state.claude_runtime.request("session/status", json!({"sessionId":thread_id})).await?;
+        if status["active"] == true || status["backgroundTaskCount"].as_u64().unwrap_or(0) > 0 {
+            return Err("来源会话正在执行，请等待轮次结束".into());
+        }
+    } else {
+        state.app_server.ensure_project_join_idle(&thread_id).await?;
+    }
+    let docs = project_docs(&state)?;
+    let docs = docs.as_ref().unwrap();
+    let receipt = docs.onboarding_receipt(&request_id, &thread_id)?.ok_or("项目文档尚未保存")?;
+    docs.bind_workspace(&receipt.project_id, &workspace_root)?;
+    state.store.change_project_thread_binding(&thread_id, store::project_bindings::BindingChange::Join(&receipt.project_id, &request_id))?;
+    Ok(receipt.project_id)
+}
+
+#[tauri::command]
 fn project_doc_bind_thread(
     state: State<'_, AppState>,
     thread_id: String,
@@ -1521,6 +1559,9 @@ pub fn run() {
             write_handover_document,
             read_handover_document,
             project_doc_thread_binding,
+            project_doc_commit_onboarding,
+            project_doc_pending_onboardings,
+            project_doc_finish_onboarding,
             project_doc_bind_thread,
             project_doc_lock_thread_binding,
             project_doc_unbind_thread,

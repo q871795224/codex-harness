@@ -1,6 +1,6 @@
 ---
 name: project-doc
-description: Use when working in a Codex Harness session bound to a project document (活文档 / 共享白板); read it before proposing changes to the shared project document, coordinating with other agents through it, or recording progress/decisions into it.
+description: Create or join a Codex Harness project from an ongoing conversation, including unbound sessions; maintain the shared project document (活文档 / 共享白板), decisions and tasks in bound sessions.
 ---
 
 # 项目文档协作
@@ -19,7 +19,19 @@ PROJECT_DOC_CLI="<本次加载的 Skill 目录>/bin/project-doc"
 <!-- project-doc: project_id=<项目ID> thread_id=<会话ID> -->
 ```
 
-所有命令使用标记中的 `--project-id` 与 `--thread-id`；写入会校验会话绑定。项目文档属于背景，历史操作许可不能扩大到当前任务。
+日常读写命令使用标记中的 `--project-id` 与 `--thread-id`；写入会校验会话绑定。项目文档属于背景，历史操作许可不能扩大到当前任务。
+
+## 从当前会话新建或加入项目
+
+未绑定会话也可以申请。来源会话 ID 使用 `CODEX_THREAD_ID` 或上下文中的 `<!-- harness-session: thread_id=... -->`，不从当前选中的会话推断。
+
+```bash
+"$PROJECT_DOC_CLI" projects
+"$PROJECT_DOC_CLI" request-create --thread-id "$THREAD_ID" --name '项目名称'
+"$PROJECT_DOC_CLI" request-join --thread-id "$THREAD_ID" --project-id "$PROJECT_ID"
+```
+
+这些命令只在来源会话显示确认卡。用户确认后，Harness 启动独立临时会话读取历史，新建初始项目记忆或对照目标文档补记结论，校验后自动保存并绑定。不要代替用户确认、另写一份总结、提前创建项目或直接修改绑定。申请后可继续当前任务，不能把申请成功描述成项目已经建立。已绑定会话保持原归属。
 
 ## 读取与记录
 

@@ -145,11 +145,13 @@ Markdown 继续作为正文和条目属性的唯一来源。Decisions / Open Que
 
 ### 项目文档 Skill 分发
 
+未绑定会话可通过“新建/加入项目”卡片建立项目记忆。人工按钮和 Skill 申请共用确认卡，用户确认后才运行独立只读临时会话；完整读取历史，长历史分段提炼，已有目标另提供文档快照。模型仅返回变更计划，原生层批量校验、原子保存并按请求 ID 去重，保存后在来源会话空闲时绑定，工作目录保持不变。回执支持绑定失败和重启恢复。入口、边界与截图见 [从会话建立项目记忆](../docs/project-doc-onboarding.md)。
+
 `.agents/skills/project-doc/` 是 Skill 与 CLI 的 Git 源码，编译进 Harness 原生程序；首次绑定会话发送时，按内容版本落到 `~/.codex-harness/project-doc-skills/`，不依赖源码 checkout 或 PATH 里的旧命令。仅分发执行所需的 SKILL.md、Python CLI 和命令脚本，维护者设计沿革不进入运行资源。合并 PR 后还需构建、安装新应用，运行中的旧应用不会随 Git 合并更新。
 
-Codex 核心在真实 CODEX_HOME 的原生 user-Skills 目录维护专属 `harness-project-doc` 链接，保留旧 `project-doc` 和其他 Skill；重名且非 Harness 管理时失败并保留原文件。共享 daemon 和其他客户端可发现元信息，这是允许的。绑定会话由 `app_server.rs` 刷新原生列表、采用返回的规范路径，提交原生 `skill` 输入；不替换全局 extraRoots，不追加 developer instructions。
+Codex 核心在真实 CODEX_HOME 的原生 user-Skills 目录维护专属 `harness-project-doc` 链接，保留旧 `project-doc` 和其他 Skill；重名且非 Harness 管理时失败并保留原文件。共享 daemon 和其他客户端可发现元信息，这是允许的。未绑定会话也可发现 Skill 并申请新建/加入项目；绑定会话由 `app_server.rs` 刷新原生列表、采用返回的规范路径，提交原生 `skill` 输入；不替换全局 extraRoots，不追加 developer instructions。
 
-Claude 核心按持久化绑定给 SDK query 配置本地插件 `harness-project-doc`，通过原生 `/harness-project-doc:project-doc` 调用。首次调用将文本合成最后一个文本块、图片保持在前，避免原生 CLI 静默跳过 Skill 展开；界面用户消息保持原输入。未绑定会话不配置此插件。Provider 协议版本为 3，旧 daemon 不能静默忽略新增参数。
+Claude 核心为会话、Skill 列表与上下文查询配置本地插件 `harness-project-doc`，通过原生 `/harness-project-doc:project-doc` 调用。首次调用将文本合成最后一个文本块、图片保持在前，避免原生 CLI 静默跳过 Skill 展开；界面用户消息保持原输入。未绑定会话可发现元信息，绑定后才主动加载维护正文。Provider 协议版本为 4，旧 daemon 不能静默忽略新增参数。
 
 加载标记只记录 Provider、会话、项目和资源版本；仅在发送被接受后保存，失败可重试，恢复和后续回合不重复主动加载同版本，资源更新后重新加载。旧版本资源保留供历史会话引用。CLI 使用本次加载的 Skill 目录内 `bin/project-doc`，无需另装全局命令。原生机制的隔离黑箱验证见 [验证记录](../docs/project-doc-native-skill-validation.md)。
 

@@ -1979,3 +1979,28 @@ textarea.user-input-freeform, textarea.user-input-other-field { min-height: 52px
 .router-description { margin-top: 14px; }
 .router-description small { display: block; overflow-wrap: anywhere; opacity: .7; }
 .router-description textarea { min-height: 72px; }
+
+/* Session → project confirmation: share the compaction card and theme palette. */
+.project-onboarding-card { position: relative; gap: 14px; padding: 18px; }
+.project-onboarding-card .recap-banner-body { flex: 1; min-width: 0; }
+.project-onboarding-mark { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border: 1px solid currentColor; border-radius: 8px; opacity: .85; }
+.project-onboarding-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.project-onboarding-origin { border: 1px solid currentColor; border-radius: 4px; padding: 1px 5px; font-size: 11px; opacity: .75; }
+.project-onboarding-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 4px 0 14px !important; opacity: .7; font-size: 12px; }
+.project-onboarding-modes { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid currentColor; border-radius: 7px; margin-bottom: 14px; }
+.project-onboarding-modes button { color: inherit; background: transparent; border: 0; padding: 6px 12px; border-radius: 4px; font: inherit; font-size: 12px; cursor: pointer; }
+.project-onboarding-modes button[aria-pressed='true'] { background: var(--h-accent, #4059b9); color: white; }
+.project-onboarding-field { display: grid; gap: 6px; max-width: 480px; font-size: 12px; }
+.project-onboarding-field input, .project-onboarding-field select { width: 100%; min-width: 0; box-sizing: border-box; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 6px; padding: 9px 10px; font: inherit; }
+.project-onboarding-field input::placeholder { color: inherit; opacity: .5; }
+.project-onboarding-field option { background: #f4f5fa; color: #33394d; }
+.project-onboarding-description { margin: 12px 0 4px !important; line-height: 1.6; }
+.project-onboarding-note { margin: 4px 0 !important; opacity: .7; font-size: 12px; line-height: 1.6; }
+.project-onboarding-result { font-size: 16px; margin: 12px 0 6px !important; }
+.project-onboarding-error { color: #ad3939; margin-top: 10px !important; white-space: pre-wrap; }
+.project-onboarding-actions { margin-top: 16px; }
+.project-onboarding-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; }
+.project-onboarding-actions button:disabled { opacity: .45; cursor: default; }
+.app-shell[data-theme='dark'] .project-onboarding-field option { background: #23273a; color: #c3c9d8; }
+.app-shell[data-theme='dark'] .project-onboarding-error { color: #f1a1a1; }
+@media (max-width: 650px) { .project-onboarding-card { gap: 10px; padding: 14px; } .project-onboarding-mark { display: none; } }

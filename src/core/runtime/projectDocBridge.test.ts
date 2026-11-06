@@ -3,6 +3,14 @@ import { invoke } from '@tauri-apps/api/core'
 import { runtime } from './bridge'
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => undefined) }))
 
+it('commits one onboarding change set and activates only the matching saved receipt', async () => {
+  const input = { requestId:'r', threadId:'t', projectId:'p', name:null, baseSeq:4, status:null, log:['进展'], decisions:[], openQuestions:[], mutations:[] }
+  await runtime.projectDocCommitOnboarding(input)
+  expect(invoke).toHaveBeenLastCalledWith('project_doc_commit_onboarding', {input})
+  await runtime.projectDocFinishOnboarding('r','t','/original')
+  expect(invoke).toHaveBeenLastCalledWith('project_doc_finish_onboarding', {requestId:'r',threadId:'t',workspaceRoot:'/original'})
+})
+
 it('passes project rename and archive arguments through IPC and preserves failures', async () => {
   await runtime.projectDocRename('demo', '新名称')
   expect(invoke).toHaveBeenCalledWith('project_doc_rename', { projectId: 'demo', name: '新名称' })

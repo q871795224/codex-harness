@@ -176,7 +176,7 @@ async function claudeProbe(mode) {
         const hold = new Promise(r => release = r);
         async function* input() { yield { type: 'user', session_id: '', parent_tool_use_id: null, message: { role: 'user', content: [image, { type: 'text', text: text + ' ' + background + '\n\n' + original }] } }; await hold; }
         const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 30000);
-        const q = query({ prompt: input(), options: { cwd: project, ...(mode === 'bound' ? { plugins: [{ type: 'local', path: plugin }] } : {}), ...(resume ? { resume } : {}), settingSources: [], model: 'claude-sonnet-4-5', env, maxTurns: 2, persistSession: mode === 'bound', abortController: abort, pathToClaudeCodeExecutable: execFileSync('which', ['claude'], { encoding: 'utf8' }).trim() } });
+        const q = query({ prompt: input(), options: { cwd: project, plugins: [{ type: 'local', path: plugin }], ...(resume ? { resume } : {}), settingSources: [], model: 'claude-sonnet-4-5', env, maxTurns: 2, persistSession: mode === 'bound', abortController: abort, pathToClaudeCodeExecutable: execFileSync('which', ['claude'], { encoding: 'utf8' }).trim() } });
         const messages = [], requestStart = captures.length;
         try {
             for await (const msg of q) {

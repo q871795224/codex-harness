@@ -1,4 +1,6 @@
 import type { ConversationService } from '../../core/conversations/types'
+import type { ProjectOnboardingService } from '../../core/project-onboarding/types'
+import { OnboardingBanner, OnboardingButton } from './OnboardingCard'
 import { CompactionBanner, CompactionButton, watchCompaction, type CompactionDeps } from './CompactionCard'
 import type { NotificationService } from '../../core/notifications/store'
 import { Archive, LoaderCircle, NotebookPen } from 'lucide-react'
@@ -55,6 +57,13 @@ export const projectDocPlugin: HarnessPlugin = {
       config: readProjectDocConfig(ctx.config), instanceId: ctx.instanceId, storage: ctx.storage,
     }
     const conversations = ctx.services.optional<ConversationService>('harness.conversations')
+    const onboarding = ctx.services.optional<ProjectOnboardingService>('harness.projectOnboarding')
+    if (onboarding) {
+      ctx.slots.composerActions.register({ id: 'onboard-project', order: 12,
+        render: props => <OnboardingButton service={onboarding} docs={service} threadId={props.threadId} disabled={props.disabled} /> })
+      ctx.slots.conversationBanners.register({ id: 'project-onboarding', order: 11,
+        render: props => <OnboardingBanner service={onboarding} props={props} settings={{ instanceId: ctx.instanceId, model: compaction.config.archiveModel, effort: compaction.config.archiveEffort }} /> })
+    }
     if (conversations) ctx.effect(watchCompaction(conversations))
     ctx.slots.conversationBanners.register({
       id: 'compaction', order: 10,

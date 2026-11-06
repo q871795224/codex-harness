@@ -6,7 +6,7 @@ import type { ProjectMeta } from './types'
  * 会话 ↔ 项目绑定意图的单一事实源（方案乙，见 .harness/project-doc-plugin-plan.md）。
  *
  * - 第 0 轮：绑定面板改 / 删折叠卡都只是改 pending 意图；本 hook 提供绑定状态与操作。
- * - 第 1 轮发送成功：调用方（App）触发 `lockOnSend`，pending → locked，此后只读。
+ * - 绑定后的背景消息发送成功：调用方（App）触发 `lockOnSend`，pending → locked，此后只读。
  * - 折叠卡是绑定意图在输入框里的投影，由 Composer 依据 App 传入的 spec 维护。
  */
 export interface ProjectBindingState {

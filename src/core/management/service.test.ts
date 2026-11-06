@@ -22,6 +22,18 @@ function fixture() {
 beforeEach(() => vi.clearAllMocks())
 
 describe('management uses effective application state', () => {
+  it('routes an Agent onboarding request to the same confirmation service, never to execution', async () => {
+    const {context,call}=fixture()
+    context.harness.threads=[{id:'source',cwd:'/source'}] as never
+    context.harness.threadRoots={source:'/source'}
+    context.plugins.resolvedConversationBanners=vi.fn(() => [{pluginId:'builtin.project-doc',contribution:{id:'project-onboarding'}}]) as never
+    const request=vi.fn(async () => ({requestId:'pending',phase:'confirm'}))
+    context.onboarding={request} as never
+    expect(await call('projects.requestOnboarding',{threadId:'source',mode:'create',name:'新项目'})).toEqual({requestId:'pending',phase:'confirm'})
+    expect(request).toHaveBeenCalledWith('source',{mode:'create',name:'新项目',projectId:undefined,requestedBy:'agent'})
+    context.plugins.resolvedConversationBanners=vi.fn(() => [])
+    await expect(call('projects.requestOnboarding',{threadId:'source',mode:'create'})).rejects.toThrow('插件未启用')
+  })
   it('returns all 17 runtime workspaces even when only 7 are explicitly registered', async () => {
     const { context, call } = fixture()
     vi.mocked(runtime.listWorkspaces).mockResolvedValue(context.harness.allWorkspaces.slice(0, 7))

@@ -171,6 +171,10 @@ export function query({prompt, options}) {
   const plain = await turn({sessionId:'unbound', input:[{type:'text',text:'plain'}]})
   assert.deepEqual(plain.plugins, [])
   assert.equal(plain.content, 'plain')
+  const discovery = await turn({sessionId:'unbound-native',input:[{type:'text',text:'plain'}],
+    projectDocSkill:{...config,invoke:false,sourceThreadId:'claude:unbound-native'}})
+  assert.deepEqual(discovery.plugins, first.plugins)
+  assert.equal(discovery.content, 'plain\n\n<!-- harness-session: thread_id=claude:unbound-native -->')
   const userEvent = daemon.messages.find(message => message.method === 'message/user')
   assert.deepEqual(userEvent.params.content, originalInput)
 })
