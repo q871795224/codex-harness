@@ -9,6 +9,11 @@ import type { TeamsService } from './core/teams/types'
 import { useTeamsService } from './core/teams/react'
 import { MemoryButton } from './features/memory/MemoryButton'
 import { createMemoryService } from './core/memory/service'
+import { createProjectOnboarding } from './core/project-onboarding/service'
+import { onboardingHistory } from './core/project-onboarding/history'
+import { prepareProjectInput } from './core/project-onboarding/context'
+import { appServer } from './core/runtime/appServerClient'
+import { ONBOARDING_REQUEST_STATE_PREFIX, type ProjectOnboardingService } from './core/project-onboarding/types'
 import { notifications } from './core/notifications/service'
 import type { NotificationAction } from './core/notifications/store'
 import { NotificationCenter } from './features/notifications/Notifications'
@@ -81,6 +86,32 @@ export default function App() {
     [harness.selectThread],
   )
   const agentRuns = useAgentRunService(selectAgentRunThread, harness.startTurnInThread)
+  const onboardingHarness = useRef(harness)
+  onboardingHarness.current = harness
+  const onboarding = useMemo(() => createProjectOnboarding({
+    requests: runtime.projectOnboardingRequests,
+    saveRequest: request => runtime.setAppState(`${ONBOARDING_REQUEST_STATE_PREFIX}${request.id}`, JSON.stringify(request)),
+    removeRequest: id => runtime.setAppState(`${ONBOARDING_REQUEST_STATE_PREFIX}${id}`, ''),
+    saved: runtime.projectDocPendingOnboardings,
+    source: async threadId => {
+      let thread = onboardingHarness.current.threads.find(t => t.id === threadId)
+      if (!thread && threadId.startsWith('claude:')) {
+        const session = (await runtime.listClaudeSessions()).find(s => s.id === threadId)
+        if (session) return { threadId, title: session.title, cwd: session.cwd }
+      }
+      if (!thread && !threadId.startsWith('claude:')) thread = (await appServer.readThread({ threadId, includeTurns: false })).thread
+      if (!thread?.cwd) throw new Error('来源会话不存在或缺少工作目录')
+      return { threadId, title: threadTitle(thread), cwd: thread.cwd }
+    },
+    busy: threadId => Boolean(onboardingHarness.current.workingThreadIds[threadId]),
+    history: onboardingHistory,
+    project: projectDocs.read,
+    binding: projectDocs.threadBinding,
+    commit: projectDocs.commitOnboarding,
+    finish: projectDocs.finishOnboarding,
+  }, projectDocs, agentRuns), [agentRuns])
+  useEffect(() => { void onboarding.resumeBindings() }, [onboarding, harness.workingThreadIds])
+  useEffect(() => { if (harness.phase === 'ready') void onboarding.restoreSaved().catch(() => {}) }, [onboarding, harness.phase])
   const teams = useTeamsService(agentRuns)
   const harnessInstructionConfig = useRef(resolveHarnessInstructionConfig(codex.config))
   harnessInstructionConfig.current = resolveHarnessInstructionConfig(codex.config)
@@ -89,6 +120,7 @@ export default function App() {
     'harness.teams': teams,
     'harness.notifications': notifications,
     'harness.projectDocs': projectDocs,
+    'harness.projectOnboarding': onboarding,
     'harness.localConnectors': {
       health: runtime.localConnectorHealth,
       listMessages: runtime.localConnectorListMessages,
@@ -182,7 +214,7 @@ export default function App() {
       deliveryContext: runtime.workspaceDeliveryContext,
       openUrl: runtime.openExternalUrl,
     } satisfies AppLauncherService,
-  }), [teams, agentRuns, harness.onTurnCompleted, harness.onMessageSubmitted, harness.onUserInputRequested, harness.selectThread])
+  }), [teams, agentRuns, onboarding, harness.onTurnCompleted, harness.onMessageSubmitted, harness.onUserInputRequested, harness.selectThread])
 
   useEffect(() => {
     const recordUnhandledError = () => {
@@ -203,22 +235,25 @@ export default function App() {
 
   return (
     <PluginHostProvider definitions={builtInPlugins} defaultInstances={defaultPluginInstances} services={services}>
-      <HarnessShell harness={harness} agentRuns={agentRuns} teams={teams} codex={codex} />
+      <HarnessShell harness={harness} agentRuns={agentRuns} teams={teams} codex={codex} onboarding={onboarding} />
     </PluginHostProvider>
   )
 }
 
-function HarnessShell({ harness, agentRuns, teams, codex }: {
+function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
+  onboarding: ProjectOnboardingService
   harness: ReturnType<typeof useUnifiedHarness>
   agentRuns: AgentRunService
   teams: TeamsService
   codex: ReturnType<typeof useCodexCore>
 }) {
+  const selectedThreadRef = useRef(harness.selectedThreadId)
+  selectedThreadRef.current = harness.selectedThreadId
   const { mode, selectMode, teamVisited } = useInterfaceMode(runtime, (error) => harness.notify('无法保存工作模式', 'error', error))
   const plugins = usePluginHost()
   const codexUpdate = useCodexUpdate(harness.selectedProvider === 'codex' ? harness.selectedThreadId : null, codex.reload)
   const flavor = import.meta.env.MODE === 'dev' ? 'dev' : 'stable'
-  useManagement({ harness, codex, plugins, flavor })
+  useManagement({ harness, codex, plugins, flavor, onboarding })
   const [tab, setTab] = useState('chat')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [selectedNotificationId, setSelectedNotificationId] = useState<string | undefined>()
@@ -1060,9 +1095,11 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                   onSend={async (input, mode, references, titleSource) => {
                     const threadId = harness.currentThread!.id
                     const submittedDraft = queuedComposerDraftsRef.current[threadId]
+                    const prepared = await prepareProjectInput(projectDocs, threadId, input, projectDocThreshold)
+                    if (selectedThreadRef.current !== threadId) throw new Error('会话已切换，消息未发送；请回到来源会话继续')
                     scrollRequestSequence.current += 1
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
-                    await harness.sendMessage(input, mode, references, titleSource)
+                    await harness.sendMessage(prepared.input, mode, references, titleSource)
                     const targetId = draftReplacementIdsRef.current[threadId] ?? threadId
                     if (submittedDraft) setConsumedComposerDrafts((current) => ({ ...current, [targetId]: submittedDraft }))
                     if (sameComposerDraft(queuedComposerDraftsRef.current[targetId], submittedDraft)) {
@@ -1071,9 +1108,9 @@ function HarnessShell({ harness, agentRuns, teams, codex }: {
                       composerDraftWriterRef.current?.update(targetId, empty)
                       setComposerDrafts((current) => ({ ...current, [targetId]: empty }))
                     }
-                    // 第 1 轮发送成功：绑定 pending → locked，此后只读、不再注入项目卡。
+                    // 绑定后的背景消息发送成功：pending → locked，此后只读、不再注入项目卡。
                     try {
-                      await projectBinding.lockOnSend()
+                      if (prepared.projectId) await projectBinding.lockOnSend()
                     } catch (error) {
                       // 消息已经发送，仍让 Composer 消耗草稿，避免用户重复发送。
                       harness.notify('消息已发送，但项目绑定尚未锁定。', 'warning', error)

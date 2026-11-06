@@ -7,6 +7,12 @@ export function createProjectDocService(): ProjectDocService {
     for (const listener of [...bindingListeners]) listener()
   }
   return {
+    commitOnboarding: input => runtime.projectDocCommitOnboarding(input),
+    finishOnboarding: async (requestId, threadId, workspaceRoot) => {
+      const id = await runtime.projectDocFinishOnboarding(requestId, threadId, workspaceRoot)
+      notifyBindings()
+      return id
+    },
     context: (id, threshold) => runtime.projectDocContext(id, threshold),
     mutateEntry: (id, mutation) => runtime.projectDocMutateEntry(id, mutation),
     measure: (id) => runtime.projectDocMeasure(id),

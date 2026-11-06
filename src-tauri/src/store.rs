@@ -4,6 +4,7 @@ pub use teams::TeamDocument;
 mod memory;
 pub use memory::{MemoryCatalog, MemoryDomainSettings, MemorySaveInput, SavedMemory};
 pub mod project_bindings;
+pub mod onboarding_requests;
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};

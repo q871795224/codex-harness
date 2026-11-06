@@ -143,6 +143,12 @@ fn wait_thread_idle(value: &Value) -> bool {
 }
 
 impl AppServerManager {
+    pub async fn ensure_project_join_idle(&self, thread: &str) -> Result<(), String> {
+        let result = self.request("thread/read".into(), json!({"threadId":thread,"includeTurns":false})).await?;
+        if wait_thread_unavailable(&result) { return Err("来源会话已归档或不可继续".into()); }
+        if !wait_thread_idle(&result) { return Err("来源会话正在执行，请等待轮次结束".into()); }
+        Ok(())
+    }
     pub fn new(
         app: AppHandle,
         diagnostics: Arc<DiagnosticLog>,
@@ -375,7 +381,7 @@ impl AppServerManager {
                 Some(thread) => self.project_skill.prepare("codex", thread)?,
                 None => None,
             };
-            if let Some(load) = load.as_ref().filter(|load| load.needed) {
+            if let Some(load) = load.as_ref().filter(|load| load.refresh) {
                 let path = load.register_codex(&resolved_codex_home()?)?;
                 let connection = self.connection().await?;
                 let cwd = if let Some(cwd) = params["cwd"].as_str() {
@@ -392,8 +398,13 @@ impl AppServerManager {
                     &connection, "skills/list".into(),
                     json!({"cwds":[cwd],"forceReload":true}),
                 ).await?;
-                let skill = crate::project_doc_skill::discovered_skill(&listing, &path)?;
-                crate::project_doc_skill::add_codex_input(&mut params, skill)?;
+                if load.needed {
+                    let skill = crate::project_doc_skill::discovered_skill(&listing, &path)?;
+                    crate::project_doc_skill::add_codex_input(&mut params, skill)?;
+                }
+                if let Some(input) = params["input"].as_array_mut() {
+                    input.push(json!({"type":"text","text":format!("<!-- harness-session: thread_id={} -->",load.thread),"text_elements":[]}));
+                }
             }
             load
         } else {
@@ -430,7 +441,7 @@ impl AppServerManager {
             }
         }
         if result.is_ok() {
-            if let Some(load) = skill_load.as_ref().filter(|load| load.needed) {
+            if let Some(load) = skill_load.as_ref().filter(|load| load.refresh) {
                 if self.project_skill.accepted(load).is_err() {
                     // A successful send must not become a failed send in the UI.
                     self.diagnostics.record("error", "project-doc", "skill.marker_failed", json!({}));

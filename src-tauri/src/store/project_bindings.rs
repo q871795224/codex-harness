@@ -14,6 +14,7 @@ pub struct ThreadProjectBinding {
 
 pub enum BindingChange<'a> {
     Bind(&'a str),
+    Join(&'a str, &'a str),
     Lock,
     Unbind,
 }
@@ -72,6 +73,15 @@ impl HarnessStore {
         let mut bindings = parse(raw)?;
         let binding = bindings.get(thread_id).and_then(normalize);
         match change {
+            BindingChange::Join(project_id, request_id) => {
+                if thread_id.is_empty() || project_id.is_empty() { return Err("项目和会话 ID 不能为空".into()); }
+                if binding.as_ref().is_some_and(|b| b.project_id != project_id) { return Err("会话已加入其他项目".into()); }
+                tx.execute("INSERT INTO app_state(state_key,state_value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(state_key) DO UPDATE SET state_value=excluded.state_value,updated_at=excluded.updated_at",
+                    params![format!("projectOnboardingFinished:{request_id}"),project_id,now_ms()]).map_err(|e|e.to_string())?;
+                if binding.is_none() {
+                    bindings.insert(thread_id.to_string(), json!({"projectId":project_id,"phase":"pending"}));
+                }
+            }
             BindingChange::Bind(project_id) => {
                 if project_id.is_empty() || thread_id.is_empty() {
                     return Err("项目和会话 ID 不能为空".to_string());
@@ -123,6 +133,17 @@ impl HarnessStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn onboarding_finishes_once_and_never_unlocks_or_moves_an_existing_binding() {
+        let dir=tempfile::tempdir().unwrap(); let store=HarnessStore::open_at(dir.path().into()).unwrap();
+        store.change_project_thread_binding("t",BindingChange::Join("p","request")).unwrap();
+        assert_eq!(store.get_app_state("projectOnboardingFinished:request").unwrap().as_deref(),Some("p"));
+        store.change_project_thread_binding("t",BindingChange::Lock).unwrap();
+        store.change_project_thread_binding("t",BindingChange::Join("p","request")).unwrap();
+        assert_eq!(store.project_thread_binding("t").unwrap().unwrap().phase,"locked");
+        assert!(store.change_project_thread_binding("t",BindingChange::Join("other","other-request")).is_err());
+        assert!(store.get_app_state("projectOnboardingFinished:other-request").unwrap().is_none());
+    }
 
     #[test]
     fn pending_can_change_or_unbind_but_locked_and_legacy_cannot() {

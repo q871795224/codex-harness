@@ -1983,6 +1983,12 @@ textarea.user-input-other-field { min-height: 19px; }
 .router-description small { display: block; overflow-wrap: anywhere; opacity: .7; }
 .router-description textarea { min-height: 72px; }
 
+/* Project choices reuse the question card, option rows and action palette. */
+.project-onboarding-option input[type='radio'] { flex: 0 0 auto; width: 13px; height: 13px; margin: 0; accent-color: var(--h-accent, #4059b9); }
+.project-onboarding-option .user-input-other-label { flex: 0 0 auto; }
+.project-onboarding-option .user-input-other-field { min-width: 0; width: 100%; height: 24px; }
+.project-onboarding-actions { justify-content: flex-end; }
+
 .router-feedback-actions button { display: inline-flex; align-items: center; gap: 4px; }
 .router-feedback-actions .route-accurate[aria-pressed='true'] { color: #287a51; border-color: #287a51; background: #edf7f0; }
 .router-feedback-actions .route-inaccurate[aria-pressed='true'] { color: #b04444; border-color: #b04444; background: #fff2f1; }

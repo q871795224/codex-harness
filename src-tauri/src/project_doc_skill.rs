@@ -22,27 +22,33 @@ pub(crate) struct ProjectDocSkill {
 pub(crate) struct SkillLoad {
     pub bundle: PathBuf,
     pub needed: bool,
+    pub refresh: bool,
+    pub thread: String,
     key: String,
     stamp: String,
 }
 
 impl ProjectDocSkill {
+    pub fn plugin_root(&self) -> Result<PathBuf, String> {
+        Ok(materialize(&self.root, &bundle_version())?.join("claude-plugin"))
+    }
     pub fn new(store: Arc<HarnessStore>, root: PathBuf) -> Self {
         Self { store, root }
     }
 
     pub fn prepare(&self, provider: &str, thread: &str) -> Result<Option<SkillLoad>, String> {
-        let Some(binding) = self.store.project_thread_binding(thread)? else {
-            return Ok(None);
-        };
+        let binding = self.store.project_thread_binding(thread)?;
         let version = bundle_version();
         let key = format!("projectDocSkillLoaded:{provider}:{thread}");
-        let stamp = format!("{version}:{}", binding.project_id);
-        let needed = self.store.get_app_state(&key)?.as_deref() != Some(&stamp);
+        let stamp = format!("{version}:{}", binding.as_ref().map(|b|b.project_id.as_str()).unwrap_or("unbound"));
+        let refresh = self.store.get_app_state(&key)?.as_deref() != Some(&stamp);
+        let needed = binding.is_some() && refresh;
         let bundle = materialize(&self.root, &version)?;
         Ok(Some(SkillLoad {
             bundle,
             needed,
+            refresh,
+            thread: thread.into(),
             key,
             stamp,
         }))
@@ -115,7 +121,7 @@ fn materialize(root: &Path, version: &str) -> Result<PathBuf, String> {
 
 impl SkillLoad {
     pub fn claude_params(&self) -> Value {
-        json!({ "pluginRoot": self.bundle.join("claude-plugin"), "invoke": self.needed })
+        json!({ "pluginRoot": self.bundle.join("claude-plugin"), "invoke": self.needed, "sourceThreadId": if self.refresh { Some(&self.thread) } else { None } })
     }
 
     /// Register only our own native user-Skill link, leaving every other Skill and
@@ -198,8 +204,10 @@ mod tests {
         let store = Arc::new(HarnessStore::open_at(dir.path().join("state")).unwrap());
         let root = dir.path().join("bundles with spaces");
         let service = ProjectDocSkill::new(store.clone(), root.clone());
-        assert!(service.prepare("codex", "unbound").unwrap().is_none());
-        assert!(!root.exists());
+        let discovery = service.prepare("codex", "unbound").unwrap().unwrap();
+        assert!(!discovery.needed); assert!(discovery.refresh);
+        service.accepted(&discovery).unwrap();
+        assert!(!service.prepare("codex", "unbound").unwrap().unwrap().refresh);
         store
             .change_project_thread_binding("bound", BindingChange::Bind("p"))
             .unwrap();
@@ -255,6 +263,8 @@ mod tests {
         let load = SkillLoad {
             bundle,
             needed: true,
+            refresh: true,
+            thread: "fixture".into(),
             key: String::new(),
             stamp: String::new(),
         };
@@ -283,6 +293,8 @@ mod tests {
         let newer = SkillLoad {
             bundle: materialize(load.bundle.parent().unwrap(), "next-version").unwrap(),
             needed: true,
+            refresh: true,
+            thread: "fixture".into(),
             key: String::new(),
             stamp: String::new(),
         };

@@ -65,7 +65,7 @@ try {
 }
 const { getSessionMessages, query } = sdk
 
-const PROTOCOL_VERSION = 3
+const PROTOCOL_VERSION = 4
 const MAX_REPLAY_EVENTS = 5_000
 const DEFAULT_MAX_TURNS = 65_536
 const socketPath = process.env.CODEX_HARNESS_CLAUDE_SOCKET
@@ -570,6 +570,11 @@ async function startTurn(params) {
   try {
     const message = await userMessage(params.input, active.providerMessageId)
     const projectSkill = params.projectDocSkill
+    if (projectSkill?.sourceThreadId) {
+      const marker = `<!-- harness-session: thread_id=${projectSkill.sourceThreadId} -->`
+      if (typeof message.message.content === 'string') message.message.content += `\n\n${marker}`
+      else message.message.content.push({ type: 'text', text: marker })
+    }
     if (projectSkill?.invoke) {
       const command = '/harness-project-doc:project-doc '
       if (typeof message.message.content === 'string') {
@@ -618,7 +623,8 @@ async function startTurn(params) {
         ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true }
           : { canUseTool: (toolName, input, context) => approvalRequest(sessionId,
             activeTurns.get(sessionId)?.turnId ?? runtime.lastTurnId, toolName, input, context) }),
-        maxTurns: settings.maxTurns, includePartialMessages: true, abortController, env,
+        maxTurns: settings.maxTurns, includePartialMessages: true, abortController,
+        env: { ...env, CODEX_HARNESS_THREAD_ID: sessionId },
       } })
       sessionQueries.set(sessionId, runtime)
       active.runtime = runtime
@@ -647,6 +653,7 @@ async function queryOptions(params, abortController) {
   const permissionMode = params.permissionMode ?? 'default'
   return {
     cwd: params.cwd,
+    ...(params.projectDocSkill ? { plugins: [{ type: 'local', path: params.projectDocSkill.pluginRoot }] } : {}),
     ...(params.providerSessionId ? { resume: params.providerSessionId } : {}),
     ...(params.model ? { model: params.model } : {}),
     ...(params.effort ? { effort: params.effort } : {}),
@@ -702,6 +709,7 @@ async function readContext(params) {
         model: state.model,
         permissionMode: state.permissionMode,
         effort: state.effort,
+        projectDocSkill: params.projectDocSkill,
       }, abortController),
     })
     await contextQuery.initializationResult()
@@ -725,7 +733,7 @@ async function listSkills(params) {
   if (typeof params.cwd !== 'string' || !params.cwd) throw new Error('读取 Claude Skills 缺少 cwd')
   const abortController = new AbortController()
   try {
-    const skillsQuery = query({ prompt: waitForInput(), options: await queryOptions({ cwd: params.cwd }, abortController) })
+    const skillsQuery = query({ prompt: waitForInput(), options: await queryOptions({ cwd: params.cwd, projectDocSkill: params.projectDocSkill }, abortController) })
     const commands = await skillsQuery.supportedCommands()
     return { source: 'Claude Agent SDK supportedCommands',
       coverage: 'user-invocable command surface; includes commands, omits user-invocable:false skills', complete: false,
@@ -777,6 +785,7 @@ function sessionStatus(params) {
     sessionId: params.sessionId,
     providerSessionId: state.providerSessionId,
     active: Boolean(active),
+    backgroundTaskCount: sessionQueries.get(params.sessionId)?.backgroundTasks.size ?? 0,
     turnId: active?.turnId ?? null,
     lastTurnStatus: state.lastStatus,
     lastResult: state.lastResult,
@@ -793,7 +802,7 @@ async function handle(client, request) {
   const { id, method, params = {} } = request
   if (method === 'initialize') {
     const lastEventSeq = Number.isSafeInteger(params.lastEventSeq) ? params.lastEventSeq : 0
-    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.3.0', ...runtimeSnapshot() })
+    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.4.0', ...runtimeSnapshot() })
     for (const event of replayEvents) {
       if (event.seq > lastEventSeq) send(client, { ...event, replayed: true })
     }
