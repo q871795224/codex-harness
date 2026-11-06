@@ -185,7 +185,7 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
     snapshot: () => cards,
     subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn) } }, request, confirm,
     listProjects: () => docs.list(),
-    agentReplied: threadId => { if (cards.get(threadId)?.phase === 'done') service.dismiss(threadId) },
+    messageAccepted: threadId => { if (cards.get(threadId)?.phase === 'done') service.dismiss(threadId) },
     registerHost: settings => {
       hosts.set(settings.instanceId,settings)
       for (const card of cards.values()) if (card.instanceId === settings.instanceId) schedule(card)

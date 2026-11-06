@@ -243,18 +243,18 @@ it('cancels stale join generation on the next one-second check and ignores late 
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('keeps success until the same conversation receives an agent reply', async () => {
+it('keeps success until the user sends another message in the same conversation', async () => {
   vi.useFakeTimers()
   const f=fixture()
   await f.service.request('t')
-  f.service.agentReplied('t')
+  f.service.messageAccepted('t')
   expect(f.service.snapshot().has('t')).toBe(true)
   await f.service.confirm('t',{mode:'create',name:'项目',projectId:''},f.settings)
   await vi.advanceTimersByTimeAsync(60_000)
   expect(f.service.snapshot().get('t')?.phase).toBe('done')
-  f.service.agentReplied('other')
+  f.service.messageAccepted('other')
   expect(f.service.snapshot().has('t')).toBe(true)
-  f.service.agentReplied('t')
+  f.service.messageAccepted('t')
   expect(f.service.snapshot().has('t')).toBe(false)
 })
 
@@ -294,12 +294,12 @@ it('checks again before saving and retries against the updated snapshot', async 
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('stops checking after a model failure and preserves its error card on replies', async () => {
+it('stops checking after a model failure and preserves its error card on user messages', async () => {
   vi.useFakeTimers()
   const f=fixture(); await f.service.request('t')
   vi.mocked(f.runs.start).mockRejectedValueOnce(new Error('模型不可用'))
   await f.service.confirm('t',{mode:'join',name:'项目',projectId:'p'},f.settings)
-  f.service.agentReplied('t')
+  f.service.messageAccepted('t')
   expect(f.service.snapshot().get('t')).toMatchObject({phase:'error',error:'模型不可用'})
   expect(f.ports.commit).not.toHaveBeenCalled()
   expect(vi.getTimerCount()).toBe(0)

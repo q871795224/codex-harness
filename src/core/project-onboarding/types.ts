@@ -33,7 +33,7 @@ export interface ProjectOnboardingService {
   updateDraft(threadId: string, selection: {mode: 'create' | 'join'; name: string; projectId: string}): void
   confirm(threadId: string, selection: { mode: 'create' | 'join'; name: string; projectId: string }, settings: OnboardingSettings): Promise<void>
   dismiss(threadId: string): void
-  agentReplied(threadId: string): void
+  messageAccepted(threadId: string): void
   resumeBindings(): Promise<void>
   restoreSaved(): Promise<void>
   listProjects(): Promise<ProjectMeta[]>

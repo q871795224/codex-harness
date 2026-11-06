@@ -264,7 +264,7 @@ export function useHarness() {
     return () => { questionListenersRef.current.delete(listener) }
   }, [])
 
-  const agentReplyListenersRef = useRef(new Set<(threadId: string) => void>())
+  const messageAcceptedListenersRef = useRef(new Set<(threadId: string) => void>())
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
   const transportRecoveryTimerRef = useRef<number | null>(null)
 
@@ -289,9 +289,9 @@ export function useHarness() {
     setNextThreadCwd(cwd)
   }, [])
 
-  const onAgentReply = useCallback((listener: (threadId: string) => void) => {
-    agentReplyListenersRef.current.add(listener)
-    return () => { agentReplyListenersRef.current.delete(listener) }
+  const onMessageAccepted = useCallback((listener: (threadId: string) => void) => {
+    messageAcceptedListenersRef.current.add(listener)
+    return () => { messageAcceptedListenersRef.current.delete(listener) }
   }, [])
 
   const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
@@ -359,6 +359,8 @@ export function useHarness() {
   }, [notify])
 
   const completeRouteFeedbackOnSend = useCallback(async (threadId: string, messageId: string) => {
+    // Project success cards share the router card's accepted-send boundary.
+    for (const listener of messageAcceptedListenersRef.current) listener(threadId)
     try {
       const record = await readRouteRecord(threadId)
       if (!record || record.status !== 'started' || record.feedbackDismissedAt) return
@@ -2353,9 +2355,6 @@ export function useHarness() {
       const turnId = typeof params.turnId === 'string' ? params.turnId : null
       const item = eventThreadItem(params.item)
       if (threadId && turnId && item) {
-        if (!event.replayed && !completedTurnIdsRef.current.has(turnId) && item.type === 'agentMessage' && typeof item.text === 'string' && item.text.trim()) {
-          for (const listener of agentReplyListenersRef.current) listener(threadId)
-        }
         const questionRequest = asyncUserInputRequest(threadId, item, turnId)
         if (questionRequest) emitQuestion(questionRequest)
         const observedAt = Date.now()
@@ -2378,10 +2377,6 @@ export function useHarness() {
       const itemId = typeof params.itemId === 'string' ? params.itemId : null
       const delta = typeof params.delta === 'string' ? params.delta : ''
       if (threadId && itemId) {
-        const turnId = typeof params.turnId === 'string' ? params.turnId : null
-        if (!event.replayed && delta.trim() && (!turnId || !completedTurnIdsRef.current.has(turnId))) {
-          for (const listener of agentReplyListenersRef.current) listener(threadId)
-        }
         queueDetailDelta(threadId, 'agentMessageDelta', itemId, delta)
       }
       return
@@ -2640,7 +2635,7 @@ export function useHarness() {
     openThread,
     forkThreadAtTurn,
     onTurnCompleted,
-    onAgentReply,
+    onMessageAccepted,
     onUserInputRequested,
     notify,
     loadOlderTurns,

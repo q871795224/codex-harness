@@ -162,29 +162,25 @@ describe('waiting indicators', () => {
   })
 })
 
-it('emits live agent replies across providers, ignoring input, tools, empty text and replay', async () => {
+it('emits accepted user messages after send succeeds, keeping failed sends and agent replies separate', async () => {
   const {result}=await ready()
-  const replied=vi.fn()
-  const stop=result.current.onAgentReply(replied)
-  const codex=vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
-  const claude=vi.mocked(runtime.listenClaudeEvents).mock.calls.at(-1)![0]
-  act(() => {
-    codex({method:'item/started',params:{threadId:'active',turnId:'next',item:{type:'userMessage',id:'user',content:[]}}})
-    codex({method:'item/completed',params:{threadId:'active',turnId:'next',item:{type:'commandExecution',id:'cmd',command:'true'}}})
-    codex({method:'item/agentMessage/delta',params:{threadId:'active',turnId:'next',itemId:'a',delta:''}})
-    codex({method:'item/completed',replayed:true,params:{threadId:'active',turnId:'old',item:{type:'agentMessage',id:'old',text:'旧回复'}}})
-    claude({method:'message/completed',replayed:true,params:{sessionId:'claude:active',turnId:'old',itemId:'old',text:'旧回复'}})
-    claude({method:'message/user',params:{sessionId:'claude:active',turnId:'next',itemId:'user',content:[]}})
-    claude({method:'message/delta',params:{sessionId:'claude:active',turnId:'next',itemId:'a',delta:' '}})
+  const accepted=vi.fn()
+  const stop=result.current.onMessageAccepted(accepted)
+  await act(async () => { await result.current.selectThread('active') })
+  const event=vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]
+  act(() => event({method:'item/completed',params:{threadId:'active',turnId:'old',item:{type:'agentMessage',id:'old',text:'Agent 回复'}}}))
+  expect(accepted).not.toHaveBeenCalled()
+  vi.mocked(appServer.startTurn).mockRejectedValueOnce(new Error('send failed'))
+  await act(async () => {
+    await expect(result.current.sendMessage([{type:'text',text:'hello',text_elements:[]}],'interject')).rejects.toThrow('send failed')
   })
-  expect(replied).not.toHaveBeenCalled()
-  act(() => {
-    codex({method:'item/agentMessage/delta',params:{threadId:'active',turnId:'next',itemId:'a',delta:'开始处理'}})
-    claude({method:'message/delta',params:{sessionId:'claude:active',turnId:'next',itemId:'a',delta:'开始处理'}})
-    codex({method:'item/completed',params:{threadId:'background',turnId:'next',item:{type:'agentMessage',id:'a',text:'后台回复'}}})
-  })
-  expect(replied.mock.calls.map(([id])=>id)).toEqual(['active','claude:active','background'])
+  expect(accepted).not.toHaveBeenCalled()
+  vi.mocked(appServer.startTurn).mockResolvedValueOnce({turn:{id:'new-turn',status:'inProgress',items:[],error:null,startedAt:null,completedAt:null,durationMs:null}})
+  await act(async () => { await result.current.sendMessage([{type:'text',text:'hello',text_elements:[]}],'interject') })
+  expect(accepted).toHaveBeenCalledExactlyOnceWith('active')
+  await act(async () => { await result.current.selectThread('claude:active') })
+  act(() => vi.mocked(runtime.listenClaudeEvents).mock.calls.at(-1)![0]({method:'turn/started',params:{sessionId:'claude:active',turnId:'turn-c'}}))
+  await act(async () => { await result.current.sendMessage([{type:'text',text:'queued',text_elements:[]}],'queue') })
+  expect(accepted.mock.calls.map(([id])=>id)).toEqual(['active','claude:active'])
   stop()
-  act(() => codex({method:'item/agentMessage/delta',params:{threadId:'active',turnId:'next',itemId:'a',delta:'继续'}}))
-  expect(replied).toHaveBeenCalledTimes(3)
 })
