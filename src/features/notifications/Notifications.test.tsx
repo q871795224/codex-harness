@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createNotificationStore } from '../../core/notifications/store'
-import { NotificationCenter, NotificationViewport } from './Notifications'
+import { NotificationCenter, NotificationViewport as Viewport } from './Notifications'
+import type { ComponentProps } from 'react'
+function NotificationViewport(props: ComponentProps<typeof Viewport>) {
+  const [open, setOpen] = useState(false)
+  return <><button type="button" aria-label="打开通知提醒" onClick={() => setOpen(!open)}>通知</button><Viewport {...props} open={props.open ?? open} onToggle={setOpen} /></>
+}
 
 afterEach(() => { cleanup(); vi.useRealTimers() })
 function store() { return createNotificationStore({ load: async () => null, save: async () => undefined }) }
@@ -62,10 +68,10 @@ it.each(['pending', 'done'] as const)('keeps running operations quiet and surfac
   act(() => { vi.advanceTimersByTime(10001) })
   expect(screen.queryByRole('status')).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
-  expect(screen.getByRole('button', { name: /展开提醒/ })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /展开提醒/ })).toBeNull()
 })
 
-it('collapses into a bubble and keeps a viewed question until the source resolves it', async () => {
+it('keeps only the toolbar toggle and keeps a viewed question until the source resolves it', async () => {
   const notifications = store()
   await notifications.initialize()
   const id = notifications.publish({ level: 'warning', source: '会话', title: '需要确认', state: 'pending', threadId: 'thread-a' })
@@ -73,13 +79,13 @@ it('collapses into a bubble and keeps a viewed question until the source resolve
   render(<NotificationViewport store={notifications} onOpen={vi.fn()} onAction={onAction} />)
   fireEvent.click(screen.getByRole('button', { name: '关闭通知：需要确认' }))
   expect(screen.queryByText('需要确认')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: /展开提醒/ }))
+  fireEvent.click(screen.getByRole('button', { name: '打开通知提醒' }))
   expect(screen.getByRole('complementary', { name: '通知提醒栏' })).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: '打开会话' }))
   await act(async () => {})
   expect(onAction).toHaveBeenCalledWith({ kind: 'thread', target: 'thread-a', label: '打开会话' })
   expect(notifications.snapshot().records[0].read).toBe(true)
-  expect(screen.getByRole('button', { name: /展开提醒/ })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /展开提醒/ })).toBeNull()
   act(() => notifications.resolve(id))
   expect(screen.queryByRole('button', { name: /展开提醒/ })).toBeNull()
 })
@@ -96,7 +102,7 @@ it('snoozes a reminder and resurfaces it once at the requested time', async () =
   expect(screen.getByText('检查结果')).toBeTruthy()
   act(() => { vi.advanceTimersByTime(6001) })
   expect(screen.queryByText('检查结果')).toBeNull()
-  expect(screen.getByRole('button', { name: /展开提醒/ })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /展开提醒/ })).toBeNull()
 })
 
 it('sets a current-session reminder without sending a message', async () => {
@@ -118,14 +124,14 @@ it('keeps reminders available after navigation fails', async () => {
   fireEvent.click(screen.getByRole('button', { name: '打开会话' }))
   await act(async () => {})
   expect(notifications.snapshot().records[0].read).toBe(false)
-  fireEvent.click(screen.getByRole('button', { name: /展开提醒/ }))
+  fireEvent.click(screen.getByRole('button', { name: '打开通知提醒' }))
   expect(screen.getByRole('alert').textContent).toContain('暂时无法打开')
 })
 it('closes on Escape without forwarding the key to conversation shortcuts or resolving reminders', async () => {
   const notifications = store(); await notifications.initialize()
   notifications.publish({ level: 'info', source: '会话', title: '结果' })
   render(<NotificationViewport store={notifications} onOpen={vi.fn()} />)
-  fireEvent.click(screen.getByRole('button', { name: /展开提醒/ }))
+  fireEvent.click(screen.getByRole('button', { name: '打开通知提醒' }))
   const shortcut = vi.fn()
   window.addEventListener('keydown', shortcut)
   fireEvent.keyDown(window, { key: 'Escape' })
@@ -133,4 +139,14 @@ it('closes on Escape without forwarding the key to conversation shortcuts or res
   expect(shortcut).not.toHaveBeenCalled()
   expect(screen.queryByRole('complementary')).toBeNull()
   expect(notifications.snapshot().records[0].read).toBe(false)
+})
+
+it('keeps the independent reminder rail open while the conversation is being used', async () => {
+  const notifications = store(); await notifications.initialize()
+  const { container } = render(<NotificationViewport store={notifications} onOpen={vi.fn()} />)
+  fireEvent.click(screen.getByRole('button', { name: '打开通知提醒' }))
+  fireEvent.pointerDown(document.body)
+  expect(screen.getByRole('complementary', { name: '通知提醒栏' })).toBeTruthy()
+  expect(container.querySelector('.notification-viewport.open')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /展开提醒/ })).toBeNull()
 })

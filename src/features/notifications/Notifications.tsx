@@ -45,12 +45,8 @@ export function NotificationViewport({ store, onOpen, open: controlledOpen, onTo
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     root.current?.querySelector<HTMLButtonElement>('.reminder-rail > header button')?.focus()
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); toggleRef.current(false); if (previousFocus.current?.isConnected) previousFocus.current.focus() } }
-    const outside = (event: PointerEvent) => {
-      const target = event.target
-      if (target instanceof Element && !root.current?.contains(target) && !target.closest('[data-notification-toggle]')) toggleRef.current(false)
-    }
-    window.addEventListener('keydown', key, true); document.addEventListener('pointerdown', outside)
-    return () => { window.removeEventListener('keydown', key, true); document.removeEventListener('pointerdown', outside) }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
   }, [open])
   const groups = attentionGroups(state.records)
   const floatingIds = new Set(state.floating.map((item) => item.id))
@@ -86,11 +82,10 @@ export function NotificationViewport({ store, onOpen, open: controlledOpen, onTo
       {floating && <button className="notification-close" type="button" aria-label={`关闭通知：${record.title}`} onClick={() => group.records.forEach((item) => store.dismiss(item.id))}><X size={14} /></button>}
     </article>
   }
-  return <div ref={root} className="notification-viewport" aria-label="通知提醒">
+  return <div ref={root} className={`notification-viewport${open ? ' open' : ''}`} aria-label="通知提醒">
     {!open && error && <p className="notification-toast error" role="alert">{error}</p>}
     {!open && floatingGroups.map((group) => card(group, true))}
-    {!open && groups.length > 0 && <button type="button" className="reminder-bubble" aria-label={`展开提醒，${groups.length} 个会话或事项待关注`} onClick={() => toggle(true)}><Bell size={16} />提醒 <b>{groups.length}</b></button>}
-    {open && <aside className="reminder-rail" aria-label="通知提醒栏">
+    {open && <aside id="notification-reminder-rail" className="reminder-rail" aria-label="通知提醒栏">
       <header><div><h2>提醒</h2><small>{groups.length ? `${groups.length} 个会话或事项待关注` : '当前没有需要关注的提醒'}</small></div><button type="button" aria-label="收起提醒" onClick={() => toggle(false)}><X size={17} /></button></header>
       <div className="reminder-rail-body">
         {state.storageError && <p role="alert">提醒暂时无法保存或读取。<button type="button" onClick={() => void store.retryStorage()}>重试</button></p>}

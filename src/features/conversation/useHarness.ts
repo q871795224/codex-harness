@@ -1,5 +1,5 @@
 import { retargetDraftProjectInput } from './draftProjectInput'
-import { isRouterThread, pendingRouteKey, readRouteRecord, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord, writeRouteRecord, type RouteRecord } from '../../core/workspace-router/service'
+import { isRouterThread, pendingRouteKey, readRouteRecord, completeRouteFeedback, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord, writeRouteRecord, type RouteRecord } from '../../core/workspace-router/service'
 import { questionRequestIdentity } from '../../core/questions/identity'
 import type { QuestionEvent } from '../../core/questions/types'
 import type { MessageReference } from '../../core/domain/codex'
@@ -352,11 +352,11 @@ export function useHarness() {
     } catch (error) { notify('无法保存路由反馈', 'error', error, { threadId }); throw error }
   }, [notify])
 
-  const acceptRouteImplicitly = useCallback(async (threadId: string, messageId: string) => {
+  const completeRouteFeedbackOnSend = useCallback(async (threadId: string, messageId: string) => {
     try {
       const record = await readRouteRecord(threadId)
-      if (!record || record.feedback !== 'pending' || record.status !== 'started') return
-      const saved = await recordRouteFeedback(record, 'implicit-accurate', null, messageId)
+      if (!record || record.status !== 'started' || record.feedbackDismissedAt) return
+      const saved = await completeRouteFeedback(record, messageId)
       setRouteRecords((current) => ({ ...current, [threadId]: saved }))
     } catch (error) { notify('消息已发送，但路由反馈保存失败', 'warning', error, { threadId }) }
   }, [notify])
@@ -1726,7 +1726,7 @@ export function useHarness() {
           const saved = await updateRouteRecord(route.id, (latest) => ({ ...latest, status: 'started', sourceMessageId: clientId, sourceTurnId: response.turn.id }))
           setRouteRecords((current) => ({ ...current, [threadId]: saved }))
         } catch (error) { notify('消息已发送，但路由记录更新失败', 'warning', error, { threadId }) }
-      } else if (!trigger && inputs?.length) await acceptRouteImplicitly(threadId, clientId)
+      } else if (!trigger && inputs?.length) await completeRouteFeedbackOnSend(threadId, clientId)
       if (!completedTurnIdsRef.current.delete(response.turn.id)) setActiveTurn(threadId, response.turn.id, true)
       if (firstSubmission) {
         // A refresh failure must not turn an accepted message into a send failure.
@@ -1739,7 +1739,7 @@ export function useHarness() {
       locallyStartingRef.current.delete(threadId)
       setThreadStarting(threadId, false)
     }
-  }, [acceptRouteImplicitly, notify, refreshThreads, setActiveTurn, setThreadStarting])
+  }, [completeRouteFeedbackOnSend, notify, refreshThreads, setActiveTurn, setThreadStarting])
 
   const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string) => {
     const threadId = selectedThreadIdRef.current
@@ -1806,7 +1806,7 @@ export function useHarness() {
         mode,
       })
       if (result.kind === 'queued') {
-        await acceptRouteImplicitly(threadId, clientUserMessageId)
+        await completeRouteFeedbackOnSend(threadId, clientUserMessageId)
         await loadQueue(threadId)
         return
       }
@@ -1814,7 +1814,7 @@ export function useHarness() {
         ...current,
         [threadId]: [...(current[threadId] ?? []), result.pending],
       }))
-      await acceptRouteImplicitly(threadId, clientUserMessageId)
+      await completeRouteFeedbackOnSend(threadId, clientUserMessageId)
     } catch (error) {
       notify('无法发送消息', 'error', error, { threadId })
       throw error
@@ -1822,7 +1822,7 @@ export function useHarness() {
       submittingThreadsRef.current.delete(threadId)
       setBusy((current) => ({ ...current, composer: false, workspaceRouter: submittingThreadsRef.current.size > 0 }))
     }
-  }, [acceptRouteImplicitly, loadQueue, maybeGenerateThreadTitle, notify, prepareRoutedDraft, recreateDraftThreadForSelectedCwd, setAutomaticWorkspace, startTurn, updateDetail, updateThread, workspaces])
+  }, [completeRouteFeedbackOnSend, loadQueue, maybeGenerateThreadTitle, notify, prepareRoutedDraft, recreateDraftThreadForSelectedCwd, setAutomaticWorkspace, startTurn, updateDetail, updateThread, workspaces])
 
   const prepareRemoteThread = useCallback(async (threadId: string): Promise<boolean> => {
     const response = await appServer.resumeThread(resumeThreadRequest(threadId, threadsRef.current.find((thread) => thread.id === threadId)?.cwd))

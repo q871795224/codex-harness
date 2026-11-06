@@ -70,16 +70,16 @@
 @keyframes notification-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .notification-spinner { animation: none; } }
 
-/* A transient overlay: conversation width and navigation remain unchanged. */
-.notification-viewport { width: min(360px, calc(100% - var(--h-sidebar-width, 0px) - 24px)); top: 72px; z-index: 35; display: flex; flex-direction: column; align-items: stretch; max-height: calc(100% - 96px); }
-.reminder-bubble { align-self: flex-end; display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border: 1px solid #dce1e8; border-radius: 22px; background: #fff; color: #4b5669; box-shadow: 0 5px 20px #18212c14; pointer-events: auto; font: inherit; font-size: 12px; }
-.reminder-bubble b { font-weight: 600; }
-.reminder-rail { display: flex; flex-direction: column; min-height: 0; max-height: 100%; border: 1px solid #dce1e8; border-radius: 12px; background: #fbfcfe; color: #36404d; box-shadow: 0 10px 35px #18212c25; pointer-events: auto; overflow: hidden; }
+/* Only transient toasts overlay the conversation; the expanded rail owns its width. */
+.notification-viewport { width: min(360px, calc(100% - var(--h-sidebar-width, 0px) - 24px)); top: 112px; z-index: 35; display: flex; flex-direction: column; align-items: stretch; max-height: calc(100% - 136px); }
+.app-shell { --h-reminder-width: clamp(280px, 25vw, 360px); }
+.notification-viewport.open { position: relative; top: auto; right: auto; z-index: auto; flex: 0 0 var(--h-reminder-width); width: var(--h-reminder-width); max-height: none; min-height: 0; margin-top: 28px; pointer-events: auto; }
+.reminder-rail { flex: 1; display: flex; flex-direction: column; min-height: 0; max-height: 100%; border: 1px solid #dce1e8; border-width: 0 0 0 1px; border-radius: 0; background: #fbfcfe; color: #36404d; pointer-events: auto; overflow: hidden; }
 .reminder-rail > header { display: flex; justify-content: space-between; align-items: flex-start; padding: 16px; border-bottom: 1px solid #e3e7ec; }
 .reminder-rail h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
 .reminder-rail small { display: block; font-size: 11px; color: #687488; }
 .reminder-rail > header > button { padding: 3px; background: transparent; border: 0; color: inherit; }
-.reminder-rail-body { overflow-y: auto; padding: 14px; min-height: 0; }
+.reminder-rail-body { flex: 1; overflow-y: auto; padding: 14px; min-height: 0; }
 .reminder-rail-body section + section { margin-top: 18px; }
 .reminder-rail h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; color: #687488; }
 .reminder-rail .notification-toast { margin-bottom: 8px; box-shadow: none; }
@@ -100,7 +100,7 @@
 .reminder-scheduled > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 12px; }
 .reminder-scheduled > div > span { flex: 1; min-width: 100px; overflow-wrap: anywhere; }
 .reminder-empty { color: #687488; font-size: 12px; }
-.app-shell[data-theme='dark'] .reminder-rail, .app-shell[data-theme='dark'] .reminder-bubble { background: #25292f; border-color: #3a4049; color: #d5dae1; }
+.app-shell[data-theme='dark'] .reminder-rail { background: #25292f; border-color: #3a4049; color: #d5dae1; }
 .app-shell[data-theme='dark'] .reminder-rail > header, .app-shell[data-theme='dark'] .reminder-rail > footer, .app-shell[data-theme='dark'] .thread-reminder-form, .app-shell[data-theme='dark'] .reminder-scheduled, .app-shell[data-theme='dark'] .thread-reminder-form button, .app-shell[data-theme='dark'] .reminder-scheduled button, .app-shell[data-theme='dark'] .thread-reminder-form input { border-color: #3a4049; }
 .app-shell[data-theme='dark'] .reminder-rail small, .app-shell[data-theme='dark'] .reminder-rail h3, .app-shell[data-theme='dark'] .reminder-empty { color: #aab4c3; }
 .app-shell[data-theme='dark'] .thread-reminder-form input[type='datetime-local'] { color-scheme: dark; }
