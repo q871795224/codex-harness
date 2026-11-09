@@ -3,6 +3,7 @@ mod workspace_router_decision;
 mod workspace_router_context;
 mod async_waits;
 mod runtime_skill;
+mod bundled_skill;
 mod api_workbench;
 mod app_launcher;
 mod app_server;

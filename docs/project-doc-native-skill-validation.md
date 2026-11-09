@@ -1,6 +1,6 @@
 # 项目文档原生 Skill 加载验证
 
-2026-11-05 的验证结果：Codex 0.166.0 与 Claude Code 2.1.303 / SDK 0.3.252 均支持本项目采用的原生 Skill 加载与恢复。用户确认共享发现元信息可接受，正式接入采用应用自带资源、仅绑定会话主动调用；不再要求发现范围也按会话隔离。Codex 不替换共享 daemon 的搜索根，改由原生 user-Skills 目录发现应用专属链接。
+2026-11-05 的验证结果：Codex 0.166.0 与 Claude Code 2.1.303 / SDK 0.3.252 均支持本项目采用的原生 Skill 加载与恢复。用户确认共享发现元信息可接受，正式接入采用应用自带资源、仅绑定会话主动调用；不再要求发现范围也按会话隔离。当时 Codex 不替换共享 daemon 的搜索根，由原生 user-Skills 目录发现应用专属链接；2026-11-09 的实现改为版本化真实文件副本，当前约定见 [Skill 分发](../.harness/skills.md)。
 
 ## 验证方法
 
@@ -34,7 +34,7 @@
 
 原生 Skill 路径本身可用，关键在于由 Provider 发现后再显式调用。Codex 仅提交 `{type: skill, path: ...}` 不足以证明正文已生效；Claude 也需要验证实际调用，而不能只看初始化列表。
 
-`skills/extraRoots/set` 是 process 级替换操作，正式实现不使用它。Codex 的原生 user-Skills 目录维护 `harness-project-doc` 专属链接，分发副本仅改名称避免与旧安装冲突，指令和 CLI 来自相同 Git 源码；其他 Skill 与搜索配置保留。由 daemon 发现并返回规范路径后再显式调用。
+`skills/extraRoots/set` 是 process 级替换操作，正式实现不使用它。2026-11-05 方案使用 `harness-project-doc` 专属链接；2026-11-09 改为 App 发布 `harness-project-doc-<内容版本>` 真实文件副本，不创建或更新软链。Skill 名称仍为 `harness-project-doc`，指令和 CLI 来自相同 Git 源码；旧资源、用户 Skill 与搜索配置保留。由 daemon 发现并返回规范路径后再显式调用。
 
 Claude 采用会话级本地插件。验证发现，命令和参数分散在多文本块，或最后一个内容块为图片时，斜杠调用可能正常完成但没有展开 Skill。正式实现仅在首次调用时把图片放前面，所有文本合并到最后一个文本块并加原生命令。黑箱检查原始用户标记、背景标记、图片数据均保留，且 Skill 正文加载、恢复均通过；daemon 集成测试同时确认界面用户消息不被改写。
 
@@ -53,3 +53,10 @@ node .agents/skills/harness-codex-audit/scripts/verify-native-project-skill.mjs
 2026-11-06 复验（Codex 0.167.0，Claude / SDK 版本不变）：未绑定会话需要通过 Skill 申请新建/加入项目，因此 Claude 的未绑定用例也配置本地插件，验证元信息可发现、正文未主动加载。首次来源标记与 Provider 协议 4 的接入另由 daemon 集成测试覆盖。
 
 本次复验结果见 [native-validation.json](review/project-onboarding/native-validation.json)。上表与旧 validation.json 保留 2026-11-05 的发现范围，复验脚本现按新的未绑定发现要求运行。
+
+
+## 2026-11-09：真实文件副本复验
+
+Codex 0.167.0、Claude Code 2.1.303 / SDK 0.3.252 在本地假模型服务上完成9组用例，共12次模型请求。Codex的managed两组改为App托管的真实版本目录，没有创建Skill软链；已绑定组显式加载正文并在恢复后保留，未绑定组可发现但没有主动加载正文。旧用户Skill仍可发现，同版CLI可运行。额外放入同名旧版本资源时，当前版本仍能被发现并按规范路径加载。Claude沿用原有App会话插件，两组正文加载与恢复检查继续通过。
+
+机器结果见 [项目文档真实副本复验](review/skill-copies/native-validation.json) 和 [管理Skill复验](review/skill-copies/runtime-validation.json)。管理Skill的3组用例同样验证同名旧版本共存、显式正文加载和恢复。Rust回归另外验证App分发不依赖旧链接、移除旧链接后CLI仍可运行、旧版本保留、用户Skill未被覆盖及资源篡改拒绝。结果只证明加载链路，实际业务配置操作仍由各管理接口测试验证。此次未安装应用，也未修改真实用户Skill目录。

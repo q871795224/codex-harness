@@ -1,0 +1,33 @@
+{
+  "codex": "codex-cli 0.167.0",
+  "backend": "loopback fixture; no real model calls",
+  "results": [
+    {
+      "provider": "codex",
+      "case": "unregistered",
+      "discovered": false,
+      "pathAlias": true,
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "managed",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": true,
+      "resumeBodyReachedModel": true,
+      "requestCount": 1
+    },
+    {
+      "provider": "codex",
+      "case": "managed-unbound",
+      "discovered": true,
+      "pathAlias": true,
+      "nativeBodyReachedModel": false,
+      "resumeBodyReachedModel": null,
+      "requestCount": 1
+    }
+  ]
+}

@@ -83,7 +83,7 @@
 
 ## 运行时约定
 
-- 应用内置 `harness-runtime` Skill 与 CLI 在 `.agents/skills/harness-runtime/` 维护并编译进应用；Codex 会话通过原生 Skill 输入加载，由 `runtime_skill.rs` 分发真实文件副本，不依赖软链或私有安装。CLI 调用本机管理入口。原生层复用项目文档 listener，单独发布带认证的 `management-server.json`；`management.rs` 负责请求关联和去重，`core/management` 调用挂载的界面服务，工作区和插件查询不从数据库重建最终列表。管理入口也提供固定分组的应用设置、Router缓存/反馈、项目元数据、通知已读及只读SeaTalk诊断；设置复用UI setter或共享设置模块，禁止任意appState。Skill的按需参考文档与CLI一起版本化分发。管理协议、覆盖范围、写入及 fallback 见 `docs/management.md`。
+- 应用内置 `harness-runtime` Skill 与 CLI 在 `.agents/skills/harness-runtime/` 维护并编译进应用；Codex 会话通过原生 Skill 输入加载，由 `runtime_skill.rs` 分发真实文件副本，不依赖软链或私有安装。CLI 调用本机管理入口。原生层复用项目文档 listener，单独发布带认证的 `management-server.json`；`management.rs` 负责请求关联和去重，`core/management` 调用挂载的界面服务，工作区和插件查询不从数据库重建最终列表。管理入口也提供固定分组的应用设置、Router缓存/反馈、项目元数据、通知已读及只读SeaTalk诊断；设置复用UI setter或共享设置模块，禁止任意appState。Skill的按需参考文档与CLI一起版本化分发。管理协议、覆盖范围、写入及 fallback 见 `docs/management.md`。全部自有 Skill 的维护与未来接入规则见 [skills.md](skills.md)；发布和审计两份暂不接入 App 分发与主动加载。
 
 - 项目文档 HTTP 服务由 Harness Rust setup 启动，退出时停止，不依赖当前会话或项目绑定。启动失败必须报错；地址文件通过原子替换发布，异常退出的旧地址在下次启动覆盖。稳定版与开发版同时运行时，CLI 使用最后启动实例的地址；实例退出只删除自己发布且仍持有的地址，不能删除其他实例的记录。
 
@@ -156,7 +156,7 @@ Fork 继承来源会话的项目绑定，在打开分支前落盘；新会话首
 
 `.agents/skills/project-doc/` 是 Skill 与 CLI 的 Git 源码，编译进 Harness 原生程序；首次绑定会话发送时，按内容版本落到 `~/.codex-harness/project-doc-skills/`，不依赖源码 checkout 或 PATH 里的旧命令。仅分发执行所需的 SKILL.md、Python CLI 和命令脚本，维护者设计沿革不进入运行资源。合并 PR 后还需构建、安装新应用，运行中的旧应用不会随 Git 合并更新。
 
-Codex 核心在真实 CODEX_HOME 的原生 user-Skills 目录维护专属 `harness-project-doc` 链接，保留旧 `project-doc` 和其他 Skill；重名且非 Harness 管理时失败并保留原文件。共享 daemon 和其他客户端可发现元信息，这是允许的。未绑定会话也可发现 Skill 并申请新建/加入项目；绑定会话由 `app_server.rs` 刷新原生列表、采用返回的规范路径，提交原生 `skill` 输入；不替换全局 extraRoots，不追加 developer instructions。
+Codex 核心在真实 CODEX_HOME 的原生 user-Skills 目录发布 `harness-project-doc-<内容版本>` 真实文件副本；不再创建或更新软链，不依赖旧链接，保留旧版本资源与用户原有 Skill。同版本副本内容被修改或替换为软链时拒绝使用，不覆盖原文件。共享 daemon 和其他客户端可发现元信息，这是允许的。未绑定会话也可发现 Skill 并申请新建/加入项目；绑定会话由 `app_server.rs` 刷新原生列表、采用返回的规范路径，提交原生 `skill` 输入；不替换全局 extraRoots，不追加 developer instructions。
 
 Claude 核心为会话、Skill 列表与上下文查询配置本地插件 `harness-project-doc`，通过原生 `/harness-project-doc:project-doc` 调用。首次调用将文本合成最后一个文本块、图片保持在前，避免原生 CLI 静默跳过 Skill 展开；界面用户消息保持原输入。未绑定会话可发现元信息，绑定后才主动加载维护正文。Provider 协议版本为 4，旧 daemon 不能静默忽略新增参数。
 

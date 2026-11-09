@@ -1,10 +1,10 @@
 # 本机 Harness 管理入口
 
-应用随附的 `harness-runtime` Skill 和 `harnessctl.py` 在本仓库 `.agents/skills/harness-runtime/` 维护，编译进应用，随应用版本发布。Harness 在 Codex 会话首次发送时通过原生 Skill 输入加载；会话恢复不重复加载，同一 Skill 资源更新后重新加载。发送失败不记为已加载。标题生成、recap 和记忆整理不加载这份运行协议。
+应用随附的 `harness-runtime` Skill 和 `harnessctl.py` 在本仓库 `.agents/skills/harness-runtime/` 维护，编译进应用，随应用版本发布。Harness 在 Codex 会话首次发送时通过原生 Skill 输入加载；会话恢复不重复加载，同一 Skill 资源更新后重新加载。发送失败不记为已加载。标题生成、recap、记忆整理、Router判定和简介生成不加载这份运行协议。
 
 主文件、CLI 和按需读取的 references 一起打包；所有文件路径和内容参与版本计算，分发时逐一核对，拒绝被替换的文件或符号链接。资源以内容版本写入 Codex 的 user-Skills 目录，使用真实文件副本，不依赖源码 checkout、全局 CLI 或软链接；旧版本副本保留供历史会话使用。Codex 的发现元信息可能对共享 daemon 的其他会话可见，正文只在 Harness 显式调用后加载；不替换 daemon 的 extraRoots。当前异步调度和自动加载仅支持 Codex，Claude 沿用现有运行方式。
 
-Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnessctl.py ...`。仓库开发时使用 `python3 .agents/skills/harness-runtime/harnessctl.py ...`。旧私有安装可继续调用兼容管理接口，但不再是本功能的运行依赖。
+Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnessctl.py ...`。仓库开发时使用 `python3 .agents/skills/harness-runtime/harnessctl.py ...`。旧私有安装可继续调用兼容管理接口，但不再是本功能的运行依赖。自有 Skill 的统一分发规则与当前四份 Skill 的接入范围见 [Skill 分发约定](../.harness/skills.md)。
 
 ## 会话中途新建或加入项目
 

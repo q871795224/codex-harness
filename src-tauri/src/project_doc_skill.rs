@@ -3,7 +3,6 @@
 use crate::store::HarnessStore;
 use serde_json::{json, Value};
 use std::{
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -40,7 +39,13 @@ impl ProjectDocSkill {
         let binding = self.store.project_thread_binding(thread)?;
         let version = bundle_version();
         let key = format!("projectDocSkillLoaded:{provider}:{thread}");
-        let stamp = format!("{version}:{}", binding.as_ref().map(|b|b.project_id.as_str()).unwrap_or("unbound"));
+        let stamp = format!(
+            "{version}:{}",
+            binding
+                .as_ref()
+                .map(|b| b.project_id.as_str())
+                .unwrap_or("unbound")
+        );
         let refresh = self.store.get_app_state(&key)?.as_deref() != Some(&stamp);
         let needed = binding.is_some() && refresh;
         let bundle = materialize(&self.root, &version)?;
@@ -60,63 +65,37 @@ impl ProjectDocSkill {
     }
 }
 
-fn bundle_version() -> String {
-    // Stable content fingerprint, not a security digest. Include both provider layouts.
-    let mut hash = 0xcbf29ce484222325u64;
-    for byte in SKILL
-        .bytes()
-        .chain(CLI.bytes())
-        .chain(COMMAND.bytes())
-        .chain(PLUGIN.bytes())
-        .chain(CODEX_NAME.bytes())
-    {
-        hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
-    }
-    format!("{hash:016x}")
+fn codex_skill_text() -> String {
+    SKILL.replacen("name: project-doc\n", "name: harness-project-doc\n", 1)
 }
 
-fn write_skill(dir: &Path, text: &str) -> std::io::Result<()> {
-    fs::create_dir_all(dir.join("bin"))?;
-    fs::write(dir.join("SKILL.md"), text)?;
-    fs::write(dir.join("project_doc.py"), CLI)?;
-    fs::write(dir.join("bin/project-doc"), COMMAND)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            dir.join("bin/project-doc"),
-            fs::Permissions::from_mode(0o755),
-        )?;
-    }
-    Ok(())
+fn bundle_files(codex_skill: &str) -> [(&str, &str); 7] {
+    [
+        ("codex/harness-project-doc/SKILL.md", codex_skill),
+        ("codex/harness-project-doc/project_doc.py", CLI),
+        ("codex/harness-project-doc/bin/project-doc", COMMAND),
+        ("claude-plugin/skills/project-doc/SKILL.md", SKILL),
+        ("claude-plugin/skills/project-doc/project_doc.py", CLI),
+        ("claude-plugin/skills/project-doc/bin/project-doc", COMMAND),
+        ("claude-plugin/.claude-plugin/plugin.json", PLUGIN),
+    ]
+}
+
+fn bundle_version() -> String {
+    // Resource paths also version the migration away from the old user-Skill link.
+    crate::bundled_skill::version(&bundle_files(&codex_skill_text()))
 }
 
 fn materialize(root: &Path, version: &str) -> Result<PathBuf, String> {
-    let run = || -> std::io::Result<PathBuf> {
-        fs::create_dir_all(root)?;
-        let target = root.join(version);
-        if !target.exists() {
-            let staging = tempfile::tempdir_in(root)?;
-            // A native alias avoids colliding with the old user-installed project-doc.
-            // The instructions and command come from the same authoritative source.
-            write_skill(
-                &staging.path().join("codex").join(CODEX_NAME),
-                &SKILL.replacen("name: project-doc\n", "name: harness-project-doc\n", 1),
-            )?;
-            let plugin = staging.path().join("claude-plugin");
-            write_skill(&plugin.join("skills/project-doc"), SKILL)?;
-            fs::create_dir_all(plugin.join(".claude-plugin"))?;
-            fs::write(plugin.join(".claude-plugin/plugin.json"), PLUGIN)?;
-            // Atomic publication; another Harness process can publish the same bundle.
-            if let Err(error) = fs::rename(staging.path(), &target) {
-                if !target.is_dir() {
-                    return Err(error);
-                }
-            }
-        }
-        fs::canonicalize(target)
-    };
-    run().map_err(|e| format!("无法准备项目文档 Skill: {e}"))
+    crate::bundled_skill::materialize(
+        &root.join(version),
+        &bundle_files(&codex_skill_text()),
+        &[
+            "codex/harness-project-doc/bin/project-doc",
+            "claude-plugin/skills/project-doc/bin/project-doc",
+        ],
+    )
+    .map_err(|error| format!("无法准备项目文档 Skill: {error}"))
 }
 
 impl SkillLoad {
@@ -124,41 +103,29 @@ impl SkillLoad {
         json!({ "pluginRoot": self.bundle.join("claude-plugin"), "invoke": self.needed, "sourceThreadId": if self.refresh { Some(&self.thread) } else { None } })
     }
 
-    /// Register only our own native user-Skill link, leaving every other Skill and
-    /// daemon search root alone. Keep immutable old bundles for resumed sessions.
-    #[cfg(unix)]
+    /// Publish an immutable versioned copy in the native discovery directory.
+    /// Existing links and user Skills remain untouched and are never dependencies.
     pub fn register_codex(&self, codex_home: &Path) -> Result<PathBuf, String> {
-        let run = || -> std::io::Result<PathBuf> {
-            let skills = codex_home.join("skills");
-            fs::create_dir_all(&skills)?;
-            let link = skills.join(CODEX_NAME);
-            let target = self.bundle.join("codex").join(CODEX_NAME);
-            match fs::symlink_metadata(&link) {
-                Ok(meta) => {
-                    let old = fs::canonicalize(&link)?;
-                    if old == target {
-                        return fs::canonicalize(target.join("SKILL.md"));
-                    }
-                    let cache = self.bundle.parent().expect("versioned bundle has parent");
-                    if !meta.file_type().is_symlink()
-                        || !old.starts_with(cache)
-                        || !old.ends_with(Path::new("codex").join(CODEX_NAME))
-                    {
-                        return Err(std::io::Error::other(
-                            "harness-project-doc 已被其他 Skill 占用",
-                        ));
-                    }
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e),
-            }
-            let staging = tempfile::tempdir_in(&skills)?;
-            let next = staging.path().join("skill");
-            std::os::unix::fs::symlink(&target, &next)?;
-            fs::rename(next, link)?;
-            fs::canonicalize(target.join("SKILL.md"))
-        };
-        run().map_err(|e| format!("无法注册项目文档原生 Skill: {e}"))
+        let version = self
+            .bundle
+            .file_name()
+            .ok_or("项目文档 Skill 缺少资源版本")?
+            .to_string_lossy();
+        let target = codex_home
+            .join("skills")
+            .join(format!("{CODEX_NAME}-{version}"));
+        let skill = codex_skill_text();
+        crate::bundled_skill::materialize(
+            &target,
+            &[
+                ("SKILL.md", &skill),
+                ("project_doc.py", CLI),
+                ("bin/project-doc", COMMAND),
+            ],
+            &["bin/project-doc"],
+        )
+        .map(|root| root.join("SKILL.md"))
+        .map_err(|error| format!("无法准备项目文档原生 Skill: {error}"))
     }
 }
 
@@ -197,6 +164,7 @@ pub(crate) fn add_codex_input(params: &mut Value, skill: Value) -> Result<(), St
 mod tests {
     use super::*;
     use crate::store::project_bindings::BindingChange;
+    use std::fs;
 
     #[test]
     fn binding_success_and_version_control_native_loading_across_restarts() {
@@ -205,9 +173,16 @@ mod tests {
         let root = dir.path().join("bundles with spaces");
         let service = ProjectDocSkill::new(store.clone(), root.clone());
         let discovery = service.prepare("codex", "unbound").unwrap().unwrap();
-        assert!(!discovery.needed); assert!(discovery.refresh);
+        assert!(!discovery.needed);
+        assert!(discovery.refresh);
         service.accepted(&discovery).unwrap();
-        assert!(!service.prepare("codex", "unbound").unwrap().unwrap().refresh);
+        assert!(
+            !service
+                .prepare("codex", "unbound")
+                .unwrap()
+                .unwrap()
+                .refresh
+        );
         store
             .change_project_thread_binding("bound", BindingChange::Bind("p"))
             .unwrap();
@@ -301,11 +276,64 @@ mod tests {
         let updated_path = newer.register_codex(&home).unwrap();
         assert_ne!(updated_path, path);
         assert!(path.is_file(), "keep old resources for resumed sessions");
-        let link = home.join("skills").join(CODEX_NAME);
-        fs::remove_file(&link).unwrap();
-        fs::create_dir(&link).unwrap();
-        fs::write(link.join("mine"), "keep").unwrap();
+        // A legacy user-managed Skill is not overwritten or required.
+        let legacy = home.join("skills").join(CODEX_NAME);
+        fs::create_dir(&legacy).unwrap();
+        fs::write(legacy.join("mine"), "keep").unwrap();
+        assert_eq!(load.register_codex(&home).unwrap(), path);
+        assert_eq!(fs::read_to_string(legacy.join("mine")).unwrap(), "keep");
+        // Refuse tampering with the versioned app-owned resource itself.
+        fs::write(&path, "modified").unwrap();
         assert!(load.register_codex(&home).is_err());
-        assert_eq!(fs::read_to_string(link.join("mine")).unwrap(), "keep");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "modified");
+    }
+    #[test]
+    fn codex_resources_are_real_versioned_copies_independent_of_legacy_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = materialize(&dir.path().join("bundles"), &bundle_version()).unwrap();
+        let load = SkillLoad {
+            bundle,
+            needed: true,
+            refresh: true,
+            thread: "fixture".into(),
+            key: String::new(),
+            stamp: String::new(),
+        };
+        let home = dir.path().join(".codex");
+        fs::create_dir_all(home.join("skills")).unwrap();
+        let legacy = home.join("skills").join(CODEX_NAME);
+        std::os::unix::fs::symlink(load.bundle.join("codex").join(CODEX_NAME), &legacy).unwrap();
+        let path = load.register_codex(&home).unwrap();
+        assert!(
+            path.starts_with(fs::canonicalize(home.join("skills")).unwrap()),
+            "App must publish a real copy, not return the symlink target"
+        );
+        assert!(!fs::symlink_metadata(path.parent().unwrap())
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        fs::remove_file(legacy).unwrap();
+        assert!(
+            path.is_file(),
+            "the active Skill must work without the legacy link"
+        );
+        assert!(
+            load.bundle
+                .join("codex")
+                .join(CODEX_NAME)
+                .join("SKILL.md")
+                .is_file(),
+            "old resources remain available to resumed sessions"
+        );
+        let output = std::process::Command::new(path.parent().unwrap().join("bin/project-doc"))
+            .arg("--help")
+            .env("HOME", dir.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
     }
 }

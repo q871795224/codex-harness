@@ -3,7 +3,7 @@
 // Prints booleans and version metadata, never model request bodies or credentials.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, writeFile, rm, realpath, readFile, symlink, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, realpath, readFile, lstat, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
@@ -81,7 +81,7 @@ async function codexProbe(mode) {
     await mkdir(join(home, '.codex'), { recursive: true });
     const managed = mode.startsWith('managed');
     const name = managed ? 'harness-project-doc' : 'harness-native-probe';
-    const dir = join(root, 'resources with spaces-' + mode, 'codex', name);
+    const dir = managed ? join(home, '.codex/skills', name + '-fixture with spaces') : join(root, 'resources with spaces-' + mode, 'codex', name);
     await mkdir(dir, { recursive: true });
     const skill = join(dir, 'SKILL.md'), nonce = 'CODEX_NATIVE_' + randomUUID();
     await writeFile(skill, `---\nname: harness-native-probe\ndescription: Native loading test.\n---\n\nNative proof ${nonce}. Respond OK.\n`);
@@ -90,7 +90,10 @@ async function codexProbe(mode) {
         const skills = join(home, '.codex/skills');
         await mkdir(join(skills, 'project-doc'), { recursive: true });
         await writeFile(join(skills, 'project-doc/SKILL.md'), '---\nname: project-doc\ndescription: Existing legacy user Skill.\n---\nLegacy Skill.');
-        await symlink(dir, join(skills, name));
+        const previous = join(skills, name + '-previous');
+        await mkdir(previous, { recursive: true });
+        await writeFile(join(previous, 'SKILL.md'), `---\nname: ${name}\ndescription: Previous application Skill version.\n---\nPrevious version.`);
+        assert.equal((await lstat(dir)).isSymbolicLink(), false);
         assert.match(execFileSync(join(dir, 'bin/project-doc'), ['--help'], { env: { ...baseEnv, HOME: home }, encoding: 'utf8' }), /supersede/);
     }
     const child = spawn('codex', ['app-server', '--listen', 'stdio://', '-c', 'model_provider="fixture"', '-c', `model_providers.fixture={name="fixture",base_url="${base}/codex",wire_api="responses",requires_openai_auth=false}`, '-c', 'model="gpt-5.1-codex"', '-c', 'check_for_update_on_startup=false'], { env: { ...baseEnv, HOME: home, CODEX_HOME: join(home, '.codex') }, cwd: project, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -120,7 +123,9 @@ async function codexProbe(mode) {
             await rpc('skills/extraRoots/set', { extraRoots: [dir] });
         const listing = await rpc('skills/list', { cwds: [project], forceReload: true,
             ...(mode === 'per-cwd' ? { perCwdExtraUserRoots: [{ cwd: project, extraUserRoots: [dir] }] } : {}) });
-        const found = listing.data?.flatMap(x => x.skills ?? []).find(x => x.name === name);
+        const expectedPath = await realpath(skill);
+        const found = listing.data?.flatMap(x => x.skills ?? []).find(x => x.name === name && (!managed || x.path === expectedPath));
+        if (managed) assert.ok(found, 'current resource must remain discoverable beside an older version');
         if (managed) assert.ok(listing.data?.flatMap(x => x.skills ?? []).some(x => x.name === 'project-doc'), 'legacy user Skill remains discoverable');
         const alias = await realpath(skill) !== skill;
         const selectedPath = mode === 'registered-alias' ? skill : found?.path ?? await realpath(skill);
