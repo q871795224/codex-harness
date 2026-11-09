@@ -1,0 +1,6 @@
+.composer-correction { --correction-bg: #f7f8fa; --correction-line: #d9dfe7; --correction-ink: #596573; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; padding: 6px 10px; border: 1px solid var(--correction-line); border-radius: 8px; background: var(--correction-bg); color: var(--correction-ink); font-size: 12px; }
+.composer-correction label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 150px; }
+.composer-correction input { width: 100%; min-width: 80px; border: 0; background: transparent; color: inherit; font: inherit; padding: 4px; }
+.composer-correction button { border: 1px solid var(--correction-line); border-radius: 5px; background: var(--correction-bg); color: inherit; font: inherit; padding: 3px 8px; cursor: pointer; }
+.composer-correction button:disabled { opacity: .5; cursor: default; }
+.app-shell[data-theme='dark'] .composer-correction { --correction-bg: #292d34; --correction-line: #3b414a; --correction-ink: #b7c0cb; }

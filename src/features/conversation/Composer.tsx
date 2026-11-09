@@ -1,3 +1,6 @@
+import './inputCorrection.css'
+import { useInputCorrection } from './useInputCorrection'
+import { addReplacement } from '../../core/input-correction/settings'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react'
 import { ChevronDown, FileText, Image, NotebookPen, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
@@ -137,6 +140,33 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
   const [composing, setComposing] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
+  const [correctionFeedback, setCorrectionFeedback] = useState('')
+  const [correctionFeedbackStatus, setCorrectionFeedbackStatus] = useState('')
+  const [savingCorrection, setSavingCorrection] = useState(false)
+  const correction = useInputCorrection(text, composing, !!disabled || !!busy, collapsedPastes, ref, (next, edits, undo) => {
+    let pastes = collapsedPastes
+    let offset = 0
+    const changes = edits.map((edit) => {
+      const start = undo ? edit.start : edit.start - offset
+      const before = undo ? edit.after : edit.before
+      const after = undo ? edit.before : edit.after
+      offset += edit.after.length - edit.before.length
+      return { start, before, after }
+    })
+    for (const change of changes.sort((a, b) => b.start - a.start)) {
+      pastes = reconcilePasteEdit(pastes, change.start, change.start + change.before.length, change.after.length - change.before.length)
+    }
+    setCollapsedPastes(pastes)
+    setText(next)
+    setCursor(ref.current?.selectionStart ?? next.length)
+  })
+  const saveCorrectionFeedback = async () => {
+    setSavingCorrection(true); setCorrectionFeedbackStatus('')
+    try { await addReplacement(correctionFeedback); setCorrectionFeedback(''); setCorrectionFeedbackStatus('替换规则已保存'); correction.noteInput() }
+    catch (error) { setCorrectionFeedbackStatus(error instanceof Error ? error.message : String(error)) }
+    finally { setSavingCorrection(false) }
+  }
+
   const pendingProjectCursor = useRef<{ text: string; cursor: number } | null>(null)
   const previousFocusRequestRef = useRef(focusRequest)
   const onDraftChangeRef = useRef(onDraftChange)
@@ -586,6 +616,14 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
           {takingOver ? '接管中…' : '接管会话'}
         </button>}
       </div>}
+      <div className="composer-correction" aria-label="输入纠正">
+        {correction.corrected && <><span role="status">已自动纠正</span><button type="button" disabled={disabled || busy} onClick={correction.undo}>撤回</button></>}
+        <label>反馈 <input aria-label="纠正反馈" placeholder="原词 → 替换词" value={correctionFeedback} disabled={disabled || savingCorrection} onChange={(event) => { setCorrectionFeedback(event.target.value); setCorrectionFeedbackStatus('') }} onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void saveCorrectionFeedback() }
+        }} /></label>
+        <button type="button" disabled={disabled || savingCorrection || !correctionFeedback.trim()} onClick={() => void saveCorrectionFeedback()}>保存</button>
+        {(correctionFeedbackStatus || correction.error) && <span role="status">{correctionFeedbackStatus || correction.error}</span>}
+      </div>
       <div className={`composer-card ${disabled ? 'disabled' : ''}`} data-composer-card>
         {visibleAttachments.length > 0 && (
           <div className="composer-attachments">
@@ -609,6 +647,7 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
           disabled={disabled || busy || attachmentBusy}
           placeholder={foreignActive ? '等待其他客户端完成当前轮' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
           onChange={(event) => {
+            correction.noteInput()
             const nextText = event.target.value
             setActionError(null)
             const nextPastes = reconcileCollapsedPastes(text, nextText, collapsedPastes)
@@ -619,7 +658,7 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
             setAttachments((current) => current.filter((item) => item.kind !== 'skill' || nextPastes.some((paste) => paste.reference?.path === item.path) || hasSkillMarker(nextText, item.name)))
           }}
           onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={() => setComposing(false)}
+          onCompositionEnd={() => { setComposing(false); correction.noteInput() }}
           onPaste={(event) => {
             if (clipboardHasImage(event.clipboardData)) {
               event.preventDefault()
@@ -632,7 +671,7 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
               return
             }
             const content = event.clipboardData.getData('text/plain')
-            if (!shouldCollapsePaste(content)) return
+            if (!shouldCollapsePaste(content)) { correction.notePaste(event.currentTarget.selectionStart, event.currentTarget.selectionEnd, content); return }
             event.preventDefault()
             const textarea = event.currentTarget
             const next = insertCollapsedPaste(text, textarea.selectionStart, textarea.selectionEnd, content, collapsedPastes)

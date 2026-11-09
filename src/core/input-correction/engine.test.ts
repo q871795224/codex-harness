@@ -1,0 +1,35 @@
+import { expect, it } from 'vitest'
+import { correctInput, moveCorrections, parseReplacement, undoCorrections } from './engine'
+const rules = [{ from: '绘画', to: '会话' }, { from: '哈尼斯', to: 'Harness' }]
+it('replaces every keyword in a single pass, preferring longer matches', () => {
+  const result = correctInput('哈尼斯有两个绘画，切换绘画', [...rules, { from: '两个绘画', to: '多个会话' }], false)
+  expect(result.text).toBe('Harness有多个会话，切换会话')
+  expect(undoCorrections(result.text, result.edits)).toBe('哈尼斯有两个绘画，切换绘画')
+  expect(correctInput('甲', [{ from: '甲', to: '乙' }, { from: '乙', to: '丙' }], false).text).toBe('乙')
+})
+it('undoes a whole batch without losing later text or a manually changed correction', () => {
+  const result = correctInput('哈尼斯绘画', rules, false)
+  const next = '前缀' + result.text + '，继续输入'
+  const prefixed = '前缀' + result.text
+  const moved = moveCorrections(prefixed, next, moveCorrections(result.text, prefixed, result.edits))
+  expect(undoCorrections(next, moved)).toBe('前缀哈尼斯绘画，继续输入')
+  const edited = result.text.replace('会话', '对话')
+  expect(undoCorrections(edited, moveCorrections(result.text, edited, result.edits))).toBe('哈尼斯对话')
+})
+it('protects code, links, paths, command lines and collapsed reference labels', () => {
+  const input = '绘画 `绘画` https://a/绘画 /tmp/绘画\n```json\n{"绘画":"绘画"}\n```\n[绘画]'
+  const start = input.lastIndexOf('[绘画]')
+  expect(correctInput(input, rules, true, [{ start, end: input.length }]).text).toBe(input.replace(/^绘画/, '会话'))
+  expect(correctInput('/command 绘画', rules, true).text).toBe('/command 绘画')
+})
+it('pairs Chinese double quotes and leaves English and code quotes literal', () => {
+  expect(correctInput('打开”绘画”然后"切换"', [], true).text).toBe('打开“绘画”然后“切换”')
+  expect(correctInput('say "hello"\n中文 `"hello"`', [], true).text).toBe('say "hello"\n中文 `"hello"`')
+  expect(correctInput('中文“已经配对”', [], true).edits).toEqual([])
+})
+it('supports explicit feedback and suppression after undo', () => {
+  expect(parseReplacement(' 绘画 -> 会话 ')).toEqual(rules[0])
+  expect(() => parseReplacement('绘画')).toThrow()
+  expect(() => parseReplacement('a → a')).toThrow()
+  expect(correctInput('绘画', rules, false, [], new Set(['绘画'])).text).toBe('绘画')
+})
