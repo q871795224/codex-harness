@@ -24,6 +24,7 @@ mod markdown_image;
 mod management;
 mod project_doc_proposals;
 mod project_doc_server;
+mod project_tools;
 mod project_doc_store;
 mod project_doc_skill;
 mod quick_command;
@@ -1502,6 +1503,13 @@ pub fn run() {
                 store::harness_data_dir()?.join("project-doc-skills"),
             ));
             let ownership = Arc::new(turn_ownership::TurnOwnership::new(store.clone())?);
+            let docs = Arc::new(project_doc_store::ProjectDocStore::open()?);
+            let dir = store::harness_data_dir()?;
+            let connection = rusqlite::Connection::open(dir.join("projects/project_docs.sqlite"))?;
+            let proposals = Arc::new(project_doc_proposals::ProposalQueue::open_at(connection)?);
+            let project_tools = Arc::new(project_tools::ProjectTools::new(
+                store.clone(), docs.clone(), proposals.clone(), ownership.clone(),
+            ));
             let manager = Arc::new(AppServerManager::new(
                 app.handle().clone(),
                 diagnostics.clone(),
@@ -1509,6 +1517,7 @@ pub fn run() {
                 ownership,
                 crate::runtime_skill::RuntimeSkill::new(store.clone()),
                 project_skill.clone(),
+                project_tools,
                 app_server::history_response_limit(
                     store.get_app_state("conversationHistoryPreferences")?.as_deref(),
                 ),
@@ -1530,12 +1539,7 @@ pub fn run() {
             // A required local capability: fail setup visibly instead of silently
             // leaving the CLI pointed at a previous process's endpoint.
             let project_doc_server = tauri::async_runtime::block_on(async {
-                let docs = project_doc_store::ProjectDocStore::open()?;
-                let dir = store::harness_data_dir()?;
-                let connection = rusqlite::Connection::open(dir.join("projects/project_docs.sqlite"))
-                    .map_err(|e| e.to_string())?;
-                let proposals = project_doc_proposals::ProposalQueue::open_at(connection)?;
-                project_doc_server::serve_with_management(docs, proposals, lookup, &dir, Some(management.clone())).await
+                project_doc_server::serve_shared(docs, proposals, lookup, &dir, Some(management.clone())).await
             }).map_err(|error: String| {
                 diagnostics.record("error", "project-doc", "server.start_failed",
                     json!({ "errorCode": "initialization_failed" }));

@@ -16,8 +16,8 @@ import type {
 
 /**
  * 会话 ↔ 项目绑定的生命周期（方案乙，见 .harness/project-doc-plugin-plan.md 第 1 节）。
- * - pending：项目背景尚未随绑定后的消息发送；支持新会话选择或中途确认接入。
- * - locked：绑定后的背景消息已发送，归属固定，只读不可改。
+ * - pending：绑定后的首条消息尚未发送；支持新会话选择或中途确认接入。
+ * - locked：绑定后的消息已发送，归属固定，只读不可改。
  * 旧的纯 projectId 字符串记录一律视为 locked（它们产生于即绑即锁的老逻辑）。
  */
 export type ThreadProjectBindingPhase = 'pending' | 'locked'

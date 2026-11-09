@@ -224,6 +224,8 @@ export type ThreadStatus =
   | { type: 'active'; activeFlags: string[] }
 
 export interface Thread {
+  /** Harness has registered client-executed project tools for this conversation. */
+  harnessProjectTools?: boolean
   id: string
   provider?: 'codex' | 'claude'
   sessionId?: string

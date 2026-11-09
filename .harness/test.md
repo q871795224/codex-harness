@@ -69,3 +69,7 @@ rg --no-filename '"area":"codex-usage"' ~/.codex-harness/logs/harness-*.jsonl | 
 ## 会话中途建立项目记忆
 
 `project-onboarding` 测试覆盖完整历史分页、长记录分段、Agent 超时默认执行、编辑停止计时、人工发起不自动执行、待选项恢复、逐秒版本检查与取消、迟到结果丢弃、成功卡按用户下一条消息发送成功收起、fork 继承项目绑定、版本冲突、保存回执恢复与来源空闲时绑定。Rust 在临时 SQLite/目录验证整批回滚、旧段落纳管后替代、待办关闭、请求去重和绑定完成标记。CLI 使用本地 HTTP fixture；真实 Provider 的原生发现复验仍只请求本地假模型。入口、截图与本次复验结果见 [从会话建立项目记忆](../docs/project-doc-onboarding.md)。
+
+## Codex 原生项目工具
+
+显式运行 `node .agents/skills/harness-codex-audit/scripts/verify-dynamic-project-tools.mjs`，使用隔离 HOME/CODEX_HOME、真实 App Server 与本地模型桩验证双会话映射、工具结果回传、进程重启后的恢复及 Fork 继承。它不连接日常 daemon 或真实模型，不加入常规 CI。业务层由 `project_tools` Rust 测试验证身份覆盖拒绝、跨项目隔离、状态审批、修订冲突、实例归属和写入回执。验证范围及版本见 [原生项目工具验证](../docs/native-project-tools.md)。

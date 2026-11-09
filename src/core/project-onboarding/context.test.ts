@@ -20,3 +20,11 @@ it('keeps an unbound send unbound and propagates context failures so drafts are 
   vi.mocked(docs.context).mockRejectedValueOnce(new Error('读取失败'))
   await expect(prepareProjectInput(docs,'t',[],10000)).rejects.toThrow('读取失败')
 })
+it('sends the original user input for native tools while retaining the binding lock intent', async () => {
+  const docs={threadBinding:vi.fn(async () => ({projectId:'opaque-project',phase:'pending'})),context:vi.fn()} as unknown as ProjectDocService
+  const original=[{type:'text' as const,text:'继续推进',text_elements:[]}]
+  const prepared=await prepareProjectInput(docs,'native-thread',original,10000,true)
+  expect(prepared.input).toBe(original)
+  expect(prepared.projectId).toBe('opaque-project')
+  expect(docs.context).not.toHaveBeenCalled()
+})
