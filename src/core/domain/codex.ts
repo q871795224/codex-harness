@@ -303,6 +303,7 @@ export interface CodexServiceTier {
 }
 
 export interface CodexConfig {
+  model_provider?: string | null
   model: string | null
   model_reasoning_effort: string | null
   service_tier?: string | null

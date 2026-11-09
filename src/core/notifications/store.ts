@@ -2,7 +2,7 @@ export type NotificationLevel = 'info' | 'warning' | 'error'
 export type NotificationAttention = 'action' | 'result' | 'follow-up'
 export interface NotificationAction {
   label: string
-  kind: 'thread' | 'release-log' | 'project'
+  kind: 'thread' | 'release-log' | 'project' | 'codex-provider-restore'
   target: string
   runId?: string
 }
