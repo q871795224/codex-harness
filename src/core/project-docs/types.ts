@@ -3,6 +3,7 @@
  * 由 App 通过 services 提供（'harness.projectDocs'），插件与审批卡组件只依赖本接口。
  */
 
+import type { ThreadCodexSettings } from '../domain/codex'
 import type { SectionKey } from '../../features/project-doc/document'
 import type { OnboardingCommit, OnboardingReceipt } from '../project-onboarding/types'
 import type {
@@ -37,7 +38,16 @@ export interface ProjectDocProposal {
   createdAt: number
 }
 
+export interface ProjectArchiveInput {
+  workspaceRoot: string
+  prompt: string
+  model: string
+  effort: ThreadCodexSettings['effort']
+}
+
 export interface ProjectDocService {
+  /** Codex 临时会话只返回草稿，不创建持久会话或写入项目正文。 */
+  generateArchive(input: ProjectArchiveInput): Promise<string>
   commitOnboarding(input: OnboardingCommit): Promise<OnboardingReceipt>
   finishOnboarding(requestId: string, threadId: string, workspaceRoot: string): Promise<string>
   context(projectId: string, threshold: number): Promise<import('../../features/project-doc/types').ProjectContext>
