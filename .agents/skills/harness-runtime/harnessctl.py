@@ -144,13 +144,10 @@ def parser():
     settings.add_parser("read").add_argument("name")
     update = settings.add_parser("update")
     update.add_argument("name"); update.add_argument("--file", type=Path, required=True); update.add_argument("--expected-file", type=Path)
-    projects = groups.add_parser("projects", help="项目元数据与会话中途接入").add_subparsers(dest="action", required=True)
+    projects = groups.add_parser("projects", help="项目元数据").add_subparsers(dest="action", required=True)
     projects.add_parser("list")
     projects.add_parser("get").add_argument("project_id")
     update = projects.add_parser("update"); update.add_argument("project_id"); update.add_argument("--file", type=Path, required=True); update.add_argument("--expected-file", type=Path)
-    for action in ("request-create", "request-join"):
-        request = projects.add_parser(action); request.add_argument("name" if action == "request-create" else "project_id"); request.add_argument("--thread-id")
-    status = projects.add_parser("request-status"); status.add_argument("thread_id", nargs="?")
     router = groups.add_parser("router", help="Router缓存、Prompt、反馈与显式纠正").add_subparsers(dest="action", required=True)
     router.add_parser("summaries")
     refresh = router.add_parser("refresh"); refresh.add_argument("root", nargs="?"); refresh.add_argument("--all", action="store_true")
@@ -202,12 +199,6 @@ def operation(args):
                 params["patch"] = read_object(args.file)
                 if args.expected_file: params["expected"] = read_object(args.expected_file)
             return "projects." + action, params
-        thread = args.thread_id or os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_HARNESS_THREAD_ID")
-        if not thread: raise ClientError("需要来源--thread-id，不能用界面选中会话代替")
-        if action == "request-status": return "projects.onboardingStatus", {"threadId": thread}
-        params = {"threadId": thread, "mode": "create" if action == "request-create" else "join"}
-        params.update({"name": args.name} if action == "request-create" else {"projectId": args.project_id})
-        return "projects.requestOnboarding", params
     if group == "router":
         if action == "summaries": return "router.summaries", {}
         if action == "refresh":
