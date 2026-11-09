@@ -8,7 +8,6 @@ it('persists keyword feedback and replaces an existing source rule', async () =>
   await addReplacement('绘画 -> 对话')
   const saved = JSON.parse(vi.mocked(runtime.setAppState).mock.calls.at(-1)![1])
   expect(saved.rules).toEqual([{ from: '绘画', to: '对话' }])
-  expect(saved.initialized).toBe(false)
   expect(runtime.setAppState).toHaveBeenCalledWith(CORRECTION_KEY, expect.any(String))
 })
 it('restores disabled options and never writes when storage failed to load', async () => {
@@ -16,12 +15,12 @@ it('restores disabled options and never writes when storage failed to load', asy
   const { addReplacement } = await import('./settings')
   await expect(addReplacement('绘画 → 会话')).rejects.toThrow('read failed')
   expect(runtime.setAppState).not.toHaveBeenCalled()
-  vi.mocked(runtime.getAppState).mockResolvedValue(JSON.stringify({ enabled: false, quotes: false, initialized: true, rules: [] }))
+  vi.mocked(runtime.getAppState).mockResolvedValue(JSON.stringify({ enabled: false, quotes: false, rules: [] }))
   await addReplacement('绘画 → 会话')
-  expect(JSON.parse(vi.mocked(runtime.setAppState).mock.calls[0][1])).toEqual({ enabled: false, quotes: false, initialized: true, rules: [{ from: '绘画', to: '会话' }] })
+  expect(JSON.parse(vi.mocked(runtime.setAppState).mock.calls[0][1])).toEqual({ enabled: false, quotes: false, rules: [{ from: '绘画', to: '会话' }] })
 })
 it('rejects duplicate source mappings without writing', async () => {
   const { saveCorrectionSettings } = await import('./settings')
-  await expect(saveCorrectionSettings({ enabled: true, quotes: true, initialized: false, rules: [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }] })).rejects.toThrow('只能有一条')
+  await expect(saveCorrectionSettings({ enabled: true, quotes: true, rules: [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }] })).rejects.toThrow('只能有一条')
   expect(runtime.setAppState).not.toHaveBeenCalled()
 })

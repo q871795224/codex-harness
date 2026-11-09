@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Composer, type ComposerDraft } from './Composer'
-const { settings, addReplacement } = vi.hoisted(() => ({ settings: { enabled: true, quotes: true, rules: [{ from: '绘画', to: '会话' }, { from: '哈尼斯', to: 'Harness' }], initialized: false }, addReplacement: vi.fn().mockResolvedValue(undefined) }))
+const { settings, addReplacement } = vi.hoisted(() => ({ settings: { enabled: true, quotes: true, rules: [{ from: '绘画', to: '会话' }, { from: '哈尼斯', to: 'Harness' }] }, addReplacement: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../../core/input-correction/settings', () => ({ useCorrectionSettings: () => settings, loadCorrectionSettings: vi.fn().mockResolvedValue(undefined), addReplacement }))
 const props = {
   disabled: false, working: false, foreignActive: false, busy: false, contextUsage: null,

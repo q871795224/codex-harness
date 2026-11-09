@@ -2,9 +2,9 @@ import { useSyncExternalStore } from 'react'
 import { runtime } from '../runtime/bridge'
 import { parseReplacement, type Replacement } from './engine'
 
-export interface CorrectionSettings { enabled: boolean; quotes: boolean; rules: Replacement[]; initialized: boolean }
+export interface CorrectionSettings { enabled: boolean; quotes: boolean; rules: Replacement[] }
 export const CORRECTION_KEY = 'input-correction.v1'
-const defaults: CorrectionSettings = { enabled: true, quotes: true, rules: [], initialized: false }
+const defaults: CorrectionSettings = { enabled: true, quotes: true, rules: [] }
 let snapshot = defaults
 let loading: Promise<void> | undefined
 const listeners = new Set<() => void>()
@@ -17,7 +17,7 @@ export function loadCorrectionSettings(): Promise<void> {
     if (raw) {
       const value = JSON.parse(raw) as CorrectionSettings
       if (!Array.isArray(value.rules)) throw new Error('纠错词库格式无效')
-      snapshot = { enabled: value.enabled !== false, quotes: value.quotes !== false, initialized: value.initialized === true, rules: value.rules.map((rule) => parseReplacement(`${rule.from} → ${rule.to}`)) }
+      snapshot = { enabled: value.enabled !== false, quotes: value.quotes !== false, rules: value.rules.map((rule) => parseReplacement(`${rule.from} → ${rule.to}`)) }
       emit()
     }
   }).catch((error) => { loading = undefined; throw error })

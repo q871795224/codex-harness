@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { initializeDictionary } from '../../core/input-correction/initialize'
 import { parseReplacement } from '../../core/input-correction/engine'
 import { loadCorrectionSettings, saveCorrectionSettings, useCorrectionSettings } from '../../core/input-correction/settings'
 
-export function InputCorrectionSettings({ cwd }: { cwd: string | null }) {
+export function InputCorrectionSettings() {
   const settings = useCorrectionSettings()
   const [dictionary, setDictionary] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
-  const [candidateReady, setCandidateReady] = useState(false)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; void loadCorrectionSettings().catch((e) => setError(String(e))).finally(() => { if (mounted.current) setLoading(false) }); return () => { mounted.current = false } }, [])
   const savedDictionary = settings.rules.map((rule) => `${rule.from} → ${rule.to}`).join('\n')
@@ -19,26 +17,10 @@ export function InputCorrectionSettings({ cwd }: { cwd: string | null }) {
     setBusy(true); setError('')
     try {
       const rules = dictionary.split('\n').filter((line) => line.trim()).map(parseReplacement)
-      await saveCorrectionSettings({ ...settings, rules, initialized: settings.initialized || candidateReady })
+      await saveCorrectionSettings({ ...settings, rules })
       setStatus('词库已保存')
     } catch (e) { setError(String(e)) }
     finally { setBusy(false) }
-  }
-  const initialize = async () => {
-    if (!cwd) return
-    setBusy(true); setError('')
-    try {
-      const rules = await initializeDictionary(cwd, (message) => { if (mounted.current) setStatus(message) })
-      if (mounted.current) {
-        setCandidateReady(true)
-        setStatus(`候选词 ${rules.length} 条，请检查后保存`)
-        const merged = new Map(rules.map((rule) => [rule.from, rule]))
-        // User-authored entries win over inferred candidates.
-        for (const rule of dictionary.split('\n').filter((line) => line.trim()).map(parseReplacement)) merged.set(rule.from, rule)
-        setDictionary([...merged.values()].map((rule) => `${rule.from} → ${rule.to}`).join('\n'))
-      }
-    } catch (e) { if (mounted.current) setError(String(e)) }
-    finally { if (mounted.current) setBusy(false) }
   }
   const toggle = async (patch: { enabled?: boolean; quotes?: boolean }) => {
     setError('')
@@ -51,9 +33,8 @@ export function InputCorrectionSettings({ cwd }: { cwd: string | null }) {
       <label className="settings-row"><span>中文正文引号配对<small>修正双引号的方向与中文样式，代码和路径保持原样。</small></span><input type="checkbox" checked={settings.quotes} disabled={busy || loading} onChange={(event) => void toggle({ quotes: event.target.checked })} /></label>
     </div>
     <label className="title-prompt-field"><span>替换词库（每行：原词 → 替换词）</span><textarea aria-label="替换词库" value={dictionary} disabled={busy || loading} onChange={(event) => setDictionary(event.target.value)} spellCheck={false} placeholder="绘画 → 会话" /></label>
-    <p>初始化会分页分析全部 Codex 会话的用户输入（含归档），由 Luna 分批生成候选词；检查后保存才生效。后续不会自动调用模型。</p>
+    <p>词库存储在本机，不随 Git 同步。每行一条规则；添加、修改或删除对应行后保存。</p>
     <div className="title-prompt-actions">
-      <button type="button" disabled={busy || loading || !cwd || settings.initialized} onClick={() => void initialize()}>{busy ? '处理中…' : settings.initialized ? '已完成词库初始化' : '从历史初始化词库'}</button>
       <button type="button" className="primary" disabled={busy || loading} onClick={() => void save()}>保存词库</button>
     </div>
     {status && <p role="status">{status}</p>}{error && <p role="alert">{error}</p>}

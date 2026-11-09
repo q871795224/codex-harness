@@ -210,7 +210,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           {page === 'router' && <RouterSettings models={codex.models} workspaces={workspaces} />}
           {page === 'recap' && <RecapSettings codex={codex} settings={recapGeneration} onChange={onRecapGeneration} />}
           {page === 'memory' && <MemorySettings models={codex.models} />}
-          {page === 'input-correction' && <InputCorrectionSettings cwd={selectedWorkspaceRoot ?? workspaces[0]?.root ?? null} />}
+          {page === 'input-correction' && <InputCorrectionSettings />}
           {page === 'handover' && <HandoverSettings />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
           {page === 'mcp' && <McpSettings codex={codex} />}
