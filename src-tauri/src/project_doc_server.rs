@@ -29,11 +29,11 @@ pub type ThreadProjectLookup = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ProposeRequest {
-    thread_id: String,
-    project_id: String,
-    section: String,
-    content: String,
+pub(crate) struct ProposeRequest {
+    pub(crate) thread_id: String,
+    pub(crate) project_id: String,
+    pub(crate) section: String,
+    pub(crate) content: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -225,6 +225,16 @@ pub async fn serve_with_management(
     endpoint_dir: &Path,
     management: Option<Arc<Management>>,
 ) -> Result<ProjectDocServer, String> {
+    serve_shared(Arc::new(store), Arc::new(proposals), lookup, endpoint_dir, management).await
+}
+
+pub async fn serve_shared(
+    store: Arc<ProjectDocStore>,
+    proposals: Arc<ProposalQueue>,
+    lookup: ThreadProjectLookup,
+    endpoint_dir: &Path,
+    management: Option<Arc<Management>>,
+) -> Result<ProjectDocServer, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| format!("无法绑定本地项目文档服务: {e}"))?;
@@ -239,8 +249,6 @@ pub async fn serve_with_management(
             "harnessVersion": env!("CARGO_PKG_VERSION"),
         }),
     )).transpose()?;
-    let store = Arc::new(store);
-    let proposals = Arc::new(proposals);
     let task = tokio::spawn(async move {
         loop {
             match listener.accept().await {

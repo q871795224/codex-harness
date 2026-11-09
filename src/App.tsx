@@ -374,6 +374,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const boundProjectId = projectBinding.binding?.projectId ?? null
   const [pendingProjectConflict, setPendingProjectConflict] = useState<{ proposalContent: string; section: string } | null>(null)
   // 折叠项目卡 spec：仅第 0 轮（pending 且有项目正文）下发给 Composer；锁定后不再注入。
+  const nativeProjectTools = harness.currentThread?.harnessProjectTools === true
   const [projectCardContent, setProjectCardContent] = useState<{ projectId: string; threshold: number; seq: number; content: string } | null>(null)
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
   const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([])
@@ -423,7 +424,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
     ? Math.floor(projectDocThresholdValue) : 10_000
   useEffect(() => {
     const binding = projectBinding.binding
-    if (!binding || binding.phase !== 'pending') {
+    if (nativeProjectTools || !binding || binding.phase !== 'pending') {
       setProjectCardContent(null)
       return undefined
     }
@@ -432,10 +433,10 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
       .then((snapshot) => { if (!disposed) setProjectCardContent({ projectId: binding.projectId, threshold: projectDocThreshold, seq: snapshot.seq, content: snapshot.content }) })
       .catch(() => { if (!disposed) setProjectCardContent(null) })
     return () => { disposed = true }
-  }, [projectBinding.binding, projectDocThreshold])
+  }, [nativeProjectTools, projectBinding.binding, projectDocThreshold])
   const projectCard = useMemo(() => {
     const binding = projectBinding.binding
-    if (!binding || binding.phase !== 'pending' || !projectBinding.project || !projectCardContent || projectCardContent.projectId !== binding.projectId || projectCardContent.threshold !== projectDocThreshold) return null
+    if (nativeProjectTools || !binding || binding.phase !== 'pending' || !projectBinding.project || !projectCardContent || projectCardContent.projectId !== binding.projectId || projectCardContent.threshold !== projectDocThreshold) return null
     // 正文开头注入机器可读标记：skill 命令据此拿到 project_id / thread_id（详见 .agents/skills/project-doc）。
     const marker = harness.selectedThreadId
       ? `<!-- project-doc: project_id=${binding.projectId} thread_id=${harness.selectedThreadId} -->\n\n`
@@ -446,7 +447,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
       seq: projectCardContent.seq,
       content: `${marker}${projectCardContent.content}`,
     }
-  }, [projectBinding.binding, projectBinding.project, projectCardContent, harness.selectedThreadId, projectDocThreshold])
+  }, [nativeProjectTools, projectBinding.binding, projectBinding.project, projectCardContent, harness.selectedThreadId, projectDocThreshold])
   const resolvedTurnActions = plugins.resolvedTurnActions({
     provider: harness.selectedProvider,
     threadId: harness.selectedThreadId,
@@ -1113,7 +1114,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                   onSend={async (input, mode, references, titleSource) => {
                     const threadId = harness.currentThread!.id
                     const submittedDraft = queuedComposerDraftsRef.current[threadId]
-                    const prepared = await prepareProjectInput(projectDocs, threadId, input, projectDocThreshold)
+                    const prepared = await prepareProjectInput(projectDocs, threadId, input, projectDocThreshold, nativeProjectTools)
                     if (selectedThreadRef.current !== threadId) throw new Error('会话已切换，消息未发送；请回到来源会话继续')
                     scrollRequestSequence.current += 1
                     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
@@ -1126,7 +1127,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                       composerDraftWriterRef.current?.update(targetId, empty)
                       setComposerDrafts((current) => ({ ...current, [targetId]: empty }))
                     }
-                    // 绑定后的背景消息发送成功：pending → locked，此后只读、不再注入项目卡。
+                    // 绑定后的消息发送成功：pending → locked，归属固定。
                     try {
                       if (prepared.projectId) await projectBinding.lockOnSend()
                     } catch (error) {

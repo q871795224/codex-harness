@@ -1,0 +1,10 @@
+{
+  "version": "codex-cli 0.167.0",
+  "backend": "isolated loopback fixture",
+  "toolCallbacks": 4,
+  "modelRequests": 8,
+  "separateThreadMapping": true,
+  "processRestartResume": true,
+  "forkInheritsTools": true,
+  "modelReceivedToolResults": true
+}

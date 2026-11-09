@@ -113,6 +113,7 @@ pub struct AppServerManager {
     ownership: Arc<TurnOwnership>,
     runtime_skill: crate::runtime_skill::RuntimeSkill,
     project_skill: Arc<crate::project_doc_skill::ProjectDocSkill>,
+    project_tools: Arc<crate::project_tools::ProjectTools>,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
     max_response_bytes: usize,
@@ -156,6 +157,7 @@ impl AppServerManager {
         ownership: Arc<TurnOwnership>,
         runtime_skill: crate::runtime_skill::RuntimeSkill,
         project_skill: Arc<crate::project_doc_skill::ProjectDocSkill>,
+        project_tools: Arc<crate::project_tools::ProjectTools>,
         max_response_bytes: usize,
     ) -> Self {
         Self {
@@ -165,6 +167,7 @@ impl AppServerManager {
             ownership,
             runtime_skill,
             project_skill,
+            project_tools,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
             max_response_bytes,
@@ -340,6 +343,23 @@ impl AppServerManager {
         Ok(turn)
     }
     pub async fn request(&self, method: String, mut params: Value) -> Result<Value, String> {
+        let register_tools = method == "thread/start" && params["ephemeral"] != true;
+        if register_tools {
+            let tools = params.as_object_mut().ok_or("thread/start 参数无效")?
+                .entry("dynamicTools").or_insert_with(|| json!([]));
+            let tools = tools.as_array_mut().ok_or("dynamicTools 必须是数组")?;
+            for tool in crate::project_tools::definitions().as_array().unwrap() {
+                if tools.iter().any(|existing| existing["name"] == tool["name"]) {
+                    return Err("Harness 项目工具名称冲突".into());
+                }
+                tools.push(tool.clone());
+            }
+        }
+        let native_project = match params["threadId"].as_str() {
+            Some(thread) => self.project_tools.enabled(thread)?,
+            None => false,
+        };
+        let native_fork = method == "thread/fork" && native_project;
         if matches!(
             method.as_str(),
             "thread/queue/add"
@@ -376,7 +396,7 @@ impl AppServerManager {
             }
             load
         } else { None };
-        let skill_load = if method == "turn/start" {
+        let skill_load = if method == "turn/start" && !native_project {
             let load = match params["threadId"].as_str() {
                 Some(thread) => self.project_skill.prepare("codex", thread)?,
                 None => None,
@@ -434,6 +454,21 @@ impl AppServerManager {
                     self.diagnostics.record("error", "harness-runtime", "skill.marker_failed", json!({}));
                 }
             }
+        }
+        if let Ok(response) = &mut result {
+            if method == "turn/start" && native_project {
+                if let Some(thread) = request_context.as_ref().and_then(|c| c["threadId"].as_str()) {
+                    if self.project_tools.accepted_turn(thread).is_err() {
+                        self.diagnostics.record("error", "project-doc", "binding.lock_failed", json!({}));
+                    }
+                }
+            }
+            if register_tools || native_fork {
+                if let Some(thread) = response.pointer("/thread/id").and_then(Value::as_str) {
+                    self.project_tools.register(thread)?;
+                }
+            }
+            if matches!(method.as_str(), "thread/start" | "thread/resume" | "thread/fork" | "thread/read" | "thread/list" | "thread/unarchive") { self.project_tools.annotate(response)?; }
         }
         if method == "thread/resume" {
             if let Ok(response) = &mut result {
@@ -656,6 +691,8 @@ impl AppServerManager {
         let reader_ownership = self.ownership.clone();
         let server_requests = Arc::new(Mutex::new(HashMap::<String, Value>::new()));
         let reader_server_requests = server_requests.clone();
+        let reader_project_tools = self.project_tools.clone();
+        let tool_outgoing = outgoing.clone();
 
         tauri::async_runtime::spawn(async move {
             while let Some(frame) = outbound.recv().await {
@@ -734,6 +771,25 @@ impl AppServerManager {
                             } else {
                                 let method = payload.get("method").and_then(Value::as_str);
                                 let params = payload.get("params").unwrap_or(&Value::Null);
+                                if method == Some("item/tool/call") && payload.get("id").is_some() {
+                                    // A shared daemon can replay pending requests to another
+                                    // client. Leave a foreign owner's request for that owner;
+                                    // sending an error here would resolve its request too.
+                                    if let (Some(thread), Some(turn)) = (params["threadId"].as_str(), params["turnId"].as_str()) {
+                                        if reader_ownership.check(thread, turn).is_err() { continue; }
+                                    }
+                                    let tools = reader_project_tools.clone();
+                                    let params = params.clone();
+                                    let id = payload["id"].clone();
+                                    let outgoing = tool_outgoing.clone();
+                                    // Never block the transport reader on SQLite or tool execution.
+                                    tauri::async_runtime::spawn(async move {
+                                        let result = tokio::task::spawn_blocking(move || tools.execute(&params)).await
+                                            .unwrap_or_else(|_| json!({"success":false,"contentItems":[{"type":"inputText","text":"Harness 项目工具执行失败"}]}));
+                                        let _ = outgoing.send(json!({"id":id,"result":result}).to_string()).await;
+                                    });
+                                    continue;
+                                }
                                 {
                                     let mut requests = reader_server_requests.lock().await;
                                     track_server_request(&mut requests, &payload);

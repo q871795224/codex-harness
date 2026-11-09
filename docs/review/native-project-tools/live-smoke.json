@@ -1,0 +1,27 @@
+{
+  "backend": "real configured model provider",
+  "model": "gpt-6.1-sol",
+  "ephemeral": true,
+  "toolCallbacks": 1,
+  "emptyArguments": true,
+  "envelopeIdentity": true,
+  "modelUsedReturnedDocument": true,
+  "usage": [
+    {
+      "totalTokens": 17986,
+      "inputTokens": 17963,
+      "cachedInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 23,
+      "reasoningOutputTokens": 0
+    },
+    {
+      "totalTokens": 18059,
+      "inputTokens": 18032,
+      "cachedInputTokens": 17792,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 27,
+      "reasoningOutputTokens": 0
+    }
+  ]
+}
