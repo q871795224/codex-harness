@@ -33,9 +33,28 @@ describe('thread catalog listing', () => {
       sortKey: 'recency_at',
       sortDirection: 'desc',
       archived: true,
+      modelProviders: [],
       useStateDbOnly: true,
       searchTerm: 'delivery',
     })
+  })
+
+  it.each(['active', 'archived'] as const)('keeps %s history visible after the configured provider changes', async (mode) => {
+    const client = transport()
+    const history = [
+      { ...thread('recent-openai', 200), modelProvider: 'openai' },
+      { ...thread('old-custom', 10), modelProvider: 'custom' },
+    ]
+    vi.mocked(client.listThreads).mockImplementation(async (params) => {
+      // App Server defaults to the configured provider when this field is omitted.
+      const providers = (params.modelProviders as string[] | undefined) ?? ['custom']
+      return {
+        data: history.filter((item) => providers.length === 0 || providers.includes(item.modelProvider)),
+        nextCursor: null,
+      }
+    })
+
+    await expect(listThreadPage(client, mode)).resolves.toEqual({ data: history, nextCursor: null })
   })
 
   it('reads every active page until the cursor is exhausted', async () => {
@@ -45,8 +64,8 @@ describe('thread catalog listing', () => {
       .mockResolvedValueOnce({ data: [thread('thread-2', 9)], nextCursor: null })
 
     await expect(listAllActiveThreads(client)).resolves.toEqual([thread('thread-1', 10), thread('thread-2', 9)])
-    expect(client.listThreads).toHaveBeenNthCalledWith(1, expect.objectContaining({ cursor: null, archived: false }))
-    expect(client.listThreads).toHaveBeenNthCalledWith(2, expect.objectContaining({ cursor: 'page-2', archived: false }))
+    expect(client.listThreads).toHaveBeenNthCalledWith(1, expect.objectContaining({ cursor: null, archived: false, modelProviders: [] }))
+    expect(client.listThreads).toHaveBeenNthCalledWith(2, expect.objectContaining({ cursor: 'page-2', archived: false, modelProviders: [] }))
   })
 })
 
