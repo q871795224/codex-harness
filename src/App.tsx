@@ -49,6 +49,7 @@ import { ConversationHeader, ConversationView } from './features/conversation/Co
 import { QueueDock } from './features/conversation/QueueDock'
 import { useUnifiedHarness } from './features/conversation/useUnifiedHarness'
 import { useCodexCore } from './features/codex/useCodexCore'
+import { useCodexProviderWatch } from './features/codex/useCodexProviderWatch'
 import { useCodexUpdate } from './features/codex/useCodexUpdate'
 import { CodexUpdatePanel } from './features/codex/CodexUpdatePanel'
 import { orderConversationTabs, parseConversationTabOrder, reorderConversationTabs } from './features/conversation/tabOrder'
@@ -252,6 +253,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   teams: TeamsService
   codex: ReturnType<typeof useCodexCore>
 }) {
+  const restoreCodexProvider = useCodexProviderWatch(harness.phase === 'ready')
   const selectedThreadRef = useRef(harness.selectedThreadId)
   selectedThreadRef.current = harness.selectedThreadId
   const { mode, selectMode, teamVisited } = useInterfaceMode(runtime, (error) => harness.notify('无法保存工作模式', 'error', error))
@@ -667,6 +669,10 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   }
 
   const handleNotificationAction = async (action: NotificationAction) => {
+    if (action.kind === 'codex-provider-restore') {
+      await restoreCodexProvider()
+      return
+    }
     selectMode('conversation')
     if (action.kind === 'release-log') {
       await runtime.openReleaseLog(action.target, action.runId)
