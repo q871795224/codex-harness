@@ -1,6 +1,7 @@
 import './inputCorrection.css'
 import { useInputCorrection } from './useInputCorrection'
 import { addReplacement } from '../../core/input-correction/settings'
+import type { Correction } from '../../core/input-correction/engine'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react'
 import { ChevronDown, FileText, Image, NotebookPen, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
@@ -143,6 +144,8 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
   const [correctionFeedback, setCorrectionFeedback] = useState('')
   const [correctionFeedbackStatus, setCorrectionFeedbackStatus] = useState('')
   const [savingCorrection, setSavingCorrection] = useState(false)
+  const [correctionHover, setCorrectionHover] = useState<{ original: string; left: number; top: number } | null>(null)
+  useEffect(() => { setCorrectionHover(null) }, [text, composing, disabled, busy])
   const correction = useInputCorrection(text, composing, !!disabled || !!busy, collapsedPastes, ref, (next, edits, undo) => {
     let pastes = collapsedPastes
     let offset = 0
@@ -636,14 +639,31 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
             ))}
           </div>
         )}
-        <div className={`composer-text-editor${collapsedPastes.length ? ' has-project-card' : ''}`}>
+        <div className={`composer-text-editor${collapsedPastes.length ? ' has-project-card' : ''}${correction.edits.length ? ' has-corrections' : ''}`}
+          onMouseLeave={() => setCorrectionHover(null)}
+          onMouseDown={() => setCorrectionHover(null)}
+          onMouseMove={(event) => {
+            if (composing || disabled || busy || event.buttons) { setCorrectionHover(null); return }
+            const bounds = event.currentTarget.getBoundingClientRect()
+            for (const span of highlightRef.current?.querySelectorAll<HTMLElement>('[data-correction-original]') ?? []) {
+              for (const rect of span.getClientRects()) {
+                if (event.clientX >= rect.left && event.clientX < rect.right && event.clientY >= rect.top && event.clientY < rect.bottom) {
+                  setCorrectionHover({ original: span.dataset.correctionOriginal!, left: Math.min(Math.max(0, rect.left - bounds.left), Math.max(0, bounds.width - 320)), top: rect.top - bounds.top })
+                  return
+                }
+              }
+            }
+            setCorrectionHover(null)
+          }}>
           <div className="composer-text-highlight" ref={highlightRef} aria-hidden="true">
-            <ProjectCardHighlight text={text} pastes={collapsedPastes} />
+            <ProjectCardHighlight text={text} pastes={collapsedPastes} corrections={correction.edits} />
           </div>
+          {correctionHover && <div className="composer-correction-tooltip" role="tooltip" aria-label="纠正前的原文" style={{ left: correctionHover.left, top: correctionHover.top }}>原文：{correctionHover.original}</div>}
         <textarea
           ref={ref}
           value={text}
-          onScroll={(event) => { if (highlightRef.current) highlightRef.current.scrollTop = event.currentTarget.scrollTop }}
+          onScroll={(event) => { setCorrectionHover(null); if (highlightRef.current) highlightRef.current.scrollTop = event.currentTarget.scrollTop }}
+          onBlur={() => setCorrectionHover(null)}
           disabled={disabled || busy || attachmentBusy}
           placeholder={foreignActive ? '等待其他客户端完成当前轮' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
           onChange={(event) => {
@@ -874,14 +894,18 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
   )
 }
 
-export function ProjectCardHighlight({ text, pastes }: { text: string; pastes: CollapsedPaste[] }) {
+export function ProjectCardHighlight({ text, pastes, corrections = [] }: { text: string; pastes: CollapsedPaste[]; corrections?: Correction[] }) {
   let cursor = 0
   const parts: ReactNode[] = []
-  for (const paste of [...pastes].sort((a, b) => a.start - b.start)) {
-    if (paste.start < cursor || text.slice(paste.start, paste.end) !== paste.label) continue
-    parts.push(text.slice(cursor, paste.start))
-    parts.push(<span key={paste.start} className={paste.origin?.kind === 'project-doc' ? 'composer-project-label' : 'composer-reference-label'}>{paste.label}</span>)
-    cursor = paste.end
+  const ranges = [
+    ...pastes.map((paste) => ({ start: paste.start, end: paste.end, label: paste.label, original: undefined as string | undefined, className: paste.origin?.kind === 'project-doc' ? 'composer-project-label' : 'composer-reference-label' })),
+    ...corrections.map((edit) => ({ start: edit.start, end: edit.end, label: edit.after, original: edit.before, className: 'composer-corrected-text' })),
+  ].sort((a, b) => a.start - b.start)
+  for (const range of ranges) {
+    if (range.start < cursor || text.slice(range.start, range.end) !== range.label) continue
+    parts.push(text.slice(cursor, range.start))
+    parts.push(<span key={range.start} className={range.className} data-correction-original={range.original}>{range.label}</span>)
+    cursor = range.end
   }
   return <>{parts}{text.slice(cursor)}{'\n'}</>
 }

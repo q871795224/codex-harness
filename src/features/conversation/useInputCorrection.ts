@@ -88,5 +88,7 @@ export function useInputCorrection(text: string, composing: boolean, disabled: b
     latest.current.apply(restored, active, true)
     requestAnimationFrame(() => { element?.focus(); element?.setSelectionRange(nextCaret, nextCaret) })
   }
-  return { corrected: edits.length > 0, undo, error, noteInput: () => { pending.current = !nextPaste.current }, notePaste: (start: number, _end: number, content: string) => { pending.current = false; nextPaste.current = { start, end: start + content.length } } }
+  // Derive ranges for this render too, so highlights never lag a user edit by one frame.
+  const visibleEdits = previous.current === text ? edits : moveCorrections(previous.current, text, edits)
+  return { edits: visibleEdits, corrected: visibleEdits.length > 0, undo, error, noteInput: () => { pending.current = !nextPaste.current }, notePaste: (start: number, _end: number, content: string) => { pending.current = false; nextPaste.current = { start, end: start + content.length } } }
 }

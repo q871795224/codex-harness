@@ -1,6 +1,13 @@
 .composer-correction { --correction-bg: #f7f8fa; --correction-line: #d9dfe7; --correction-ink: #596573; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; padding: 6px 10px; border: 1px solid var(--correction-line); border-radius: 8px; background: var(--correction-bg); color: var(--correction-ink); font-size: 12px; }
-.composer-correction label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 150px; }
-.composer-correction input { width: 100%; min-width: 80px; border: 0; background: transparent; color: inherit; font: inherit; padding: 4px; }
+.composer-correction label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 150px; white-space: nowrap; }
+.composer-correction input { flex: 1; width: 0; min-width: 80px; border: 0; background: transparent; color: inherit; font: inherit; padding: 4px; }
 .composer-correction button { border: 1px solid var(--correction-line); border-radius: 5px; background: var(--correction-bg); color: inherit; font: inherit; padding: 3px 8px; cursor: pointer; }
 .composer-correction button:disabled { opacity: .5; cursor: default; }
 .app-shell[data-theme='dark'] .composer-correction { --correction-bg: #292d34; --correction-line: #3b414a; --correction-ink: #b7c0cb; }
+.has-corrections .composer-text-highlight { display: block; }
+.app-shell .has-corrections textarea { position: relative; color: transparent !important; caret-color: #1f232b; }
+.composer-corrected-text { color: #5088be; text-decoration: underline dashed; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.composer-correction-tooltip { position: absolute; z-index: 5; max-width: min(320px, 100%); transform: translateY(calc(-100% - 6px)); padding: 5px 9px; border: 1px solid #c9d9e9; border-radius: 6px; background: #f0f6fc; color: #315f8a; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; pointer-events: none; }
+.app-shell[data-theme='dark'] .has-corrections textarea { caret-color: #e1e5eb; }
+.app-shell[data-theme='dark'] .composer-corrected-text { color: #86b8ea; }
+.app-shell[data-theme='dark'] .composer-correction-tooltip { background: #253648; border-color: #435c75; color: #b8d7f5; }
