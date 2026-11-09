@@ -1,28 +1,23 @@
 import type { CollapsedPaste } from '../conversation/composerInput'
 
-/**
- * 项目背景折叠卡（首轮注入）的纯逻辑。
- *
- * 设计见 .harness/project-doc-plugin-plan.md 第 1 节「生命周期（方案乙）」：
- * - 折叠卡是草稿态 paste，`origin.kind === 'project-doc'`，仅在第 0 轮存在于输入框。
- * - 发送第 1 轮时随 expandedText 展开注入正文；发送后被消耗，不再注入。
- * - 卡的 label 显示「项目名 + seq」，content 是项目文档正文（仅正文，不含协议/seq 元数据）。
- */
+/** Project-bound composer card. Native tools use a short read notice (seq=null);
+ * legacy conversations use the document snapshot and its sequence. Both are
+ * consumed with the first accepted message and can be removed to unbind a draft. */
 
 export const PROJECT_CARD_LABEL_PREFIX = '[项目: '
 
 export interface ProjectCardSpec {
   projectId: string
   name: string
-  seq: number
-  /** 项目文档正文（注入内容）。 */
+  seq: number | null
+  /** 项目背景或原生工具的绑定提示；提示不关联正文版本，seq 为 null。 */
   content: string
 }
 
 /** 项目卡 label，如 `[项目: 我的项目 (seq 5)]`。 */
 export function projectCardLabel(spec: Pick<ProjectCardSpec, 'name' | 'seq'>): string {
   const name = spec.name.replace(/\s+/g, ' ').trim().slice(0, 40) || '未命名'
-  return `${PROJECT_CARD_LABEL_PREFIX}${name} (seq ${spec.seq})]`
+  return spec.seq === null ? `${PROJECT_CARD_LABEL_PREFIX}${name}]` : `${PROJECT_CARD_LABEL_PREFIX}${name} (seq ${spec.seq})]`
 }
 
 /** 找出 pastes 里的项目背景卡（最多一张；一期一 thread 只能绑一个项目）。 */

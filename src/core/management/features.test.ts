@@ -87,13 +87,12 @@ it('reads only documented plugin configuration and rejects non-loopback Bridge c
   expect(read).toMatchObject({ settings: { account: 'notify', baseUrl: 'http://127.0.0.1:8787' }, hiddenConfigKeys: ['token'] })
   await expect(call('plugins.configure', { instanceId: 'p', patch: { baseUrl: 'https://outside.example' } })).rejects.toThrow('本机')
 })
-it('validates project metadata before mutation and does not expose the document in request status', async () => {
+it('validates project metadata before mutation', async () => {
   const { context, call } = fixture()
   vi.mocked(runtime.projectDocGet).mockResolvedValue({ id: 'project', name: 'Name', shortName: null } as never)
   await expect(call('projects.update', { projectId: 'project', patch: { name: 'Renamed', shortName: '[invalid]' } })).rejects.toThrow('方括号')
   expect(runtime.projectDocRename).not.toHaveBeenCalled()
-  context.onboarding = { snapshot: () => new Map([['thread', { id: 'request', source: { threadId: 'thread' }, phase: 'running', detail: 'private body', error: 'private body' }]]) } as never
-  expect(JSON.stringify(await call('projects.onboardingStatus', { threadId: 'thread' }))).not.toContain('private body')
+
 })
 it('marks a notification read without resolving a source-owned pending question', async () => {
   const { call } = fixture()

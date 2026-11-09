@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AUTO_CONFIRM_DELAY_MS, createProjectOnboarding } from './service'
+import { createProjectOnboarding } from './service'
 import { chunkHistory, parsePlan } from './prompt'
 import type { AgentRunService } from '../agent-runs/types'
 import type { ProjectDocService } from '../project-docs/types'
 import type { OnboardingPorts, StoredOnboardingRequest } from './types'
 
-const disposers: Array<() => void> = []
-afterEach(() => { disposers.splice(0).forEach(dispose => dispose()); vi.useRealTimers() })
+afterEach(() => vi.useRealTimers())
 
 function fixture() {
   const plan = { status: '目标和当前成果', log: ['验收通过'], decisions: ['只补缺失项'], openQuestions: ['跟进上线'], mutations: [] }
@@ -18,15 +17,14 @@ function fixture() {
   const docs = {list:vi.fn(async () => []),get:vi.fn(async () => ({projectId:"p",name:"已有项目",currentSeq:4}))} as unknown as ProjectDocService
   const service = createProjectOnboarding(ports, docs, runs)
   const settings = { instanceId:'instance', model:'fixture-model', effort:'low' }
-  disposers.push(service.registerHost(settings))
   return { service, ports, runs, settings, plan, docs }
 }
 describe('session project onboarding', () => {
-  it('Agent requests show one card and do not start immediately', async () => {
+  it('user requests show one card and do not start immediately', async () => {
     const f=fixture()
-    const [one,two] = await Promise.all([f.service.request('t',{requestedBy:'agent',name:'Agent 建议的项目',instanceId:'instance'}), f.service.request('t')])
+    const [one,two] = await Promise.all([f.service.request('t',{name:'用户填写的项目',instanceId:'instance'}), f.service.request('t')])
     expect(one.requestId).toBe(two.requestId)
-    expect(f.service.snapshot().get('t')?.requestedBy).toBe('agent')
+    expect(f.service.snapshot().get('t')?.requestedBy).toBe('user')
     expect(f.runs.start).not.toHaveBeenCalled(); expect(f.ports.commit).not.toHaveBeenCalled()
     await f.service.confirm('t',{mode:'create', name:'新项目',projectId:''},f.settings)
     expect(f.service.snapshot().get('t')?.phase).toBe('done')
@@ -103,52 +101,59 @@ describe('session project onboarding', () => {
   })
 })
 
-describe('non-blocking Agent defaults', () => {
-  it('returns immediately and uses the proposal on timeout while the source keeps working', async () => {
-    vi.useFakeTimers()
-    const f=fixture(); f.ports.busy.mockReturnValue(true)
-    const result=await f.service.request('t',{requestedBy:'agent',name:'默认项目',instanceId:'instance'})
-    expect(result.phase).toBe('confirm'); expect(result.autoConfirmAt).toBe(Date.now()+AUTO_CONFIRM_DELAY_MS)
-    expect(f.runs.start).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS-1)
-    expect(f.runs.start).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(1)
-    expect(f.ports.commit).toHaveBeenCalledWith(expect.objectContaining({name:'默认项目'}))
-    expect(f.service.snapshot().get('t')?.phase).toBe('binding')
-    f.ports.busy.mockReturnValue(false); await f.service.resumeBindings()
-    expect(f.service.snapshot().get('t')?.phase).toBe('done')
-  })
-  it('uses the proposed existing project after timeout', async () => {
-    vi.useFakeTimers()
-    const f=fixture()
-    vi.mocked(f.docs.get).mockResolvedValue({projectId:'p',name:'目标项目',currentSeq:4,createdAt:1,updatedAt:1})
-    await f.service.request('t',{requestedBy:'agent',mode:'join',projectId:'p',instanceId:'instance'})
-    await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS)
-    expect(f.ports.commit).toHaveBeenCalledWith(expect.objectContaining({projectId:'p',name:null,baseSeq:4}))
-    expect(f.service.snapshot().get('t')?.name).toBe('目标项目')
-  })
-  it('cancels the timer once the user takes over editing', async () => {
-    vi.useFakeTimers()
-    const f=fixture()
-    await f.service.request('t',{requestedBy:'agent',name:'默认项目',instanceId:'instance'})
-    f.service.updateDraft('t',{mode:'create',name:'用户改名',projectId:''})
-    await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS*2)
-    expect(f.runs.start).not.toHaveBeenCalled()
-    expect(f.service.snapshot().get('t')?.autoConfirmAt).toBeUndefined()
-    await f.service.confirm('t',{mode:'create',name:'用户改名',projectId:''},f.settings)
-    expect(f.ports.commit).toHaveBeenCalledWith(expect.objectContaining({name:'用户改名'}))
-  })
-  it('never auto-confirms a manual card and cancels a dismissed Agent request', async () => {
+describe('manual confirmation and restart', () => {
+  function storage() {
+    const saved=new Map<string,StoredOnboardingRequest>()
+    return {saved,ports:{requests:async () => [...saved.values()],
+      saveRequest:async (request:StoredOnboardingRequest) => {saved.set(request.id,structuredClone(request))},
+      removeRequest:async (id:string) => {saved.delete(id)}}}
+  }
+  it('never starts a user draft until confirmation, including after editing or dismissing it', async () => {
     vi.useFakeTimers()
     const f=fixture()
     await f.service.request('t',{instanceId:'instance'})
-    await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS*2)
+    f.service.updateDraft('t',{mode:'create',name:'用户改名',projectId:''})
+    await vi.advanceTimersByTimeAsync(600_000)
     expect(f.runs.start).not.toHaveBeenCalled()
+    expect(f.service.snapshot().get('t')).toMatchObject({phase:'confirm',name:'用户改名'})
     f.service.dismiss('t')
-    await f.service.request('t',{requestedBy:'agent',name:'默认项目',instanceId:'instance'})
-    f.service.dismiss('t')
-    await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS*2)
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(f.service.snapshot().size).toBe(0)
+    expect(f.ports.commit).not.toHaveBeenCalled()
+  })
+  it('restores an expired legacy Agent proposal as a manual card', async () => {
+    vi.useFakeTimers()
+    const f=fixture(),db=storage()
+    db.saved.set('legacy',{id:'legacy',threadId:'t',requestedBy:'agent',instanceId:'instance',mode:'create',name:'旧建议',projectId:'',phase:'confirm',autoConfirmAt:Date.now()-1})
+    const restored=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
+    await restored.restoreSaved(); await vi.advanceTimersByTimeAsync(600_000)
+    expect(restored.snapshot().get('t')).toMatchObject({phase:'confirm',requestedBy:'user',name:'旧建议'})
+    expect(db.saved.get('legacy')).not.toHaveProperty('autoConfirmAt')
     expect(f.runs.start).not.toHaveBeenCalled()
+    await restored.confirm('t',{mode:'create',name:'用户确认名称',projectId:''},f.settings)
+    expect(f.ports.commit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({name:'用户确认名称'}))
+  })
+  it('does not replay an interrupted legacy run', async () => {
+    vi.useFakeTimers()
+    const f=fixture(),db=storage()
+    db.saved.set('interrupted',{id:'interrupted',threadId:'t',requestedBy:'agent',instanceId:'instance',mode:'create',name:'默认项目',projectId:'',phase:'interrupted',autoConfirmAt:Date.now()-1})
+    const restored=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
+    await restored.restoreSaved(); await vi.advanceTimersByTimeAsync(600_000)
+    expect(restored.snapshot().get('t')?.phase).toBe('error')
+    expect(f.runs.start).not.toHaveBeenCalled()
+  })
+  it('keeps user choices after restart without model work', async () => {
+    vi.useFakeTimers()
+    const f=fixture(),db=storage()
+    const service=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
+    await service.request('t',{instanceId:'instance'})
+    service.updateDraft('t',{mode:'create',name:'用户草稿',projectId:''})
+    await vi.advanceTimersByTimeAsync(0)
+    const restored=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
+    await restored.restoreSaved(); await vi.advanceTimersByTimeAsync(600_000)
+    expect(restored.snapshot().get('t')?.name).toBe('用户草稿')
+    expect(f.runs.start).not.toHaveBeenCalled()
+    expect(JSON.stringify([...db.saved.values()])).not.toContain('早期背景')
   })
   it('does not summarize a busy source with no persisted messages', async () => {
     const f=fixture(); f.ports.busy.mockReturnValue(true); f.ports.history.mockResolvedValue([])
@@ -156,62 +161,6 @@ describe('non-blocking Agent defaults', () => {
     await f.service.confirm('t',{mode:'create',name:'新项目',projectId:''},f.settings)
     expect(f.runs.start).not.toHaveBeenCalled()
     expect(f.service.snapshot().get('t')?.error).toContain('没有可总结的对话')
-  })
-  it('requires an Agent proposal instead of inventing a name or target for it', async () => {
-    const f=fixture()
-    await expect(f.service.request('t',{requestedBy:'agent',instanceId:'instance'})).rejects.toThrow('项目名称')
-    await expect(f.service.request('t',{requestedBy:'agent',mode:'join',instanceId:'instance'})).rejects.toThrow('已有项目')
-    expect(f.runs.start).not.toHaveBeenCalled()
-  })
-})
-
-
-describe('pending choices survive navigation and restart', () => {
-  function storage() {
-    const saved=new Map<string,StoredOnboardingRequest>()
-    return {saved,ports:{requests:async () => [...saved.values()],
-      saveRequest:async (request:StoredOnboardingRequest) => {saved.set(request.id,structuredClone(request))},
-      removeRequest:async (id:string) => {saved.delete(id)}}}
-  }
-  it('restores an untouched Agent proposal and executes its elapsed default', async () => {
-    vi.useFakeTimers()
-    const f=fixture(),db=storage()
-    const service=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
-    const stop=service.registerHost(f.settings); disposers.push(stop)
-    const requested=await service.request('t',{requestedBy:'agent',instanceId:'instance',name:'默认项目'})
-    expect(db.saved.get(requested.requestId)?.autoConfirmAt).toBe(Date.now()+AUTO_CONFIRM_DELAY_MS)
-    stop(); vi.setSystemTime(Date.now()+AUTO_CONFIRM_DELAY_MS+1000)
-    const restored=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
-    disposers.push(restored.registerHost(f.settings))
-    await restored.restoreSaved(); await vi.advanceTimersByTimeAsync(0)
-    expect(f.runs.start).toHaveBeenCalledTimes(1)
-    expect(restored.snapshot().get('t')?.phase).toBe('done')
-    expect(db.saved.size).toBe(0)
-  })
-  it('does not replay an interrupted run as an expired default', async () => {
-    vi.useFakeTimers()
-    const f=fixture(),db=storage()
-    db.saved.set('interrupted',{id:'interrupted',threadId:'t',requestedBy:'agent',instanceId:'instance',mode:'create',name:'默认项目',projectId:'',phase:'interrupted',autoConfirmAt:Date.now()-1})
-    const restored=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
-    disposers.push(restored.registerHost(f.settings))
-    await restored.restoreSaved(); await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS)
-    expect(restored.snapshot().get('t')?.phase).toBe('error')
-    expect(f.runs.start).not.toHaveBeenCalled()
-  })
-  it('keeps the user draft without any automatic action after restart', async () => {
-    vi.useFakeTimers()
-    const f=fixture(),db=storage()
-    const service=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
-    const stop=service.registerHost(f.settings); disposers.push(stop)
-    await service.request('t',{requestedBy:'agent',instanceId:'instance',name:'默认项目'})
-    service.updateDraft('t',{mode:'create',name:'用户草稿',projectId:''})
-    await vi.advanceTimersByTimeAsync(0); stop()
-    const restored=createProjectOnboarding({...f.ports,...db.ports},f.docs,f.runs)
-    disposers.push(restored.registerHost(f.settings))
-    await restored.restoreSaved(); await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS*2)
-    expect(restored.snapshot().get('t')?.name).toBe('用户草稿')
-    expect(f.runs.start).not.toHaveBeenCalled()
-    expect(JSON.stringify([...db.saved.values()])).not.toContain('早期背景')
   })
 })
 

@@ -32,7 +32,7 @@ Skill 与自定义工具可以组合：Skill 说明复杂流程，工具只提�
 | 源码目录 | 用途 | App 分发 | App 主动加载 |
 | --- | --- | --- | --- |
 | `harness-runtime` | 应用设置、工作区/会话、Router、通知及异步等待管理 | 是，Codex | Codex 会话首次使用当前版本；排除标题、回顾、记忆提炼、路由判定及简介生成等后台任务 |
-| `project-doc` | 项目文档、决定和待办维护；会话中途新建/加入项目 | 是，Codex/Claude | 旧 Codex / Claude 绑定会话首次使用当前项目和资源版本；原生项目工具会话不主动加载 |
+| `project-doc` | 已绑定会话的项目文档、决定和待办维护 | 是，Codex/Claude | 旧 Codex / Claude 绑定会话首次使用当前项目和资源版本；原生项目工具会话不主动加载 |
 | `harness-release` | Harness 发布流程与恢复脚本 | 暂不接入 | 暂不接入，保留仓库开发用途 |
 | `harness-codex-audit` | 请求、Token 与 Skill 原生加载验证 | 暂不接入 | 暂不接入，保留仓库开发用途 |
 
@@ -51,6 +51,6 @@ Skill 与自定义工具可以组合：Skill 说明复杂流程，工具只提�
 
 ## Codex 原生项目工具
 
-`app_server.rs` 为新建的非 ephemeral 会话注册 `harness_project_read`、`harness_project_propose`、`harness_project_mutate_entry`。工具说明承担项目维护操作指引，参数不接受项目或会话 ID；`project_tools.rs` 使用 App Server 回调的 threadId 查 Harness 绑定。正文按需作为工具结果返回，消息不再附带项目背景卡、项目标记或项目维护 Skill。`harness-runtime` 管理 Skill 保留。
+`app_server.rs` 为新建的非 ephemeral 会话注册 `harness_project_read`、`harness_project_propose`、`harness_project_mutate_entry`。工具说明承担项目维护操作指引，参数不接受项目或会话 ID；`project_tools.rs` 使用 App Server 回调的 threadId 查 Harness 绑定。正文按需作为工具结果返回，输入区只附项目绑定后的读取提示，消息不附带项目全文、身份标记或项目维护 Skill。`harness-runtime` 管理 Skill 保留。
 
 App Server 持久化工具定义并在恢复和 Fork 时继承；Harness 持久化注册标记，并在会话元数据中返回 `harnessProjectTools`。0.167.0 的 `thread/resume` 不接受 dynamicTools，旧会话继续使用兼容链路。验证与复现见 [原生项目工具验证](../docs/native-project-tools.md)。

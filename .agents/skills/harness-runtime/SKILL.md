@@ -18,7 +18,7 @@ python3 /absolute/path/to/harness-runtime/harnessctl.py capabilities
 
 - 管理设置、Router、工作区/会话、插件、项目元数据、通知或排查SeaTalk连接：读[管理操作](references/management.md)。`settings list`给出当前可编辑的字段、范围和生效时间；`capabilities`确认实际支持的方法。
 - 等外部回复、构建、审批或资源就绪，并在满足条件后继续当前任务：读[异步等待](references/async-waits.md)。登记后结束当前轮，由Harness后台检查。
-- 读取或维护项目正文、决定、待办及历史：使用`harness-project-doc` Skill自带的`project-doc` CLI。这里的`projects`管理元数据和中途加入申请，不替代文档维护工具。
+- 读取或维护项目正文、决定、待办及历史：优先使用已提供的原生项目工具；旧会话与Claude使用`harness-project-doc` Skill自带的`project-doc` CLI。这里的`projects`只管理元数据。
 
 ## 执行与回读
 
@@ -28,7 +28,7 @@ python3 /absolute/path/to/harness-runtime/harnessctl.py capabilities
 
 设置和插件配置用JSON文件传入，避免shell展开提示词或特殊字符。不要读取/修改Harness数据库，不提供任意appState、通用RPC或shell入口，不输出凭据；Bridge凭据和API密钥仍由原有服务/Keychain管理。
 
-新建/加入项目沿用确认卡与原有默认计时；整文精简仍由用户在界面发起，不能通过别的管理命令绕过。通知标记已读不会代替回答问题或审批；旧右侧提醒浮层维持关闭。发布、安装和外部发消息需有对应操作授权，管理能力本身不扩大任务范围。
+新建/加入项目仅由用户在界面发起并确认，Agent不申请接入；整文精简仍由用户在界面发起，不能通过别的管理命令绕过。通知标记已读不会代替回答问题或审批；旧右侧提醒浮层维持关闭。发布、安装和外部发消息需有对应操作授权，管理能力本身不扩大任务范围。
 
 旧版本不支持某个操作时报告缺失能力，可用`source`只读定位实现；不要把源码中已有功能当作运行实例已经支持，也不要绕过运行时写SQLite。
 

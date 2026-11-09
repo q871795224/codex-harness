@@ -40,8 +40,8 @@ import { isYoloMode, yoloModeSettings } from '../codex/yoloMode'
 export interface ComposerProjectCard {
   projectId: string
   name: string
-  seq: number
-  /** 项目文档正文（注入内容，仅正文）。 */
+  seq: number | null
+  /** 项目背景或绑定后的读取提示。 */
   content: string
 }
 

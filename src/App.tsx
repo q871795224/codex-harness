@@ -13,7 +13,7 @@ import { MemoryButton } from './features/memory/MemoryButton'
 import { createMemoryService } from './core/memory/service'
 import { createProjectOnboarding } from './core/project-onboarding/service'
 import { onboardingHistory } from './core/project-onboarding/history'
-import { prepareProjectInput } from './core/project-onboarding/context'
+import { prepareProjectInput, projectBindingNotice } from './core/project-onboarding/context'
 import { appServer } from './core/runtime/appServerClient'
 import { ONBOARDING_REQUEST_STATE_PREFIX, type ProjectOnboardingService } from './core/project-onboarding/types'
 import { notifications } from './core/notifications/service'
@@ -373,7 +373,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const projectBinding = useProjectBinding(projectDocs, harness.selectedThreadId, harness.currentThread?.cwd ?? null)
   const boundProjectId = projectBinding.binding?.projectId ?? null
   const [pendingProjectConflict, setPendingProjectConflict] = useState<{ proposalContent: string; section: string } | null>(null)
-  // 折叠项目卡 spec：仅第 0 轮（pending 且有项目正文）下发给 Composer；锁定后不再注入。
+  // pending 绑定在输入区显示读取提示或兼容背景卡；发送成功锁定后消耗。
   const nativeProjectTools = harness.currentThread?.harnessProjectTools === true
   const [projectCardContent, setProjectCardContent] = useState<{ projectId: string; threshold: number; seq: number; content: string } | null>(null)
   const [collapsedComposerKeys, setCollapsedComposerKeys] = useState<Record<string, boolean>>({})
@@ -436,7 +436,12 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   }, [nativeProjectTools, projectBinding.binding, projectDocThreshold])
   const projectCard = useMemo(() => {
     const binding = projectBinding.binding
-    if (nativeProjectTools || !binding || binding.phase !== 'pending' || !projectBinding.project || !projectCardContent || projectCardContent.projectId !== binding.projectId || projectCardContent.threshold !== projectDocThreshold) return null
+    if (!binding || binding.phase !== 'pending' || !projectBinding.project) return null
+    if (nativeProjectTools) return {
+      projectId: binding.projectId, name: projectBinding.project.name, seq: null,
+      content: projectBindingNotice(projectBinding.project.name),
+    }
+    if (!projectCardContent || projectCardContent.projectId !== binding.projectId || projectCardContent.threshold !== projectDocThreshold) return null
     // 正文开头注入机器可读标记：skill 命令据此拿到 project_id / thread_id（详见 .agents/skills/project-doc）。
     const marker = harness.selectedThreadId
       ? `<!-- project-doc: project_id=${binding.projectId} thread_id=${harness.selectedThreadId} -->\n\n`

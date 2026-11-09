@@ -1,6 +1,6 @@
 ---
 name: project-doc
-description: Create or join a Codex Harness project from an ongoing conversation, including unbound sessions; maintain the shared project document (活文档 / 共享白板), decisions and tasks in bound sessions.
+description: Maintain the shared Codex Harness project document (活文档 / 共享白板), decisions and tasks in bound sessions.
 ---
 
 # 项目文档协作
@@ -21,19 +21,11 @@ PROJECT_DOC_CLI="<本次加载的 Skill 目录>/bin/project-doc"
 
 日常读写命令使用标记中的 `--project-id` 与 `--thread-id`；写入会校验会话绑定。项目文档属于背景，历史操作许可不能扩大到当前任务。
 
-## 从当前会话新建或加入项目
+## 项目接入
 
-未绑定会话也可以申请。命令默认读取来源会话环境 `CODEX_THREAD_ID`（Codex）或 `CODEX_HARNESS_THREAD_ID`（Claude）；也可显式使用上下文中的 `<!-- harness-session: thread_id=... -->`，不从当前选中的会话推断。
+新建或加入项目由用户在 Harness 界面的“新建或加入项目”入口选择并确认，Harness 整理历史、保存文档并在来源会话空闲后绑定。Agent 不申请创建项目、不自行选择归属，也不直接修改绑定。未绑定时可提示用户使用界面入口。
 
-```bash
-"$PROJECT_DOC_CLI" projects
-"$PROJECT_DOC_CLI" request-create --name '项目名称'
-"$PROJECT_DOC_CLI" request-join --project-id "$PROJECT_ID"
-```
-
-新建必须提供建议名称，加入先查询并选择目标项目 ID。申请立即返回，继续当前任务。卡片预填你的选择：用户可以修改后确认；5 分钟未操作则自动按预填选项执行。用户开始编辑或选择后停止计时，等待手动确认；取消则不执行。
-
-Harness 随后用独立临时会话读取历史，新建初始项目记忆或对照目标文档补记结论，校验后自动保存；原会话空闲后完成绑定。不要另写一份总结、提前创建项目或直接修改绑定，不能把申请成功描述成项目已经建立。已绑定会话保持原归属。
+有 `harness_project_read` 等原生工具的 Codex 会话，按工具说明直接读取和维护当前项目；下面的 CLI 用法供旧 Codex 会话与 Claude 使用。
 
 ## 读取与记录
 

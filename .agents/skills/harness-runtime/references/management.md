@@ -39,15 +39,9 @@ Codex默认设置仍用`config read`、`config set model MODEL`、`config set mo
 
 `projects list`列元数据，`projects get ID`补充工作区关联；`projects update ID --file FILE`支持name、shortName，简称最多12个字符且无换行/方括号，空字符串清除。简称影响后续命名，不批量重命名历史会话。可选expected-file是`{"name":"原名","shortName":null}`这样的先前元数据。
 
-```sh
-python3 "$CLI" projects request-create '新项目名称'
-python3 "$CLI" projects request-join PROJECT_ID
-python3 "$CLI" projects request-status
-```
+新建/加入项目仅由用户在 Harness 界面选择并确认，管理 API 和 CLI 不提供接入申请或申请状态入口。确认后由 Harness 整理历史、保存文档并完成绑定。旧版本遗留申请恢复为手动确认，不执行旧倒计时。
 
-来源thread优先使用显式`--thread-id`，否则读取当前进程CODEX_THREAD_ID或CODEX_HARNESS_THREAD_ID；绝不使用界面当前选中的会话代替。申请只显示确认卡，5分钟未操作按预填选项执行，开始编辑则等待确认；用request-status核对reading/running/saving/binding/done/error，不把申请受理当作项目已创建。项目归属锁定、文档Status审批和人工精简规则保持原样。
-
-项目正文及条目操作使用`harness-project-doc` Skill：read、entries、propose、update、supersede、close等。此Skill不复制另一套项目维护接口。
+项目正文及条目操作优先使用会话已有的原生项目工具；旧会话与 Claude 使用 `harness-project-doc` Skill。项目归属锁定、日常 Status 审批和人工精简规则保持原样。
 
 ## 插件、SeaTalk与通知
 

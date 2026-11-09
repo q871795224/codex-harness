@@ -15,12 +15,13 @@ export interface OnboardingSource { threadId: string; title: string; cwd: string
 export interface OnboardingState {
   id: string; source: OnboardingSource; mode: 'create' | 'join'; name: string; projectId: string
   phase: 'confirm' | 'reading' | 'running' | 'saving' | 'binding' | 'done' | 'error'
-  requestedBy: 'user' | 'agent'; error?: string; detail?: string; receipt?: OnboardingReceipt
+  requestedBy: 'user'; error?: string; detail?: string; receipt?: OnboardingReceipt
   messages?: number; chunks?: number; completedChunks?: number
-  autoConfirmAt?: number; instanceId?: string
+  instanceId?: string
 }
 export interface StoredOnboardingRequest {
   id: string; threadId: string; mode: 'create' | 'join'; name: string; projectId: string
+  /** Legacy Agent requests are restored as manual confirmation cards. */
   requestedBy: 'user' | 'agent'; phase: 'confirm' | 'interrupted' | 'error'; autoConfirmAt?: number; instanceId?: string
 }
 export const ONBOARDING_REQUEST_STATE_PREFIX = 'projectOnboardingRequest:'
@@ -28,8 +29,7 @@ export interface OnboardingSettings { instanceId: string; model: string; effort:
 export interface ProjectOnboardingService {
   snapshot(): ReadonlyMap<string, OnboardingState>
   subscribe(listener: () => void): () => void
-  request(threadId: string, options?: { mode?: 'create' | 'join'; name?: string; projectId?: string; requestedBy?: 'user' | 'agent'; instanceId?: string }): Promise<{ requestId: string; phase: string; autoConfirmAt?: number }>
-  registerHost(settings: OnboardingSettings): () => void
+  request(threadId: string, options?: { mode?: 'create' | 'join'; name?: string; projectId?: string; instanceId?: string }): Promise<{ requestId: string; phase: string }>
   updateDraft(threadId: string, selection: {mode: 'create' | 'join'; name: string; projectId: string}): void
   confirm(threadId: string, selection: { mode: 'create' | 'join'; name: string; projectId: string }, settings: OnboardingSettings): Promise<void>
   dismiss(threadId: string): void

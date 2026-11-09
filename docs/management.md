@@ -8,7 +8,7 @@ Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnes
 
 ## 会话中途新建或加入项目
 
-`projects.list` 返回项目元数据；`projects.requestOnboarding` 接受 `threadId`、`mode`（create/join）、`name`（新建）或 `projectId`（加入）。来源会话必须存在，且项目文档插件的确认卡在该作用域启用。此接口立即显示预填确认卡并返回，原 Agent 可继续工作。用户可修改确认，5 分钟未操作则按默认选项执行；开始编辑即停止计时，关闭即取消。人工入口没有倒计时。申请返回 `requestId`、`phase` 和 `autoConfirmAt`，不能把确认卡已显示当作操作已完成。流程见 [从会话建立项目记忆](project-doc-onboarding.md)。
+`projects.list` 返回项目元数据。新建或加入项目仅由用户在界面选择并确认，Harness 执行整理、保存和绑定；管理入口不提供 Agent 接入申请或申请状态接口。流程见 [从会话建立项目记忆](project-doc-onboarding.md)。
 
 ## 连接与执行
 
@@ -58,8 +58,7 @@ Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnes
 | `router.setFeedback` | `{threadId,accurate,actualWorkspace?}` | 记录用户明确评价；不准确时必须显式给root或null（通用），当前任务和目录不变 |
 | `router.correct` | `{threadId,actualWorkspace}` | 记录纠正并切换已加载、空闲Codex会话的后续工作区，不重放任务 |
 | `projects.get` / `projects.update` | `{projectId}` / `{projectId,patch,expected?}` | 项目元数据及关联工作区；仅修改name/shortName，简称最多12字符，不含控制字符或方括号 |
-| `projects.list` / `projects.requestOnboarding` | `{}` / `{threadId,mode,name?,projectId?}` | 项目列表及来源会话接入确认卡，沿用既有用户确认和默认计时 |
-| `projects.onboardingStatus` | `{threadId}` | 申请阶段和回执，省略历史正文及原始错误详情 |
+| `projects.list` | `{}` | 项目元数据列表；接入由用户在界面发起 |
 | `plugins.read` | `{instanceId}` | 已声明的非秘密配置、可编辑字段、隐藏键名和实际生命周期；未知插件不导出配置值 |
 | `notifications.list` | `{threadId?,unread?,offset?,limit?}` | 通知摘要，省略原始details；旧提醒浮层保持关闭 |
 | `notifications.markRead` | `{id}`或`{all:true}` | 保存已读状态，不处理源问题、审批或其他业务动作 |

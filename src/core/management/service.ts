@@ -92,23 +92,6 @@ export function createManagementHandler(get: () => ManagementContext) {
       case 'projects.list':
         if (!get().onboarding) throw new Error('项目会话接入服务不可用')
         return { data: await get().onboarding!.listProjects() }
-      case 'projects.requestOnboarding': {
-        const service = get().onboarding
-        if (!service) throw new Error('项目会话接入服务不可用')
-        const mode = text(p, 'mode')
-        if (mode !== 'create' && mode !== 'join') throw new Error('mode 必须是 create 或 join')
-        const threadId = text(p, 'threadId')
-        const thread = h.threads.find(t => t.id === threadId)
-        if (!thread) throw new Error('请先在 Harness 打开来源会话')
-        const context: PluginViewContext = { threadId, provider: threadId.startsWith('claude:') ? 'claude' : 'codex',
-          threadCwd: thread.cwd, workspaceRoot: h.threadRoots[threadId] ?? thread.cwd }
-        const host = plugins.resolvedConversationBanners(context).find(b => b.pluginId === 'builtin.project-doc' && b.contribution.id === 'project-onboarding')
-        if (!host) {
-          throw new Error('来源会话的项目文档插件未启用，无法显示确认卡')
-        }
-        return service.request(threadId, { mode, requestedBy: 'agent', instanceId: host.instanceId,
-          name: mode === 'create' ? text(p, 'name') : undefined, projectId: mode === 'join' ? text(p, 'projectId') : undefined })
-      }
       case 'projects.get': {
         const projectId = text(p, 'projectId')
         return { ...await runtime.projectDocGet(projectId), workspaceRoots: await runtime.projectDocWorkspaces(projectId) }
@@ -125,13 +108,6 @@ export function createManagementHandler(get: () => ManagementContext) {
         const saved = await runtime.projectDocGet(projectId)
         if ((patch.name !== undefined && saved.name !== (patch.name as string).trim()) || (patch.shortName !== undefined && (saved.shortName ?? '') !== (patch.shortName as string).trim())) throw new Error('项目元数据已提交，但回读未确认，请查询实际状态')
         return saved
-      }
-      case 'projects.onboardingStatus': {
-        if (!get().onboarding) throw new Error('项目会话接入服务不可用')
-        const state = get().onboarding!.snapshot().get(text(p, 'threadId'))
-        if (!state) return { data: null }
-        const { id, source, mode, name, projectId, phase, requestedBy, autoConfirmAt, receipt, messages, chunks, completedChunks } = state
-        return { data: { requestId: id, threadId: source.threadId, mode, name, projectId, phase, requestedBy, autoConfirmAt, receipt, messages, chunks, completedChunks } }
       }
       case 'models.list':
         return { provider: provider(p), data: provider(p) === 'codex' ? codex.models : h.claudeModels, source: 'mounted provider model catalog' }
@@ -232,7 +208,7 @@ export function createManagementHandler(get: () => ManagementContext) {
         return { ...instanceSummary(instance), settings, editableFields: Object.keys(settings), hiddenConfigKeys: Object.keys(instance.config).filter(k => !Object.hasOwn(settings, k)) }
       }
       case 'capabilities':
-        return { settingsGroups: Object.keys(settingsCatalog), manualOnly: ['project-document-compaction'], protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),
+        return { settingsGroups: Object.keys(settingsCatalog), manualOnly: ['project-document-compaction', 'project-onboarding'], protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),
           pluginSystem: 'Harness PluginHost（与 Codex/Claude 插件各自独立）', scope: '运行中的 Harness 实例；异步等待就绪后按已登记动作启动原会话轮次' }
       case 'status':
         return { versions: await runtime.getRuntimeVersions(), flavor, phase: h.phase, selectedProvider: h.selectedProvider,

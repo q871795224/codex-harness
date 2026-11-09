@@ -15,23 +15,14 @@ export function OnboardingCard({ state, projects, onConfirm, onDismiss, onOpen, 
   const [mode, setMode] = useState(state.mode)
   const [name, setName] = useState(state.name)
   const [projectId, setProjectId] = useState(state.projectId)
-  const [takenOver, setTakenOver] = useState(false)
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    if (!state.autoConfirmAt || takenOver) return
-    const timer=setInterval(() => setNow(Date.now()),1000)
-    return () => clearInterval(timer)
-  },[state.autoConfirmAt,takenOver])
   const editing = state.phase === 'confirm' || state.phase === 'error'
   const saved = Boolean(state.receipt), done = state.phase === 'done'
   const selected = projects?.find(p => p.projectId === projectId)
-  const remaining=state.autoConfirmAt && !takenOver ? Math.max(0,Math.ceil((state.autoConfirmAt-now)/1000)) : null
-  const countdown=remaining === null ? '' : `${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`
   const title=done ? state.mode === 'create' ? '项目已创建' : '已加入项目'
     : editing ? mode === 'create' ? '创建一个项目' : '加入一个项目'
     : state.phase === 'binding' ? '正在加入项目…' : state.phase === 'saving' ? '正在保存…' : '正在整理…'
   const draft=(next: {mode: 'create' | 'join'; name: string; projectId: string}) => {
-    setTakenOver(true); setMode(next.mode); setName(next.name); setProjectId(next.projectId); onDraft?.(next)
+    setMode(next.mode); setName(next.name); setProjectId(next.projectId); onDraft?.(next)
   }
   const choose=(next: 'create' | 'join') => draft({mode:next,name,projectId})
   return <article className={`approval-card user-input-card project-onboarding-card phase-${state.phase}`} aria-label="新建或加入项目">
@@ -63,7 +54,6 @@ export function OnboardingCard({ state, projects, onConfirm, onDismiss, onOpen, 
         </fieldset>}
         {state.error && <p role="alert">{state.error}</p>}
         <div className="approval-actions user-input-actions project-onboarding-actions">
-          {countdown && <span className="user-input-shortcut-hint" title="倒计时结束后使用 Agent 的预填选项">{countdown}</span>}
           <button type="submit" className="approve" disabled={!saved && (mode === 'create' ? !name.trim() : !selected)}>确认</button>
         </div>
       </form>}

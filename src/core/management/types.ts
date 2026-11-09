@@ -6,10 +6,8 @@ export interface ManagementRequest {
 
 export const managementMethods = {
   'projects.list': false,
-  'projects.requestOnboarding': true,
   'projects.get': false,
   'projects.update': true,
-  'projects.onboardingStatus': false,
   'settings.list': false,
   'settings.read': false,
   'settings.update': true,

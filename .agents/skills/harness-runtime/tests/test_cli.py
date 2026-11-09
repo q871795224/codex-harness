@@ -116,13 +116,12 @@ class CLITest(unittest.TestCase):
                 self.assertEqual(self.calls[-1]['method'], method)
                 self.assertEqual(self.calls[-1]['params'], params)
 
-    def test_project_commands_use_the_actual_origin_and_do_not_replace_selection(self):
-        with patch.dict(os.environ, {'CODEX_THREAD_ID': 'actual-origin'}):
-            self.assertEqual(self.run_cli('projects', 'request-create', 'Harness 管理')[0], 0)
-        self.assertEqual(self.calls[-1]['params'], {'threadId': 'actual-origin', 'mode': 'create', 'name': 'Harness 管理'})
-        with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(self.run_cli('projects', 'request-status')[0], 1)
-        self.assertEqual(len(self.calls), 1)
+    def test_project_onboarding_commands_are_not_available(self):
+        for action in ('request-create', 'request-join', 'request-status'):
+            with self.subTest(action=action), self.assertRaises(SystemExit) as error:
+                self.run_cli('projects', action)
+            self.assertEqual(error.exception.code, 2)
+        self.assertEqual(self.calls, [])
 
     def test_ambiguous_bulk_commands_are_rejected_before_http(self):
         for args in [('router', 'refresh'), ('router', 'refresh', '/a', '--all'), ('notifications', 'read'), ('notifications', 'read', 'one', '--all')]:
