@@ -27,7 +27,7 @@ export function InputCorrectionSettings() {
     try { await saveCorrectionSettings({ ...settings, ...patch }) } catch (e) { setError(String(e)) }
   }
   return <div className="settings-section codex-settings"><section className="codex-setting-card">
-    <div className="settings-section-title"><div><h3>输入自动纠正</h3><p>日常输入只使用本地词库。暂停输入后替换关键词，并可一次撤回全部纠正。</p></div></div>
+    <div className="settings-section-title"><div><h3>输入自动纠正</h3><p>日常输入只使用本地词库。暂停输入后替换关键词，需要调整时直接在输入框编辑。</p></div></div>
     <div className="settings-row-list">
       <label className="settings-row"><span>自动替换关键词</span><input type="checkbox" checked={settings.enabled} disabled={busy || loading} onChange={(event) => void toggle({ enabled: event.target.checked })} /></label>
       <label className="settings-row"><span>中文正文引号配对<small>修正双引号的方向与中文样式，代码和路径保持原样。</small></span><input type="checkbox" checked={settings.quotes} disabled={busy || loading} onChange={(event) => void toggle({ quotes: event.target.checked })} /></label>

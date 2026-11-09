@@ -17,9 +17,9 @@ export function protectedRanges(text: string, ranges: Range[] = []): Range[] {
   return result
 }
 
-export function correctInput(text: string, rules: Replacement[], quotes: boolean, ranges: Range[] = [], suppressed = new Set<string>()): { text: string; edits: Correction[] } {
+export function correctInput(text: string, rules: Replacement[], quotes: boolean, ranges: Range[] = []): { text: string; edits: Correction[] } {
   const protectedText = protectedRanges(text, ranges)
-  const sorted = rules.filter((rule) => rule.from && rule.to && rule.from !== rule.to && !suppressed.has(rule.from)).sort((a, b) => b.from.length - a.from.length)
+  const sorted = rules.filter((rule) => rule.from && rule.to && rule.from !== rule.to).sort((a, b) => b.from.length - a.from.length)
   const edits: Correction[] = []
   let output = '', quoteOpen = false
   for (let index = 0; index < text.length;) {
@@ -33,7 +33,7 @@ export function correctInput(text: string, rules: Replacement[], quotes: boolean
     const rule = sorted.find((entry) => text.startsWith(entry.from, index) && !protectedText.some((range) => index < range.end && index + entry.from.length > range.start))
     const before = rule?.from ?? text[index]
     let after = rule?.to ?? before
-    if (!rule && quotes && !suppressed.has('__quotes__') && /[“”"]/.test(before)) {
+    if (!rule && quotes && /[“”"]/.test(before)) {
       const lineStart = text.lastIndexOf('\n', index - 1) + 1
       const lineEnd = text.indexOf('\n', index)
       if (/\p{Script=Han}/u.test(text.slice(lineStart, lineEnd < 0 ? undefined : lineEnd))) {
@@ -58,9 +58,13 @@ export function moveCorrections(before: string, after: string, edits: Correction
   return edits.flatMap((edit) => edit.end <= start ? [edit] : edit.start >= end ? [{ ...edit, start: edit.start + delta, end: edit.end + delta }] : [])
 }
 
-export function undoCorrections(text: string, edits: Correction[]): string {
-  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
-    if (text.slice(edit.start, edit.end) === edit.after) text = text.slice(0, edit.start) + edit.before + text.slice(edit.end)
-  }
-  return text
+// A user edit inside a corrected span becomes literal text for the rest of this draft.
+export function manuallyEditedRanges(before: string, after: string, ranges: Range[]): Range[] {
+  let start = 0, end = before.length, nextEnd = after.length
+  while (start < end && start < nextEnd && before[start] === after[start]) start++
+  while (end > start && nextEnd > start && before[end - 1] === after[nextEnd - 1]) { end--; nextEnd-- }
+  const delta = nextEnd - end
+  return ranges.filter((range) => range.end > start && range.start < end || start === end && range.start < start && range.end > start)
+    .map((range) => ({ start: Math.min(range.start, start), end: Math.max(nextEnd, range.end + delta) }))
+    .filter((range) => range.end > range.start)
 }

@@ -74,6 +74,8 @@ interface ComposerProps {
   onSettingsChange: (patch: Partial<ThreadCodexSettings>) => Promise<void> | void
   onClaudeSettingsChange?: (patch: Partial<ClaudeSessionSettings>) => Promise<void> | void
   onFollowUpModeChange: (mode: FollowUpMode) => void
+  threadId?: string
+  onMessageAccepted?: (listener: (threadId: string) => void) => () => void
   onSend: (input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string) => Promise<void> | void
   onCommand: (command: ComposerCommand) => Promise<void> | void
   onStop: () => Promise<void> | void
@@ -119,7 +121,7 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ threadId, onMessageAccepted, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const busy = externallyBusy || submitting
@@ -144,15 +146,16 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
   const [correctionFeedback, setCorrectionFeedback] = useState('')
   const [correctionFeedbackStatus, setCorrectionFeedbackStatus] = useState('')
   const [savingCorrection, setSavingCorrection] = useState(false)
+  const [correctionFeedbackVisible, setCorrectionFeedbackVisible] = useState(false)
   const [correctionHover, setCorrectionHover] = useState<{ original: string; left: number; top: number } | null>(null)
   useEffect(() => { setCorrectionHover(null) }, [text, composing, disabled, busy])
-  const correction = useInputCorrection(text, composing, !!disabled || !!busy, collapsedPastes, ref, (next, edits, undo) => {
+  const correction = useInputCorrection(text, composing, !!disabled || !!busy, collapsedPastes, ref, (next, edits) => {
     let pastes = collapsedPastes
     let offset = 0
     const changes = edits.map((edit) => {
-      const start = undo ? edit.start : edit.start - offset
-      const before = undo ? edit.after : edit.before
-      const after = undo ? edit.before : edit.after
+      const start = edit.start - offset
+      const before = edit.before
+      const after = edit.after
       offset += edit.after.length - edit.before.length
       return { start, before, after }
     })
@@ -163,6 +166,13 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
     setText(next)
     setCursor(ref.current?.selectionStart ?? next.length)
   })
+  useEffect(() => { if (correction.revision > 0) setCorrectionFeedbackVisible(true) }, [correction.revision])
+  useEffect(() => onMessageAccepted?.((acceptedId) => {
+    if (acceptedId !== threadId) return
+    setCorrectionFeedbackVisible(false)
+    setCorrectionFeedback('')
+    setCorrectionFeedbackStatus('')
+  }), [onMessageAccepted, threadId])
   const saveCorrectionFeedback = async () => {
     setSavingCorrection(true); setCorrectionFeedbackStatus('')
     try { await addReplacement(correctionFeedback); setCorrectionFeedback(''); setCorrectionFeedbackStatus('替换规则已保存'); correction.noteInput() }
@@ -619,14 +629,13 @@ export function Composer({ provider = 'codex', initialDraft, consumedDraft, proj
           {takingOver ? '接管中…' : '接管会话'}
         </button>}
       </div>}
-      <div className="composer-correction" aria-label="输入纠正">
-        {correction.corrected && <><span role="status">已自动纠正</span><button type="button" disabled={disabled || busy} onClick={correction.undo}>撤回</button></>}
+      {correctionFeedbackVisible && <div className="composer-correction" aria-label="输入纠正">
         <label>反馈 <input aria-label="纠正反馈" placeholder="原词 → 替换词" value={correctionFeedback} disabled={disabled || savingCorrection} onChange={(event) => { setCorrectionFeedback(event.target.value); setCorrectionFeedbackStatus('') }} onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void saveCorrectionFeedback() }
         }} /></label>
         <button type="button" disabled={disabled || savingCorrection || !correctionFeedback.trim()} onClick={() => void saveCorrectionFeedback()}>保存</button>
         {(correctionFeedbackStatus || correction.error) && <span role="status">{correctionFeedbackStatus || correction.error}</span>}
-      </div>
+      </div>}
       <div className={`composer-card ${disabled ? 'disabled' : ''}`} data-composer-card>
         {visibleAttachments.length > 0 && (
           <div className="composer-attachments">

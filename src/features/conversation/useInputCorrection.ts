@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { correctInput, moveCorrections, undoCorrections, type Correction, type Range } from '../../core/input-correction/engine'
+import { correctInput, moveCorrections, manuallyEditedRanges, type Correction, type Range } from '../../core/input-correction/engine'
 import { loadCorrectionSettings, useCorrectionSettings } from '../../core/input-correction/settings'
 
-export function useInputCorrection(text: string, composing: boolean, disabled: boolean, ranges: Range[], textarea: RefObject<HTMLTextAreaElement | null>, apply: (text: string, edits: Correction[], undo: boolean) => void) {
+export function useInputCorrection(text: string, composing: boolean, disabled: boolean, ranges: Range[], textarea: RefObject<HTMLTextAreaElement | null>, apply: (text: string, edits: Correction[]) => void) {
   const settings = useCorrectionSettings()
   const [edits, setEdits] = useState<Correction[]>([])
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const [revision, setRevision] = useState(0)
   const previous = useRef(text)
   const pending = useRef(false)
-  const suppressed = useRef(new Set<string>())
   const pasted = useRef<Correction[]>([])
   const nextPaste = useRef<Range | null>(null)
   const latest = useRef({ apply, ranges, edits })
@@ -22,18 +22,19 @@ export function useInputCorrection(text: string, composing: boolean, disabled: b
   useEffect(() => {
     if (previous.current !== text) {
       const remaining = moveCorrections(previous.current, text, latest.current.edits)
-      pasted.current = moveCorrections(previous.current, text, pasted.current)
+      const manual = manuallyEditedRanges(previous.current, text, [...latest.current.edits, ...pasted.current])
+      pasted.current = [...moveCorrections(previous.current, text, pasted.current), ...manual.map((range) => ({ ...range, before: '', after: '' }))]
       if (nextPaste.current) pasted.current.push({ ...nextPaste.current, before: '', after: '' })
       nextPaste.current = null
       previous.current = text
       latest.current.edits = remaining
       setEdits(remaining)
     }
-    if (!text) { suppressed.current.clear(); pasted.current = []; pending.current = false; return }
+    if (!text) { pasted.current = []; pending.current = false; return }
     if (!loaded || !pending.current || composing || disabled) return
     const timer = setTimeout(() => {
       pending.current = false
-      const result = correctInput(text, settings.enabled ? settings.rules : [], settings.quotes, [...latest.current.ranges, ...latest.current.edits, ...pasted.current], suppressed.current)
+      const result = correctInput(text, settings.enabled ? settings.rules : [], settings.quotes, [...latest.current.ranges, ...latest.current.edits, ...pasted.current])
       if (!result.edits.length) return
       const element = textarea.current
       const selectionStart = element?.selectionStart ?? text.length
@@ -64,31 +65,13 @@ export function useInputCorrection(text: string, composing: boolean, disabled: b
       pasted.current = move(pasted.current)
       previous.current = result.text
       setEdits([...existing, ...result.edits])
-      latest.current.apply(result.text, result.edits, false)
+      setRevision((value) => value + 1)
+      latest.current.apply(result.text, result.edits)
       requestAnimationFrame(() => element?.setSelectionRange(shift(selectionStart), shift(selectionEnd)))
     }, 600)
     return () => clearTimeout(timer)
   }, [text, composing, disabled, settings, textarea, loaded])
-  const undo = () => {
-    const active = latest.current.edits
-    for (const edit of active) suppressed.current.add(/^[“”"]$/.test(edit.before) ? '__quotes__' : edit.before)
-    const restored = undoCorrections(text, active)
-    let movedPastes = pasted.current
-    for (const edit of [...active].sort((a, b) => b.start - a.start)) {
-      const offset = edit.before.length - edit.after.length
-      movedPastes = movedPastes.map((range) => range.start >= edit.end ? { ...range, start: range.start + offset, end: range.end + offset } : range)
-    }
-    pasted.current = movedPastes
-    const element = textarea.current
-    const caret = element?.selectionStart ?? restored.length
-    const nextCaret = caret + active.filter((edit) => edit.end <= caret).reduce((sum, edit) => sum + edit.before.length - edit.after.length, 0)
-    previous.current = restored
-    pending.current = false
-    setEdits([])
-    latest.current.apply(restored, active, true)
-    requestAnimationFrame(() => { element?.focus(); element?.setSelectionRange(nextCaret, nextCaret) })
-  }
   // Derive ranges for this render too, so highlights never lag a user edit by one frame.
   const visibleEdits = previous.current === text ? edits : moveCorrections(previous.current, text, edits)
-  return { edits: visibleEdits, corrected: visibleEdits.length > 0, undo, error, noteInput: () => { pending.current = !nextPaste.current }, notePaste: (start: number, _end: number, content: string) => { pending.current = false; nextPaste.current = { start, end: start + content.length } } }
+  return { edits: visibleEdits, revision, error, noteInput: () => { pending.current = !nextPaste.current }, notePaste: (start: number, _end: number, content: string) => { pending.current = false; nextPaste.current = { start, end: start + content.length } } }
 }
