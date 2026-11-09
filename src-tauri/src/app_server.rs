@@ -362,7 +362,7 @@ impl AppServerManager {
                 self.ownership.check(thread, turn)?;
             }
         }
-        let runtime_load = if method == "turn/start" && !matches!(params["turnTrigger"].as_str(), Some("thread-title" | "recap" | "memory-save" | "workspace-router-summary")) {
+        let runtime_load = if crate::runtime_skill::should_load(&method, params["turnTrigger"].as_str()) {
             let thread = params["threadId"].as_str().ok_or("turn/start 缺少 threadId")?;
             let load = self.runtime_skill.prepare(&resolved_codex_home()?, thread)?;
             if let Some(load) = &load {

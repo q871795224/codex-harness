@@ -1,3 +1,4 @@
+import { settingsSaved } from '../runtime/settingsEvents'
 import { runtime } from '../runtime/bridge'
 import { DEFAULT_BACKGROUND_MODEL } from '../domain/codex'
 import { MEMORY_INSTRUCTIONS } from './extraction'
@@ -37,5 +38,6 @@ export async function loadMemorySettings(): Promise<MemorySettings> {
 export async function saveMemorySettings(value: MemorySettings): Promise<MemorySettings> {
   const settings = validateMemorySettings(value)
   await runtime.setAppState(MEMORY_SETTINGS_KEY, JSON.stringify(settings))
+  settingsSaved('memory')
   return settings
 }

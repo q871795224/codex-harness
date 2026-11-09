@@ -5,7 +5,8 @@
 | 任务 | 文档 | 读取时机 |
 | --- | --- | --- |
 | 了解模块边界、IPC、App Server、插件和 daemon | [architecture.md](architecture.md) | 改动跨层流程、运行时或插件宿主前 |
-| 从 Agent 查询或管理 Harness 本身 | [../docs/management.md](../docs/management.md) | 使用全局 codex-harness Skill、harnessctl 或维护本机管理入口时 |
+| 自有 Skill 的源码、App 分发与主动加载 | [skills.md](skills.md) | 新增、修改或接入 Harness 自有 Skill 前；发布和审计 Skill 暂保留仓库开发用途 |
+| 从 Agent 查询或管理 Harness 本身 | [../docs/management.md](../docs/management.md) | 使用应用随附 harness-runtime Skill、harnessctl 或维护本机管理入口时 |
 | 记录已经确认的长期决策和当前状态 | [memory.md](memory.md) | 需要延续历史决策，或任务完成后沉淀结论 |
 | 项目文档维护、会话中途新建/加入、注入与人工精简边界 | [architecture.md](architecture.md) 的“项目文档维护”；中途接入见 [project-doc-onboarding.md](../docs/project-doc-onboarding.md) | 修改项目文档插件或讨论 Agent 管理接口前 |
 | 工作区自动选择、简介缓存、最终 Prompt、反馈与后端设置 | [workspace-router.md](workspace-router.md) | 修改 Router 或重新讨论其决策前 |

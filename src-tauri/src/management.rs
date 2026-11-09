@@ -10,7 +10,32 @@ type Outcome = Result<Value, String>;
 type Emitter = Arc<dyn Fn(&ManagementRequest) -> Result<(), String> + Send + Sync>;
 
 fn is_read(method: &str) -> bool {
-    matches!(method, "asyncWaits.list" | "status" | "capabilities" | "config.read" | "workspaces.list" | "sessions.list" | "plugins.list" | "skills.list" | "mcp.list")
+    matches!(
+        method,
+        "projects.list"
+            | "projects.get"
+            | "projects.onboardingStatus"
+            | "settings.list"
+            | "settings.read"
+            | "models.list"
+            | "router.summaries"
+            | "router.preview"
+            | "router.record"
+            | "router.feedback"
+            | "notifications.list"
+            | "seatalk.status"
+            | "seatalk.bindings"
+            | "plugins.read"
+            | "asyncWaits.list"
+            | "status"
+            | "capabilities"
+            | "config.read"
+            | "workspaces.list"
+            | "sessions.list"
+            | "plugins.list"
+            | "skills.list"
+            | "mcp.list"
+    )
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -145,5 +170,46 @@ mod tests {
         different.params = json!({"enabled": true});
         assert_eq!(manager.call(different).await.0, 409);
         assert!(requests.try_recv().is_err());
+    }
+    #[tokio::test]
+    async fn new_configuration_queries_release_request_records() {
+        let (sender, mut requests) = tokio::sync::mpsc::unbounded_channel();
+        let manager = Arc::new(
+            Management::new(Arc::new(move |request| {
+                sender.send(request.clone()).map_err(|e| e.to_string())
+            }))
+            .unwrap(),
+        );
+        manager.set_ready(true).unwrap();
+        for method in [
+            "projects.list",
+            "projects.get",
+            "projects.onboardingStatus",
+            "settings.list",
+            "settings.read",
+            "router.preview",
+            "router.summaries",
+            "router.record",
+            "router.feedback",
+            "plugins.read",
+            "models.list",
+            "notifications.list",
+            "seatalk.status",
+            "seatalk.bindings",
+        ] {
+            let mut query = request(method);
+            query.method = method.into();
+            let target = manager.clone();
+            let task = tokio::spawn(async move { target.call(query).await });
+            let emitted = requests.recv().await.unwrap();
+            manager
+                .respond(&emitted.request_id, Some(json!({})), None)
+                .unwrap();
+            assert_eq!(task.await.unwrap().0, 200);
+            assert!(
+                manager.state.lock().unwrap().requests.is_empty(),
+                "query {method} leaked a request record"
+            );
+        }
     }
 }

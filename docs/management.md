@@ -1,10 +1,10 @@
 # 本机 Harness 管理入口
 
-应用随附的 `harness-runtime` Skill 和 `harnessctl.py` 在本仓库 `.agents/skills/harness-runtime/` 维护，编译进应用，随应用版本发布。Harness 在 Codex 会话首次发送时通过原生 Skill 输入加载；会话恢复不重复加载，同一 Skill 资源更新后重新加载。发送失败不记为已加载。标题生成、recap 和记忆整理不加载这份运行协议。
+应用随附的 `harness-runtime` Skill 和 `harnessctl.py` 在本仓库 `.agents/skills/harness-runtime/` 维护，编译进应用，随应用版本发布。Harness 在 Codex 会话首次发送时通过原生 Skill 输入加载；会话恢复不重复加载，同一 Skill 资源更新后重新加载。发送失败不记为已加载。标题生成、recap、记忆整理、Router判定和简介生成不加载这份运行协议。
 
-资源以内容版本写入 Codex 的 user-Skills 目录，使用真实文件副本，不依赖源码 checkout、全局 CLI 或软链接；旧版本副本保留供历史会话使用。Codex 的发现元信息可能对共享 daemon 的其他会话可见，正文只在 Harness 显式调用后加载；不替换 daemon 的 extraRoots。当前异步调度和自动加载仅支持 Codex，Claude 沿用现有运行方式。
+主文件、CLI 和按需读取的 references 一起打包；所有文件路径和内容参与版本计算，分发时逐一核对，拒绝被替换的文件或符号链接。资源以内容版本写入 Codex 的 user-Skills 目录，使用真实文件副本，不依赖源码 checkout、全局 CLI 或软链接；旧版本副本保留供历史会话使用。Codex 的发现元信息可能对共享 daemon 的其他会话可见，正文只在 Harness 显式调用后加载；不替换 daemon 的 extraRoots。当前异步调度和自动加载仅支持 Codex，Claude 沿用现有运行方式。
 
-Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnessctl.py ...`。仓库开发时使用 `python3 .agents/skills/harness-runtime/harnessctl.py ...`。旧私有安装可继续调用兼容管理接口，但不再是本功能的运行依赖。
+Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnessctl.py ...`。仓库开发时使用 `python3 .agents/skills/harness-runtime/harnessctl.py ...`。旧私有安装可继续调用兼容管理接口，但不再是本功能的运行依赖。自有 Skill 的统一分发规则与当前四份 Skill 的接入范围见 [Skill 分发约定](../.harness/skills.md)。
 
 ## 会话中途新建或加入项目
 
@@ -36,7 +36,7 @@ Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnes
 | `workspaces.add` / `workspaces.show` | `{path}` | 验证并登记 Git 工作区，取消隐藏，更新界面；回读可见和持久化导航状态 |
 | `workspaces.hide` | `{root}` | 沿界面的移除语义隐藏，保留目录和会话；回读导航状态 |
 | `sessions.list` | `{}` | 当前已加载会话视图的元数据；complete=false，不包含消息正文 |
-| `sessions.create` | `{provider,cwd}` | 创建 Codex/Claude 空会话；显式 cwd 优先，不发送模型轮次 |
+| `sessions.create` | `{provider?,cwd?}` | 创建空会话；Codex省略cwd时沿用自动Router，显式cwd优先；不发送模型轮次 |
 | `sessions.select` | `{id}` | 使用已有 openThread 流程打开会话 |
 | `sessions.rename` | `{id,name}` | 重命名当前视图已加载的会话 |
 | `sessions.archive` | `{id}` | 归档当前活动视图的闲置会话；未发送草稿和空白会话沿原有规则处理 |
@@ -49,10 +49,45 @@ Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnes
 | `skills.list` | `{cwd,provider?,reload?}` | Codex 使用 App Server skills/list；Claude 使用 SDK supportedCommands，明确它是部分命令表 |
 | `skills.setEnabled` | `{cwd,path,enabled,provider?}` | 当前支持 Codex，验证目标在该工作区原生列表内后写入并 forceReload 回读 |
 | `mcp.list` / `mcp.reload` | `{}` | 当前针对 Codex 全局 daemon；原生查询/刷新，不把配置启用当成连接成功 |
+| `models.list` | `{provider?}` | 挂载Provider的模型目录，用于选择模型及推理强度 |
+| `settings.list` / `settings.read` | `{}` / `{group}` | 配置组、可编辑字段、当前值和生效时机 |
+| `settings.update` | `{group,patch,expected?}` | 固定配置组的小范围更新；先验证整份patch，回读运行时及持久化值；expected防止覆盖并发修改 |
+| `router.summaries` / `router.refresh` | `{}` / `{root}`或`{all:true}` | 可见工作区简介及检查状态；刷新立即返回accepted，后续查summaries，不声称生成已完成 |
+| `router.preview` | `{input?}` | 调用真实Prompt组装逻辑，无输入时使用占位符，不调用模型 |
+| `router.record` / `router.feedback` | `{threadId}` / `{offset?,limit?}` | 路由记录及分页反馈元数据，省略用户消息正文 |
+| `router.setFeedback` | `{threadId,accurate,actualWorkspace?}` | 记录用户明确评价；不准确时必须显式给root或null（通用），当前任务和目录不变 |
+| `router.correct` | `{threadId,actualWorkspace}` | 记录纠正并切换已加载、空闲Codex会话的后续工作区，不重放任务 |
+| `projects.get` / `projects.update` | `{projectId}` / `{projectId,patch,expected?}` | 项目元数据及关联工作区；仅修改name/shortName，简称最多12字符，不含控制字符或方括号 |
+| `projects.list` / `projects.requestOnboarding` | `{}` / `{threadId,mode,name?,projectId?}` | 项目列表及来源会话接入确认卡，沿用既有用户确认和默认计时 |
+| `projects.onboardingStatus` | `{threadId}` | 申请阶段和回执，省略历史正文及原始错误详情 |
+| `plugins.read` | `{instanceId}` | 已声明的非秘密配置、可编辑字段、隐藏键名和实际生命周期；未知插件不导出配置值 |
+| `notifications.list` | `{threadId?,unread?,offset?,limit?}` | 通知摘要，省略原始details；旧提醒浮层保持关闭 |
+| `notifications.markRead` | `{id}`或`{all:true}` | 保存已读状态，不处理源问题、审批或其他业务动作 |
+| `seatalk.status` / `seatalk.bindings` | `{}` | 只读通道状态和thread/root绑定元数据，不发送消息、领取指令或处理审批 |
 | `config.read` | `{}` | 仅返回 Codex 默认 model、model_reasoning_effort、service_tier、approval_policy |
 | `config.set` | `{key,value}` | 写入上述 Codex 默认值，刷新并核对有效配置；不修改已有会话设置 |
 
 scope 为 `{kind:"global"}`、`{kind:"workspace",workspaceRoot}` 或 `{kind:"thread",threadId}`。布尔字段必须是 JSON 布尔值；config 和 patch 必须是对象。
+
+## 设置与新增功能覆盖
+
+`settings`管理Harness应用，`config`管理Codex默认值，`plugins`管理插件实例。客户端直接命令见应用随附Skill的[管理参考](../.agents/skills/harness-runtime/references/management.md)，不能把旧客户端或源码能力当作运行实例能力。
+
+| 功能 | Agent管理入口 | 生效与边界 |
+| --- | --- | --- |
+| 工作区Router | settings/router、router子命令、自动会话创建 | 缓存、检查、Prompt、反馈、纠正齐全；刷新可能消耗模型，切换不回滚旧任务 |
+| 项目文档精简 | plugins/read、configure的compactionThreshold、archiveModel、archiveEffort | 仅配置；整文精简由用户在界面发起 |
+| 项目决定与待办 | harness-project-doc自带CLI | 继续使用共享文档的版本、回执与条目生命周期，不复制接口 |
+| 会话中途建立项目 | projects申请及状态；项目元数据修改 | 绑定/整理仍走原有确认流程，真实来源thread不以当前选中会话代替 |
+| 后台异步等待 | async-waits全套命令 | 已有只读检查器与续跑授权规则不变 |
+| SeaTalk远程续聊 | seatalk诊断，相关插件配置 | 核心通道与旧草稿插件独立，凭据由Bridge保管 |
+| 中间提问 | 提问通知插件的Bridge地址、account、targetId配置 | 不通过管理API代答问题或批准操作 |
+| 通知与会话提醒 | 通知列表、已读和通知插件生命周期 | 已读不完成源事项；旧右侧浮层保持关闭 |
+| 应用配置 | appearance、navigation、keyboard、threadTitle、recap、conversationStats、memory、history、inputCorrection、handover | 对应界面实时状态或共享设置模块，不开放任意appState |
+
+配置组和范围以`settings list`为准；对象中的fontSizes、actionShortcuts、descriptions按键合并，Router介绍的null删除该项，其他数组整体替换。更新前可带先前settings对象作为expected；成功回包包含effect及实际值。核心UI设置通过原有setter应用，并确认存储；Router、记忆、历史和交接面板接收共享保存事件，已打开的界面随之刷新。历史响应上限需要重启，管理命令不自动重启。
+
+插件配置仅为已知内置功能提供字段白名单，读取不导出未知配置值；Bridge地址只允许无凭据的本机HTTP(S)地址。独立管理Agent浮窗及列表注意力管理仍为后续事项。
 
 ## 能力边界与源码 fallback
 
@@ -62,7 +97,7 @@ Harness 插件、Codex 插件、Claude Code 插件分别管理。此入口管理
 
 ## 验证
 
-Rust 测试验证端点认证、Origin 拒绝、权限和注册归属，以及写请求去重；前端测试使用真实 PluginHost 的 lifecycle 验证启停和贡献变化，覆盖显式登记与发现工作区的数量差异。Claude daemon 用注入 SDK 测试命令查询，不发送真实模型请求。客户端用本地 fixture 服务验证请求、错误和重定向边界。所有测试使用临时目录或注入依赖。
+Rust 测试验证端点认证、Origin 拒绝、权限和注册归属，以及写请求去重；前端测试使用真实 PluginHost 的 lifecycle 验证启停和贡献变化，覆盖显式登记与发现工作区的数量差异。Claude daemon 用注入 SDK 测试命令查询，不发送真实模型请求。客户端用本地 fixture 服务验证请求、错误和重定向边界。所有测试使用临时目录或注入依赖。新增设置测试覆盖整份patch先校验、expected冲突拒绝、持久化回读和已打开面板刷新；Router测试区分反馈与实际目录切换，通知测试保留源事项pending。Skill分发测试逐文件核对参考文档并拒绝替换；隔离原生Skill探针使用临时HOME与本地假模型验证发现、加载及会话恢复，不调用真实模型。
 
 ## 异步等待（Codex）
 

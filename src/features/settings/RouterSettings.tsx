@@ -1,3 +1,4 @@
+import { useSettingsReload } from '../../core/runtime/settingsEvents'
 import { useEffect, useId, useState } from 'react'
 import { GitBranch, RefreshCw, Search } from 'lucide-react'
 import { runtime } from '../../core/runtime/bridge'
@@ -49,6 +50,7 @@ export function RouterSettings({ models, workspaces, initialSection = 'configura
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState('')
   const [settingsVersion, setSettingsVersion] = useState(0)
+  useSettingsReload('router', loadRouterSettings, value => { setDraft(value); setSettingsVersion(v => v + 1) }, error => setError(String(error)))
   useEffect(() => {
     let disposed = false
     void loadRouterSettings().then(value => { if (!disposed) { setDraft(value); setLoaded(true) } })

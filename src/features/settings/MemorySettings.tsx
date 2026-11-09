@@ -1,3 +1,4 @@
+import { useSettingsReload } from '../../core/runtime/settingsEvents'
 import { Brain } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { CodexModel } from '../../core/domain/codex'
@@ -9,6 +10,7 @@ export function MemorySettings({ models }: { models: CodexModel[] }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState('')
+  useSettingsReload('memory', loadMemorySettings, setDraft, error => setError(String(error)))
   useEffect(() => {
     let disposed = false
     void loadMemorySettings().then((settings) => { if (!disposed) setDraft(settings) })

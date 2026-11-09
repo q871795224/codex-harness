@@ -70,6 +70,8 @@ async function writeBundledSkill(dir, name, nonce) {
     const text = await readFile(new URL('SKILL.md', sourceSkill), 'utf8');
     await writeFile(join(dir, 'SKILL.md'), text + `\nNative test marker: ${nonce}\n`);
     await writeFile(join(dir, 'harnessctl.py'), await readFile(new URL('harnessctl.py', sourceSkill)));
+    await mkdir(join(dir, 'references'), { recursive: true });
+    for (const name of ['management.md', 'async-waits.md']) await writeFile(join(dir, 'references', name), await readFile(new URL('references/' + name, sourceSkill)));
 }
 async function codexProbe(mode) {
     const home = join(root, 'codex-home-' + mode);
@@ -85,6 +87,9 @@ async function codexProbe(mode) {
         const skills = join(home, '.codex/skills');
         await mkdir(join(skills, 'project-doc'), { recursive: true });
         await writeFile(join(skills, 'project-doc/SKILL.md'), '---\nname: project-doc\ndescription: Existing legacy user Skill.\n---\nLegacy Skill.');
+        const previous = join(skills, name + '-previous');
+        await mkdir(previous, { recursive: true });
+        await writeFile(join(previous, 'SKILL.md'), `---\nname: ${name}\ndescription: Previous application Skill version.\n---\nPrevious version.`);
         assert.match(execFileSync('python3', [join(dir, 'harnessctl.py'), '--help'], { env: { ...baseEnv, HOME: home }, encoding: 'utf8' }), /async-waits/);
     }
     const child = spawn('codex', ['app-server', '--listen', 'stdio://', '-c', 'model_provider="fixture"', '-c', `model_providers.fixture={name="fixture",base_url="${base}/codex",wire_api="responses",requires_openai_auth=false}`, '-c', 'model="gpt-5.1-codex"', '-c', 'check_for_update_on_startup=false'], { env: { ...baseEnv, HOME: home, CODEX_HOME: join(home, '.codex') }, cwd: project, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -114,7 +119,9 @@ async function codexProbe(mode) {
             await rpc('skills/extraRoots/set', { extraRoots: [dir] });
         const listing = await rpc('skills/list', { cwds: [project], forceReload: true,
             ...(mode === 'per-cwd' ? { perCwdExtraUserRoots: [{ cwd: project, extraUserRoots: [dir] }] } : {}) });
-        const found = listing.data?.flatMap(x => x.skills ?? []).find(x => x.name === name);
+        const expectedPath = await realpath(skill);
+        const found = listing.data?.flatMap(x => x.skills ?? []).find(x => x.name === name && (!managed || x.path === expectedPath));
+        if (managed) assert.ok(found, 'current resource must remain discoverable beside an older version');
         if (managed) assert.ok(listing.data?.flatMap(x => x.skills ?? []).some(x => x.name === 'project-doc'), 'legacy user Skill remains discoverable');
         const alias = await realpath(skill) !== skill;
         const selectedPath = mode === 'registered-alias' ? skill : found?.path ?? await realpath(skill);

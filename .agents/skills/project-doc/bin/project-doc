@@ -1,5 +1,5 @@
 #!/bin/sh
-# 解析到本脚本所在的 skill 目录，兼容符号链接安装（~/.codex/skills/project-doc → 仓库）。
+# 定位本次 App 分发的同版本 Skill 目录，同时兼容历史链接。
 # project_doc.py 与 bin/ 同级（都在 skill 根目录下）。
 SELF="$0"
 while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done

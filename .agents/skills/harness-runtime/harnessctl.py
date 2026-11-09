@@ -110,7 +110,7 @@ def parser():
     for group, actions in {
         "workspaces": ["list", "add", "hide", "show"],
         "sessions": ["list", "create", "select", "rename", "archive", "restore"],
-        "plugins": ["list", "create", "enable", "disable", "configure", "delete"],
+        "plugins": ["list", "read", "create", "enable", "disable", "configure", "delete"],
         "skills": ["list", "enable", "disable"], "mcp": ["list", "reload"], "config": ["read", "set"],
     }.items():
         sub = groups.add_parser(group).add_subparsers(dest="action", required=True)
@@ -120,11 +120,11 @@ def parser():
             if group == "sessions" and action in {"select", "rename", "archive", "restore"}: command.add_argument("id")
             if group == "sessions" and action == "rename": command.add_argument("name")
             if group == "skills" or (group == "sessions" and action == "create"):
-                if group == "skills" or action == "create": command.add_argument("--cwd", required=True)
+                if group == "skills" or action == "create": command.add_argument("--cwd", required=group == "skills")
                 command.add_argument("--provider", choices=["codex", "claude"], default="codex")
             if group == "skills" and action != "list": command.add_argument("path")
             if group == "plugins":
-                if action in {"enable", "disable", "configure", "delete"}: command.add_argument("instance_id")
+                if action in {"read", "enable", "disable", "configure", "delete"}: command.add_argument("instance_id")
                 if action == "create":
                     command.add_argument("plugin_id")
                     command.add_argument("--scope", choices=["global", "workspace", "thread"], default="global")
@@ -137,6 +137,36 @@ def parser():
             if group == "config" and action == "set":
                 command.add_argument("key")
                 command.add_argument("value")
+    models = groups.add_parser("models").add_subparsers(dest="action", required=True)
+    models.add_parser("list").add_argument("--provider", choices=["codex", "claude"], default="codex")
+    settings = groups.add_parser("settings", help="Harness应用设置；Codex默认值使用config").add_subparsers(dest="action", required=True)
+    settings.add_parser("list")
+    settings.add_parser("read").add_argument("name")
+    update = settings.add_parser("update")
+    update.add_argument("name"); update.add_argument("--file", type=Path, required=True); update.add_argument("--expected-file", type=Path)
+    projects = groups.add_parser("projects", help="项目元数据与会话中途接入").add_subparsers(dest="action", required=True)
+    projects.add_parser("list")
+    projects.add_parser("get").add_argument("project_id")
+    update = projects.add_parser("update"); update.add_argument("project_id"); update.add_argument("--file", type=Path, required=True); update.add_argument("--expected-file", type=Path)
+    for action in ("request-create", "request-join"):
+        request = projects.add_parser(action); request.add_argument("name" if action == "request-create" else "project_id"); request.add_argument("--thread-id")
+    status = projects.add_parser("request-status"); status.add_argument("thread_id", nargs="?")
+    router = groups.add_parser("router", help="Router缓存、Prompt、反馈与显式纠正").add_subparsers(dest="action", required=True)
+    router.add_parser("summaries")
+    refresh = router.add_parser("refresh"); refresh.add_argument("root", nargs="?"); refresh.add_argument("--all", action="store_true")
+    preview = router.add_parser("preview"); preview.add_argument("--input-file", type=Path)
+    router.add_parser("record").add_argument("thread_id")
+    feedback = router.add_parser("feedback"); feedback.add_argument("--offset", type=int, default=0); feedback.add_argument("--limit", type=int, default=20)
+    for action in ("set-feedback", "correct"):
+        command = router.add_parser(action); command.add_argument("thread_id")
+        target = command.add_mutually_exclusive_group(required=True)
+        target.add_argument("--workspace"); target.add_argument("--general", action="store_true")
+        if action == "set-feedback": target.add_argument("--accurate", action="store_true")
+    notices = groups.add_parser("notifications", help="通知历史及已读；不启用旧右侧浮层").add_subparsers(dest="action", required=True)
+    listing = notices.add_parser("list"); listing.add_argument("--thread-id"); listing.add_argument("--unread", action="store_true"); listing.add_argument("--offset", type=int, default=0); listing.add_argument("--limit", type=int, default=50)
+    read = notices.add_parser("read"); read.add_argument("id", nargs="?"); read.add_argument("--all", action="store_true")
+    seatalk = groups.add_parser("seatalk", help="只读连接与会话分支诊断").add_subparsers(dest="action", required=True)
+    seatalk.add_parser("status"); seatalk.add_parser("bindings")
     waits = groups.add_parser("async-waits", help="Harness 原生异步等待").add_subparsers(dest="action", required=True)
     waits.add_parser("list")
     get = waits.add_parser("get")
@@ -156,6 +186,48 @@ def operation(args):
         if not isinstance(params, dict): raise ClientError("params 必须是对象")
         return args.method, params
     action = args.action
+    if group == "models": return "models.list", {"provider": args.provider}
+    if group == "settings":
+        if action == "list": return "settings.list", {}
+        params = {"group": args.name}
+        if action == "update":
+            params["patch"] = read_object(args.file)
+            if args.expected_file: params["expected"] = read_object(args.expected_file)
+        return "settings." + action, params
+    if group == "projects":
+        if action == "list": return "projects.list", {}
+        if action in {"get", "update"}:
+            params = {"projectId": args.project_id}
+            if action == "update":
+                params["patch"] = read_object(args.file)
+                if args.expected_file: params["expected"] = read_object(args.expected_file)
+            return "projects." + action, params
+        thread = args.thread_id or os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_HARNESS_THREAD_ID")
+        if not thread: raise ClientError("需要来源--thread-id，不能用界面选中会话代替")
+        if action == "request-status": return "projects.onboardingStatus", {"threadId": thread}
+        params = {"threadId": thread, "mode": "create" if action == "request-create" else "join"}
+        params.update({"name": args.name} if action == "request-create" else {"projectId": args.project_id})
+        return "projects.requestOnboarding", params
+    if group == "router":
+        if action == "summaries": return "router.summaries", {}
+        if action == "refresh":
+            if bool(args.root) == bool(args.all): raise ClientError("请提供一个工作区root或--all")
+            return "router.refresh", {"all": True} if args.all else {"root": args.root}
+        if action == "preview": return "router.preview", {"input": args.input_file.read_text()} if args.input_file else {}
+        if action == "record": return "router.record", {"threadId": args.thread_id}
+        if action == "feedback": return "router.feedback", {"offset": args.offset, "limit": args.limit}
+        params = {"threadId": args.thread_id}
+        if action == "set-feedback": params["accurate"] = args.accurate
+        if not getattr(args, "accurate", False): params["actualWorkspace"] = args.workspace if args.workspace is not None else None
+        return ("router.setFeedback" if action == "set-feedback" else "router.correct"), params
+    if group == "notifications":
+        if action == "list":
+            params = {"offset": args.offset, "limit": args.limit, "unread": args.unread}
+            if args.thread_id: params["threadId"] = args.thread_id
+            return "notifications.list", params
+        if bool(args.id) == bool(args.all): raise ClientError("请提供通知ID或--all")
+        return "notifications.markRead", {"all": True} if args.all else {"id": args.id}
+    if group == "seatalk": return "seatalk." + action, {}
     if group == "async-waits":
         if action in {"list", "get"}: return "asyncWaits.list", {}
         if action == "create":
@@ -169,12 +241,14 @@ def operation(args):
     if group == "sessions":
         if action in {"select", "rename", "archive", "restore"}: params["id"] = args.id
         if action == "rename": params["name"] = args.name
-        if action == "create": params.update(cwd=args.cwd, provider=args.provider)
+        if action == "create":
+            params["provider"] = args.provider
+            if args.cwd: params["cwd"] = args.cwd
     if group == "skills":
         params.update(cwd=args.cwd, provider=args.provider)
         if action != "list": params.update(path=args.path, enabled=action == "enable"); action = "setEnabled"
     if group == "plugins":
-        if action in {"enable", "disable", "configure", "delete"}: params["instanceId"] = args.instance_id
+        if action in {"read", "enable", "disable", "configure", "delete"}: params["instanceId"] = args.instance_id
         if action in {"enable", "disable"}: params["enabled"] = action == "enable"; action = "setEnabled"
         if action == "configure": params["patch"] = read_object(args.file)
         if action == "create":

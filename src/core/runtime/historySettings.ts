@@ -1,3 +1,4 @@
+import { settingsSaved } from './settingsEvents'
 import { runtime } from './bridge'
 
 export interface HistorySettings {
@@ -26,6 +27,7 @@ export async function loadHistorySettings(): Promise<HistorySettings> {
 export async function saveHistorySettings(value: HistorySettings): Promise<HistorySettings> {
   const settings = validateHistorySettings(value)
   await runtime.setAppState(HISTORY_SETTINGS_KEY, JSON.stringify(settings))
+  settingsSaved('history')
   return settings
 }
 
