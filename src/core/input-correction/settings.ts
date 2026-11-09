@@ -9,6 +9,9 @@ let snapshot = defaults
 let loading: Promise<void> | undefined
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((listener) => listener())
+export function readCorrectionSettings(): CorrectionSettings {
+  return { ...snapshot, rules: snapshot.rules.map(rule => ({ ...rule })) }
+}
 export function useCorrectionSettings() {
   return useSyncExternalStore((listener) => { listeners.add(listener); return () => { listeners.delete(listener) } }, () => snapshot)
 }

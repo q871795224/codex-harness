@@ -8,6 +8,18 @@ use std::{
 };
 const SKILL: &str = include_str!("../../.agents/skills/harness-runtime/SKILL.md");
 const CLI: &str = include_str!("../../.agents/skills/harness-runtime/harnessctl.py");
+const FILES: &[(&str, &str)] = &[
+    ("SKILL.md", SKILL),
+    ("harnessctl.py", CLI),
+    (
+        "references/management.md",
+        include_str!("../../.agents/skills/harness-runtime/references/management.md"),
+    ),
+    (
+        "references/async-waits.md",
+        include_str!("../../.agents/skills/harness-runtime/references/async-waits.md"),
+    ),
+];
 pub const NAME: &str = "harness-runtime";
 
 pub struct RuntimeSkill {
@@ -19,9 +31,9 @@ pub struct SkillLoad {
     stamp: String,
 }
 fn version() -> String {
-    let hash = SKILL
-        .bytes()
-        .chain(CLI.bytes())
+    let hash = FILES
+        .iter()
+        .flat_map(|(name, content)| name.bytes().chain([0]).chain(content.bytes()).chain([0]))
         .fold(0xcbf29ce484222325u64, |h, b| {
             (h ^ u64::from(b)).wrapping_mul(0x100000001b3)
         });
@@ -51,8 +63,13 @@ fn materialize(home: &Path, version: &str) -> Result<PathBuf, String> {
         let target = skills.join(format!("harness-runtime-{version}"));
         if !target.exists() {
             let stage = tempfile::tempdir_in(&skills)?;
-            fs::write(stage.path().join("SKILL.md"), SKILL)?;
-            fs::write(stage.path().join("harnessctl.py"), CLI)?;
+            for (name, content) in FILES {
+                let file = stage.path().join(name);
+                if let Some(parent) = file.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::write(file, content)?;
+            }
             if let Err(error) = fs::rename(stage.path(), &target) {
                 if !target.is_dir() {
                     return Err(error);
@@ -60,17 +77,19 @@ fn materialize(home: &Path, version: &str) -> Result<PathBuf, String> {
             }
         }
         // Refuse substituted bundles, including symlinks; do not overwrite user content.
-        if fs::symlink_metadata(&target)?.file_type().is_symlink()
-            || fs::symlink_metadata(target.join("SKILL.md"))?
-                .file_type()
-                .is_symlink()
-            || fs::symlink_metadata(target.join("harnessctl.py"))?
-                .file_type()
-                .is_symlink()
-            || fs::read_to_string(target.join("SKILL.md"))? != SKILL
-            || fs::read_to_string(target.join("harnessctl.py"))? != CLI
-        {
-            return Err(std::io::Error::other("应用 Skill 副本已被修改，请核对"));
+        if fs::symlink_metadata(&target)?.file_type().is_symlink() {
+            return Err(std::io::Error::other("应用 Skill 副本目录被替换，请核对"));
+        }
+        for (name, content) in FILES {
+            let file = target.join(name);
+            for ancestor in file.ancestors().take_while(|path| *path != target) {
+                if fs::symlink_metadata(ancestor)?.file_type().is_symlink() {
+                    return Err(std::io::Error::other("应用 Skill 副本包含符号链接，请核对"));
+                }
+            }
+            if fs::read_to_string(file)? != *content {
+                return Err(std::io::Error::other("应用 Skill 副本已被修改，请核对"));
+            }
         }
         fs::canonicalize(target.join("SKILL.md"))
     };
@@ -134,5 +153,30 @@ mod tests {
         add_input(&mut p, &listing, path).unwrap();
         assert_eq!(p["input"].as_array().unwrap().len(), 2);
         assert_eq!(p["input"][0]["text"], "hello");
+    }
+    #[test]
+    fn ships_references_and_refuses_substituted_reference_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill = materialize(dir.path(), &version()).unwrap();
+        let root = skill.parent().unwrap();
+        for (name, content) in FILES {
+            assert_eq!(fs::read_to_string(root.join(name)).unwrap(), *content);
+        }
+        fs::write(root.join("references/management.md"), "modified").unwrap();
+        assert!(materialize(dir.path(), &version()).is_err());
+        fs::remove_dir_all(root.join("references")).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        for (name, content) in FILES
+            .iter()
+            .filter(|(name, _)| name.starts_with("references/"))
+        {
+            fs::write(
+                outside.path().join(Path::new(name).file_name().unwrap()),
+                content,
+            )
+            .unwrap();
+        }
+        std::os::unix::fs::symlink(outside.path(), root.join("references")).unwrap();
+        assert!(materialize(dir.path(), &version()).is_err());
     }
 }

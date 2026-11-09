@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { runtime } from '../../core/runtime/bridge'
+import { saveHistorySettings } from '../../core/runtime/historySettings'
 import { HistorySettings } from './HistorySettings'
 
 vi.mock('../../core/runtime/bridge', () => ({ runtime: { getAppState: vi.fn(), setAppState: vi.fn() } }))
@@ -38,4 +39,13 @@ it('shows validation and storage failures without claiming settings were saved',
   fireEvent.click(save)
   await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('storage failed'))
   expect(screen.queryByRole('status')).toBeNull()
+})
+
+it('refreshes an already open panel after a management save', async () => {
+  render(<HistorySettings />)
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存设置' }).hasAttribute('disabled')).toBe(false))
+  vi.mocked(runtime.setAppState).mockImplementation(async (_key, value) => { vi.mocked(runtime.getAppState).mockResolvedValue(value) })
+  await act(async () => { await saveHistorySettings({ loading: 'eager', maxResponseMiB: 512 }) })
+  await waitFor(() => expect((screen.getByLabelText('历史加载方式') as HTMLSelectElement).value).toBe('eager'))
+  expect((screen.getByLabelText('响应上限（MiB）') as HTMLInputElement).value).toBe('512')
 })

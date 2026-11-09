@@ -83,7 +83,7 @@
 
 ## 运行时约定
 
-- 应用内置 `harness-runtime` Skill 与 CLI 在 `.agents/skills/harness-runtime/` 维护并编译进应用；Codex 会话通过原生 Skill 输入加载，由 `runtime_skill.rs` 分发真实文件副本，不依赖软链或私有安装。CLI 调用本机管理入口。原生层复用项目文档 listener，单独发布带认证的 `management-server.json`；`management.rs` 负责请求关联和去重，`core/management` 调用挂载的界面服务，工作区和插件查询不从数据库重建最终列表。管理协议、覆盖范围、写入及 fallback 见 `docs/management.md`。
+- 应用内置 `harness-runtime` Skill 与 CLI 在 `.agents/skills/harness-runtime/` 维护并编译进应用；Codex 会话通过原生 Skill 输入加载，由 `runtime_skill.rs` 分发真实文件副本，不依赖软链或私有安装。CLI 调用本机管理入口。原生层复用项目文档 listener，单独发布带认证的 `management-server.json`；`management.rs` 负责请求关联和去重，`core/management` 调用挂载的界面服务，工作区和插件查询不从数据库重建最终列表。管理入口也提供固定分组的应用设置、Router缓存/反馈、项目元数据、通知已读及只读SeaTalk诊断；设置复用UI setter或共享设置模块，禁止任意appState。Skill的按需参考文档与CLI一起版本化分发。管理协议、覆盖范围、写入及 fallback 见 `docs/management.md`。
 
 - 项目文档 HTTP 服务由 Harness Rust setup 启动，退出时停止，不依赖当前会话或项目绑定。启动失败必须报错；地址文件通过原子替换发布，异常退出的旧地址在下次启动覆盖。稳定版与开发版同时运行时，CLI 使用最后启动实例的地址；实例退出只删除自己发布且仍持有的地址，不能删除其他实例的记录。
 

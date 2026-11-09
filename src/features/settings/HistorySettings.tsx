@@ -1,3 +1,4 @@
+import { useSettingsReload } from '../../core/runtime/settingsEvents'
 import { useEffect, useState } from 'react'
 import { MessageSquareText } from 'lucide-react'
 import { DEFAULT_HISTORY_SETTINGS, loadHistorySettings, saveHistorySettings, type HistorySettings as Settings } from '../../core/runtime/historySettings'
@@ -7,6 +8,7 @@ export function HistorySettings() {
   const [busy, setBusy] = useState(true)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
+  useSettingsReload('history', loadHistorySettings, setDraft, error => setError(String(error)))
   useEffect(() => {
     let disposed = false
     void loadHistorySettings().then((value) => { if (!disposed) setDraft(value) })

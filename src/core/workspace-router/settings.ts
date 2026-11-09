@@ -1,3 +1,4 @@
+import { settingsSaved } from '../runtime/settingsEvents'
 import { runtime } from '../runtime/bridge'
 
 export interface RouterSettings {
@@ -32,5 +33,6 @@ export async function loadRouterSettings(): Promise<RouterSettings> {
 export async function saveRouterSettings(value: RouterSettings): Promise<RouterSettings> {
   const settings = validateRouterSettings(value)
   await runtime.setAppState(ROUTER_SETTINGS_KEY, JSON.stringify(settings))
+  settingsSaved('router')
   return settings
 }

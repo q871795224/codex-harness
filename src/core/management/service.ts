@@ -1,3 +1,11 @@
+import { settingsCatalog, settingsGroup, readSettings, updateSettings } from './settings'
+import { pluginSettings, validatePluginPatch } from './pluginSettings'
+import { keys, number, sameJson } from './validation'
+import { notifications } from '../notifications/service'
+import { refreshRouterSummaries } from '../workspace-router/summaries'
+import { prepareRouterPreview, routingCandidates, readRouteRecord } from '../workspace-router/service'
+import { loadRouterSettings } from '../workspace-router/settings'
+import { textInput } from '../domain/codex'
 import type { AsyncWaitAction } from '../async-waits/types'
 import type { useUnifiedHarness } from '../../features/conversation/useUnifiedHarness'
 import type { useCodexCore } from '../../features/codex/useCodexCore'
@@ -34,13 +42,6 @@ function provider(p: Record<string, unknown>): 'codex' | 'claude' {
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('需要 JSON 对象')
   return value as Record<string, unknown>
-}
-function sameJson(left: unknown, right: unknown): boolean {
-  if (left === right) return true
-  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((value, i) => sameJson(value, right[i]))
-  if (!left || !right || typeof left !== 'object' || typeof right !== 'object' || Array.isArray(left) || Array.isArray(right)) return false
-  const a = left as Record<string, unknown>, b = right as Record<string, unknown>
-  return Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((key) => Object.hasOwn(b, key) && sameJson(a[key], b[key]))
 }
 function scope(value: unknown): PluginScope {
   const input = object(value)
@@ -108,8 +109,130 @@ export function createManagementHandler(get: () => ManagementContext) {
         return service.request(threadId, { mode, requestedBy: 'agent', instanceId: host.instanceId,
           name: mode === 'create' ? text(p, 'name') : undefined, projectId: mode === 'join' ? text(p, 'projectId') : undefined })
       }
+      case 'projects.get': {
+        const projectId = text(p, 'projectId')
+        return { ...await runtime.projectDocGet(projectId), workspaceRoots: await runtime.projectDocWorkspaces(projectId) }
+      }
+      case 'projects.update': {
+        const projectId = text(p, 'projectId'), patch = object(p.patch)
+        keys(patch, ['name', 'shortName'], true)
+        const current = await runtime.projectDocGet(projectId)
+        if (p.expected !== undefined && !sameJson(object(p.expected), { name: current.name, shortName: current.shortName ?? null })) throw new Error('项目元数据已变化，请重新读取')
+        if (patch.name !== undefined) text(patch, 'name')
+        if (patch.shortName !== undefined && (typeof patch.shortName !== 'string' || Array.from(patch.shortName.trim()).length > 12 || /[\p{Cc}\[\]【】]/u.test(patch.shortName))) throw new Error('项目简称须为最多12字符的单行文本，不含方括号')
+        if (patch.name !== undefined) await runtime.projectDocRename(projectId, text(patch, 'name'))
+        if (patch.shortName !== undefined) await runtime.projectDocSetShortName(projectId, (patch.shortName as string).trim(), false)
+        const saved = await runtime.projectDocGet(projectId)
+        if ((patch.name !== undefined && saved.name !== (patch.name as string).trim()) || (patch.shortName !== undefined && (saved.shortName ?? '') !== (patch.shortName as string).trim())) throw new Error('项目元数据已提交，但回读未确认，请查询实际状态')
+        return saved
+      }
+      case 'projects.onboardingStatus': {
+        if (!get().onboarding) throw new Error('项目会话接入服务不可用')
+        const state = get().onboarding!.snapshot().get(text(p, 'threadId'))
+        if (!state) return { data: null }
+        const { id, source, mode, name, projectId, phase, requestedBy, autoConfirmAt, receipt, messages, chunks, completedChunks } = state
+        return { data: { requestId: id, threadId: source.threadId, mode, name, projectId, phase, requestedBy, autoConfirmAt, receipt, messages, chunks, completedChunks } }
+      }
+      case 'models.list':
+        return { provider: provider(p), data: provider(p) === 'codex' ? codex.models : h.claudeModels, source: 'mounted provider model catalog' }
+      case 'settings.list':
+        return { groups: settingsCatalog, codexDefaults: 'config.read / config.set', pluginSettings: 'plugins.read / plugins.configure' }
+      case 'settings.read': {
+        const group = settingsGroup(p.group)
+        return { group, settings: await readSettings(group, get()), ...settingsCatalog[group] }
+      }
+      case 'settings.update': {
+        const group = settingsGroup(p.group)
+        if (p.expected !== undefined && !sameJson(object(p.expected), await readSettings(group, get()))) throw new Error('设置已变化，请重新读取再更新')
+        return updateSettings(group, object(p.patch), get, waitFor)
+      }
+      case 'router.summaries':
+        return { data: await runtime.routerSummaries(h.workspaces.map(w => w.root)) }
+      case 'router.refresh': {
+        if (p.all === true && p.root !== undefined) throw new Error('root和all不能同时提供')
+        const roots = p.all === true ? h.workspaces.map(w => w.root) : [text(p, 'root')]
+        if (p.all !== undefined && typeof p.all !== 'boolean') throw new Error('all 必须是布尔值')
+        const workspaces = roots.map(root => {
+          const found = h.workspaces.find(w => w.root === root)
+          if (!found) throw new Error('请使用可见工作区的root')
+          return found
+        })
+        // A full sweep may take longer than a management request. The existing
+        // lease-aware queue owns execution; this receipt does not claim completion.
+        void refreshRouterSummaries(workspaces, () => false, true).catch(error => get().harness.notify('Router介绍检查失败', 'error', error))
+        return { accepted: true, roots, statusMethod: 'router.summaries', changedDocumentsMayUseModel: true }
+      }
+      case 'router.preview': {
+        if (p.input !== undefined && typeof p.input !== 'string') throw new Error('input 必须是文本')
+        const settings = await loadRouterSettings()
+        const candidates = await routingCandidates(h.workspaces, settings)
+        return { prompt: candidates.length ? await prepareRouterPreview([textInput((p.input as string | undefined) ?? '{{用户输入}}')], candidates, settings) : '', modelCalled: false, userInputIsPlaceholder: p.input === undefined }
+      }
+      case 'router.record':
+        return { data: await readRouteRecord(text(p, 'threadId')) }
+      case 'router.feedback':
+        return runtime.routerFeedback(p.offset === undefined ? 0 : number(p.offset, 0, Number.MAX_SAFE_INTEGER, 'offset'), p.limit === undefined ? 20 : number(p.limit, 1, 100, 'limit'))
+      case 'router.setFeedback':
+      case 'router.correct': {
+        const id = text(p, 'threadId')
+        if (id.startsWith('claude:') || !h.threads.some(t => t.id === id)) throw new Error('请先在Harness加载目标Codex会话')
+        const record = await readRouteRecord(id)
+        if (!record || record.status !== 'started') throw new Error('该会话没有已启动的Router任务')
+        const accurate = method === 'router.correct' ? false : boolean(p, 'accurate')
+        if (!accurate && !Object.hasOwn(p, 'actualWorkspace')) throw new Error('请明确actualWorkspace，通用工作区使用null')
+        const actual = accurate || p.actualWorkspace === null ? null : text(p, 'actualWorkspace')
+        const beforeCwd = h.threads.find(t => t.id === id)?.cwd
+        let afterCwd = beforeCwd
+        if (method === 'router.correct') {
+          const target = actual === null ? await runtime.routerWorkspaceDirectory() : h.workspaces.find(w => w.root === actual)?.checkoutRoot
+          if (!target) throw new Error('目标工作区已移除')
+          await h.correctRouteWorkspace(id, actual)
+          afterCwd = await waitFor(() => get().harness.threads.find(t => t.id === id)?.cwd === target ? target : undefined)
+        } else await h.giveRouteFeedback(id, accurate, actual)
+        const saved = await readRouteRecord(id)
+        if (saved?.feedback !== (accurate ? 'accurate' : 'inaccurate') || saved.actualWorkspace !== actual) throw new Error('反馈已提交，但回读未确认')
+        return { record: saved, workspaceChanged: afterCwd !== beforeCwd, cwd: afterCwd, taskReplayed: false }
+      }
+      case 'notifications.list': {
+        await notifications.initialize()
+        const state = notifications.snapshot()
+        if (state.storageError) throw new Error('通知历史读取失败，请在通知中心检查')
+        const offset = p.offset === undefined ? 0 : number(p.offset, 0, Number.MAX_SAFE_INTEGER, 'offset')
+        const limit = p.limit === undefined ? 50 : number(p.limit, 1, 100, 'limit')
+        if (p.unread !== undefined && typeof p.unread !== 'boolean') throw new Error('unread 必须是布尔值')
+        const threadId = p.threadId === undefined ? undefined : text(p, 'threadId')
+        const records = state.records.filter(r => (!threadId || r.threadId === threadId) && (!p.unread || !r.read))
+        return { data: records.slice(offset, offset + limit).map(({ details: _details, ...record }) => record), hasMore: offset + limit < records.length, inAppReminderOverlay: false }
+      }
+      case 'notifications.markRead': {
+        if (p.all === true && p.id !== undefined) throw new Error('id和all不能同时提供')
+        await notifications.initialize()
+        if (notifications.snapshot().storageError) throw new Error('通知历史尚未加载')
+        const id = p.all === true ? undefined : text(p, 'id')
+        if (p.all !== undefined && typeof p.all !== 'boolean') throw new Error('all 必须是布尔值')
+        if (id && !notifications.snapshot().records.some(r => r.id === id)) throw new Error('通知不存在')
+        notifications.markRead(id)
+        await notifications.flushed()
+        if (notifications.snapshot().storageError) throw new Error('通知已标记，但保存未确认，请先查询状态')
+        return { id: id ?? null, all: !id, read: true, sourceActionsResolved: false }
+      }
+      case 'seatalk.status': {
+        const status = object(await runtime.seatalkRemoteCall('status'))
+        return Object.fromEntries(['reachable', 'connected', 'accountId', 'ownerId', 'state', 'interactiveCards'].filter(k => ['boolean', 'string', 'number'].includes(typeof status[k])).map(k => [k, status[k]]))
+      }
+      case 'seatalk.bindings': {
+        const response = object(await runtime.seatalkRemoteCall('bindings'))
+        const bindings = response.data ?? response.bindings
+        if (!Array.isArray(bindings)) throw new Error('SeaTalk绑定响应无效')
+        return { data: bindings.map(value => { const b = object(value); return Object.fromEntries(['threadId', 'rootId', 'createdAt'].filter(k => ['string', 'number'].includes(typeof b[k])).map(k => [k, b[k]])) }) }
+      }
+      case 'plugins.read': {
+        const instance = pluginInstance(text(p, 'instanceId'))
+        const settings = pluginSettings(instance)
+        return { ...instanceSummary(instance), settings, editableFields: Object.keys(settings), hiddenConfigKeys: Object.keys(instance.config).filter(k => !Object.hasOwn(settings, k)) }
+      }
       case 'capabilities':
-        return { protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),
+        return { settingsGroups: Object.keys(settingsCatalog), manualOnly: ['project-document-compaction'], protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),
           pluginSystem: 'Harness PluginHost（与 Codex/Claude 插件各自独立）', scope: '运行中的 Harness 实例；异步等待就绪后按已登记动作启动原会话轮次' }
       case 'status':
         return { versions: await runtime.getRuntimeVersions(), flavor, phase: h.phase, selectedProvider: h.selectedProvider,
@@ -154,6 +277,11 @@ export function createManagementHandler(get: () => ManagementContext) {
             cwd: thread.cwd, provider: thread.id.startsWith('claude:') ? 'claude' : 'codex', createdAt: thread.createdAt,
             updatedAt: thread.updatedAt, activeTurnId: h.activeTurnIds[thread.id] ?? null })) }
       case 'sessions.create': {
+        if (p.cwd === undefined) {
+          const id = await h.createThread(provider(p))
+          if (!id) throw new Error('会话创建失败')
+          return waitFor(() => { const thread = get().harness.threads.find(t => t.id === id); return thread ? { id, cwd: thread.cwd, provider: provider(p), automaticWorkspace: provider(p) === 'codex' } : undefined })
+        }
         const cwd = text(p, 'cwd'), mappings = await runtime.mapThreadWorkspaces([cwd])
         if (!mappings[cwd]) throw new Error('cwd 不是可用的 Git checkout')
         const id = await h.createThread(provider(p), mappings[cwd]!.checkoutRoot)
@@ -214,15 +342,19 @@ export function createManagementHandler(get: () => ManagementContext) {
         if (!definition.manifest.supportedScopes.includes(target.kind)) throw new Error('插件不支持该作用域')
         if (!definition.allowMultipleInstancesPerScope && plugins.instances.some((candidate) => candidate.pluginId === definition.manifest.id
           && sameJson(candidate.scope, target))) throw new Error('该作用域已有插件实例')
-        return savePlugin({ instanceId: crypto.randomUUID(), pluginId: definition.manifest.id, scope: target,
+        const instance: PluginInstanceRecord = { instanceId: crypto.randomUUID(), pluginId: definition.manifest.id, scope: target,
           enabled: p.enabled === undefined ? true : boolean(p, 'enabled'), config: p.config === undefined
-            ? definition.createInstanceConfig?.() ?? {} : object(p.config), createdAt: Date.now(), updatedAt: Date.now() })
+            ? definition.createInstanceConfig?.() ?? {} : object(p.config), createdAt: Date.now(), updatedAt: Date.now() }
+        if (p.config !== undefined) validatePluginPatch(instance, object(p.config))
+        return savePlugin(instance)
       }
       case 'plugins.setEnabled':
         return savePlugin({ ...pluginInstance(text(p, 'instanceId')), enabled: boolean(p, 'enabled') })
       case 'plugins.configure': {
         const instance = pluginInstance(text(p, 'instanceId'))
-        return savePlugin({ ...instance, config: { ...instance.config, ...object(p.patch) } })
+        const patch = object(p.patch)
+        validatePluginPatch(instance, patch)
+        return savePlugin({ ...instance, config: { ...instance.config, ...patch } })
       }
       case 'plugins.delete': {
         const id = text(p, 'instanceId')

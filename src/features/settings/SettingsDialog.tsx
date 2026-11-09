@@ -1,3 +1,4 @@
+import { useSettingsReload } from '../../core/runtime/settingsEvents'
 import { InputCorrectionSettings } from './InputCorrectionSettings'
 import { RouterSettings } from './RouterSettings'
 import { HistorySettings } from './HistorySettings'
@@ -363,6 +364,13 @@ function HandoverSettings() {
   const [savedTemplate, setSavedTemplate] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  useSettingsReload('handover', async () => ({
+    prompt: await runtime.readHandoverTemplate(HANDOVER_PROMPT_FILE_NAME, DEFAULT_HANDOVER_PROMPT),
+    template: await runtime.readHandoverTemplate(HANDOVER_TEMPLATE_FILE_NAME, DEFAULT_HANDOVER_TEMPLATE),
+  }), ({ prompt, template }) => {
+    setPromptDraft(prompt); setSavedPrompt(prompt); setTemplateDraft(template); setSavedTemplate(template)
+    setNotice('交接设置已更新。'); setLoadError(null)
+  }, error => setLoadError(String(error)))
 
   useEffect(() => {
     let cancelled = false

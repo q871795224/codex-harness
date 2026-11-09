@@ -94,4 +94,49 @@ class CLITest(unittest.TestCase):
         self.assertEqual(self.calls[0]['params'], {'id': 'wait-one', 'action': 'pause'})
 
 
+    def test_new_management_commands_send_their_typed_parameters(self):
+        file = self.root / 'patch with spaces.json'
+        file.write_text(json.dumps({'backend': 'codex', 'descriptions': {'/a': 'a\nb'}}))
+        cases = [
+            (['settings', 'list'], 'settings.list', {}),
+            (['settings', 'read', 'router'], 'settings.read', {'group': 'router'}),
+            (['settings', 'update', 'router', '--file', str(file)], 'settings.update', {'group': 'router', 'patch': json.loads(file.read_text())}),
+            (['router', 'refresh', '/work tree'], 'router.refresh', {'root': '/work tree'}),
+            (['router', 'correct', 'thread', '--general'], 'router.correct', {'threadId': 'thread', 'actualWorkspace': None}),
+            (['router', 'set-feedback', 'thread', '--accurate'], 'router.setFeedback', {'threadId': 'thread', 'accurate': True}),
+            (['plugins', 'read', 'one'], 'plugins.read', {'instanceId': 'one'}),
+            (['notifications', 'read', '--all'], 'notifications.markRead', {'all': True}),
+            (['seatalk', 'bindings'], 'seatalk.bindings', {}),
+            (['models', 'list'], 'models.list', {'provider': 'codex'}),
+            (['sessions', 'create'], 'sessions.create', {'provider': 'codex'}),
+        ]
+        for args, method, params in cases:
+            with self.subTest(args=args):
+                self.assertEqual(self.run_cli(*args)[0], 0)
+                self.assertEqual(self.calls[-1]['method'], method)
+                self.assertEqual(self.calls[-1]['params'], params)
+
+    def test_project_commands_use_the_actual_origin_and_do_not_replace_selection(self):
+        with patch.dict(os.environ, {'CODEX_THREAD_ID': 'actual-origin'}):
+            self.assertEqual(self.run_cli('projects', 'request-create', 'Harness 管理')[0], 0)
+        self.assertEqual(self.calls[-1]['params'], {'threadId': 'actual-origin', 'mode': 'create', 'name': 'Harness 管理'})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(self.run_cli('projects', 'request-status')[0], 1)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_ambiguous_bulk_commands_are_rejected_before_http(self):
+        for args in [('router', 'refresh'), ('router', 'refresh', '/a', '--all'), ('notifications', 'read'), ('notifications', 'read', 'one', '--all')]:
+            self.assertEqual(self.run_cli(*args)[0], 1)
+        self.assertEqual(self.calls, [])
+
+    def test_optional_expected_settings_and_preview_file_preserve_values(self):
+        patch_file = self.root / 'patch.json'; patch_file.write_text('{"feedbackCount": 5}')
+        expected = self.root / 'expected.json'; expected.write_text('{"backend": "decision2"}')
+        self.assertEqual(self.run_cli('settings', 'update', 'router', '--file', str(patch_file), '--expected-file', str(expected))[0], 0)
+        self.assertEqual(self.calls[-1]['params']['expected'], {'backend': 'decision2'})
+        request = self.root / 'request.txt'; request.write_text('中文需求\n保留换行')
+        self.assertEqual(self.run_cli('router', 'preview', '--input-file', str(request))[0], 0)
+        self.assertEqual(self.calls[-1]['params'], {'input': request.read_text()})
+
+
 if __name__ == '__main__': unittest.main()

@@ -70,6 +70,8 @@ async function writeBundledSkill(dir, name, nonce) {
     const text = await readFile(new URL('SKILL.md', sourceSkill), 'utf8');
     await writeFile(join(dir, 'SKILL.md'), text + `\nNative test marker: ${nonce}\n`);
     await writeFile(join(dir, 'harnessctl.py'), await readFile(new URL('harnessctl.py', sourceSkill)));
+    await mkdir(join(dir, 'references'), { recursive: true });
+    for (const name of ['management.md', 'async-waits.md']) await writeFile(join(dir, 'references', name), await readFile(new URL('references/' + name, sourceSkill)));
 }
 async function codexProbe(mode) {
     const home = join(root, 'codex-home-' + mode);
