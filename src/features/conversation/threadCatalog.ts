@@ -20,6 +20,8 @@ export function listThreadPage(
     sortKey: 'recency_at',
     sortDirection: 'desc',
     archived: mode === 'archived',
+    // Omission filters by the configured provider and hides history after a switch.
+    modelProviders: [],
     useStateDbOnly: true,
     ...(searchTerm.trim() ? { searchTerm: searchTerm.trim() } : {}),
   })
@@ -36,6 +38,7 @@ export async function listAllActiveThreads(transport: ThreadCatalogTransport): P
       sortKey: 'recency_at',
       sortDirection: 'desc',
       archived: false,
+      modelProviders: [],
       useStateDbOnly: true,
     })
     threads.push(...response.data)
