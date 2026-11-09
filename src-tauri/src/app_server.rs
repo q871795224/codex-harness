@@ -772,6 +772,12 @@ impl AppServerManager {
                                 let method = payload.get("method").and_then(Value::as_str);
                                 let params = payload.get("params").unwrap_or(&Value::Null);
                                 if method == Some("item/tool/call") && payload.get("id").is_some() {
+                                    // A shared daemon can replay pending requests to another
+                                    // client. Leave a foreign owner's request for that owner;
+                                    // sending an error here would resolve its request too.
+                                    if let (Some(thread), Some(turn)) = (params["threadId"].as_str(), params["turnId"].as_str()) {
+                                        if reader_ownership.check(thread, turn).is_err() { continue; }
+                                    }
                                     let tools = reader_project_tools.clone();
                                     let params = params.clone();
                                     let id = payload["id"].clone();
