@@ -1,3 +1,4 @@
+import { InputCorrectionSettings } from './InputCorrectionSettings'
 import { RouterSettings } from './RouterSettings'
 import { HistorySettings } from './HistorySettings'
 import type { useCodexUpdate } from '../codex/useCodexUpdate'
@@ -74,7 +75,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'router' | 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
+type SettingsPage = 'input-correction' | 'router' | 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -99,6 +100,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
     router: { heading: '工作区 Router', kicker: 'AUTOMATION' },
     recap: { heading: '会话回顾', kicker: 'AUTOMATION' },
+    'input-correction': { heading: '输入纠正', kicker: 'CONVERSATION' },
     memory: { heading: '记忆', kicker: 'MEMORY' },
     handover: { heading: '交接', kicker: 'AUTOMATION' },
     skills: { heading: '技能', kicker: 'CODEX' },
@@ -173,6 +175,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
             <button type="button" className={page === 'recap' ? 'selected' : ''} aria-current={page === 'recap' ? 'page' : undefined} onClick={() => setPage('recap')}>
               <Sparkles size={16} />会话回顾
             </button>
+            <button type="button" className={page === 'input-correction' ? 'selected' : ''} aria-current={page === 'input-correction' ? 'page' : undefined} onClick={() => setPage('input-correction')}><MessageSquareText size={16} />输入纠正</button>
             <button type="button" className={page === 'memory' ? 'selected' : ''} aria-current={page === 'memory' ? 'page' : undefined} onClick={() => setPage('memory')}>
               <BrainCircuit size={16} />记忆
             </button>
@@ -207,6 +210,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           {page === 'router' && <RouterSettings models={codex.models} workspaces={workspaces} />}
           {page === 'recap' && <RecapSettings codex={codex} settings={recapGeneration} onChange={onRecapGeneration} />}
           {page === 'memory' && <MemorySettings models={codex.models} />}
+          {page === 'input-correction' && <InputCorrectionSettings />}
           {page === 'handover' && <HandoverSettings />}
           {page === 'skills' && <SkillsSettings workspaceRoot={selectedWorkspaceRoot} />}
           {page === 'mcp' && <McpSettings codex={codex} />}

@@ -1077,6 +1077,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                 {composerDraftsLoaded && <Composer
                   key={harness.draftOrigins?.[harness.currentThread.id] ?? harness.currentThread.id}
                   provider={harness.selectedProvider}
+                  threadId={harness.currentThread.id}
+                  onMessageAccepted={harness.onMessageAccepted}
                   initialDraft={composerDrafts[harness.currentThread.id]}
                   consumedDraft={consumedComposerDrafts[harness.currentThread.id]}
                   projectCard={projectCard}
