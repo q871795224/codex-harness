@@ -60,7 +60,6 @@ export const projectDocPlugin: HarnessPlugin = {
     const onboarding = ctx.services.optional<ProjectOnboardingService>('harness.projectOnboarding')
     if (onboarding) {
       const settings = {instanceId:ctx.instanceId,model:compaction.config.archiveModel,effort:compaction.config.archiveEffort}
-      ctx.effect(onboarding.registerHost(settings))
       ctx.slots.composerActions.register({ id: 'onboard-project', order: 12,
         render: props => <OnboardingButton service={onboarding} docs={service} threadId={props.threadId} disabled={props.disabled} instanceId={ctx.instanceId} /> })
       ctx.slots.conversationBanners.register({ id: 'project-onboarding', order: 11,

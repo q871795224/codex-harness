@@ -22,17 +22,17 @@ function fixture() {
 beforeEach(() => vi.clearAllMocks())
 
 describe('management uses effective application state', () => {
-  it('routes an Agent onboarding request to the same confirmation service, never to execution', async () => {
+  it('does not expose Agent project onboarding or request status', async () => {
     const {context,call}=fixture()
-    context.harness.threads=[{id:'source',cwd:'/source'}] as never
-    context.harness.threadRoots={source:'/source'}
-    context.plugins.resolvedConversationBanners=vi.fn(() => [{pluginId:'builtin.project-doc',instanceId:'host',contribution:{id:'project-onboarding'}}]) as never
-    const request=vi.fn(async () => ({requestId:'pending',phase:'confirm'}))
+    const request=vi.fn()
     context.onboarding={request} as never
-    expect(await call('projects.requestOnboarding',{threadId:'source',mode:'create',name:'新项目'})).toEqual({requestId:'pending',phase:'confirm'})
-    expect(request).toHaveBeenCalledWith('source',{mode:'create',name:'新项目',projectId:undefined,requestedBy:'agent',instanceId:'host'})
-    context.plugins.resolvedConversationBanners=vi.fn(() => [])
-    await expect(call('projects.requestOnboarding',{threadId:'source',mode:'create'})).rejects.toThrow('插件未启用')
+    await expect(call('projects.requestOnboarding',{threadId:'source',mode:'create',name:'新项目'})).rejects.toThrow('不支持')
+    await expect(call('projects.onboardingStatus',{threadId:'source'})).rejects.toThrow('不支持')
+    expect(request).not.toHaveBeenCalled()
+    const capabilities=await call('capabilities') as {methods:Array<{name:string}>;manualOnly:string[]}
+    expect(capabilities.methods.map(m => m.name)).not.toContain('projects.requestOnboarding')
+    expect(capabilities.methods.map(m => m.name)).not.toContain('projects.onboardingStatus')
+    expect(capabilities.manualOnly).toContain('project-onboarding')
   })
   it('returns all 17 runtime workspaces even when only 7 are explicitly registered', async () => {
     const { context, call } = fixture()

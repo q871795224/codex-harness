@@ -14,7 +14,6 @@ fn is_read(method: &str) -> bool {
         method,
         "projects.list"
             | "projects.get"
-            | "projects.onboardingStatus"
             | "settings.list"
             | "settings.read"
             | "models.list"
@@ -184,7 +183,6 @@ mod tests {
         for method in [
             "projects.list",
             "projects.get",
-            "projects.onboardingStatus",
             "settings.list",
             "settings.read",
             "router.preview",

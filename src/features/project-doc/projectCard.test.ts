@@ -14,6 +14,7 @@ function paste(origin?: CollapsedPaste['origin']): CollapsedPaste {
 
 describe('projectCard', () => {
   it('renders label with name and seq', () => {
+    expect(projectCardLabel({ name: '我的项目', seq: null })).toBe('[项目: 我的项目]')
     expect(projectCardLabel({ name: '我的项目', seq: 5 })).toBe('[项目: 我的项目 (seq 5)]')
     expect(projectCardLabel({ name: '  多空  格  ', seq: 0 })).toBe('[项目: 多空 格 (seq 0)]')
     expect(projectCardLabel({ name: '', seq: 1 })).toBe(`${PROJECT_CARD_LABEL_PREFIX}未命名 (seq 1)]`)

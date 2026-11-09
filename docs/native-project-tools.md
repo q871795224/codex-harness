@@ -1,6 +1,6 @@
 # Codex 原生项目工具
 
-Harness 为新建的 Codex 持久会话注册客户端执行的动态工具。Agent 调用“当前项目”工具时，Harness 使用 App Server 回调的 `threadId` 查询自己的项目绑定；工具参数不接受项目或会话 ID。项目正文通过工具结果进入上下文，首条消息不再拼接项目背景、身份标记或项目维护 Skill。
+Harness 为新建的 Codex 持久会话注册客户端执行的动态工具。Agent 调用“当前项目”工具时，Harness 使用 App Server 回调的 `threadId` 查询自己的项目绑定；工具参数不接受项目或会话 ID。项目正文通过工具结果进入上下文，绑定后的首条消息仅附一条读取提示，不拼接项目全文、身份标记或项目维护 Skill。
 
 ## 调用与写入
 
@@ -18,7 +18,7 @@ Harness 为新建的 Codex 持久会话注册客户端执行的动态工具。Ag
 
 ## 恢复与兼容
 
-App Server 持久化动态工具，并在进程重启后的 resume 和 Fork 中恢复。Harness 保存注册标记，通过会话元数据 `harnessProjectTools` 控制项目背景卡和 Skill 加载。绑定后的消息被接受后，项目归属沿用 pending → locked 生命周期。
+App Server 持久化动态工具，并在进程重启后的 resume 和 Fork 中恢复。Harness 保存注册标记，通过会话元数据 `harnessProjectTools` 控制项目读取提示、兼容背景卡和 Skill 加载。绑定后的消息被接受后，项目归属沿用 pending → locked 生命周期。
 
 Codex 0.167.0 的本机生成协议只有 `thread/start` 接受 `dynamicTools`，没有给现有会话补挂工具的入口。旧 Codex 会话继续使用原生项目 Skill、背景卡和身份标记；Claude 沿用现有链路。ephemeral 后台线程不注册这些工具。`harness-runtime` 管理 Skill 保留。
 

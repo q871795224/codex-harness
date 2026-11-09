@@ -11,8 +11,7 @@ const dark = params.get('theme') === 'dark'
 const mode = params.get('mode') === 'join' ? 'join' : 'create'
 const phase = (params.get('phase') || 'confirm') as OnboardingState['phase']
 const state: OnboardingState = {id:'visual-fixture',source:{threadId:'fixture', title:'DNS 同步方案与验收边界',cwd:'/example/dns-tools'},
-  mode,phase,name:mode === 'join' ? (phase === 'done' ? 'AIOps 自动化运维' : '') : 'DNS 配置同步',projectId:mode === 'join' ? 'aiops' : '',requestedBy:params.get('agent') === '1' ? 'agent' : 'user',
-  autoConfirmAt:params.get('agent') === '1' && phase === 'confirm' ? Date.now()+300_000 : undefined,
+  mode,phase,name:mode === 'join' ? (phase === 'done' ? 'AIOps 自动化运维' : '') : 'DNS 配置同步',projectId:mode === 'join' ? 'aiops' : '',requestedBy:'user',
   detail:phase === 'running' ? '正在对照项目文档，整理已有结论' : undefined,
   messages:46,chunks:3,completedChunks:1,
   ...(phase === 'done' ? {receipt:{projectId:'aiops',seq:12}} : {}),

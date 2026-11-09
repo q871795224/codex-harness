@@ -212,3 +212,20 @@ it('consumes the user text when project locking removes its background card duri
   await act(async () => { finish() })
   expect((screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement).value).toBe('')
 })
+
+it('shows a native binding notice without a document version and sends it with only the user task as title source', async () => {
+  const onSend=vi.fn().mockResolvedValue(undefined)
+  const notice='当前会话已加入项目「项目」。继续前请调用 harness_project_read 读取最新项目文档。'
+  const {rerender}=render(<Composer {...props} projectCard={{projectId:'one',name:'项目',seq:null,content:notice}}
+    initialDraft={{text:'继续排查',collapsedPastes:[],attachments:[]}} onSend={onSend}/>)
+  const input=screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement
+  expect(input.value).toContain('[项目: 项目]')
+  expect(input.value).not.toContain('seq')
+  await act(async () => {fireEvent.keyDown(input,{key:'Enter'})})
+  expect(onSend).toHaveBeenCalledTimes(1)
+  const [messages,,,titleSource]=onSend.mock.calls[0]
+  expect(messages.find((item:{type:string})=>item.type==='text').text).toBe(`${notice}\n继续排查`)
+  expect(titleSource).toBe('继续排查')
+  rerender(<Composer {...props} projectCard={null} onSend={onSend}/>)
+  expect(input.value).toBe('')
+})
