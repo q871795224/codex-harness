@@ -7,6 +7,8 @@
 - 前端原生调用统一经过 `src/core/runtime/bridge.ts`；Rust 命令在 `src-tauri/src/lib.rs` 注册。
 - `src-tauri/src/app_server.rs` 独占 App Server WebSocket/Unix socket 协议。新增协议方法应先在这里封装，再从 bridge 提供类型化入口。
 
+新增 Agent 能力时，按 [能力接入原则](skills.md#agent-能力接入原则) 选择 Skill 或自定义工具；具体选择与现有能力范围统一维护在该文档。
+
 ## 插件
 
 - `src/core/plugins/` 提供插件生命周期、实例存储、React host 和 slot 解析；`src/plugins/` 放随 App 发布的内置插件。

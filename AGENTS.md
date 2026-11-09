@@ -5,7 +5,7 @@
 本文只放每次任务都必须知道的项目边界和安全约束。详细背景按任务需要读取，不要默认把 `.harness/` 下的全部文件加载进上下文。
 
 - 先读 [.harness/README.md](.harness/README.md)，再按任务类型读取对应文档。
-- 自有 Skill 的源码、App 分发、主动加载及后续接入约定读 [.harness/skills.md](.harness/skills.md)。
+- Agent 能力的 Skill／自定义工具选型、自有 Skill 源码、App 分发与加载约定读 [.harness/skills.md](.harness/skills.md)。
 - 项目架构读 [.harness/architecture.md](.harness/architecture.md)。
 - 工作区 Router 的简介缓存、纠错与后端决策读 [.harness/workspace-router.md](.harness/workspace-router.md)。
 - 项目长期记忆读 [.harness/memory.md](.harness/memory.md)。
