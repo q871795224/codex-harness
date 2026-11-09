@@ -1,4 +1,5 @@
 import { runtime } from '../runtime/bridge'
+import { generateProjectArchive } from './archive'
 import type { ProjectDocService } from './types'
 
 export function createProjectDocService(): ProjectDocService {
@@ -7,6 +8,7 @@ export function createProjectDocService(): ProjectDocService {
     for (const listener of [...bindingListeners]) listener()
   }
   return {
+    generateArchive: generateProjectArchive,
     commitOnboarding: input => runtime.projectDocCommitOnboarding(input),
     finishOnboarding: async (requestId, threadId, workspaceRoot) => {
       const id = await runtime.projectDocFinishOnboarding(requestId, threadId, workspaceRoot)

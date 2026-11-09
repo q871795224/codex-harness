@@ -114,7 +114,7 @@ interface ArchiveDeps {
   persistDraft: (draft: ArchiveDraft) => Promise<void>
 }
 
-/** 归档触发共用逻辑：校验绑定 → 起匿名 run 提炼 Status。返回错误消息（null = 成功启动）。 */
+/** 归档触发共用逻辑：校验绑定 → 提炼 Status 草稿。返回错误消息（null = 成功启动）。 */
 async function runArchive(deps: ArchiveDeps, input: {
   threadId: string | null
   checkoutRoot: string | null

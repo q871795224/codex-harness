@@ -12,7 +12,7 @@ import type { ProjectDocConfig, ArchiveDraft } from './config'
 import type { ArchiveStore } from './archiveStore'
 
 /**
- * 归档按钮的编排：起匿名 detached run 提炼 Status，产出暂存待人确认。
+ * 归档按钮的编排：Codex 起临时会话、Claude 起 detached run 提炼 Status，产出暂存待人确认。
  * 见 .harness/project-doc-plugin-plan.md 第 2 节。
  */
 
@@ -56,26 +56,14 @@ export async function startArchiveRun(deps: ArchiveRunDeps, input: ArchiveRunInp
       transcript,
     })
 
-    const run = await deps.agentRuns.start({
-      instanceId: input.instanceId,
-      provider: input.provider,
-      title: '归档到项目文档',
-      mode: 'detached',
-      workspaceAccess: 'read-only',
-      workspaceRoot: input.workspaceRoot,
-      parentThreadId: input.threadId,
-      prompt,
-      settings: {
+    const statusDraft = input.provider === 'codex'
+      ? await projectDocs.generateArchive({
+        workspaceRoot: input.workspaceRoot,
+        prompt,
         model: input.config.archiveModel,
         effort: input.config.archiveEffort,
-        serviceTier: null,
-        approvalPolicy: 'never',
-        approvalsReviewer: 'user',
-        sandboxMode: 'read-only',
-      },
-    })
-
-    const statusDraft = await waitForRunResult(deps.agentRuns, run.runId)
+      })
+      : await runPersistentArchive(deps.agentRuns, input, prompt)
     const trimmed = statusDraft.trim()
     if (!trimmed) throw new Error('归档 Agent 没有产出内容。')
 
@@ -94,6 +82,30 @@ export async function startArchiveRun(deps: ArchiveRunDeps, input: ArchiveRunInp
     store.setFailed(input.projectId, input.threadId, messageOf(error))
     deps.notifications?.publish({ ...notification, id: notificationId, level: 'error', title: '项目归档未完成', message: '请查看详情后重新发起归档。', details: errorDetails(error), state: 'done' })
   }
+}
+
+/** Claude 保留原有 Agent Run 路径。 */
+async function runPersistentArchive(agentRuns: AgentRunService, input: ArchiveRunInput, prompt: string): Promise<string> {
+  const run = await agentRuns.start({
+    instanceId: input.instanceId,
+    provider: input.provider,
+    title: '归档到项目文档',
+    mode: 'detached',
+    workspaceAccess: 'read-only',
+    workspaceRoot: input.workspaceRoot,
+    parentThreadId: input.threadId,
+    prompt,
+    settings: {
+      model: input.config.archiveModel,
+      effort: input.config.archiveEffort,
+      serviceTier: null,
+      approvalPolicy: 'never',
+      approvalsReviewer: 'user',
+      sandboxMode: 'read-only',
+    },
+  })
+
+  return waitForRunResult(agentRuns, run.runId)
 }
 
 /** 轮询 run 直到完成/失败，完成则返回最后一条 Agent 消息。 */
