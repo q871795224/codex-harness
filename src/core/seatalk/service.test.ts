@@ -56,7 +56,7 @@ it('directs an inbound reply to its mapped session and never submits the same me
   await Promise.all([f.service.tick(), f.service.tick()])
   await new SeaTalkSync(f.call as RemoteCall, () => f.snapshot, f.actions).tick()
   expect(f.actions.send).toHaveBeenCalledExactlyOnceWith('two', 'continue work')
-  expect(f.deliveries[0]).toMatchObject({ threadId: 'two', text: '已接收；执行中的追加消息会排队。' })
+  expect(f.deliveries[0]).toMatchObject({ threadId: 'two', text: '已接收；执行中的追加消息会排队。', silent: true })
 })
 
 it('catches up beyond one hundred messages and does not execute unknown slash commands as prompts', async () => {
@@ -121,7 +121,7 @@ it('creates roots automatically for ordinary sessions and skips ephemeral helper
   const f = fixture(); f.bindings.splice(0)
   f.snapshot.threads[1].ephemeral = true
   await f.service.tick()
-  expect(f.deliveries).toEqual([{ threadId: 'one', title: 'one', cwd: '/repo/one' }])
+  expect(f.deliveries).toEqual([{ threadId: 'one', title: 'one', cwd: '/repo/one', silent: true }])
 })
 
 it('splits a long Unicode result into native-size messages without losing content', async () => {
@@ -227,4 +227,18 @@ it('keeps approvals operable with explicit commands when Bridge has not been upg
   expect(f.deliveries[0].text).toContain('/批准 ')
   expect(f.deliveries[0].text).toContain('/拒绝 ')
   expect(f.actions.warn).toHaveBeenCalledTimes(1)
+})
+
+it('requests silent delivery for new roots, every result segment, and pending question cards', async () => {
+  const f = fixture(); f.bindings.splice(0)
+  const detail = emptyThreadDetail(thread('one'))
+  const content = '你好👋'.repeat(5000)
+  detail.items = [{ turnId: 'turn', item: { id: 'long', type: 'agentMessage', phase: 'final_answer', text: content }, timing: { completedAt: now } }]
+  f.snapshot.details.one = detail
+  f.snapshot.approvals.one = [{ id: 'question', threadId: 'one', method: 'item/tool/requestUserInput', params: { questions: [{ id: 'mode', question: 'Choose a mode' }] } }]
+  await f.service.tick()
+  expect(f.deliveries.filter(d => d.eventId === undefined)).toHaveLength(2)
+  expect(f.deliveries.filter(d => String(d.eventId).startsWith('item:')).map(d => d.text).join('')).toBe(content)
+  expect(f.deliveries.some(d => d.card)).toBe(true)
+  expect(f.deliveries.every(d => d.silent === true)).toBe(true)
 })
