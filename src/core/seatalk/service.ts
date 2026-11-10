@@ -128,7 +128,7 @@ export class SeaTalkSync {
           if (Date.now() > this.deadline || this.sendBudget <= 0) { this.nextThreadIndex = index; break }
           let binding = byThread.get(thread.id)
           if (!binding) {
-            binding = { threadId: thread.id, ...await this.call<Omit<Binding, 'threadId'>>('send', { threadId: thread.id, title: threadTitle(thread), cwd: thread.cwd }) }
+            binding = { threadId: thread.id, ...await this.call<Omit<Binding, 'threadId'>>('send', { threadId: thread.id, title: threadTitle(thread), cwd: thread.cwd, silent: true }) }
             byThread.set(thread.id, binding)
           }
           await this.syncThread(thread, binding, snapshot)
@@ -163,7 +163,7 @@ export class SeaTalkSync {
       if (Date.now() > this.deadline || this.sendBudget <= 0) throw new SyncYield()
       --this.sendBudget
       this.sent.add(key)
-      await this.call('send', { threadId, title: thread ? threadTitle(thread) : 'Harness 会话', cwd: thread?.cwd ?? '/', eventId: `${eventId}:${index}`, text: part, ...(card ? { card } : { format: 'markdown' }) })
+      await this.call('send', { threadId, silent: true, title: thread ? threadTitle(thread) : 'Harness 会话', cwd: thread?.cwd ?? '/', eventId: `${eventId}:${index}`, text: part, ...(card ? { card } : { format: 'markdown' }) })
     }
   }
 
