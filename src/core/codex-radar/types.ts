@@ -4,6 +4,7 @@ export interface RadarModelRow {
   effort: string
   score: number | null
   coverage: number
+  requiredTasks?: number
   price: number | null
   minutes: number | null
   bestScore: boolean
