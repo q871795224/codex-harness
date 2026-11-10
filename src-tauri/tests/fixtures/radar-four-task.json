@@ -1,0 +1,1720 @@
+{
+  "response": {
+    "schema": "codex-four-task-results/1",
+    "protocol": "codex-four-weighted-150-v2",
+    "round_id": "codex-four-20261109-5c-solmax",
+    "score_max": 150,
+    "task_weights": {
+      "combined": 60,
+      "pompeii": 45,
+      "pelican": 22.5,
+      "candy": 22.5
+    },
+    "rows": [
+      {
+        "model": "gpt-6.1-sol",
+        "effort": "low",
+        "pompeii": {
+          "model_elapsed_seconds": 261.41401346586645,
+          "cost_usd": 0.2075328,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 56.00000000000001
+        },
+        "pelican": {
+          "model_elapsed_seconds": 106.27546063810587,
+          "cost_usd": 0.0916148,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 90
+        },
+        "candy": {
+          "model_elapsed_seconds": 38.97045389935374,
+          "cost_usd": 0.0275956,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 155.6821171399206,
+          "cost_usd": 0.1344048,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "pompeii": {
+          "model_elapsed_seconds": 386.9589541256428,
+          "cost_usd": 0.3607028,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 64.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 144.83135342039168,
+          "cost_usd": 0.0937192,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 94.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 36.86914957687259,
+          "cost_usd": 0.0286184,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 313.9030894115567,
+          "cost_usd": 0.2126472,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 75
+        }
+      },
+      {
+        "model": "gpt-6.1-sol",
+        "effort": "high",
+        "pompeii": {
+          "model_elapsed_seconds": 516.2539333645254,
+          "cost_usd": 0.3112764,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 81.48148148148148
+        },
+        "pelican": {
+          "model_elapsed_seconds": 412.9124572854489,
+          "cost_usd": 0.2918484,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 99
+        },
+        "candy": {
+          "model_elapsed_seconds": 54.007026767358184,
+          "cost_usd": 0.0301224,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 619.8325380403548,
+          "cost_usd": 0.3415108,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-6.1-sol",
+        "effort": "xhigh",
+        "pompeii": {
+          "model_elapsed_seconds": 779.7429949454963,
+          "cost_usd": 0.5288116,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 88.88888888888889
+        },
+        "pelican": {
+          "model_elapsed_seconds": 604.7401925437152,
+          "cost_usd": 0.5485988,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 92.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 61.271795900538564,
+          "cost_usd": 0.0384828,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 671.3918396811932,
+          "cost_usd": 0.4724416,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 87
+        }
+      },
+      {
+        "model": "gpt-6.1-sol",
+        "effort": "max",
+        "pompeii": {
+          "model_elapsed_seconds": 1147.13458227925,
+          "cost_usd": 0.634822,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 88.88888888888889
+        },
+        "pelican": {
+          "model_elapsed_seconds": 789.0039676837623,
+          "cost_usd": 0.6212528,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 99
+        },
+        "candy": {
+          "model_elapsed_seconds": 68.87320173159242,
+          "cost_usd": 0.045932,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 807.8061093781143,
+          "cost_usd": 0.4617712,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-6.1-sol",
+        "effort": "ultra",
+        "pompeii": {
+          "model_elapsed_seconds": 815.0093969125301,
+          "cost_usd": 0.614644,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 96.55172413793103
+        },
+        "pelican": {
+          "model_elapsed_seconds": 661.6857728585601,
+          "cost_usd": 0.4922092,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 97
+        },
+        "candy": {
+          "model_elapsed_seconds": 75.92532540298998,
+          "cost_usd": 0.0475556,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 544.9758972078562,
+          "cost_usd": 0.332422,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 79
+        }
+      },
+      {
+        "model": "gpt-6-astra",
+        "effort": "low",
+        "pompeii": {
+          "model_elapsed_seconds": 275.59151652641594,
+          "cost_usd": 0.995962,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 66.66666666666666
+        },
+        "pelican": {
+          "model_elapsed_seconds": 117.1284814029932,
+          "cost_usd": 0.461982,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 92.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 43.168760845437646,
+          "cost_usd": 0.143956,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 199.98806077986956,
+          "cost_usd": 0.572864,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 67
+        }
+      },
+      {
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "pompeii": {
+          "model_elapsed_seconds": 234.49494165554643,
+          "cost_usd": 0.808432,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 92.85714285714286
+        },
+        "pelican": {
+          "model_elapsed_seconds": 105.17650815285742,
+          "cost_usd": 0.417664,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 95.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 36.919630862772465,
+          "cost_usd": 0.113546,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 230.99024168029428,
+          "cost_usd": 0.663948,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "pompeii": {
+          "model_elapsed_seconds": 381.1071989815682,
+          "cost_usd": 1.46806,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 69.56521739130434
+        },
+        "pelican": {
+          "model_elapsed_seconds": 175.63449035584927,
+          "cost_usd": 0.610188,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 97.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 48.11997340992093,
+          "cost_usd": 0.206338,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 450.26406713947654,
+          "cost_usd": 1.4182,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 79
+        }
+      },
+      {
+        "model": "gpt-6-astra",
+        "effort": "xhigh",
+        "pompeii": {
+          "model_elapsed_seconds": 330.155789796263,
+          "cost_usd": 1.521574,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 100.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 548.9829223975539,
+          "cost_usd": 2.185398,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 97.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 55.472281290218234,
+          "cost_usd": 0.129348,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 510.5224237497896,
+          "cost_usd": 1.608378,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 77
+        }
+      },
+      {
+        "model": "gpt-6-astra",
+        "effort": "max",
+        "pompeii": {
+          "model_elapsed_seconds": 994.6950575746596,
+          "cost_usd": 2.691996,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 92.85714285714286
+        },
+        "pelican": {
+          "model_elapsed_seconds": 683.2910797726363,
+          "cost_usd": 2.343784,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 95.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 65.97297506593168,
+          "cost_usd": 0.220512,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 903.2127996198833,
+          "cost_usd": 2.6104,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 79
+        }
+      },
+      {
+        "model": "gpt-6-astra",
+        "effort": "ultra",
+        "pompeii": {
+          "model_elapsed_seconds": 864.201078588143,
+          "cost_usd": 3.045224,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 88.88888888888889
+        },
+        "pelican": {
+          "model_elapsed_seconds": 586.3381999060512,
+          "cost_usd": 2.446846,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 97
+        },
+        "candy": {
+          "model_elapsed_seconds": 55.32117787562311,
+          "cost_usd": 0.259448,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 490.7206923197955,
+          "cost_usd": 1.67228,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 79
+        }
+      },
+      {
+        "model": "gpt-6.1-terra",
+        "effort": "low",
+        "pompeii": {
+          "model_elapsed_seconds": 270.0629459954798,
+          "cost_usd": 0.15179,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 45.45454545454545
+        },
+        "pelican": {
+          "model_elapsed_seconds": 63.97293812781572,
+          "cost_usd": 0.0261266,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 64.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 33.468204252421856,
+          "cost_usd": 0.0136128,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 95.57636460289359,
+          "cost_usd": 0.039115,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 64
+        }
+      },
+      {
+        "model": "gpt-6.1-terra",
+        "effort": "medium",
+        "pompeii": {
+          "model_elapsed_seconds": 200.93814221397042,
+          "cost_usd": 0.100056,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 31.57894736842105
+        },
+        "pelican": {
+          "model_elapsed_seconds": 66.12167681194842,
+          "cost_usd": 0.031753,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 67.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 37.118996335193515,
+          "cost_usd": 0.0154406,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 88.04219984449446,
+          "cost_usd": 0.0359922,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 54.5
+        }
+      },
+      {
+        "model": "gpt-6.1-terra",
+        "effort": "high",
+        "pompeii": {
+          "model_elapsed_seconds": 205.33910628035665,
+          "cost_usd": 0.113296,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 63.63636363636363
+        },
+        "pelican": {
+          "model_elapsed_seconds": 78.87411242164671,
+          "cost_usd": 0.0416414,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 66
+        },
+        "candy": {
+          "model_elapsed_seconds": 31.76943256519735,
+          "cost_usd": 0.0142226,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 140.43078890815377,
+          "cost_usd": 0.048441,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-6.1-terra",
+        "effort": "xhigh",
+        "pompeii": {
+          "model_elapsed_seconds": 438.36738142743707,
+          "cost_usd": 0.193245,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 92.85714285714286
+        },
+        "pelican": {
+          "model_elapsed_seconds": 82.82490064203739,
+          "cost_usd": 0.0315168,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 62.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 36.00493426434696,
+          "cost_usd": 0.015941,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 192.88693139143288,
+          "cost_usd": 0.0690674,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-6.1-terra",
+        "effort": "max",
+        "pompeii": {
+          "model_elapsed_seconds": 205.588294390589,
+          "cost_usd": 0.1654538,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 100.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 447.76762225292623,
+          "cost_usd": 0.190499,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 97
+        },
+        "candy": {
+          "model_elapsed_seconds": 49.82157472893596,
+          "cost_usd": 0.0200674,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 506.7750572524965,
+          "cost_usd": 0.1908226,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 96.5
+        }
+      },
+      {
+        "model": "gpt-6.1-terra",
+        "effort": "ultra",
+        "pompeii": {
+          "model_elapsed_seconds": 338.95322917215526,
+          "cost_usd": 0.1780564,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 47.61904761904761
+        },
+        "pelican": {
+          "model_elapsed_seconds": 84.62475946545601,
+          "cost_usd": 0.0332466,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 62.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 37.76981114037335,
+          "cost_usd": 0.0226074,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 159.43154349923134,
+          "cost_usd": 0.06507,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-6-sol",
+        "effort": "low",
+        "pompeii": {
+          "model_elapsed_seconds": 105.92770602367818,
+          "cost_usd": 0.133788,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 36.36363636363637
+        },
+        "pelican": {
+          "model_elapsed_seconds": 75.00884835235775,
+          "cost_usd": 0.0653012,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 72
+        },
+        "candy": {
+          "model_elapsed_seconds": 39.11819147132337,
+          "cost_usd": 0.044736,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 130.6805545631796,
+          "cost_usd": 0.1065016,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-6-sol",
+        "effort": "medium",
+        "pompeii": {
+          "model_elapsed_seconds": 484.4721730053425,
+          "cost_usd": 0.7291236,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 52.17391304347826
+        },
+        "pelican": {
+          "model_elapsed_seconds": 117.67881600372493,
+          "cost_usd": 0.0897976,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 79
+        },
+        "candy": {
+          "model_elapsed_seconds": 43.77014237083495,
+          "cost_usd": 0.038216,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 264.0292680859566,
+          "cost_usd": 0.1952708,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-6-sol",
+        "effort": "high",
+        "pompeii": {
+          "model_elapsed_seconds": 431.3652066141367,
+          "cost_usd": 0.48188,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 41.66666666666667
+        },
+        "pelican": {
+          "model_elapsed_seconds": 189.98756429180503,
+          "cost_usd": 0.167698,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 97
+        },
+        "candy": {
+          "model_elapsed_seconds": 48.721116561442614,
+          "cost_usd": 0.0548452,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 218.0328340921551,
+          "cost_usd": 0.1677496,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 67
+        }
+      },
+      {
+        "model": "gpt-6-sol",
+        "effort": "xhigh",
+        "pompeii": {
+          "model_elapsed_seconds": 804.1603572368622,
+          "cost_usd": 1.2065368,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 50.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 262.2427385598421,
+          "cost_usd": 0.2540828,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 96
+        },
+        "candy": {
+          "model_elapsed_seconds": 54.52073728106916,
+          "cost_usd": 0.0313376,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 336.1011166572571,
+          "cost_usd": 0.3185136,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-6-sol",
+        "effort": "max",
+        "pompeii": {
+          "model_elapsed_seconds": 951.0536800101399,
+          "cost_usd": 1.1432104,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 81.48148148148148
+        },
+        "pelican": {
+          "model_elapsed_seconds": 378.409029006958,
+          "cost_usd": 0.3338268,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 100
+        },
+        "candy": {
+          "model_elapsed_seconds": 62.039221446961164,
+          "cost_usd": 0.0709044,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 535.729372818023,
+          "cost_usd": 0.4375672,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 85.5
+        }
+      },
+      {
+        "model": "gpt-6-sol",
+        "effort": "ultra",
+        "pompeii": {
+          "model_elapsed_seconds": 713.4018676001579,
+          "cost_usd": 0.845994,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 58.333333333333336
+        },
+        "pelican": {
+          "model_elapsed_seconds": 770.9538868237287,
+          "cost_usd": 0.6136664,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 78.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 75.82334879040718,
+          "cost_usd": 0.0605116,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 405.3626079633832,
+          "cost_usd": 0.3916616,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-6-luna",
+        "effort": "low",
+        "pompeii": {
+          "model_elapsed_seconds": 15.61744224652648,
+          "cost_usd": 0.00202194,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 0.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 70.0719268489629,
+          "cost_usd": 0.0032705,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 58.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 15.517014250159264,
+          "cost_usd": 0.00082116,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": false
+        },
+        "combined": {
+          "model_elapsed_seconds": 113.42692835628986,
+          "cost_usd": 0.00530108,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 45.5
+        }
+      },
+      {
+        "model": "gpt-6-luna",
+        "effort": "medium",
+        "pompeii": {
+          "model_elapsed_seconds": 102.77672306634486,
+          "cost_usd": 0.00700422,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 36.36363636363637
+        },
+        "pelican": {
+          "model_elapsed_seconds": 79.0095105972141,
+          "cost_usd": 0.0042525,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 47.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 48.11994528397918,
+          "cost_usd": 0.00183882,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 123.97990525700152,
+          "cost_usd": 0.00587978,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 40
+        }
+      },
+      {
+        "model": "gpt-6-luna",
+        "effort": "high",
+        "pompeii": {
+          "model_elapsed_seconds": 114.17837850749493,
+          "cost_usd": 0.00838418,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 36.36363636363637
+        },
+        "pelican": {
+          "model_elapsed_seconds": 87.041782008484,
+          "cost_usd": 0.00529778,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 54.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 39.71974132396281,
+          "cost_usd": 0.00150316,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 143.88191930390894,
+          "cost_usd": 0.00675762,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 43
+        }
+      },
+      {
+        "model": "gpt-6-luna",
+        "effort": "xhigh",
+        "pompeii": {
+          "model_elapsed_seconds": 658.2882940676063,
+          "cost_usd": 0.03220206,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 34.78260869565217
+        },
+        "pelican": {
+          "model_elapsed_seconds": 106.7779333870858,
+          "cost_usd": 0.00522778,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 53.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 66.97300715744495,
+          "cost_usd": 0.00227766,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 257.9471458811313,
+          "cost_usd": 0.00995276,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 56
+        }
+      },
+      {
+        "model": "gpt-6-luna",
+        "effort": "max",
+        "pompeii": {
+          "model_elapsed_seconds": 1854.3680877313018,
+          "cost_usd": 0.12281918,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 27.27272727272727
+        },
+        "pelican": {
+          "model_elapsed_seconds": 166.08176952414215,
+          "cost_usd": 0.00740852,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 67
+        },
+        "candy": {
+          "model_elapsed_seconds": 332.55418622121215,
+          "cost_usd": 0.01082502,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 240.79340988956392,
+          "cost_usd": 0.01000762,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 57
+        }
+      },
+      {
+        "model": "gpt-5.6-sol",
+        "effort": "low",
+        "pompeii": {
+          "model_elapsed_seconds": 301.1987670008093,
+          "cost_usd": 0.4733648,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 41.66666666666667
+        },
+        "pelican": {
+          "model_elapsed_seconds": 125.07804518379271,
+          "cost_usd": 0.1876064,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        },
+        "candy": {
+          "model_elapsed_seconds": 45.9213646389544,
+          "cost_usd": 0.0621112,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 132.01643695496023,
+          "cost_usd": 0.2136296,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-5.6-sol",
+        "effort": "medium",
+        "pompeii": {
+          "model_elapsed_seconds": 872.0625677593052,
+          "cost_usd": 2.0110016,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 34.78260869565217
+        },
+        "pelican": {
+          "model_elapsed_seconds": 134.88335556536913,
+          "cost_usd": 0.237256,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 49
+        },
+        "candy": {
+          "model_elapsed_seconds": 77.72385325655341,
+          "cost_usd": 0.1379984,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 173.23297321982682,
+          "cost_usd": 0.3091984,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-5.6-sol",
+        "effort": "high",
+        "pompeii": {
+          "model_elapsed_seconds": 746.6540755741298,
+          "cost_usd": 1.4485136,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 41.66666666666667
+        },
+        "pelican": {
+          "model_elapsed_seconds": 115.77913250029087,
+          "cost_usd": 0.1858984,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 60
+        },
+        "candy": {
+          "model_elapsed_seconds": 62.52245118841529,
+          "cost_usd": 0.1162944,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 251.39266063645482,
+          "cost_usd": 0.429316,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-5.6-sol",
+        "effort": "xhigh",
+        "pompeii": {
+          "model_elapsed_seconds": 676.2899952530861,
+          "cost_usd": 1.336756,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 60.86956521739131
+        },
+        "pelican": {
+          "model_elapsed_seconds": 201.38663787953556,
+          "cost_usd": 0.3038632,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 62
+        },
+        "candy": {
+          "model_elapsed_seconds": 68.9230306725949,
+          "cost_usd": 0.113196,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 329.6510108038783,
+          "cost_usd": 0.5127392,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-5.6-sol",
+        "effort": "max",
+        "pompeii": {
+          "model_elapsed_seconds": 2208.6071628462523,
+          "cost_usd": 8.5856256,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 96.7741935483871
+        },
+        "pelican": {
+          "model_elapsed_seconds": 297.0335837677121,
+          "cost_usd": 0.481904,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 79.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 85.22420613467693,
+          "cost_usd": 0.130956,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 510.37272312119603,
+          "cost_usd": 0.811404,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-5.6-sol",
+        "effort": "ultra",
+        "pompeii": {
+          "model_elapsed_seconds": 722.5931842569262,
+          "cost_usd": 1.8563856,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 100.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 496.66965059936047,
+          "cost_usd": 0.9047256,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 74
+        },
+        "candy": {
+          "model_elapsed_seconds": 116.52800796926022,
+          "cost_usd": 0.1773504,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 626.5354055184871,
+          "cost_usd": 1.3157728,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-5.6-terra",
+        "effort": "low",
+        "pompeii": {
+          "model_elapsed_seconds": 277.7473249230534,
+          "cost_usd": 0.2689016,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 38.095238095238095
+        },
+        "pelican": {
+          "model_elapsed_seconds": 97.67729148454964,
+          "cost_usd": 0.0818188,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 55.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 86.22458442300558,
+          "cost_usd": 0.061168,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 132.93079679645598,
+          "cost_usd": 0.1204064,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 55.5
+        }
+      },
+      {
+        "model": "gpt-5.6-terra",
+        "effort": "medium",
+        "pompeii": {
+          "model_elapsed_seconds": 480.92077093571424,
+          "cost_usd": 0.5619852,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 50.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 120.5284379273653,
+          "cost_usd": 0.0996496,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 51.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 145.68080372549593,
+          "cost_usd": 0.1067264,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 111.82756154797971,
+          "cost_usd": 0.0936852,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 55.5
+        }
+      },
+      {
+        "model": "gpt-5.6-terra",
+        "effort": "high",
+        "pompeii": {
+          "model_elapsed_seconds": 892.6654485408217,
+          "cost_usd": 1.1706612,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 33.33333333333333
+        },
+        "pelican": {
+          "model_elapsed_seconds": 110.72719442285597,
+          "cost_usd": 0.0906156,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 53
+        },
+        "candy": {
+          "model_elapsed_seconds": 178.5845434628427,
+          "cost_usd": 0.1085516,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 161.88390525989234,
+          "cost_usd": 0.132434,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 53.5
+        }
+      },
+      {
+        "model": "gpt-5.6-terra",
+        "effort": "xhigh",
+        "pompeii": {
+          "model_elapsed_seconds": 1679.1078088562936,
+          "cost_usd": 2.5225256,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 45.45454545454545
+        },
+        "pelican": {
+          "model_elapsed_seconds": 149.48152747377753,
+          "cost_usd": 0.1248816,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 45
+        },
+        "candy": {
+          "model_elapsed_seconds": 139.63151840120554,
+          "cost_usd": 0.092598,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 288.2973662223667,
+          "cost_usd": 0.2330148,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 52
+        }
+      },
+      {
+        "model": "gpt-5.6-terra",
+        "effort": "max",
+        "pompeii": {
+          "model_elapsed_seconds": 806.7539010625333,
+          "cost_usd": 1.0367316,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 100.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 285.29590036161244,
+          "cost_usd": 0.279562,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 180.43493716046214,
+          "cost_usd": 0.1230908,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 536.4781411327422,
+          "cost_usd": 0.4091568,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 69
+        }
+      },
+      {
+        "model": "gpt-5.6-terra",
+        "effort": "ultra",
+        "pompeii": {
+          "model_elapsed_seconds": 1620.4922406598926,
+          "cost_usd": 2.2317664,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 43.47826086956522
+        },
+        "pelican": {
+          "model_elapsed_seconds": 206.94054988399148,
+          "cost_usd": 0.1876328,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 167.28199306875467,
+          "cost_usd": 0.0895324,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 621.5358656104654,
+          "cost_usd": 0.4709244,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 59
+        }
+      },
+      {
+        "model": "gpt-5.6-luna",
+        "effort": "low",
+        "pompeii": {
+          "model_elapsed_seconds": 99.87801710143685,
+          "cost_usd": 0.01597264,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 11.11111111111111
+        },
+        "pelican": {
+          "model_elapsed_seconds": 67.42693861201406,
+          "cost_usd": 0.00710848,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 49.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 61.42079767398536,
+          "cost_usd": 0.00454576,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 80.00957613624632,
+          "cost_usd": 0.00801572,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 46
+        }
+      },
+      {
+        "model": "gpt-5.6-luna",
+        "effort": "medium",
+        "pompeii": {
+          "model_elapsed_seconds": 203.38839386589825,
+          "cost_usd": 0.02536428,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 43.47826086956522
+        },
+        "pelican": {
+          "model_elapsed_seconds": 78.92432835139334,
+          "cost_usd": 0.00816168,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 44
+        },
+        "candy": {
+          "model_elapsed_seconds": 42.06875224597752,
+          "cost_usd": 0.00258924,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 105.92748304456472,
+          "cost_usd": 0.01035936,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 41
+        }
+      },
+      {
+        "model": "gpt-5.6-luna",
+        "effort": "high",
+        "pompeii": {
+          "model_elapsed_seconds": 1251.1572177242488,
+          "cost_usd": 0.17210768,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 40.0
+        },
+        "pelican": {
+          "model_elapsed_seconds": 111.62764827907085,
+          "cost_usd": 0.01073372,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 44
+        },
+        "candy": {
+          "model_elapsed_seconds": 59.87246913835406,
+          "cost_usd": 0.00398124,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 180.33425350114703,
+          "cost_usd": 0.01663116,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 50.5
+        }
+      },
+      {
+        "model": "gpt-5.6-luna",
+        "effort": "xhigh",
+        "pompeii": {
+          "model_elapsed_seconds": 1969.5911926478148,
+          "cost_usd": 0.31504708,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 41.66666666666667
+        },
+        "pelican": {
+          "model_elapsed_seconds": 156.58285621367395,
+          "cost_usd": 0.01563184,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 53.5
+        },
+        "candy": {
+          "model_elapsed_seconds": 71.27342321537435,
+          "cost_usd": 0.00479844,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 261.99378824420273,
+          "cost_usd": 0.02588284,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 42
+        }
+      },
+      {
+        "model": "gpt-5.6-luna",
+        "effort": "max",
+        "pompeii": {
+          "model_elapsed_seconds": 3731.4875900093466,
+          "cost_usd": 1.31232864,
+          "cost_kind": "api_equivalent_estimate",
+          "score100": 53.84615384615385
+        },
+        "pelican": {
+          "model_elapsed_seconds": 231.79275267384946,
+          "cost_usd": 0.02071212,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 70
+        },
+        "candy": {
+          "model_elapsed_seconds": 88.42451042681932,
+          "cost_usd": 0.00593004,
+          "cost_kind": "api_equivalent_estimate",
+          "correct": true
+        },
+        "combined": {
+          "model_elapsed_seconds": 378.1622029449791,
+          "cost_usd": 0.03551684,
+          "cost_kind": "api_equivalent_estimate",
+          "score": 53.5
+        }
+      }
+    ]
+  },
+  "homepage": [
+    {
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "score150": 103.35,
+      "cost_usd": 0.461148,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 562.3420451432467,
+      "score_display": "103.35"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "score150": 117.5625,
+      "cost_usd": 0.6956876,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 882.5625465344638,
+      "score_display": "117.56"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "score150": 122.84166666666667,
+      "cost_usd": 0.974758,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1603.0059554576874,
+      "score_display": "122.84"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "score150": 135.5125,
+      "cost_usd": 1.5883348000000002,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 2117.1468230709434,
+      "score_display": "135.51"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "effort": "max",
+      "score150": 126.17500000000001,
+      "cost_usd": 1.763778,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 2812.817861072719,
+      "score_display": "126.18"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "effort": "ultra",
+      "score150": 135.17327586206898,
+      "cost_usd": 1.4868308,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 2097.5963923819363,
+      "score_display": "135.17"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "score150": 113.51249999999999,
+      "cost_usd": 2.174764,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 635.8768195547163,
+      "score_display": "113.51"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "score150": 127.17321428571428,
+      "cost_usd": 2.00359,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 607.5813223514706,
+      "score_display": "127.17"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "score150": 123.14184782608696,
+      "cost_usd": 3.7027859999999997,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1055.125729886815,
+      "score_display": "123.14"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "xhigh",
+      "score150": 135.6375,
+      "cost_usd": 5.444698,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1445.1334172338247,
+      "score_display": "135.64"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "max",
+      "score150": 133.17321428571427,
+      "cost_usd": 7.866692,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 2647.171912033111,
+      "score_display": "133.17"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "ultra",
+      "score150": 131.72500000000002,
+      "cost_usd": 7.423798,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1996.5811486896127,
+      "score_display": "131.73"
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "effort": "low",
+      "score150": 95.86704545454545,
+      "cost_usd": 0.2306444,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 463.080452978611,
+      "score_display": "95.87"
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "effort": "medium",
+      "score150": 84.59802631578947,
+      "cost_usd": 0.1832418,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 392.2210152056068,
+      "score_display": "84.60"
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "effort": "high",
+      "score150": 107.38636363636363,
+      "cost_usd": 0.217601,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 456.4134401753545,
+      "score_display": "107.39"
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "effort": "xhigh",
+      "score150": 113.74821428571428,
+      "cost_usd": 0.3097702,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 750.0841477252543,
+      "score_display": "113.75"
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "effort": "max",
+      "score150": 147.22500000000002,
+      "cost_usd": 0.5668428,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1209.9525486249477,
+      "score_display": "147.23"
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "effort": "ultra",
+      "score150": 93.39107142857142,
+      "cost_usd": 0.29898040000000004,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 620.779343277216,
+      "score_display": "93.39"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "low",
+      "score150": 90.46363636363637,
+      "cost_usd": 0.3503268,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 350.7353004105389,
+      "score_display": "90.46"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "medium",
+      "score150": 105.15326086956522,
+      "cost_usd": 1.052408,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 909.9503994658589,
+      "score_display": "105.15"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "score150": 103.27499999999999,
+      "cost_usd": 0.8721728,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 888.1067215595394,
+      "score_display": "103.27"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "xhigh",
+      "score150": 108.0,
+      "cost_usd": 1.8104708,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1457.0249497350305,
+      "score_display": "108.00"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "max",
+      "score150": 132.96666666666667,
+      "cost_usd": 1.9855088,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1927.231303282082,
+      "score_display": "132.97"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "ultra",
+      "score150": 107.8125,
+      "cost_usd": 1.9118336,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1965.541711177677,
+      "score_display": "107.81"
+    },
+    {
+      "model": "gpt-6-luna",
+      "effort": "low",
+      "score150": 40.4625,
+      "cost_usd": 0.01141468,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 214.6333117019385,
+      "score_display": "40.46"
+    },
+    {
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "score150": 73.55113636363636,
+      "cost_usd": 0.01897532,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 353.88608420453966,
+      "score_display": "73.55"
+    },
+    {
+      "model": "gpt-6-luna",
+      "effort": "high",
+      "score150": 76.92613636363637,
+      "cost_usd": 0.02194274,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 384.8218211438507,
+      "score_display": "76.93"
+    },
+    {
+      "model": "gpt-6-luna",
+      "effort": "xhigh",
+      "score150": 83.78967391304349,
+      "cost_usd": 0.04966026,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1089.9863804932684,
+      "score_display": "83.79"
+    },
+    {
+      "model": "gpt-6-luna",
+      "effort": "max",
+      "score150": 84.04772727272727,
+      "cost_usd": 0.15106034,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 2593.79745336622,
+      "score_display": "84.05"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "effort": "low",
+      "score150": 89.925,
+      "cost_usd": 0.936712,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 604.2146137785167,
+      "score_display": "89.93"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "effort": "medium",
+      "score150": 84.57717391304348,
+      "cost_usd": 2.6954544,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1257.9027498010546,
+      "score_display": "84.58"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "score150": 90.15,
+      "cost_usd": 2.1800224,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1176.3483198992908,
+      "score_display": "90.15"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "score150": 99.24130434782609,
+      "cost_usd": 2.2665544,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1276.2506746090949,
+      "score_display": "99.24"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "effort": "max",
+      "score150": 125.33588709677419,
+      "cost_usd": 10.009889600000001,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 3101.2376758698374,
+      "score_display": "125.34"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "score150": 125.55000000000001,
+      "cost_usd": 4.2542344,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1962.326248344034,
+      "score_display": "125.55"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "effort": "low",
+      "score150": 85.43035714285713,
+      "cost_usd": 0.5322948000000001,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 594.5799976270646,
+      "score_display": "85.43"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "score150": 89.8875,
+      "cost_usd": 0.8620464,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 858.9575741365552,
+      "score_display": "89.89"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "effort": "high",
+      "score150": 81.525,
+      "cost_usd": 1.5022624,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1343.8610916864127,
+      "score_display": "81.53"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "effort": "xhigh",
+      "score150": 84.27954545454546,
+      "cost_usd": 2.97302,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 2256.5182209536433,
+      "score_display": "84.28"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "effort": "max",
+      "score150": 124.53750000000001,
+      "cost_usd": 1.8485411999999999,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1808.96287971735,
+      "score_display": "124.54"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "effort": "ultra",
+      "score150": 90.85271739130435,
+      "cost_usd": 2.9798560000000003,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 2616.250649223104,
+      "score_display": "90.85"
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "effort": "low",
+      "score150": 66.2375,
+      "cost_usd": 0.0356426,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 308.7353295236826,
+      "score_display": "66.24"
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "effort": "medium",
+      "score150": 76.56521739130434,
+      "cost_usd": 0.04647456,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 430.30895750783384,
+      "score_display": "76.57"
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "score150": 80.69999999999999,
+      "cost_usd": 0.20345380000000002,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 1602.9915886428207,
+      "score_display": "80.70"
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "effort": "xhigh",
+      "score150": 78.48750000000001,
+      "cost_usd": 0.36136019999999996,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 2459.441260321066,
+      "score_display": "78.49"
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "score150": 94.58076923076923,
+      "cost_usd": 1.3744876400000001,
+      "cost_kind": "api_equivalent_estimate",
+      "model_elapsed_seconds": 4429.8670560549945,
+      "score_display": "94.58"
+    }
+  ]
+}

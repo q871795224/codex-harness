@@ -1,7 +1,6 @@
 use crate::diagnostics::DiagnosticLog;
-use futures_util::{stream, StreamExt};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
     sync::Arc,
@@ -10,8 +9,9 @@ use std::{
 use tokio::sync::Mutex;
 
 const ORIGIN: &str = "https://codexradar.com";
-const MIN_RANKING_COVERAGE: u64 = 40;
-const SCORE_VERSION: &str = "radar-bench-v2-150";
+const MIN_RANKING_COVERAGE: u64 = 2;
+const RESULTS_PATH: &str = "/data/codex-four-task-results.json";
+const TASKS: [&str; 4] = ["combined", "pompeii", "pelican", "candy"];
 const CACHE_TTL: Duration = Duration::from_secs(30 * 60);
 const MAX_STALE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
@@ -23,6 +23,7 @@ pub struct RadarModelRow {
     pub effort: String,
     pub score: Option<f64>,
     pub coverage: u64,
+    pub required_tasks: u64,
     pub price: Option<f64>,
     pub minutes: Option<f64>,
     pub best_score: bool,
@@ -38,23 +39,6 @@ pub struct RadarModelTable {
     pub rows: Vec<RadarModelRow>,
     pub fetched_at: u64,
     pub warnings: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct Selection {
-    model: String,
-    effort: String,
-}
-
-#[derive(Deserialize)]
-struct Binding {
-    score_version: String,
-    score_max: u64,
-    total_tasks: u64,
-    benchmark: String,
-    catalog_version: String,
-    task_set_sha256: String,
-    model_efforts: Vec<Selection>,
 }
 
 #[derive(Clone)]
@@ -139,219 +123,105 @@ impl CodexRadarClient {
     }
 
     async fn fetch_table(&self, origin: &str, now: u64) -> Result<RadarModelTable, String> {
-        let binding: Binding = self
+        let value: Value = self
             .client
-            .get(format!("{origin}/data/radar-bench-binding.json"))
+            .get(format!("{origin}{RESULTS_PATH}"))
             .header(reqwest::header::CACHE_CONTROL, "no-cache")
             .send()
             .await
-            .map_err(|e| format!("无法获取 Radar Bench 模型列表: {e}"))?
+            .map_err(|e| format!("无法获取 Radar 四项测试: {e}"))?
             .error_for_status()
-            .map_err(|e| format!("Radar Bench 模型列表接口异常: {e}"))?
+            .map_err(|e| format!("Radar 四项测试接口异常: {e}"))?
             .json()
             .await
-            .map_err(|e| format!("无法解析 Radar Bench 模型列表: {e}"))?;
-        if binding.score_version != SCORE_VERSION
-            || binding.score_max != 150
-            || binding.total_tasks != 64
-            || binding.model_efforts.is_empty()
-            || binding.model_efforts.len() > 64
-        {
-            return Err("Radar Bench 基准版本或模型列表不兼容".into());
-        }
-        // Each model/effort has an independent summary. One failed read must not
-        // discard successful reads, and concurrency stays bounded like the site.
-        let fetch_id = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-            .to_string();
+            .map_err(|e| format!("无法解析 Radar 四项测试: {e}"))?;
+        let table = parse_results(&value, now)?;
         self.record(
             "info",
-            "binding.loaded",
-            json!({"fetchId":fetch_id, "selections":binding.model_efforts.len()}),
+            "fetch.completed",
+            json!({"fetchedAt":now,
+            "source":RESULTS_PATH,"roundId":value["round_id"],"rows":table.rows.len(),
+            "failedSelections":table.warnings.len()}),
         );
-        let fetch_id = &fetch_id;
-        let binding_ref = &binding;
-        let client = &self.client;
-        let results = stream::iter(binding.model_efforts.clone())
-            .map(|selection| async move {
-                let started = std::time::Instant::now();
-                let result = async {
-                    let mut url = reqwest::Url::parse(&format!("{origin}/api/radar-bench-score"))
-                        .map_err(|e| e.to_string())?;
-                    url.query_pairs_mut().extend_pairs([
-                        ("model", selection.model.as_str()),
-                        ("effort", selection.effort.as_str()),
-                        ("view", "summary"),
-                        ("selection", "user-selected-v1"),
-                    ]);
-                    let response = client
-                        .get(url)
-                        .header(reqwest::header::CACHE_CONTROL, "no-cache")
-                        .send()
-                        .await
-                        .map_err(|e| {
-                            format!(
-                                "transport ({}): {e}",
-                                if e.is_timeout() {
-                                    "timeout"
-                                } else if e.is_connect() {
-                                    "connect"
-                                } else {
-                                    "request"
-                                }
-                            )
-                        })?
-                        .error_for_status()
-                        .map_err(|e| format!("http: {e}"))?
-                        .json::<Value>()
-                        .await
-                        .map_err(|e| format!("decode: {e}"))?;
-                    parse_summary(&response, binding_ref, &selection)
-                }
-                .await;
-                match &result {
-                    Ok(row) => self.record(
-                        "info",
-                        "selection.loaded",
-                        json!({"fetchId":fetch_id,
-                        "model":selection.model,"effort":selection.effort,"coverage":row.coverage,
-                        "score":row.score,"elapsedMs":started.elapsed().as_millis()}),
-                    ),
-                    Err(error) => self.record(
-                        "warn",
-                        "selection.failed",
-                        json!({"fetchId":fetch_id,
-                        "model":selection.model,"effort":selection.effort,"error":error,
-                        "elapsedMs":started.elapsed().as_millis()}),
-                    ),
-                }
-                result
-                    .map_err(|error| format!("{} / {}: {error}", selection.model, selection.effort))
-            })
-            .buffer_unordered(4)
-            .collect::<Vec<_>>()
-            .await;
-        let mut rows = Vec::new();
-        let mut warnings = Vec::new();
-        for result in results {
-            match result {
-                Ok(row) => rows.push(row),
-                Err(error) => warnings.push(error),
-            }
-        }
-        let loaded_rows = rows.clone();
-        let mut table =
-            build_model_table(rows, now).map_err(|e| format!("{e}: {}", warnings.join("; ")))?;
-        for row in loaded_rows {
-            let selected = table
-                .rows
-                .iter()
-                .find(|candidate| candidate.model == row.model && candidate.effort == row.effort);
-            let reason = if selected.is_some() {
-                "included"
-            } else if row.score.is_none() {
-                "missing_score"
-            } else if row.coverage <= MIN_RANKING_COVERAGE {
-                "insufficient_coverage"
-            } else {
-                "outside_group_selection"
-            };
-            self.record("info", "selection.classified", json!({"fetchId":fetch_id,"model":row.model,
-                "effort":row.effort,"coverage":row.coverage,"reason":reason,"group":selected.map(|r| &r.group)}));
-        }
-        table.warnings = warnings;
-        self.record(if table.warnings.is_empty() { "info" } else { "warn" }, "fetch.completed",
-            json!({"fetchId":fetch_id,"fetchedAt":now,"rows":table.rows.len(),"failedSelections":table.warnings.len(),
-                "groups":table.rows.iter().map(|row| &row.group).collect::<Vec<_>>()}));
         Ok(table)
     }
 }
 
-fn parse_summary(
-    value: &Value,
-    binding: &Binding,
-    selection: &Selection,
-) -> Result<RadarModelRow, String> {
-    let invalid = || {
-        format!(
-            "Radar Bench 数据不兼容: {} {}",
-            selection.model, selection.effort
-        )
-    };
-    let mismatches: Vec<&str> = [
-        (
-            "schema",
-            !matches!(
-                value["schema"].as_str(),
-                Some(
-                    "radar-bench-public-summary-v5-150-daily-graded-count"
-                        | "radar-bench-public-summary-v6-150-details"
-                )
-            ),
-        ),
-        ("score_version", value["score_version"] != SCORE_VERSION),
-        ("score_max", value["score_max"] != 150),
-        ("required_tasks", value["required_tasks"] != 64),
-        ("benchmark", value["benchmark"] != binding.benchmark),
-        (
-            "catalog_version",
-            value["catalog_version"] != binding.catalog_version,
-        ),
-        (
-            "task_set_sha256",
-            value["task_set_sha256"] != binding.task_set_sha256,
-        ),
-        ("model", value["model"] != selection.model),
-        ("effort", value["effort"] != selection.effort),
-    ]
-    .into_iter()
-    .filter_map(|(key, mismatch)| mismatch.then_some(key))
-    .collect();
-    if !mismatches.is_empty() {
-        return Err(format!(
-            "{}: mismatched {}",
-            invalid(),
-            mismatches.join(", ")
-        ));
-    }
-    let coverage = value["coverage"]
-        .as_u64()
-        .filter(|v| *v <= 64)
-        .ok_or_else(|| format!("{}: invalid coverage", invalid()))?;
-    let score = nonnegative_number(&value["score"]);
-    let expected_status = if coverage == 0 {
-        "missing_current_result"
-    } else if coverage == 64 {
-        "complete"
-    } else {
-        "provisional"
-    };
-    if value["score_status"] != expected_status
-        || (coverage == 0 && !value["score"].is_null())
-        || (coverage > 0 && !score.is_some_and(|v| v <= 150.0))
+fn parse_results(value: &Value, now: u64) -> Result<RadarModelTable, String> {
+    if value["schema"] != "codex-four-task-results/1"
+        || value["protocol"] != "codex-four-weighted-150-v2"
+        || value["score_max"] != 150
+        || value["task_weights"] != json!({"combined":60,"pompeii":45,"pelican":22.5,"candy":22.5})
     {
-        return Err(format!("{}: invalid score or score_status", invalid()));
+        return Err("Radar 四项测试版本或评分规则不兼容".into());
     }
-    let metric = |key: &str| {
-        if value["statistics_state"] != "available" {
-            return None;
+    let raw_rows = value["rows"]
+        .as_array()
+        .filter(|rows| !rows.is_empty() && rows.len() <= 64)
+        .ok_or("Radar 四项测试模型列表不兼容")?;
+    let mut rows = Vec::new();
+    let mut warnings = Vec::new();
+    for raw in raw_rows {
+        match parse_result_row(raw) {
+            Ok(row) => rows.push(row),
+            Err(error) => warnings.push(format!("{} / {}: {error}", raw["model"], raw["effort"])),
         }
-        let metric = &value["statistics"]["metrics"][key];
-        if metric["known_samples"].as_u64().unwrap_or(0) == 0 {
-            return None;
-        }
-        nonnegative_number(&metric["mean"])
-    };
+    }
+    let mut table = build_model_table(rows, now)?;
+    table.warnings = warnings;
+    Ok(table)
+}
+
+fn parse_result_row(raw: &Value) -> Result<RadarModelRow, String> {
+    let model = raw["model"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or("缺少模型名")?;
+    let effort = raw["effort"]
+        .as_str()
+        .filter(|s| matches!(*s, "low" | "medium" | "high" | "xhigh" | "max" | "ultra"))
+        .ok_or("无效推理强度")?;
+    let score100 = |v: &Value| nonnegative_number(v).filter(|n| *n <= 100.0);
+    let scores = [
+        score100(&raw["combined"]["score"]),
+        score100(&raw["pompeii"]["score100"]),
+        score100(&raw["pelican"]["score"]),
+        raw["candy"]["correct"]
+            .as_bool()
+            .map(|correct| if correct { 100.0 } else { 0.0 }),
+    ];
+    let coverage = scores.iter().flatten().count() as u64;
+    // Match the site's 60/45/22.5/22.5 weighted total. Cost and time are
+    // totals for the same four tasks, never mixed with the retired 64-task mean.
+    let score = scores
+        .into_iter()
+        .zip([0.6, 0.45, 0.225, 0.225])
+        .map(|(score, weight)| score.map(|s| s * weight))
+        .sum::<Option<f64>>();
+    let price = TASKS
+        .iter()
+        .map(|task| {
+            (raw[task]["cost_kind"] == "api_equivalent_estimate")
+                .then(|| nonnegative_number(&raw[task]["cost_usd"]))
+                .flatten()
+        })
+        .sum::<Option<f64>>()
+        .filter(|n| n.is_finite());
+    let minutes = TASKS
+        .iter()
+        .map(|task| nonnegative_number(&raw[task]["model_elapsed_seconds"]))
+        .sum::<Option<f64>>()
+        .filter(|n| n.is_finite())
+        .map(|s| s / 60.0);
     Ok(RadarModelRow {
         group: "reference".into(),
-        model: selection.model.clone(),
-        effort: selection.effort.clone(),
+        model: model.into(),
+        effort: effort.into(),
         score,
         coverage,
-        price: metric("api_equivalent_usd"),
-        minutes: metric("elapsed_ms").map(|ms| ms / 60_000.0),
+        required_tasks: 4,
+        price,
+        minutes,
         best_score: false,
         best_price: false,
         best_minutes: false,
@@ -369,7 +239,7 @@ fn build_model_table(
     fetched_at: u64,
 ) -> Result<RadarModelTable, String> {
     if !rows.iter().any(|row| row.score.is_some()) {
-        return Err("Radar Bench 暂无有效雷达分".into());
+        return Err("Radar 四项测试暂无有效雷达分".into());
     }
     rows.sort_by(|left, right| {
         right
@@ -381,7 +251,7 @@ fn build_model_table(
     });
     rows.dedup_by(|left, right| left.model == right.model && left.effort == right.effort);
     // Preserve the compact launcher groups without depending on the retired
-    // station recommendations. Like the site overview, ranking needs >40 tasks;
+    // station recommendations. Ranking requires at least three of four tasks;
     // the fixed Astra/Luna choices can still display their measured coverage.
     let mut candidates = Vec::new();
     let mut references = 0;
@@ -408,7 +278,7 @@ fn build_model_table(
         candidates.push(row);
     }
     if !candidates.iter().any(|row| row.score.is_some()) {
-        return Err("Radar Bench 暂无足够覆盖的模型数据".into());
+        return Err("Radar 四项测试暂无足够覆盖的模型数据".into());
     }
     let ranked = candidates.iter().filter(|row| row.group != "simple");
     let best_score = ranked.clone().filter_map(|row| row.score).reduce(f64::max);
@@ -460,256 +330,156 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn binding() -> Binding {
-        serde_json::from_value(json!({"score_version":SCORE_VERSION,"score_max":150,"total_tasks":64,
-            "benchmark":"radar-bench-final64-20261004","catalog_version":"catalog","task_set_sha256":"digest",
-            "model_efforts":[{"model":"gpt-6.1-sol","effort":"high"}]})).unwrap()
-    }
-
-    fn summary(model: &str, effort: &str, score: Value) -> Value {
-        json!({"schema":"radar-bench-public-summary-v5-150-daily-graded-count",
-            "score_version":SCORE_VERSION,"score_max":150,"required_tasks":64,
-            "benchmark":"radar-bench-final64-20261004","catalog_version":"catalog","task_set_sha256":"digest",
-            "model":model,"effort":effort,"score":score,"coverage":50,"score_status":"provisional",
-            "statistics_state":"available","statistics":{"metrics":{
-                "api_equivalent_usd":{"mean":0.48260188,"known_samples":50},
-                "elapsed_ms":{"mean":1050708.24,"known_samples":50}}}})
-    }
-
     fn row(model: &str, effort: &str, score: f64) -> RadarModelRow {
-        parse_summary(
-            &summary(model, effort, json!(score)),
-            &binding(),
-            &Selection {
-                model: model.into(),
-                effort: effort.into(),
-            },
-        )
-        .unwrap()
+        RadarModelRow {
+            group: "reference".into(),
+            model: model.into(),
+            effort: effort.into(),
+            score: Some(score),
+            coverage: 4,
+            required_tasks: 4,
+            price: Some(1.0),
+            minutes: Some(2.0),
+            best_score: false,
+            best_price: false,
+            best_minutes: false,
+            automatic: false,
+            default_cursor: false,
+        }
+    }
+
+    fn fixture() -> Value {
+        serde_json::from_str(include_str!("../tests/fixtures/radar-four-task.json")).unwrap()
+    }
+
+    #[test]
+    fn current_results_match_all_46_homepage_scores_costs_and_times() {
+        let fixture = fixture();
+        for (raw, expected) in fixture["response"]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(fixture["homepage"].as_array().unwrap())
+        {
+            let row = parse_result_row(raw).unwrap();
+            assert_eq!(row.model, expected["model"].as_str().unwrap());
+            assert_eq!(row.effort, expected["effort"].as_str().unwrap());
+            assert!((row.score.unwrap() - expected["score150"].as_f64().unwrap()).abs() < 1e-8);
+            assert!((row.price.unwrap() - expected["cost_usd"].as_f64().unwrap()).abs() < 1e-8);
+            assert!(
+                (row.minutes.unwrap() - expected["model_elapsed_seconds"].as_f64().unwrap() / 60.0)
+                    .abs()
+                    < 1e-8
+            );
+            assert_eq!((row.coverage, row.required_tasks), (4, 4));
+        }
+        let table = parse_results(&fixture["response"], 42).unwrap();
+        assert!(table.warnings.is_empty());
+        assert!(table.rows.iter().all(|row| row.price.is_some()));
+        let terra = table
+            .rows
+            .iter()
+            .find(|row| row.model == "gpt-6.1-terra")
+            .unwrap();
+        assert_eq!(terra.effort, "max");
+        assert!((terra.score.unwrap() - 147.225).abs() < 1e-8);
+        let wire = serde_json::to_value(terra).unwrap();
+        assert_eq!(wire["requiredTasks"], 4);
+    }
+
+    #[test]
+    fn missing_evidence_stays_unknown_and_zero_remains_zero() {
+        let mut raw = fixture()["response"]["rows"][0].clone();
+        raw["combined"]["cost_usd"] = Value::Null;
+        raw["pelican"]["model_elapsed_seconds"] = Value::Null;
+        let row = parse_result_row(&raw).unwrap();
+        assert!(row.price.is_none());
+        assert!(row.minutes.is_none());
+        assert!(row.score.is_some());
+        for task in TASKS {
+            raw[task]["cost_usd"] = json!(0);
+        }
+        assert_eq!(parse_result_row(&raw).unwrap().price, Some(0.0));
+        raw["candy"]["correct"] = Value::Null;
+        let row = parse_result_row(&raw).unwrap();
+        assert_eq!(row.coverage, 3);
+        assert!(row.score.is_none());
+        raw["combined"]["cost_kind"] = json!("unknown");
+        assert!(parse_result_row(&raw).unwrap().price.is_none());
+    }
+
+    #[test]
+    fn rejects_changed_protocol_and_preserves_valid_rows_on_partial_failure() {
+        let good = fixture()["response"].clone();
+        for (key, bad) in [
+            ("schema", json!("other")),
+            ("protocol", json!("other")),
+            ("score_max", json!(100)),
+            ("task_weights", json!({})),
+            ("rows", json!([])),
+        ] {
+            let mut value = good.clone();
+            value[key] = bad;
+            assert!(parse_results(&value, 42).is_err(), "{key}");
+        }
+        let mut partial = good;
+        partial["rows"][0]["effort"] = json!("invalid");
+        let table = parse_results(&partial, 42).unwrap();
+        assert_eq!(table.warnings.len(), 1);
+        assert!(!table.rows.is_empty());
     }
 
     #[tokio::test]
-    async fn reads_the_new_routes_and_keeps_successes_when_one_selection_fails() {
+    async fn reads_current_route_caches_and_never_masks_forced_refresh_failure() {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
+        let body = fixture()["response"].to_string();
         let server = std::thread::spawn(move || {
-            for _ in 0..3 {
+            for index in 0..4 {
                 let (mut socket, _) = listener.accept().unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
                 let mut request = Vec::new();
                 let mut chunk = [0; 1024];
-                while !request.windows(4).any(|v| v == b"\r\n\r\n") {
-                    let count = socket.read(&mut chunk).unwrap();
-                    assert!(count > 0);
-                    request.extend_from_slice(&chunk[..count]);
-                }
-                let request = String::from_utf8(request).unwrap();
-                let (status, body) = if request.starts_with("GET /data/radar-bench-binding.json ") {
-                    ("200 OK", json!({"score_version":SCORE_VERSION,"score_max":150,"total_tasks":64,
-                        "benchmark":"radar-bench-final64-20261004","catalog_version":"catalog","task_set_sha256":"digest",
-                        "model_efforts":[{"model":"gpt-6.1-sol","effort":"high"},{"model":"gpt-6-astra","effort":"medium"}]}).to_string())
-                } else {
-                    assert!(request.starts_with("GET /api/radar-bench-score?"));
-                    assert!(request.contains("view=summary"));
-                    assert!(request.contains("selection=user-selected-v1"));
-                    if request.contains("model=gpt-6.1-sol&effort=high") {
-                        (
-                            "200 OK",
-                            summary("gpt-6.1-sol", "high", json!(104.6)).to_string(),
-                        )
-                    } else {
-                        ("502 Bad Gateway", "temporarily unavailable".into())
+                while !request.windows(4).any(|s| s == b"\r\n\r\n") {
+                    let len = socket.read(&mut chunk).unwrap();
+                    if len == 0 {
+                        break;
                     }
+                    request.extend_from_slice(&chunk[..len]);
+                }
+                assert!(String::from_utf8_lossy(&request)
+                    .starts_with("GET /data/codex-four-task-results.json "));
+                let (status, body) = if index < 2 {
+                    ("200 OK", body.as_str())
+                } else {
+                    ("502 Bad Gateway", "{}")
                 };
-                write!(socket, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                write!(socket,"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
             }
         });
-        let log_dir = tempfile::tempdir().unwrap();
         let radar = CodexRadarClient {
-            client: Client::builder()
-                .no_proxy()
-                .timeout(Duration::from_secs(5))
-                .build()
-                .unwrap(),
-            cache: Arc::new(Mutex::new(Some(
-                build_model_table(vec![row("gpt-6-luna", "max", 1.0)], unix_seconds()).unwrap(),
-            ))),
-            diagnostics: Some(Arc::new(
-                DiagnosticLog::open_at(log_dir.path().into()).unwrap(),
-            )),
-        };
-        let table = radar.model_table_from(&origin, true).await.unwrap();
-        server.join().unwrap();
-        assert_eq!(table.rows.len(), 1);
-        assert_eq!(table.rows[0].model, "gpt-6.1-sol");
-        assert_eq!(table.rows[0].score, Some(104.6));
-        assert!(unix_seconds().saturating_sub(table.fetched_at) < 5);
-        let cached = radar.model_table_from(&origin, false).await.unwrap();
-        assert_eq!(cached.rows[0].score, Some(104.6));
-        assert_eq!(cached.fetched_at, table.fetched_at);
-        assert_eq!(table.warnings.len(), 1);
-        assert!(table.warnings[0].contains("gpt-6-astra / medium: http:"));
-        let entries: Vec<Value> = std::fs::read_dir(log_dir.path())
-            .unwrap()
-            .flat_map(|entry| {
-                std::fs::read_to_string(entry.unwrap().path())
-                    .unwrap()
-                    .lines()
-                    .map(|line| serde_json::from_str::<Value>(line).unwrap())
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        let failure = entries
-            .iter()
-            .find(|entry| entry["event"] == "selection.failed")
-            .unwrap();
-        assert_eq!(failure["fields"]["model"], "gpt-6-astra");
-        assert_eq!(failure["fields"]["effort"], "medium");
-        assert!(failure["fields"]["error"].as_str().unwrap().contains("502"));
-        let completed = entries
-            .iter()
-            .find(|entry| entry["event"] == "fetch.completed")
-            .unwrap();
-        assert_eq!(completed["fields"]["failedSelections"], 1);
-        assert_eq!(completed["fields"]["fetchId"], failure["fields"]["fetchId"]);
-    }
-
-    #[tokio::test]
-    async fn forced_refresh_bypasses_cache_and_never_masks_failure_with_stale_data() {
-        use std::io::{Read, Write};
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let origin = format!("http://{}", listener.local_addr().unwrap());
-        let server = std::thread::spawn(move || {
-            // Only forced refresh and the expired-cache retry should reach the server.
-            for _ in 0..2 {
-                let (mut socket, _) = listener.accept().unwrap();
-                socket
-                    .set_read_timeout(Some(Duration::from_secs(5)))
-                    .unwrap();
-                let mut buf = [0; 4096];
-                let count = socket.read(&mut buf).unwrap();
-                let request = String::from_utf8_lossy(&buf[..count]);
-                assert!(request.starts_with("GET /data/radar-bench-binding.json "));
-                assert!(request.to_lowercase().contains("cache-control: no-cache"));
-                write!(
-                    socket,
-                    "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                )
-                .unwrap();
-            }
-        });
-        let cached =
-            build_model_table(vec![row("gpt-6-luna", "max", 52.9)], unix_seconds()).unwrap();
-        let radar = CodexRadarClient {
-            client: Client::builder()
-                .no_proxy()
-                .timeout(Duration::from_secs(5))
-                .build()
-                .unwrap(),
-            cache: Arc::new(Mutex::new(Some(cached.clone()))),
+            client: Client::new(),
+            cache: Arc::new(Mutex::new(None)),
             diagnostics: None,
         };
+        let first = radar.model_table_from(&origin, false).await.unwrap();
         assert_eq!(
             radar
                 .model_table_from(&origin, false)
                 .await
                 .unwrap()
                 .fetched_at,
-            cached.fetched_at
+            first.fetched_at
         );
-        let error = radar.model_table_from(&origin, true).await.unwrap_err();
-        assert!(error.contains("502"));
-        assert_eq!(
-            radar.cache.lock().await.as_ref().unwrap().fetched_at,
-            cached.fetched_at
-        );
+        assert!(radar.model_table_from(&origin, true).await.is_ok());
+        assert!(radar.model_table_from(&origin, true).await.is_err());
         radar.cache.lock().await.as_mut().unwrap().fetched_at -= CACHE_TTL.as_secs();
         let stale = radar.model_table_from(&origin, false).await.unwrap();
-        assert_eq!(stale.rows[0].model, "gpt-6-luna");
-        assert!(stale.warnings[0].contains("旧缓存"));
+        assert_eq!(stale.warnings.len(), 1);
         server.join().unwrap();
-    }
-
-    #[test]
-    fn parses_bench_score_and_evidenced_metrics_in_minutes() {
-        let row = row("gpt-6.1-sol", "high", 104.5646953046953);
-        assert_eq!(row.score, Some(104.5646953046953));
-        assert_eq!(row.coverage, 50);
-        assert_eq!(row.price, Some(0.48260188));
-        assert_eq!(row.minutes, Some(17.511804));
-        let wire = serde_json::to_value(row).unwrap();
-        assert!(wire.get("bestScore").is_some());
-        assert!(wire.get("iq").is_none());
-    }
-
-    #[test]
-    fn distinguishes_missing_results_and_zero_scores_or_costs() {
-        let binding = binding();
-        let selection = &binding.model_efforts[0];
-        let mut value = summary(&selection.model, &selection.effort, json!(0));
-        value["statistics"]["metrics"]["api_equivalent_usd"]["mean"] = json!(0);
-        let row = parse_summary(&value, &binding, selection).unwrap();
-        assert_eq!((row.score, row.price), (Some(0.0), Some(0.0)));
-        value["coverage"] = json!(0);
-        value["score"] = Value::Null;
-        value["score_status"] = json!("missing_current_result");
-        value["statistics_state"] = json!("not_provided");
-        let row = parse_summary(&value, &binding, selection).unwrap();
-        assert_eq!((row.score, row.price, row.minutes), (None, None, None));
-        assert!(build_model_table(vec![row], 42).is_err());
-    }
-
-    #[test]
-    fn accepts_v6_details_without_changing_score_or_metric_meaning() {
-        let binding = binding();
-        let selection = &binding.model_efforts[0];
-        let mut value = summary(&selection.model, &selection.effort, json!(98.2927307067932));
-        value["schema"] = json!("radar-bench-public-summary-v6-150-details");
-        value["coverage"] = json!(64);
-        value["score_status"] = json!("complete");
-        value["detail_metrics"] = json!({"valid_grade_events":137});
-        let row = parse_summary(&value, &binding, selection).unwrap();
-        assert_eq!(row.score, Some(98.2927307067932));
-        assert_eq!(row.coverage, 64);
-        assert_eq!(row.price, Some(0.48260188));
-        assert_eq!(row.minutes, Some(1050708.24 / 60_000.0));
-    }
-
-    #[test]
-    fn rejects_other_benchmarks_selections_and_invalid_scores() {
-        let binding = binding();
-        let selection = &binding.model_efforts[0];
-        for (key, bad) in [
-            ("schema", json!("radar-bench-public-summary-v99")),
-            ("score_version", json!("legacy")),
-            ("model", json!("other")),
-            ("task_set_sha256", json!("other")),
-            ("coverage", json!(65)),
-            ("score", json!(151)),
-            ("score", json!(-1)),
-            ("score", Value::Null),
-        ] {
-            let mut value = summary(&selection.model, &selection.effort, json!(100));
-            value[key] = bad;
-            assert!(parse_summary(&value, &binding, selection).is_err(), "{key}");
-        }
-    }
-
-    #[test]
-    fn missing_metric_evidence_does_not_become_zero_or_win() {
-        let binding = binding();
-        let selection = &binding.model_efforts[0];
-        let mut value = summary(&selection.model, &selection.effort, json!(100));
-        value["statistics"]["metrics"]["api_equivalent_usd"]["known_samples"] = json!(0);
-        value["statistics"]["metrics"]["elapsed_ms"]["mean"] = Value::Null;
-        let row = parse_summary(&value, &binding, selection).unwrap();
-        assert_eq!((row.price, row.minutes), (None, None));
-        let table = build_model_table(vec![row], 42).unwrap();
-        assert!(!table.rows[0].best_price);
-        assert!(!table.rows[0].best_minutes);
     }
 
     #[test]

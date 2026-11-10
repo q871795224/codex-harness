@@ -67,16 +67,16 @@ it.each(['async', 'sync'] as const)('stops after %s initialization failure acros
   expect(notifications.publish).toHaveBeenCalledTimes(1)
 })
 
-it('renders Bench scores and coverage while leaving unavailable metrics blank', async () => {
+it('renders four-task scores and actual coverage while leaving unavailable metrics blank', async () => {
   const models: CodexModel[] = [{ id: 'gpt-6.1-sol', model: 'gpt-6.1-sol', displayName: 'Sol', description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'high', description: '' }], defaultReasoningEffort: 'high', inputModalities: ['text'], isDefault: true }]
-  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [{ group: 'reference' as const, model: 'gpt-6.1-sol', effort: 'high', score: 104.5647, coverage: 50, price: null, minutes: null, bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: true }] })) }
+  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [{ group: 'reference' as const, model: 'gpt-6.1-sol', effort: 'high', score: 122.841666, coverage: 4, requiredTasks: 4, price: null, minutes: null, bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: true }] })) }
   render(<SessionLauncher radar={radar} storage={{ get: async () => null, set: async () => {} }} notifications={{ publish: vi.fn() }} threadId="bench-render" threadCwd={null} workspaceRoot={null} isNewThread models={models} settings={{ model: 'gpt-6.1-sol', effort: 'high', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null }} disabled={false} onSettingsChange={vi.fn()} />)
   expect(await screen.findByRole('button', { name: /6.1 Sol.*high/i })).toBeTruthy()
   expect(screen.getByRole('columnheader', { name: '雷达分' })).toBeTruthy()
   expect(screen.queryByRole('columnheader', { name: 'IQ' })).toBeNull()
-  expect(screen.getByTitle('覆盖 50/64 道题').textContent).toBe('104.6')
+  expect(screen.getByTitle('覆盖 4/4 道题').textContent).toBe('122.8')
   expect(screen.getAllByText('—')).toHaveLength(2)
-  expect(screen.getByText(/COST 为 API 等价费用/)).toBeTruthy()
+  expect(screen.getByText(/COST 为四项测试 API 等价总费用/)).toBeTruthy()
 })
 
 

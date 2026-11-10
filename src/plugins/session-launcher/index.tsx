@@ -13,6 +13,7 @@ export interface PickerRow {
   effort: string
   score: number | null
   coverage: number | null
+  requiredTasks?: number
   price: number | null
   minutes: number | null
   bestScore: boolean
@@ -160,7 +161,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
 
       <div className="radar-table-wrap">
         <table className="radar-table">
-          <thead><tr><th aria-label="selected" /><th>GROUP</th><th>MODEL</th><th title="雷达 Bench · 满分 150">雷达分</th><th>COST</th><th>TIME</th></tr></thead>
+          <thead><tr><th aria-label="selected" /><th>GROUP</th><th>MODEL</th><th title="雷达四项测试 · 满分 150">雷达分</th><th title="同轮四项测试的 API 等价总费用">COST</th><th title="同轮四项测试的模型总耗时">TIME</th></tr></thead>
           <tbody>
             {rows.map((row) => {
               const selected = selectedRow?.model === row.model && selectedRow?.effort === row.effort
@@ -169,7 +170,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
                   <td>{selected ? <Check size={14} /> : null}</td>
                   <td><span className={`radar-group ${row.group}`}>{groupLabel(row.group)}</span></td>
                   <td><button type="button" disabled={disabled || saving} onClick={() => void apply({ model: row.model, effort: row.effort })}><strong>{modelLabel(row.model)}</strong> <span>{row.effort}</span></button></td>
-                  <Metric title={row.coverage === null ? undefined : `覆盖 ${row.coverage}/64 道题`} value={row.score === null ? '—' : row.score.toFixed(1)} best={row.bestScore} tone="iq" />
+                  <Metric title={row.coverage === null ? undefined : `覆盖 ${row.coverage}/${row.requiredTasks ?? 64} 道题`} value={row.score === null ? '—' : row.score.toFixed(1)} best={row.bestScore} tone="iq" />
                   <Metric value={row.price === null ? '—' : `$${row.price.toFixed(2)}`} best={row.bestPrice} tone="price" />
                   <Metric value={row.minutes === null ? '—' : `${Math.round(row.minutes)}m`} best={row.bestMinutes} tone="time" />
                 </tr>
@@ -180,7 +181,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
         {loading && <div className="radar-table-state"><LoaderCircle className="spin" size={15} />正在加载 Radar 指标…</div>}
       </div>
       <footer className="session-launcher-foot">
-        <span title={error ?? warnings.join('\n')} className={settingsError || error || warnings.length ? 'error' : ''}>{settingsError ?? (error ? (remoteRows?.length ? 'Radar 更新失败，保留上次数据。' : 'Radar 暂不可用，已显示 App Server 模型。') : warnings.length ? `Radar 数据不完整：${warnings.length} 项获取失败，详情见日志。` : '雷达 Bench · 满分 150 · COST 为 API 等价费用 · ★ 最佳指标')}</span>
+        <span title={error ?? warnings.join('\n')} className={settingsError || error || warnings.length ? 'error' : ''}>{settingsError ?? (error ? (remoteRows?.length ? 'Radar 更新失败，保留上次数据。' : 'Radar 暂不可用，已显示 App Server 模型。') : warnings.length ? `Radar 数据不完整：${warnings.length} 项获取失败，详情见日志。` : '雷达四项测试 · 满分 150 · COST 为四项测试 API 等价总费用 · ★ 最佳指标')}</span>
         <span className={`launch-mode-summary ${mode}`}><Gauge size={13} />{modeLabel(mode)}</span>
       </footer>
     </section>
@@ -213,7 +214,7 @@ export function selectedRadarRow(rows: PickerRow[], settings: Pick<ThreadCodexSe
 }
 
 export function defaultRadarRow(rows: PickerRow[]): PickerRow | null {
-  const ranked = rows.filter((row) => (row.group === 'reference' || row.group === 'agi') && row.coverage !== null && row.coverage > 40 && row.score !== null && Number.isFinite(row.score))
+  const ranked = rows.filter((row) => (row.group === 'reference' || row.group === 'agi') && row.coverage !== null && row.coverage / (row.requiredTasks ?? 64) > 40 / 64 && row.score !== null && Number.isFinite(row.score))
     .sort((left, right) => right.score! - left.score! || (left.price ?? Infinity) - (right.price ?? Infinity))
   const [highest, second] = ranked
   if (!highest) return rows.find((row) => row.defaultCursor) ?? rows[0] ?? null

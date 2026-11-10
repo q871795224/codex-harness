@@ -122,6 +122,12 @@ describe('session launcher model selection', () => {
     expect(defaultRadarRow(rows)).toEqual(sol)
   })
 
+  it('ranks current four-task coverage by its actual denominator', () => {
+    const sol = { ...row('gpt-6.1-sol', 'high'), score: 122.84, coverage: 4, requiredTasks: 4 }
+    const astra = { ...row('gpt-6-astra', 'medium'), group: 'agi' as const, score: 127.17, coverage: 4, requiredTasks: 4 }
+    expect(defaultRadarRow([sol, astra])).toEqual(astra)
+  })
+
   it('compares only reference and AGI, choosing a cheaper runner-up within two score points', () => {
     const highest = { ...row('astra', 'medium'), group: 'agi' as const, score: 110, price: 3 }
     const second = { ...row('sol', 'high'), score: 108, price: 1 }
