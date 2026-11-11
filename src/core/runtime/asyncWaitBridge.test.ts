@@ -18,3 +18,10 @@ it('uses dedicated native commands, preserves source identity and propagates fai
   receive({ payload: { threadId: 'origin', turnId: 'turn' } } as never)
   expect(handler).toHaveBeenCalledWith({ threadId: 'origin', turnId: 'turn' })
 })
+
+it('keeps user approval separate from Agent actions and binds the displayed revision', async () => {
+  await runtime.reviewAsyncWait('proposal', 7, false)
+  expect(invoke).toHaveBeenLastCalledWith('async_wait_review', { id: 'proposal', revision: 7, approve: false })
+  await runtime.stageAsyncWaitDraft('ci')
+  expect(invoke).toHaveBeenLastCalledWith('async_wait_stage_draft', { id: 'ci' })
+})

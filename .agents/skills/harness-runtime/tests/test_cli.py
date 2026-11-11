@@ -138,4 +138,13 @@ class CLITest(unittest.TestCase):
         self.assertEqual(self.calls[-1]['params'], {'input': request.read_text()})
 
 
+    def test_controlled_tool_aliases_preserve_typed_target_and_reject_mismatch(self):
+        file = self.root / 'controlled.json'
+        params = {'id': 'ci', 'threadId': 'source', 'target': {'type': 'gitlabCi', 'project': 'group/repo', 'pipeline': 42, 'sha': 'a'*40}}
+        file.write_text(json.dumps(params))
+        self.assertEqual(self.run_cli('async-waits', 'ci', '--file', str(file))[0], 0)
+        self.assertEqual(self.calls[-1]['params'], params)
+        self.assertEqual(self.run_cli('async-waits', 'sleep', '--file', str(file))[0], 1)
+        self.assertEqual(len(self.calls), 1)
+
 if __name__ == '__main__': unittest.main()

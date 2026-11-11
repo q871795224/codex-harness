@@ -6,7 +6,7 @@ import { refreshRouterSummaries } from '../workspace-router/summaries'
 import { prepareRouterPreview, routingCandidates, readRouteRecord } from '../workspace-router/service'
 import { loadRouterSettings } from '../workspace-router/settings'
 import { textInput } from '../domain/codex'
-import type { AsyncWaitAction } from '../async-waits/types'
+import type { CreateAsyncWait, AsyncWaitAction } from '../async-waits/types'
 import type { useUnifiedHarness } from '../../features/conversation/useUnifiedHarness'
 import type { useCodexCore } from '../../features/codex/useCodexCore'
 import type { usePluginHost } from '../plugins/react'
@@ -208,16 +208,22 @@ export function createManagementHandler(get: () => ManagementContext) {
         return { ...instanceSummary(instance), settings, editableFields: Object.keys(settings), hiddenConfigKeys: Object.keys(instance.config).filter(k => !Object.hasOwn(settings, k)) }
       }
       case 'capabilities':
-        return { settingsGroups: Object.keys(settingsCatalog), manualOnly: ['project-document-compaction', 'project-onboarding'], protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),
-          pluginSystem: 'Harness PluginHost（与 Codex/Claude 插件各自独立）', scope: '运行中的 Harness 实例；异步等待就绪后按已登记动作启动原会话轮次' }
+        return { settingsGroups: Object.keys(settingsCatalog), manualOnly: ['project-document-compaction', 'project-onboarding', 'custom-async-wait-approval'], asyncWaitTools: ['ci', 'sdp', 'seatalk', 'sleep', 'custom'], protocolVersion: 1, methods: Object.entries(managementMethods).map(([name, writes]) => ({ name, writes })),
+          pluginSystem: 'Harness PluginHost（与 Codex/Claude 插件各自独立）', scope: '运行中的 Harness 实例；CI/SDP 通知并预填，SeaTalk/sleep/获批自定义任务唤醒来源会话' }
       case 'status':
         return { versions: await runtime.getRuntimeVersions(), flavor, phase: h.phase, selectedProvider: h.selectedProvider,
           selectedThreadId: h.selectedThreadId, claude: h.claudeStatus, plugins: { loading: plugins.loading, error: plugins.error },
           observedAt: new Date().toISOString(), source: 'mounted Harness services' }
       case 'asyncWaits.list':
         return runtime.listAsyncWaits()
-      case 'asyncWaits.create':
-        return runtime.createAsyncWait({ id: text(p, 'id'), threadId: text(p, 'threadId'), title: text(p, 'title'), continuation: text(p, 'continuation'), checkerPath: text(p, 'checkerPath') })
+      case 'asyncWaits.create': {
+        keys(p, ['id', 'threadId', 'title', 'continuation', 'checkerPath', 'target', 'condition'])
+        // Native deserialization validates the discriminated target and rejects unknown fields.
+        return runtime.createAsyncWait({ id: text(p, 'id'), threadId: text(p, 'threadId'), title: text(p, 'title'), continuation: text(p, 'continuation'),
+          ...(p.condition !== undefined ? { condition: text(p, 'condition') } : {}),
+          ...(p.checkerPath !== undefined ? { checkerPath: text(p, 'checkerPath') } : {}),
+          ...(p.target !== undefined ? { target: object(p.target) as CreateAsyncWait['target'] } : {}) })
+      }
       case 'asyncWaits.action': {
         const action = text(p, 'action')
         if (!['check', 'pause', 'resume', 'cancel', 'acknowledge'].includes(action)) throw new Error('异步任务操作无效')

@@ -150,3 +150,13 @@ it('creates waits against the supplied origin rather than the selected conversat
   await expect(call('asyncWaits.create', { ...input, threadId: '' })).rejects.toThrow('threadId')
   await expect(call('asyncWaits.action', { id: input.id, action: 'turn/start' })).rejects.toThrow('无效')
 })
+
+it('accepts typed builtins but never exposes custom approval to the Agent', async () => {
+  const { call } = fixture()
+  const input = { id: 'ci', threadId: 'origin', title: 'CI', continuation: 'Review if needed', target: { type: 'gitlabCi', project: 'group/repo', pipeline: 42, sha: 'a'.repeat(40) } }
+  await call('asyncWaits.create', input)
+  expect(runtime.createAsyncWait).toHaveBeenLastCalledWith(input)
+  await expect(call('asyncWaits.create', { ...input, approved: true })).rejects.toThrow('approved')
+  await expect(call('asyncWaits.action', { id: 'custom', action: 'approve' })).rejects.toThrow('无效')
+  await expect(call('asyncWaits.review', { id: 'custom', approve: true })).rejects.toThrow('不支持')
+})

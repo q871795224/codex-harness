@@ -98,6 +98,23 @@ async fn async_wait_action(
 }
 
 #[tauri::command]
+async fn async_wait_review(
+    state: State<'_, AppState>,
+    id: String,
+    revision: u64,
+    approve: bool,
+) -> Result<async_waits::WaitTask, String> {
+    state.async_waits.review(&id, revision, approve).await
+}
+#[tauri::command]
+fn async_wait_stage_draft(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<async_waits::WaitTask, String> {
+    state.async_waits.stage_draft(&id)
+}
+
+#[tauri::command]
 fn management_ready(state: State<'_, AppState>, ready: bool) -> Result<(), String> {
     state.management.set_ready(ready)
 }
@@ -1577,6 +1594,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             async_wait_list,
             async_wait_create,
+            async_wait_review,
+            async_wait_stage_draft,
             async_wait_action,
             management_ready,
             management_respond,

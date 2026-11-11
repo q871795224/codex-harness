@@ -1,3 +1,4 @@
+use super::Target;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -13,7 +14,12 @@ pub struct CreateWait {
     pub thread_id: String,
     pub title: String,
     pub continuation: String,
+    #[serde(default)]
+    pub condition: String,
+    #[serde(default)]
     pub checker_path: String,
+    #[serde(default)]
+    pub target: Target,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +28,8 @@ pub struct WaitTask {
     pub thread_id: String,
     pub title: String,
     pub continuation: String,
+    #[serde(default)]
+    pub condition: String,
     pub cwd: String,
     pub status: String,
     pub revision: u64,
@@ -40,6 +48,14 @@ pub struct WaitTask {
     pub next_delivery_at: u64,
     pub turn_id: Option<String>,
     pub delivery_id: Option<String>,
+    #[serde(default)]
+    pub target: Target,
+    #[serde(default)]
+    pub approved: bool,
+    #[serde(default)]
+    pub checker_source: Option<String>,
+    #[serde(default)]
+    pub draft_staged: bool,
 }
 impl WaitTask {
     pub fn active(&self) -> bool {
@@ -177,24 +193,44 @@ impl WaitStore {
         {
             return Err("需要 Codex 来源会话、标题和后续动作".into());
         }
-        let source = Path::new(&input.checker_path);
-        if !source.is_absolute() || !source.is_file() {
-            return Err("checkerPath 必须是现有 Python 检查脚本的绝对路径".into());
+        if !path.exists() {
+            input.target.validate(now)?;
         }
-        if fs::metadata(source).map_err(|e| e.to_string())?.len() > 64 * 1024 {
-            return Err("检查脚本超过64KiB".into());
+        if input.target == Target::Custom
+            && (input.condition.trim().is_empty() || input.condition.len() > 4000)
+        {
+            return Err("自定义任务须说明就绪条件（最多4000字节）".into());
         }
-        let script = fs::read(source).map_err(|e| e.to_string())?;
-        if script.is_empty() || script.len() > 64 * 1024 {
-            return Err("检查脚本须为1–65536字节".into());
-        }
+        let script = if input.target == Target::Custom {
+            let source = Path::new(&input.checker_path);
+            if !source.is_absolute() || !source.is_file() {
+                return Err("checkerPath 必须是现有 Python 检查脚本的绝对路径".into());
+            }
+            if fs::metadata(source).map_err(|e| e.to_string())?.len() > 65536 {
+                return Err("检查脚本超过64KiB".into());
+            }
+            let bytes = fs::read(source).map_err(|e| e.to_string())?;
+            if bytes.is_empty() || bytes.len() > 65536 {
+                return Err("检查脚本须为1–65536字节".into());
+            }
+            std::str::from_utf8(&bytes).map_err(|_| "检查脚本须为 UTF-8")?;
+            bytes
+        } else {
+            if !input.checker_path.is_empty() {
+                return Err("受控工具不接受 checkerPath".into());
+            }
+            input.target.script()?
+        };
         if path.exists() {
             let old = self.read(&input.id)?;
             if old.thread_id == input.thread_id
                 && old.title == input.title
                 && old.continuation == input.continuation
+                && old.condition == input.condition
                 && old.cwd == cwd
-                && fs::read(self.checker(&old.id)).map_err(|e| e.to_string())? == script
+                && old.target == input.target
+                && (old.target != Target::Custom
+                    || fs::read(self.checker(&old.id)).map_err(|e| e.to_string())? == script)
             {
                 return Ok(old);
             }
@@ -203,7 +239,9 @@ impl WaitStore {
         if self
             .list_unlocked()?
             .iter()
-            .filter(|t| t.active() || t.status == "dispatching")
+            .filter(|t| {
+                t.active() || matches!(t.status.as_str(), "dispatching" | "awaitingApproval")
+            })
             .count()
             >= 64
         {
@@ -215,21 +253,40 @@ impl WaitStore {
             thread_id: input.thread_id,
             title: input.title,
             continuation: input.continuation,
+            condition: input.condition,
             cwd,
-            status: "waiting".into(),
+            status: if input.target == Target::Custom {
+                "awaitingApproval"
+            } else {
+                "waiting"
+            }
+            .into(),
             revision: 1,
             created_at: now,
             updated_at: now,
-            deadline: now + 7 * 24 * 3600,
+            deadline: match input.target {
+                Target::Sleep { wake_at } => wake_at + 7 * 86400,
+                _ => now + 7 * 86400,
+            },
             next_check_at: now,
             last_checked_at: None,
             failures: 0,
-            summary: "等待首次检查".into(),
+            summary: if input.target == Target::Custom {
+                "自定义检查器等待用户确认"
+            } else {
+                "等待首次检查"
+            }
+            .into(),
             last_observation: None,
             delivery_failures: 0,
             next_delivery_at: now,
             turn_id: None,
             delivery_id: None,
+            approved: input.target != Target::Custom,
+            checker_source: (input.target == Target::Custom)
+                .then(|| String::from_utf8(script).unwrap()),
+            target: input.target,
+            draft_staged: false,
         };
         self.write(&task)?;
         Ok(task)
@@ -263,14 +320,23 @@ impl WaitStore {
                 task.status = "paused".into();
                 task.summary = "用户已暂停".into();
             }
-            "cancel" if !matches!(task.status.as_str(), "delivered" | "closed") => {
+            "cancel" if !matches!(task.status.as_str(), "delivered" | "notified" | "closed") => {
                 task.status = "cancelled".into();
                 task.summary = "用户已取消".into();
             }
-            "resume" if matches!(task.status.as_str(), "paused" | "expired") => {
+            "resume" if matches!(task.status.as_str(), "paused" | "expired") && !task.approved => {
+                task.status = "awaitingApproval".into();
+                task.checker_source =
+                    Some(fs::read_to_string(self.checker(id)).map_err(|e| e.to_string())?);
+                task.summary = "自定义检查器等待用户确认".into();
+            }
+            "resume" if matches!(task.status.as_str(), "paused" | "expired") && task.approved => {
                 task.status = "waiting".into();
                 task.next_check_at = now;
-                task.deadline = now + 7 * 24 * 3600;
+                task.deadline = match task.target {
+                    Target::Sleep { wake_at } => wake_at.max(now) + 7 * 86400,
+                    _ => now + 7 * 86400,
+                };
                 task.failures = 0;
                 task.delivery_failures = 0;
                 task.next_delivery_at = now;
@@ -280,6 +346,52 @@ impl WaitStore {
         }
         task.revision += 1;
         task.updated_at = now;
+        self.write(&task)?;
+        Ok(task)
+    }
+    // UI-only command: never exported through the Agent management API.
+    pub fn review(
+        &self,
+        id: &str,
+        revision: u64,
+        approve: bool,
+        now: u64,
+    ) -> Result<WaitTask, String> {
+        let _guard = self.writer()?;
+        let mut task = self.read(id)?;
+        if task.revision != revision || task.status != "awaitingApproval" {
+            return Err("任务已变化，请重新读取后确认".into());
+        }
+        // Bind approval to the exact snapshot presented to the user.
+        if approve {
+            let bytes = fs::read(self.checker(id)).map_err(|e| e.to_string())?;
+            if task.checker_source.as_deref().map(str::as_bytes) != Some(bytes.as_slice()) {
+                return Err("检查脚本已变化，不能批准".into());
+            }
+        }
+        task.approved = approve;
+        task.status = if approve { "waiting" } else { "cancelled" }.into();
+        task.summary = if approve {
+            "用户已同意，等待首次检查"
+        } else {
+            "用户已拒绝创建"
+        }
+        .into();
+        task.next_check_at = now;
+        task.deadline = now + 7 * 86400;
+        task.updated_at = now;
+        task.revision += 1;
+        self.write(&task)?;
+        Ok(task)
+    }
+    pub fn stage_draft(&self, id: &str) -> Result<WaitTask, String> {
+        let _guard = self.writer()?;
+        let mut task = self.read(id)?;
+        if task.status != "notified" {
+            return Err("任务尚未通知".into());
+        }
+        task.draft_staged = true;
+        task.revision += 1;
         self.write(&task)?;
         Ok(task)
     }

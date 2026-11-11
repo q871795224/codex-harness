@@ -81,12 +81,14 @@ export function useReminderSources(sources: Sources) {
 
   const publishWait = (task: AsyncWaitTask) => {
     const id = `async-wait:${task.id}`
-    if (['paused', 'expired', 'uncertain'].includes(task.status) && task.summary !== '用户已暂停') {
-      const label = task.status === 'expired' ? '等待已到期' : task.status === 'uncertain' ? '续跑结果需要核对' : '等待已暂停'
+    if (['awaitingApproval', 'paused', 'expired', 'uncertain'].includes(task.status) && task.summary !== '用户已暂停') {
+      const label = task.status === 'awaitingApproval' ? '自定义异步任务等待你确认' : task.status === 'expired' ? '等待已到期' : task.status === 'uncertain' ? '续跑结果需要核对' : '等待已暂停'
       notifications.publish({ id, source: '异步等待', threadId: task.threadId, workspaceRoot: task.cwd, title: task.title,
         message: `${label}，请打开原会话查看并处理。`, level: 'warning', state: 'pending', attention: 'action', eventKey: `${task.status}:${task.revision}` })
     } else {
       notifications.resolve(id)
+      if (task.status === 'notified') notifications.publish({ id: `async-result:${task.id}`, source: '异步等待', threadId: task.threadId, workspaceRoot: task.cwd,
+        title: task.title, message: task.lastObservation ?? task.summary, level: 'info', attention: 'result', eventKey: task.id })
       if (task.status === 'delivered' && task.turnId) {
         const event = completions.current.get(`${task.threadId}:${task.turnId}`)
         if (event?.status === 'completed') notifications.publish({ id: `async-result:${task.id}`, source: '异步等待', threadId: task.threadId, workspaceRoot: task.cwd,

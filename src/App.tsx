@@ -1,7 +1,9 @@
+import { useAsyncWaitPrefill } from './core/async-waits/useAsyncWaitPrefill'
 import { RouterSettings } from './features/settings/RouterSettings'
 import { useRouterSummaries } from './core/workspace-router/react'
 import { useSeaTalkSync } from './core/seatalk/react'
 import { RouterFeedbackCard } from './features/conversation/RouterFeedbackCard'
+import { AsyncWaitApprovals } from './core/async-waits/AsyncWaitApprovals'
 import { AsyncWaitPanel } from './core/async-waits/AsyncWaitPanel'
 import { useQuestionLinks } from './features/conversation/useQuestionLinks'
 import type { QuestionNotificationService } from './core/questions/types'
@@ -300,6 +302,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({})
   const [consumedComposerDrafts, setConsumedComposerDrafts] = useState<Record<string, ComposerDraft>>({})
   const [composerDraftsLoaded, setComposerDraftsLoaded] = useState(false)
+  const [composerDraftsRestored, setComposerDraftsRestored] = useState(false)
   const composerDraftWriterRef = useRef<ComposerDraftWriter | null>(null)
   const queuedComposerDraftsRef = useRef<Record<string, ComposerDraft>>({})
   const draftReplacementIdsRef = useRef<Record<string, string>>({})
@@ -315,6 +318,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
         const restored = restoreComposerDrafts(records)
         queuedComposerDraftsRef.current = restored
         setComposerDrafts(restored)
+        setComposerDraftsRestored(true)
       }
     }).catch((error) => {
       if (!disposed) harness.notify(`无法恢复输入草稿`, 'error', error)
@@ -363,6 +367,12 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
       return { ...current, [threadId]: draft }
     })
   }, [])
+  const stageAsyncDraft = useCallback((threadId: string, draft: ComposerDraft) => {
+    queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [threadId]: draft }
+    composerDraftWriterRef.current?.update(threadId, draft)
+    setComposerDrafts(current => ({ ...current, [threadId]: draft }))
+  }, [])
+  const asyncPrefill = useAsyncWaitPrefill(composerDrafts, stageAsyncDraft, composerDraftsRestored)
   const agentRunList = useSyncExternalStore(agentRuns.subscribe, agentRuns.snapshot)
   const pendingReturnRuns = useMemo(
     () => agentRunList.filter((run) => run.parentThreadId === harness.selectedThreadId),
@@ -987,6 +997,9 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                 pendingSteers={currentSteers}
                 workingStartedAt={turnStartedAtMilliseconds(harness.selectedProvider, currentActiveTurn?.startedAt ?? null)}
                 banners={<>
+                  <AsyncWaitApprovals threadId={harness.selectedThreadId ?? ''} />
+                  {asyncPrefill.error && <p role="alert">异步结果预填失败：{asyncPrefill.error}</p>}
+                  {asyncPrefill.tasks.filter(task => task.threadId === harness.selectedThreadId).map(task => <div key={task.id} className="async-wait-panel">「{task.title}」已结束，结果未发送。{' '}<button type="button" onClick={() => void asyncPrefill.insert(task)}>插入结果到输入框</button></div>)}
                   {codexConversation && harness.currentRoute && <RouterFeedbackCard
                     key={harness.currentRoute.id}
                     record={harness.currentRoute}
