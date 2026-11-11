@@ -168,8 +168,8 @@ def parser():
     waits.add_parser("list")
     get = waits.add_parser("get")
     get.add_argument("id")
-    create = waits.add_parser("create")
-    create.add_argument("--file", type=Path, required=True)
+    for name in ("create", "ci", "sdp", "seatalk", "sleep", "custom"):
+        waits.add_parser(name).add_argument("--file", type=Path, required=True)
     for action in ("check", "pause", "resume", "cancel", "acknowledge"):
         waits.add_parser(action).add_argument("id")
     return p
@@ -221,8 +221,11 @@ def operation(args):
     if group == "seatalk": return "seatalk." + action, {}
     if group == "async-waits":
         if action in {"list", "get"}: return "asyncWaits.list", {}
-        if action == "create":
+        if action in {"create", "ci", "sdp", "seatalk", "sleep", "custom"}:
             params = read_object(args.file)
+            kind = params.get("target", {}).get("type", "custom")
+            expected = {"ci": {"gitlabCi", "githubCi"}, "sdp": {"sdp"}, "seatalk": {"seatalk"}, "sleep": {"sleep"}, "custom": {"custom"}}
+            if action in expected and kind not in expected[action]: raise ClientError("工具类型与 target.type 不匹配")
             params.setdefault("threadId", os.environ.get("CODEX_THREAD_ID"))
             if not params.get("threadId"): raise ClientError("需要来源 threadId 或 CODEX_THREAD_ID，不能用当前选中会话代替")
             return "asyncWaits.create", params

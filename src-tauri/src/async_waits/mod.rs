@@ -1,11 +1,14 @@
 //! Durable one-shot waits. The native scheduler owns polling; no model runs until ready.
 mod store;
+mod target;
 use crate::{
     app_server::{AppServerManager, WaitThreadState},
     store::HarnessStore,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+#[cfg(test)]
+use serde_json::json;
+use serde_json::Value;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -15,6 +18,7 @@ use std::{
 };
 use store::WaitStore;
 pub use store::{CreateWait, WaitTask};
+pub use target::Target;
 use tauri::{Emitter, Listener};
 use tokio::{io::AsyncReadExt, process::Command};
 
@@ -106,6 +110,16 @@ async fn check_with_timeout(
     .await
     .map_err(|_| "检查超过30秒，已停止".to_string())?;
     result
+}
+// Built-ins always execute the current app-owned implementation, never an Agent
+// supplied file. Upgrades can update adapters without invalidating waiting targets.
+async fn check_builtin(target: &Target, cwd: &str) -> Result<Observation, String> {
+    use std::io::Write;
+    let mut script = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    script
+        .write_all(&target.script()?)
+        .map_err(|e| e.to_string())?;
+    check(script.path(), cwd).await
 }
 fn apply_observation(task: &mut WaitTask, result: Result<Observation, String>, at: u64) {
     task.last_checked_at = Some(at);
@@ -285,6 +299,17 @@ impl AsyncWaits {
         self.changed();
         Ok(task)
     }
+    pub async fn review(&self, id: &str, revision: u64, approve: bool) -> Result<WaitTask, String> {
+        let _gate = self.gate.lock().await;
+        let task = self.store.review(id, revision, approve, now())?;
+        self.changed();
+        Ok(task)
+    }
+    pub fn stage_draft(&self, id: &str) -> Result<WaitTask, String> {
+        let task = self.store.stage_draft(id)?;
+        self.changed();
+        Ok(task)
+    }
     pub fn pause_thread(&self, id: &str) -> Result<(), String> {
         self.store.pause_thread(id, now())?;
         self.changed();
@@ -318,6 +343,18 @@ impl AsyncWaits {
         };
         let mut due = Vec::new();
         for mut task in self.store.list()? {
+            // Legacy custom checkers also require explicit approval before execution.
+            if !task.approved && task.active() {
+                task.status = "awaitingApproval".into();
+                task.checker_source = Some(
+                    std::fs::read_to_string(self.store.checker(&task.id))
+                        .map_err(|e| e.to_string())?,
+                );
+                task.summary = "自定义检查器等待用户确认".into();
+                self.store.update(&task)?;
+                self.changed();
+                continue;
+            }
             if !task.active() {
                 continue;
             }
@@ -338,8 +375,41 @@ impl AsyncWaits {
         due.sort_by_key(|task| task.next_check_at);
         let checked =
             futures_util::future::join_all(due.into_iter().take(4).map(|mut task| async move {
-                let result = check(&self.store.checker(&task.id), &task.cwd).await;
+                let result = match &task.target {
+                    Target::Custom => {
+                        let intact =
+                            std::fs::read(self.store.checker(&task.id)).is_ok_and(|bytes| {
+                                task.checker_source.as_deref().map(str::as_bytes)
+                                    == Some(bytes.as_slice())
+                            });
+                        if intact {
+                            check(&self.store.checker(&task.id), &task.cwd).await
+                        } else {
+                            Ok(Observation {
+                                status: "needsAttention".into(),
+                                summary: "检查脚本与批准快照不一致，请重新创建任务".into(),
+                            })
+                        }
+                    }
+                    Target::Sleep { wake_at } => Ok(Observation {
+                        status: if now() >= *wake_at {
+                            "ready"
+                        } else {
+                            "waiting"
+                        }
+                        .into(),
+                        summary: format!("定时唤醒：{wake_at}"),
+                    }),
+                    target => check_builtin(target, &task.cwd).await,
+                };
                 apply_observation(&mut task, result, now());
+                if let Target::Sleep { wake_at } = task.target {
+                    task.next_check_at = if task.status == "waiting" {
+                        wake_at
+                    } else {
+                        now() + 300
+                    };
+                }
                 task
             }))
             .await;
@@ -350,6 +420,15 @@ impl AsyncWaits {
         }
         let mut groups: BTreeMap<String, Vec<WaitTask>> = BTreeMap::new();
         for task in self.store.list()? {
+            if task.status == "ready" && task.target.notify_only() {
+                let mut notified = task;
+                notified.status = "notified".into();
+                notified.summary = "结果已就绪，已通知；待预填来源会话，不自动发送".into();
+                notified.updated_at = now();
+                self.store.update(&notified)?;
+                self.changed();
+                continue;
+            }
             if task.status == "ready" && task.next_delivery_at <= now() {
                 groups.entry(task.thread_id.clone()).or_default().push(task);
             }
@@ -464,7 +543,11 @@ impl AsyncWaits {
     }
 }
 fn continuation_message(tasks: &[WaitTask]) -> String {
-    let items = tasks.iter().map(|t| format!("{}（{}）", t.title.replace(['\n', '\r'], " "), t.id)).collect::<Vec<_>>().join("；");
+    let items = tasks
+        .iter()
+        .map(|t| format!("{}（{}）", t.title.replace(['\n', '\r'], " "), t.id))
+        .collect::<Vec<_>>()
+        .join("；");
     format!("Harness 异步任务已就绪：{items}。\n请用随附 CLI 的 async-waits get ID 读取任务观察和后续动作，核对外部状态后继续。")
 }
 
@@ -478,6 +561,31 @@ mod tests {
             Mutex,
         },
     };
+    impl AsyncWaits {
+        async fn create_approved(&self, input: CreateWait) -> Result<WaitTask, String> {
+            let task = self.create(input).await?;
+            if task.approved {
+                Ok(task)
+            } else {
+                self.review(&task.id, task.revision, true).await
+            }
+        }
+    }
+    impl WaitStore {
+        fn create_approved(
+            &self,
+            input: CreateWait,
+            cwd: String,
+            at: u64,
+        ) -> Result<WaitTask, String> {
+            let task = self.create(input, cwd, at)?;
+            if task.approved {
+                Ok(task)
+            } else {
+                self.review(&task.id, task.revision, true, at)
+            }
+        }
+    }
     struct FakeServer {
         cwd: String,
         busy: AtomicBool,
@@ -556,7 +664,9 @@ mod tests {
             thread_id: "thread-1".into(),
             title: id.into(),
             continuation: "Review the result, do not publish".into(),
+            condition: "The expected result is ready".into(),
             checker_path: path.to_string_lossy().into_owned(),
+            target: Target::Custom,
         }
     }
     #[tokio::test]
@@ -564,7 +674,7 @@ mod tests {
         let (dir, waits, server) = fixture();
         for id in ["certificate", "cors"] {
             waits
-                .create(input(
+                .create_approved(input(
                     dir.path(),
                     id,
                     r#"{"status":"ready","summary":"verified"}"#,
@@ -599,7 +709,7 @@ mod tests {
         let (dir, waits, server) = fixture();
         server.busy.store(true, Ordering::SeqCst);
         waits
-            .create(input(
+            .create_approved(input(
                 dir.path(),
                 "bot",
                 r#"{"status":"ready","summary":"MR !123"}"#,
@@ -623,7 +733,7 @@ mod tests {
         let (dir, waits, server) = fixture();
         server.fail.store(true, Ordering::SeqCst);
         waits
-            .create(input(
+            .create_approved(input(
                 dir.path(),
                 "approval",
                 r#"{"status":"ready","summary":"approved"}"#,
@@ -647,7 +757,7 @@ mod tests {
     async fn overdue_checks_run_after_recovery_but_expired_and_archived_tasks_do_not_start() {
         let (dir, waits, server) = fixture();
         waits
-            .create(input(
+            .create_approved(input(
                 dir.path(),
                 "recover",
                 r#"{"status":"ready","summary":"done"}"#,
@@ -672,7 +782,7 @@ mod tests {
     async fn leader_lock_prevents_two_instances_from_checking() {
         let (dir, waits, server) = fixture();
         waits
-            .create(input(
+            .create_approved(input(
                 dir.path(),
                 "one",
                 r#"{"status":"ready","summary":"done"}"#,
@@ -692,7 +802,7 @@ mod tests {
         let (dir, waits, _) = fixture();
         let mut task = waits
             .store
-            .create(
+            .create_approved(
                 input(
                     dir.path(),
                     "one",
@@ -723,7 +833,7 @@ mod tests {
         let (dir, waits, _) = fixture();
         waits
             .store
-            .create(
+            .create_approved(
                 input(
                     dir.path(),
                     "one",
@@ -765,17 +875,20 @@ mod tests {
             r#"{"status":"waiting","summary":"pending"}"#,
         );
         let cwd = dir.path().to_string_lossy().into_owned();
-        let task = waits.store.create(spec.clone(), cwd.clone(), 10).unwrap();
+        let task = waits
+            .store
+            .create_approved(spec.clone(), cwd.clone(), 10)
+            .unwrap();
         let reopened = WaitStore::open(dir.path().join("waits")).unwrap();
         assert_eq!(
             reopened
-                .create(spec.clone(), cwd.clone(), 20)
+                .create_approved(spec.clone(), cwd.clone(), 20)
                 .unwrap()
                 .created_at,
             10
         );
         fs::write(&spec.checker_path, "raise Exception()").unwrap();
-        assert!(reopened.create(spec, cwd, 30).is_err());
+        assert!(reopened.create_approved(spec, cwd, 30).is_err());
         assert!(fs::read_to_string(reopened.checker("one"))
             .unwrap()
             .contains("pending"));
@@ -786,13 +899,15 @@ mod tests {
         assert_eq!(reopened.list().unwrap()[0].status, "cancelled");
         let mut invalid = input(dir.path(), "two", "{}");
         invalid.id = "../escape".into();
-        assert!(reopened.create(invalid, "/tmp".into(), 50).is_err());
+        assert!(reopened
+            .create_approved(invalid, "/tmp".into(), 50)
+            .is_err());
     }
     #[tokio::test]
     async fn restoring_the_conversation_backs_off_and_preserves_observation() {
         let (dir, waits, server) = fixture();
         waits
-            .create(input(
+            .create_approved(input(
                 dir.path(),
                 "ready",
                 r#"{"status":"ready","summary":"certificate uploaded"}"#,
@@ -832,7 +947,7 @@ mod tests {
             ),
         )
         .unwrap();
-        waits.create(spec).await.unwrap();
+        waits.create_approved(spec).await.unwrap();
         server.busy.store(true, Ordering::SeqCst);
         waits.tick().await.unwrap();
         let mut task = waits.list().unwrap().data[0].clone();
@@ -903,5 +1018,204 @@ mod tests {
                 .unwrap_err();
             assert!(!error.contains("secret"));
         }
+    }
+    #[tokio::test]
+    async fn custom_proposals_never_execute_until_ui_approval_and_survive_restart() {
+        let (dir, waits, server) = fixture();
+        let spec = input(
+            dir.path(),
+            "proposal",
+            r#"{"status":"ready","summary":"done"}"#,
+        );
+        let proposal = waits.create(spec).await.unwrap();
+        assert_eq!(proposal.status, "awaitingApproval");
+        assert!(!proposal.approved);
+        assert!(waits.action("proposal", "resume").await.is_err());
+        assert!(waits.action("proposal", "check").await.is_err());
+        assert!(waits.action("proposal", "approve").await.is_err());
+        waits.tick().await.unwrap();
+        assert!(waits.list().unwrap().data[0].last_checked_at.is_none());
+        assert!(server.calls.lock().unwrap().is_empty());
+        let reopened = AsyncWaits {
+            store: WaitStore::open(dir.path().join("waits")).unwrap(),
+            ..waits
+        };
+        assert!(reopened
+            .review("proposal", proposal.revision + 1, true)
+            .await
+            .is_err());
+        reopened
+            .review("proposal", proposal.revision, true)
+            .await
+            .unwrap();
+        reopened.tick().await.unwrap();
+        assert_eq!(server.calls.lock().unwrap().len(), 1);
+    }
+    #[tokio::test]
+    async fn rejected_and_modified_proposals_cannot_execute() {
+        let (dir, waits, server) = fixture();
+        let task = waits
+            .create(input(
+                dir.path(),
+                "rejected",
+                r#"{"status":"ready","summary":"done"}"#,
+            ))
+            .await
+            .unwrap();
+        waits.review(&task.id, task.revision, false).await.unwrap();
+        assert!(waits.action(&task.id, "resume").await.is_err());
+        let task = waits
+            .create(input(
+                dir.path(),
+                "modified",
+                r#"{"status":"ready","summary":"done"}"#,
+            ))
+            .await
+            .unwrap();
+        fs::write(waits.store.checker(&task.id), "raise Exception()").unwrap();
+        assert!(waits.review(&task.id, task.revision, true).await.is_err());
+        waits.tick().await.unwrap();
+        assert!(server.calls.lock().unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn ci_and_deployment_notify_without_restoring_or_starting_a_thread() {
+        let (dir, waits, server) = fixture();
+        server.prepare_fail.store(true, Ordering::SeqCst);
+        let targets = [
+            Target::GitlabCi {
+                project: "group/project".into(),
+                pipeline: 42,
+                sha: "a".repeat(40),
+            },
+            Target::Sdp {
+                service: "dns-api-test-sg".into(),
+                environment: "test".into(),
+                callback: "123abc".into(),
+                sha: "a".repeat(40),
+                tasks: vec!["dns-api-test-sg.123.456".into()],
+            },
+        ];
+        for (i, target) in targets.into_iter().enumerate() {
+            let mut spec = input(dir.path(), &format!("builtin-{i}"), "{}");
+            spec.checker_path.clear();
+            spec.target = target;
+            let mut task = waits.create(spec).await.unwrap();
+            assert!(task.approved);
+            task.status = "ready".into();
+            task.last_observation = Some("pipeline failed".into());
+            task.next_check_at = now() + 300;
+            waits.store.update(&task).unwrap();
+        }
+        waits.tick().await.unwrap();
+        let tasks = waits.list().unwrap().data;
+        assert!(tasks
+            .iter()
+            .all(|t| t.status == "notified" && !t.draft_staged && t.turn_id.is_none()));
+        waits.stage_draft(&tasks[0].id).unwrap();
+        waits.tick().await.unwrap();
+        assert!(
+            waits
+                .list()
+                .unwrap()
+                .data
+                .iter()
+                .find(|t| t.id == tasks[0].id)
+                .unwrap()
+                .draft_staged
+        );
+        assert!(server.calls.lock().unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn sleep_wakes_after_resume_from_sleep_and_does_not_expire_at_seven_days() {
+        let (dir, waits, server) = fixture();
+        let mut spec = input(dir.path(), "timer", "{}");
+        spec.checker_path.clear();
+        spec.target = Target::Sleep { wake_at: now() - 1 };
+        let task = waits
+            .store
+            .create(spec, server.cwd.clone(), now() - 10 * 86400)
+            .unwrap();
+        assert!(task.deadline > now());
+        waits.tick().await.unwrap();
+        assert_eq!(waits.list().unwrap().data[0].status, "delivered");
+        waits.tick().await.unwrap();
+        assert_eq!(server.calls.lock().unwrap().len(), 1);
+    }
+    #[test]
+    fn builtins_reject_executables_unknown_fields_and_invalid_identities() {
+        assert!(serde_json::from_value::<Target>(
+            json!({"type":"sleep","wakeAt":now()+10,"script":"evil"})
+        )
+        .is_err());
+        assert!(Target::GithubCi {
+            repo: "--help".into(),
+            pr: 1,
+            sha: "a".repeat(40)
+        }
+        .validate(now())
+        .is_err());
+        let (dir, waits, _) = fixture();
+        let mut spec = input(dir.path(), "bad", "{}");
+        spec.target = Target::Sleep {
+            wake_at: now() + 10,
+        };
+        assert!(waits
+            .store
+            .create(spec, server_cwd(dir.path()), now())
+            .is_err());
+    }
+    fn server_cwd(dir: &Path) -> String {
+        dir.to_string_lossy().into_owned()
+    }
+    #[tokio::test]
+    async fn legacy_waits_require_reapproval_before_any_check() {
+        let (dir, waits, server) = fixture();
+        let task = waits
+            .create_approved(input(
+                dir.path(),
+                "legacy",
+                r#"{"status":"ready","summary":"done"}"#,
+            ))
+            .await
+            .unwrap();
+        let path = dir.path().join("waits/legacy.json");
+        let mut old = serde_json::to_value(task).unwrap();
+        for key in [
+            "target",
+            "approved",
+            "checkerSource",
+            "condition",
+            "draftStaged",
+        ] {
+            old.as_object_mut().unwrap().remove(key);
+        }
+        fs::write(path, serde_json::to_vec(&old).unwrap()).unwrap();
+        waits.tick().await.unwrap();
+        let pending = waits.list().unwrap().data[0].clone();
+        assert_eq!(pending.status, "awaitingApproval");
+        assert!(pending.last_checked_at.is_none());
+        assert!(pending.checker_source.unwrap().contains("ready"));
+        assert!(server.calls.lock().unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn builtin_script_is_a_self_contained_python_program() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = Target::GitlabCi {
+            project: "group/repo".into(),
+            pipeline: 42,
+            sha: "a".repeat(40),
+        };
+        let mut script = target.script().unwrap();
+        // Test actual native serialization and Python parsing using a fake read-only response.
+        script.extend_from_slice(br#"
+print(__import__('json').dumps(main(SPEC, lambda *args: '{"id":42,"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"failed"}')))"#);
+        let source = String::from_utf8(script)
+            .unwrap()
+            .replace("if __name__ == '__main__':", "if False:");
+        let path = dir.path().join("builtin.py");
+        fs::write(&path, source).unwrap();
+        let observed = check(&path, dir.path().to_str().unwrap()).await.unwrap();
+        assert_eq!(observed.status, "ready");
+        assert!(observed.summary.contains("failed"));
     }
 }

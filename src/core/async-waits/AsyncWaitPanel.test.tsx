@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AsyncWaitPanel } from './AsyncWaitPanel'
 import { runtime } from '../runtime/bridge'
 import type { AsyncWaitTask } from './types'
-vi.mock('../runtime/bridge', () => ({ runtime: { listAsyncWaits: vi.fn(), listenAsyncWaits: vi.fn(async () => () => {}), asyncWaitAction: vi.fn() } }))
+vi.mock('../runtime/bridge', () => ({ runtime: { listAsyncWaits: vi.fn(), listenAsyncWaits: vi.fn(async () => () => {}), asyncWaitAction: vi.fn(), reviewAsyncWait: vi.fn() } }))
 beforeEach(() => vi.clearAllMocks())
 afterEach(cleanup)
 it('lets users find waits in other conversations and resume paused checks without sending chat input', async () => {
@@ -56,4 +56,16 @@ it('keeps continuation and observations collapsed while showing checks alongside
   const heading = screen.getByText('等待回复').parentElement!
   expect(heading.querySelectorAll('time')).toHaveLength(2)
   expect(screen.getByRole('status').className).toContain('waiting')
+})
+
+it('requires an explicit user decision for a custom proposal and passes its revision', async () => {
+  const task = { id: 'custom', threadId: 'origin', status: 'awaitingApproval', title: '远端实验', summary: 'pending', condition: '结果文件生成', continuation: '分析结果', checkerSource: 'print("readonly")', revision: 7, deadline: 1000 } as AsyncWaitTask
+  vi.mocked(runtime.listAsyncWaits).mockResolvedValue({ data: [task], schedulerError: null })
+  render(<AsyncWaitPanel threadId="origin" view="page" />)
+  await screen.findByText('同意创建')
+  expect(runtime.reviewAsyncWait).not.toHaveBeenCalled()
+  expect(screen.getByText('就绪条件：结果文件生成')).toBeTruthy()
+  expect(screen.getByText('print("readonly")')).toBeTruthy()
+  await act(async () => fireEvent.click(screen.getByText('同意创建')))
+  expect(runtime.reviewAsyncWait).toHaveBeenCalledWith('custom', 7, true)
 })

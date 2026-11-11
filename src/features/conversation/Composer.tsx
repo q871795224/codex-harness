@@ -307,6 +307,19 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
 
   const currentDraftRef = useRef<ComposerDraft>({ text, collapsedPastes, attachments })
   useLayoutEffect(() => { currentDraftRef.current = { text, collapsedPastes, attachments } }, [text, collapsedPastes, attachments])
+  // Project programmatic draft updates into a mounted Composer only when its
+  // live value still matches the previous parent snapshot (preserve user edits).
+  const previousInitialDraft = useRef(initialDraft)
+  useLayoutEffect(() => {
+    const previous = previousInitialDraft.current
+    previousInitialDraft.current = initialDraft
+    if (!initialDraft || initialDraft === previous) return
+    const empty = { text: '', attachments: [], collapsedPastes: [] }
+    if (!sameComposerDraft(currentDraftRef.current, previous ?? empty)) return
+    setText(initialDraft.text)
+    setAttachments(initialDraft.attachments)
+    setCollapsedPastes(initialDraft.collapsedPastes)
+  }, [initialDraft])
   const previousConsumedDraft = useRef(consumedDraft)
   useLayoutEffect(() => {
     if (previousConsumedDraft.current === consumedDraft) return

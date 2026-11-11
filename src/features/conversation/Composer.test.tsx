@@ -229,3 +229,17 @@ it('shows a native binding notice without a document version and sends it with o
   rerender(<Composer {...props} projectCard={null} onSend={onSend}/>)
   expect(input.value).toBe('')
 })
+
+it('projects an async result into a mounted empty input without sending or replacing newer user edits', () => {
+  const onSend = vi.fn()
+  const { rerender } = render(<Composer {...props} onSend={onSend} />)
+  const input = screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement
+  const result = { text: 'CI 已结束，任务 ID：ci', collapsedPastes: [], attachments: [] }
+  rerender(<Composer {...props} onSend={onSend} initialDraft={result} />)
+  expect(input.value).toBe(result.text)
+  expect(onSend).not.toHaveBeenCalled()
+  fireEvent.change(input, { target: { value: '用户正在输入' } })
+  rerender(<Composer {...props} onSend={onSend} initialDraft={{ ...result, text: '迟到的结果' }} />)
+  expect(input.value).toBe('用户正在输入')
+  expect(onSend).not.toHaveBeenCalled()
+})

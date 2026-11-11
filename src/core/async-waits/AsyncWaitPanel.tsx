@@ -1,10 +1,11 @@
 import './AsyncWaitPanel.css'
+import { AsyncWaitApproval } from './AsyncWaitApprovals'
 import React from 'react'
 import { useEffect, useState } from 'react'
 import { runtime } from '../runtime/bridge'
 import type { AsyncWaitAction, AsyncWaitSnapshot } from './types'
 
-const labels: Record<string, string> = { waiting: '等待外部结果', ready: '已就绪，等待会话空闲', paused: '已暂停', expired: '等待已到期', dispatching: '提交中／待核对', uncertain: '提交结果待核对', delivered: '已继续处理', cancelled: '已取消', closed: '已核对结束' }
+const labels: Record<string, string> = { awaitingApproval: '等待用户确认', notified: '已通知，未自动发送', waiting: '等待外部结果', ready: '已就绪，等待会话空闲', paused: '已暂停', expired: '等待已到期', dispatching: '提交中／待核对', uncertain: '提交结果待核对', delivered: '已继续处理', cancelled: '已取消', closed: '已核对结束' }
 export function AsyncWaitPanel({ threadId, onOpenThread, view = 'compact' }: { threadId: string; onOpenThread?: (id: string) => void; view?: 'compact' | 'page' }) {
   const [snapshot, setSnapshot] = useState<AsyncWaitSnapshot>({ data: [], schedulerError: null })
   const [all, setAll] = useState(view === 'page')
@@ -34,7 +35,7 @@ export function AsyncWaitPanel({ threadId, onOpenThread, view = 'compact' }: { t
     catch (cause) { setError(String(cause)) }
     finally { setPending(null) }
   }
-  const ended = (status: string) => ['delivered', 'cancelled', 'closed'].includes(status)
+  const ended = (status: string) => ['delivered', 'notified', 'cancelled', 'closed'].includes(status)
   const tasks = snapshot.data.filter((task) => (all || task.threadId === threadId) && (statusFilter === 'all' || (statusFilter === 'ended' ? ended(task.status) : !ended(task.status))))
   if (view === 'compact' && !snapshot.data.length && !error && !snapshot.schedulerError) return null
   const content = <>
@@ -57,6 +58,7 @@ export function AsyncWaitPanel({ threadId, onOpenThread, view = 'compact' }: { t
           <time className={task.status === 'expired' ? 'expired' : ''} title={new Date(task.deadline * 1000).toLocaleString()} dateTime={new Date(task.deadline * 1000).toISOString()}>到期 {shortTime(task.deadline)}</time>
         </div>
       </div>
+      {task.status === 'awaitingApproval' && <AsyncWaitApproval task={task} onChanged={() => void runtime.listAsyncWaits().then(setSnapshot)} />}
       <p className="async-wait-summary" title={task.summary}>{task.summary}</p>
       <div className="async-wait-actions">
         {(view === 'page' || task.threadId !== threadId) && onOpenThread && <button type="button" onClick={() => onOpenThread(task.threadId)}>打开来源会话</button>}
@@ -65,10 +67,11 @@ export function AsyncWaitPanel({ threadId, onOpenThread, view = 'compact' }: { t
       </div>
       <details className="async-wait-details"><summary>详情</summary>
         {task.lastObservation && task.lastObservation !== task.summary && <p>最近观察：{task.lastObservation}</p>}
+        {task.target && <pre>{JSON.stringify(task.target, null, 2)}</pre>}
         <p>就绪后：{task.continuation}</p>
-        <small>Harness 打开时每5分钟检查，休眠或关闭后暂停；就绪后自动继续，忙时排队。</small>
+        <small>Harness 打开时每5分钟检查，休眠或关闭后暂停；CI／SDP 就绪后通知并预填，其他任务唤醒 Agent。</small>
         <small>任务 {task.id}</small>
-        {!['delivered', 'cancelled', 'closed', 'dispatching', 'uncertain'].includes(task.status) && <button type="button" disabled={pending !== null} onClick={() => void act(task.id, 'cancel')}>取消等待</button>}
+        {!['delivered', 'notified', 'cancelled', 'closed', 'dispatching', 'uncertain'].includes(task.status) && <button type="button" disabled={pending !== null} onClick={() => void act(task.id, 'cancel')}>取消等待</button>}
         {['dispatching', 'uncertain'].includes(task.status) && <button type="button" disabled={pending !== null} onClick={() => void act(task.id, 'acknowledge')}>我已核对会话，结束此记录</button>}
       </details>
     </article>)}
