@@ -29,9 +29,9 @@ it('settings save the editable local-token threshold', async () => {
 it('automatic reminders respect threshold and cooldown; manual action bypasses both', async () => {
   const { requestCompaction, CompactionBanner } = await import('./CompactionCard')
   const projectId='reminder-'+crypto.randomUUID()
-  const docs={threadProject:vi.fn(async()=>projectId),measure:vi.fn(async()=>({seq:1,tokens:10000}))}
+  const docs={threadProject:vi.fn(async()=>projectId),measure:vi.fn(async()=>({seq:1,tokens:10000})),generateArchive:vi.fn()}
   const storage={get:vi.fn(async()=>Date.now()),set:vi.fn(async()=>{})}
-  const deps={docs,runs:{start:vi.fn()},config:{compactionThreshold:10000},instanceId:'i',storage} as any
+  const deps={docs,config:{compactionThreshold:10000},storage} as any
   render(<CompactionBanner deps={deps} props={{threadId:'t',threadCwd:'/w',workspaceRoot:'/w',checkoutRoot:'/w'}} />)
   await requestCompaction(deps,'t',false)
   expect(screen.queryByRole('button',{name:'整理并归档'})).toBeNull()
@@ -40,23 +40,23 @@ it('automatic reminders respect threshold and cooldown; manual action bypasses b
   expect(screen.queryByRole('button',{name:'整理并归档'})).toBeNull()
   await requestCompaction(deps,'t',true)
   await screen.findByRole('button',{name:'整理并归档'})
-  expect(deps.runs.start).not.toHaveBeenCalled()
+  expect(docs.generateArchive).not.toHaveBeenCalled()
 })
 
 it('confirmation runs once and saves without a second content-approval step', async()=>{
   const { requestCompaction, CompactionBanner }=await import('./CompactionCard')
   const projectId='run-'+crypto.randomUUID()
   const docs={threadProject:vi.fn(async()=>projectId),measure:vi.fn(async()=>({seq:1,tokens:12300})),
+    generateArchive:vi.fn(async()=> 'new body'),
     beginCompaction:vi.fn(async()=>({jobId:'j',baseSeq:1,content:'old',archivePath:'/archive',tokens:12300})),
     completeCompaction:vi.fn(async()=>({newSeq:2,beforeTokens:12300,afterTokens:3400,archivePath:'/archive'})),cancelCompaction:vi.fn(async()=>{})}
-  const runs={start:vi.fn(async()=>({runId:'r'})),subscribe:()=>()=>{},snapshot:()=>[{runId:'r',status:'completed'}],loadResult:async()=> 'new body'}
-  const deps={docs,runs,config:{compactionThreshold:10000},instanceId:'i',storage:{get:async()=>null,set:async()=>{}}} as any
+  const deps={docs,config:{compactionThreshold:10000},storage:{get:async()=>null,set:async()=>{}}} as any
   render(<CompactionBanner deps={deps} props={{threadId:'run-thread',threadCwd:'/w',workspaceRoot:'/w',checkoutRoot:'/w'}} />)
   await requestCompaction(deps,'run-thread',true)
   const button=await screen.findByRole('button',{name:'整理并归档'})
   fireEvent.click(button);fireEvent.click(button)
   await screen.findByText('项目文档已整理')
-  expect(docs.completeCompaction).toHaveBeenCalledOnce();expect(runs.start).toHaveBeenCalledOnce()
+  expect(docs.completeCompaction).toHaveBeenCalledOnce();expect(docs.generateArchive).toHaveBeenCalledOnce()
   expect(screen.queryByRole('button',{name:'整理并归档'})).toBeNull()
 })
 
@@ -65,7 +65,7 @@ it('completed-turn reminders use the resolved banner settings and deduplicate ev
   let handler!: (e:any)=>void
   const stop=watchCompaction({onUserInputRequested:()=>()=>{},onTurnCompleted:(h)=>{handler=h;return ()=>{}},onMessageSubmitted:()=>()=>{},openThread:vi.fn()})
   const docs={threadProject:vi.fn(async()=> 'scoped-'+crypto.randomUUID()),measure:vi.fn(async()=>({seq:1,tokens:12300}))}
-  const deps={docs,runs:{},config:{compactionThreshold:15000},instanceId:'scoped',storage:{get:async()=>null,set:async()=>{}}} as any
+  const deps={docs,config:{compactionThreshold:15000},storage:{get:async()=>null,set:async()=>{}}} as any
   render(<CompactionBanner deps={deps} props={{threadId:'scope-thread',threadCwd:'/w',workspaceRoot:'/w',checkoutRoot:'/w'}} />)
   act(()=>handler({threadId:'scope-thread',turnId:'1',status:'failed'}))
   expect(docs.measure).not.toHaveBeenCalled()
