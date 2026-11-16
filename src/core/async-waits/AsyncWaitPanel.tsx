@@ -4,9 +4,10 @@ import React from 'react'
 import { useEffect, useState } from 'react'
 import { runtime } from '../runtime/bridge'
 import type { AsyncWaitAction, AsyncWaitSnapshot } from './types'
+import { AsyncWaitDock } from './AsyncWaitDock'
+import { asyncWaitEnded, asyncWaitStatusLabels as labels } from './presentation'
 
-const labels: Record<string, string> = { awaitingApproval: '等待用户确认', notified: '已通知，未自动发送', waiting: '等待外部结果', ready: '已就绪，等待会话空闲', paused: '已暂停', expired: '等待已到期', dispatching: '提交中／待核对', uncertain: '提交结果待核对', delivered: '已继续处理', cancelled: '已取消', closed: '已核对结束' }
-export function AsyncWaitPanel({ threadId, onOpenThread, view = 'compact' }: { threadId: string; onOpenThread?: (id: string) => void; view?: 'compact' | 'page' }) {
+export function AsyncWaitPanel({ threadId, onOpenThread, onOpenTasks, view = 'compact' }: { threadId: string; onOpenThread?: (id: string) => void; onOpenTasks?: () => void; view?: 'compact' | 'page' | 'dock' }) {
   const [snapshot, setSnapshot] = useState<AsyncWaitSnapshot>({ data: [], schedulerError: null })
   const [all, setAll] = useState(view === 'page')
   const [statusFilter, setStatusFilter] = useState(view === 'page' ? 'pending' : 'all')
@@ -35,8 +36,12 @@ export function AsyncWaitPanel({ threadId, onOpenThread, view = 'compact' }: { t
     catch (cause) { setError(String(cause)) }
     finally { setPending(null) }
   }
-  const ended = (status: string) => ['delivered', 'notified', 'cancelled', 'closed'].includes(status)
+  const ended = asyncWaitEnded
   const tasks = snapshot.data.filter((task) => (all || task.threadId === threadId) && (statusFilter === 'all' || (statusFilter === 'ended' ? ended(task.status) : !ended(task.status))))
+  if (view === 'dock') {
+    const current = snapshot.data.filter(task => task.threadId === threadId && !ended(task.status))
+    return <AsyncWaitDock key={threadId} tasks={current} error={error || (current.length ? snapshot.schedulerError : null)} onOpenTasks={onOpenTasks} />
+  }
   if (view === 'compact' && !snapshot.data.length && !error && !snapshot.schedulerError) return null
   const content = <>
     {view === 'page' && <header><h2>异步任务</h2><span>{snapshot.data.filter((task) => !ended(task.status)).length} 项待处理</span></header>}
