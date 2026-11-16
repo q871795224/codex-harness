@@ -28,6 +28,7 @@ vi.mock('../../core/runtime/bridge', () => ({
     listenTransport: vi.fn().mockResolvedValue(() => {}),
     stopClaudeSession: vi.fn().mockResolvedValue(undefined),
     readClaudeContext: vi.fn().mockResolvedValue(null),
+    startClaudeTurn: vi.fn().mockResolvedValue(undefined),
   },
 }))
 vi.mock('../../core/runtime/appServerClient', () => ({
@@ -71,6 +72,25 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('waiting indicators', () => {
+  it('dispatches delayed messages to their original provider after switching conversations', async () => {
+    const { result } = await ready()
+    const input = [{ type: 'text' as const, text: 'later', text_elements: [] }]
+    vi.mocked(appServer.startTurn).mockResolvedValueOnce({ turn: {
+      id: 'delayed', status: 'inProgress', items: [], error: null,
+      startedAt: null, completedAt: null, durationMs: null,
+    } })
+    await act(async () => { await result.current.selectThread('claude:active') })
+    await act(async () => { await result.current.sendMessage(input, 'queue', [], undefined, 'active') })
+    expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'active', input }))
+    expect(runtime.startClaudeTurn).not.toHaveBeenCalled()
+    expect(result.current.selectedThreadId).toBe('claude:active')
+    await act(async () => { await result.current.selectThread('active') })
+    await act(async () => { await result.current.sendMessage(input, 'queue', [], undefined, 'claude:active') })
+    expect(runtime.startClaudeTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'claude:active', input }))
+    expect(appServer.startTurn).toHaveBeenCalledTimes(1)
+    expect(result.current.selectedThreadId).toBe('active')
+  })
+
   it('emits message submission only when sending, not when switching conversations', async () => {
     const { result } = await ready()
     const activity = vi.fn()

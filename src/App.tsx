@@ -26,7 +26,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useM
 import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, Clock3, GitBranch, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
 import { useAgentRunService } from './core/agent-runs/react'
 import type { AgentRunService } from './core/agent-runs/types'
-import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage } from './core/domain/codex'
+import { DEFAULT_FONT_SIZES, threadTitle, type CodexConfig, type HarnessActionId, type ThreadCreditUsage, type MessageReference, type UserInput } from './core/domain/codex'
 import type { LocalConnectorService } from './core/local-connectors/types'
 import type { CodexRadarService } from './core/codex-radar/types'
 import type { ConversationService } from './core/conversations/types'
@@ -40,6 +40,7 @@ import { useWorkspaceRelease } from './core/release-command/useWorkspaceRelease'
 import { resolveQuickPanelAnchor, shouldShowQuickPanels } from './core/plugins/quickPanelLayout'
 import { runtime } from './core/runtime/bridge'
 import { Sidebar } from './features/navigation/Sidebar'
+import { useDelayedSend } from './features/conversation/useDelayedSend'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
 import { DelegationReturnCard } from './features/conversation/DelegationReturnCard'
 import { insertComposerPrompt } from './features/conversation/composerInput'
@@ -432,6 +433,39 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const projectDocThresholdValue = plugins.instances.find((instance) => instance.instanceId === projectDocInstanceId)?.config.compactionThreshold
   const projectDocThreshold = typeof projectDocThresholdValue === 'number' && Number.isFinite(projectDocThresholdValue) && projectDocThresholdValue >= 1
     ? Math.floor(projectDocThresholdValue) : 10_000
+
+  async function sendComposerMessage(threadId: string, input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string, delayed = false) {
+    const submittedDraft = queuedComposerDraftsRef.current[threadId]
+    const prepared = await prepareProjectInput(projectDocs, threadId, input, projectDocThreshold, harness.threads.find(thread => thread.id === threadId)?.harnessProjectTools === true)
+    if (!delayed && selectedThreadRef.current !== threadId) throw new Error('会话已切换，消息未发送；请回到来源会话继续')
+    scrollRequestSequence.current += 1
+    setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
+    await harness.sendMessage(prepared.input, mode, references, titleSource, threadId)
+    const targetId = draftReplacementIdsRef.current[threadId] ?? threadId
+    if (submittedDraft) setConsumedComposerDrafts((current) => ({ ...current, [targetId]: submittedDraft }))
+    if (sameComposerDraft(queuedComposerDraftsRef.current[targetId], submittedDraft)) {
+      const empty: ComposerDraft = { text: '', collapsedPastes: [], attachments: [] }
+      queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [targetId]: empty }
+      composerDraftWriterRef.current?.update(targetId, empty)
+      harness.setThreadDraftContent(targetId, false)
+      setComposerDrafts((current) => ({ ...current, [targetId]: empty }))
+    }
+    // 绑定后的消息发送成功：pending → locked，归属固定。
+    try {
+      if (prepared.projectId) {
+        await projectDocs.lockThreadBinding(targetId)
+        if (selectedThreadRef.current === targetId) await projectBinding.reload()
+      }
+    } catch (error) {
+      // 消息已经发送，仍让 Composer 消耗草稿，避免用户重复发送。
+      harness.notify('消息已发送，但项目绑定尚未锁定。', 'warning', error)
+    }
+  }
+  const delayedSend = useDelayedSend(async (threadId, message) => {
+    if (codexUpdate.updating) throw new Error('应用正在更新，草稿已保留')
+    if (!sameComposerDraft(queuedComposerDraftsRef.current[threadId], message.draft)) throw new Error('草稿已变更，请重新设置延迟发送')
+    await sendComposerMessage(threadId, message.input, message.mode, message.references, message.titleSource, true)
+  }, (threadId, error) => harness.notify('延迟发送失败，草稿已保留', 'error', error, { threadId }))
   useEffect(() => {
     const binding = projectBinding.binding
     if (nativeProjectTools || !binding || binding.phase !== 'pending') {
@@ -1129,30 +1163,14 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                     ? harness.updateClaudeSettings(harness.selectedThreadId, patch)
                     : undefined}
                   onFollowUpModeChange={harness.setFollowUpMode}
-                  onSend={async (input, mode, references, titleSource) => {
+                  delayedSend={delayedSend.pending[harness.currentThread.id]}
+                  onCancelDelayedSend={() => delayedSend.cancel(harness.currentThread!.id)}
+                  onScheduleSend={(minutes, input, mode, references, titleSource) => {
                     const threadId = harness.currentThread!.id
-                    const submittedDraft = queuedComposerDraftsRef.current[threadId]
-                    const prepared = await prepareProjectInput(projectDocs, threadId, input, projectDocThreshold, nativeProjectTools)
-                    if (selectedThreadRef.current !== threadId) throw new Error('会话已切换，消息未发送；请回到来源会话继续')
-                    scrollRequestSequence.current += 1
-                    setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
-                    await harness.sendMessage(prepared.input, mode, references, titleSource)
-                    const targetId = draftReplacementIdsRef.current[threadId] ?? threadId
-                    if (submittedDraft) setConsumedComposerDrafts((current) => ({ ...current, [targetId]: submittedDraft }))
-                    if (sameComposerDraft(queuedComposerDraftsRef.current[targetId], submittedDraft)) {
-                      const empty: ComposerDraft = { text: '', collapsedPastes: [], attachments: [] }
-                      queuedComposerDraftsRef.current = { ...queuedComposerDraftsRef.current, [targetId]: empty }
-                      composerDraftWriterRef.current?.update(targetId, empty)
-                      setComposerDrafts((current) => ({ ...current, [targetId]: empty }))
-                    }
-                    // 绑定后的消息发送成功：pending → locked，归属固定。
-                    try {
-                      if (prepared.projectId) await projectBinding.lockOnSend()
-                    } catch (error) {
-                      // 消息已经发送，仍让 Composer 消耗草稿，避免用户重复发送。
-                      harness.notify('消息已发送，但项目绑定尚未锁定。', 'warning', error)
-                    }
+                    const draft = queuedComposerDraftsRef.current[threadId]
+                    if (draft) delayedSend.schedule(threadId, minutes, { input, mode, references, titleSource, draft })
                   }}
+                  onSend={(input, mode, references, titleSource) => sendComposerMessage(harness.currentThread!.id, input, mode, references, titleSource)}
                   onCommand={(command) => {
                     if (command.name === 'raw') setRawMode((current) => !current)
                     else if (command.name === 'new') runAction('thread.new')

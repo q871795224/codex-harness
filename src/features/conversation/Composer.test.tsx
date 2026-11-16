@@ -243,3 +243,65 @@ it('projects an async result into a mounted empty input without sending or repla
   expect(input.value).toBe('用户正在输入')
   expect(onSend).not.toHaveBeenCalled()
 })
+
+it.each([1, 5, 10] as const)('offers %s-minute delayed sending with expanded text, images and the chosen follow-up mode', minutes => {
+  const onScheduleSend = vi.fn()
+  const onSend = vi.fn()
+  render(<Composer {...props} working onSend={onSend} onScheduleSend={onScheduleSend}
+    followUpMode="interject" initialDraft={{ text: '[长文本]', collapsedPastes: [{ start: 0, end: 5, label: '[长文本]', content: '展开的消息' }], attachments: [{ kind: 'image', name: 'test.png', path: '/tmp/test.png' }] }} />)
+  fireEvent.contextMenu(screen.getByRole('button', { name: '插话' }))
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['1 分钟后发送', '5 分钟后发送', '10 分钟后发送'])
+  fireEvent.click(screen.getByRole('menuitem', { name: `${minutes} 分钟后发送` }))
+  expect(onScheduleSend).toHaveBeenCalledExactlyOnceWith(minutes, [
+    { type: 'localImage', path: '/tmp/test.png' },
+    { type: 'text', text: '[Image #1] 展开的消息', text_elements: [{ byteRange: { start: 0, end: 10 }, placeholder: '[Image #1]' }] },
+  ], 'interject', [{ kind: 'image', start: 0, end: 10, path: '/tmp/test.png' }, { kind: 'paste', start: 11, end: 16 }], '展开的消息')
+  expect(onSend).not.toHaveBeenCalled()
+  expect(screen.queryByRole('menu')).toBeNull()
+})
+
+it('supports keyboard navigation, Escape and clicking outside the delayed-send menu', () => {
+  render(<Composer {...props} initialDraft={{ text: 'test', attachments: [], collapsedPastes: [] }} onScheduleSend={vi.fn()} />)
+  const button = screen.getByRole('button', { name: '发送消息' })
+  fireEvent.keyDown(button, { key: 'F10', shiftKey: true })
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '1 分钟后发送' }))
+  fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '5 分钟后发送' }))
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(document.activeElement).toBe(button)
+  fireEvent.contextMenu(button)
+  fireEvent.mouseDown(document.body)
+  expect(screen.queryByRole('menu')).toBeNull()
+})
+
+it.each([
+  { text: '', working: false, busy: false, disabled: false },
+  { text: '', working: true, busy: false, disabled: false },
+  { text: '/new', working: false, busy: false, disabled: false },
+  { text: 'test', working: false, busy: true, disabled: false },
+  { text: 'test', working: false, busy: false, disabled: true },
+])('does not schedule empty drafts, stop actions, local commands or unavailable input: %j', options => {
+  const { container } = render(<Composer {...props} {...options} onScheduleSend={vi.fn()} initialDraft={{ text: options.text, attachments: [], collapsedPastes: [] }} />)
+  fireEvent.contextMenu(container.querySelector('.send-button')!)
+  expect(screen.queryByRole('menu')).toBeNull()
+})
+
+it('shows the countdown, freezes the pending draft, and allows cancellation before sending', () => {
+  vi.useFakeTimers()
+  try {
+    const onCancelDelayedSend = vi.fn()
+    const initialDraft = { text: 'test', attachments: [], collapsedPastes: [] }
+    const delayedSend = { dueAt: Date.now() + 60_000, sending: false, message: { input: [], mode: 'queue' as const, draft: initialDraft } }
+    const { rerender } = render(<Composer {...props} initialDraft={initialDraft} delayedSend={delayedSend} onCancelDelayedSend={onCancelDelayedSend} />)
+    expect(screen.getByRole('status').textContent).toBe('1:00 后发送')
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true)
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(screen.getByRole('status').textContent).toBe('0:59 后发送')
+    fireEvent.click(screen.getByRole('button', { name: '取消延迟发送' }))
+    expect(onCancelDelayedSend).toHaveBeenCalledOnce()
+    rerender(<Composer {...props} initialDraft={initialDraft} />)
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(false)
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('test')
+  } finally { vi.useRealTimers() }
+})

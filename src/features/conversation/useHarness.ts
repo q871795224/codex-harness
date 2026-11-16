@@ -1778,9 +1778,10 @@ export function useHarness() {
     }
   }, [completeRouteFeedbackOnSend, notify, refreshThreads, setActiveTurn, setThreadStarting])
 
-  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string) => {
-    const threadId = selectedThreadIdRef.current
+  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string, targetThreadId?: string) => {
+    const threadId = targetThreadId ?? selectedThreadIdRef.current
     if (!threadId || input.length === 0) return
+    if (targetThreadId && (viewModeRef.current !== 'active' || !threadsRef.current.some(thread => thread.id === threadId && thread.canAcceptDirectInput !== false))) throw new Error('目标会话已不可用，草稿已保留')
     if (submittingThreadsRef.current.has(threadId)) throw new Error('消息正在发送，请稍候')
     const text = input
       .filter((item): item is Extract<UserInput, { type: 'text' }> => item.type === 'text')
@@ -1793,8 +1794,8 @@ export function useHarness() {
     )
     const owned = ownedActiveThreadsRef.current[threadId] === true
     if (activeTurnId && !owned) {
-      notify('该会话正由其他客户端运行；请等待当前轮结束。', 'warning')
-      return
+      notify('该会话正由其他客户端运行；请等待当前轮结束。', 'warning', undefined, { threadId })
+      throw new Error('该会话正由其他客户端运行；请等待当前轮结束。')
     }
     submittingThreadsRef.current.add(threadId)
     setBusy((current) => ({ ...current, composer: true }))

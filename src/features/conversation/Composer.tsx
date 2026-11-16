@@ -3,7 +3,7 @@ import { useInputCorrection } from './useInputCorrection'
 import { addReplacement } from '../../core/input-correction/settings'
 import type { Correction } from '../../core/input-correction/engine'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react'
-import { ChevronDown, FileText, Image, NotebookPen, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
+import { ChevronDown, Clock3, FileText, Image, NotebookPen, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput, MessageReference } from '../../core/domain/codex'
 import type { ComposerCompletionItem } from '../../extensions/types'
@@ -31,6 +31,8 @@ import {
   titleSourceText,
   type CollapsedPaste,
 } from './composerInput'
+import { DelayedSendMenu, DelayedSendStatus } from './DelayedSendControls'
+import type { DelayedSend } from './useDelayedSend'
 import { sameComposerDraft } from './composerDraftStorage'
 import { findProjectCard, projectCardLabel } from '../project-doc/projectCard'
 import { parseComposerCommand, type ComposerCommand } from './composerCommands'
@@ -77,6 +79,9 @@ interface ComposerProps {
   threadId?: string
   onMessageAccepted?: (listener: (threadId: string) => void) => () => void
   onSend: (input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string) => Promise<void> | void
+  delayedSend?: DelayedSend
+  onCancelDelayedSend?: () => void
+  onScheduleSend?: (minutes: 1 | 5 | 10, input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string) => void
   onCommand: (command: ComposerCommand) => Promise<void> | void
   onStop: () => Promise<void> | void
   onDraftChange?: (draft: ComposerDraft, hasContent: boolean) => void
@@ -121,7 +126,10 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ threadId, onMessageAccepted, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ threadId, onMessageAccepted, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+  const disabled = externallyDisabled || Boolean(delayedSend)
+  const [delayMenuOpen, setDelayMenuOpen] = useState(false)
+  const sendButtonRef = useRef<HTMLButtonElement>(null)
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const busy = externallyBusy || submitting
@@ -503,6 +511,10 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
     }
   }
 
+  const canSchedule = Boolean(onScheduleSend) && hasContent && !disabled && !busy && !attachmentBusy && !imageUnsupported
+    && !parseComposerCommand(expandedText, attachments.length > 0)
+  useEffect(() => { if (!canSchedule) setDelayMenuOpen(false) }, [canSchedule])
+
   const runPrimaryAction = () => working && !hasContent ? onStop() : submit()
 
   const chooseSuggestion = async (suggestion: ComposerSuggestion) => {
@@ -636,6 +648,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
 
   return (
     <div className="composer-zone">
+      {delayedSend && <DelayedSendStatus job={delayedSend} onCancel={() => onCancelDelayedSend?.()} />}
       {foreignActive && <div className="foreign-active-note">
         此会话由其他客户端运行，当前只读。
         {onTakeOver && <button type="button" disabled={takingOver} onClick={onTakeOver}>
@@ -656,7 +669,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
               <span key={attachment.path} title={attachment.path}>
                 {attachment.kind === 'image' ? <Image size={13} /> : attachment.kind === 'skill' ? <Sparkles size={13} /> : <FileText size={13} />}
                 <span>{attachment.name}</span>
-                <button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.path !== attachment.path))} aria-label={`移除 ${attachment.name}`}><X size={12} /></button>
+                <button type="button" disabled={disabled || busy} onClick={() => setAttachments((current) => current.filter((item) => item.path !== attachment.path))} aria-label={`移除 ${attachment.name}`}><X size={12} /></button>
               </span>
             ))}
           </div>
@@ -891,16 +904,35 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
             <div className="send-control">
               <button
                 type="button"
+                ref={sendButtonRef}
                 className={`send-button${working && !hasContent ? ' stop' : ''}`}
                 disabled={disabled || busy || attachmentBusy || (!working && !hasContent) || (hasContent && imageUnsupported)}
-                onClick={() => void runPrimaryAction()}
-                title={working && !hasContent ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队' : '插话') : '发送消息'}
+                onClick={() => { setDelayMenuOpen(false); void runPrimaryAction() }}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  if (canSchedule) { setModeOpen(false); setDelayMenuOpen(true) }
+                }}
+                onKeyDown={(event) => {
+                  if (canSchedule && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
+                    event.preventDefault(); setModeOpen(false); setDelayMenuOpen(true)
+                  }
+                }}
+                aria-haspopup={canSchedule ? 'menu' : undefined}
+                aria-expanded={canSchedule ? delayMenuOpen : undefined}
+                title={working && !hasContent ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队' : '插话') : '发送消息（右键可延迟发送）'}
                 aria-label={working && !hasContent ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队消息' : '插话') : '发送消息'}
               >
-                {working && !hasContent ? <Square size={13} fill="currentColor" /> : <Send size={17} />}
+                {delayedSend ? <Clock3 size={17} /> : working && !hasContent ? <Square size={13} fill="currentColor" /> : <Send size={17} />}
               </button>
+              {delayMenuOpen && canSchedule && <DelayedSendMenu
+                onClose={() => { setDelayMenuOpen(false); sendButtonRef.current?.focus() }}
+                onSelect={(minutes) => {
+                  setDelayMenuOpen(false)
+                  onScheduleSend?.(minutes, submission.input, followUpMode, submission.references, titleSourceText(text, collapsedPastes))
+                }}
+              />}
               {working && !foreignActive && (
-                <button type="button" className="follow-up-toggle" disabled={busy} onClick={() => setModeOpen((open) => !open)} title={`默认：${followUpMode === 'queue' ? '排队' : '插话'}`} aria-label="选择后续消息默认行为"><ChevronDown size={13} /></button>
+                <button type="button" className="follow-up-toggle" disabled={busy} onClick={() => { setDelayMenuOpen(false); setModeOpen((open) => !open) }} title={`默认：${followUpMode === 'queue' ? '排队' : '插话'}`} aria-label="选择后续消息默认行为"><ChevronDown size={13} /></button>
               )}
               {working && !foreignActive && modeOpen && (
                 <div className="follow-up-menu">

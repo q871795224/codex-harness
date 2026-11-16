@@ -307,32 +307,35 @@ export function useUnifiedHarness() {
     }
   }, [claude, codex, currentThread?.cwd])
 
-  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string) => {
-    if (selectedThreadId) noteMessageSubmitted(selectedThreadId)
+  const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string, targetThreadId?: string) => {
+    const threadId = targetThreadId ?? selectedThreadId
+    const provider = threadId?.startsWith('claude:') ? 'claude' : 'codex'
+    if (threadId) noteMessageSubmitted(threadId)
     recordWorkspaceContextDiagnostic({
       level: 'info',
       event: 'conversation.message.dispatch',
-      threadId: selectedThreadId ?? undefined,
-      method: selectedProvider === 'claude' ? 'claude/turn/start' : 'turn/start',
+      threadId: threadId ?? undefined,
+      method: provider === 'claude' ? 'claude/turn/start' : 'turn/start',
       context: {
         source: 'useUnifiedHarness.sendMessage',
-        provider: selectedProvider,
+        provider,
         unifiedSelectedThreadId: selectedThreadId,
         codexSelectedThreadId: codex.selectedThreadId,
         stateAligned: selectedProvider === 'codex' ? selectedThreadId === codex.selectedThreadId : null,
         mode,
       },
     })
-    if (selectedProvider === 'claude' && selectedThreadId) {
-      const session = claude.sessions.find((candidate) => candidate.id === selectedThreadId)
+    if (provider === 'claude' && threadId) {
+      const session = claude.sessions.find((candidate) => candidate.id === threadId)
       const userText = input
         .filter((item): item is Extract<UserInput, { type: 'text' }> => item.type === 'text')
         .map((item) => item.text)
         .join('\n')
       const shouldGenerateTitle = Boolean(session
         && userText.trim()
-        && shouldGenerateClaudeTitle(session.title, session.providerSessionId, Boolean(claude.activeTurnIds[selectedThreadId])))
-      await claude.sendMessage(selectedThreadId, input, mode)
+        && shouldGenerateClaudeTitle(session.title, session.providerSessionId, Boolean(claude.activeTurnIds[threadId])))
+      if (!session || session.archived) throw new Error('目标会话已不可用，草稿已保留')
+      await claude.sendMessage(threadId, input, mode)
       if (shouldGenerateTitle && session) {
         void codex.generateConversationTitle(session.id, session.cwd, titleSource ?? userText)
           .then((title) => title ? claude.applyGeneratedTitle(session.id, title) : undefined)
@@ -340,7 +343,7 @@ export function useUnifiedHarness() {
       }
       return
     }
-    return codex.sendMessage(input, mode, references, titleSource)
+    return codex.sendMessage(input, mode, references, titleSource, threadId ?? undefined)
   }, [claude, codex, noteMessageSubmitted, selectedProvider, selectedThreadId])
 
   const stopTurn = useCallback(() => {
