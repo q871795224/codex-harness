@@ -40,7 +40,7 @@ export function AsyncWaitPanel({ threadId, onOpenThread, onOpenTasks, view = 'co
   const tasks = snapshot.data.filter((task) => (all || task.threadId === threadId) && (statusFilter === 'all' || (statusFilter === 'ended' ? ended(task.status) : !ended(task.status))))
   if (view === 'dock') {
     const current = snapshot.data.filter(task => task.threadId === threadId && !ended(task.status))
-    return <AsyncWaitDock key={threadId} tasks={current} error={error || (current.length ? snapshot.schedulerError : null)} onOpenTasks={onOpenTasks} />
+    return <AsyncWaitDock key={threadId} tasks={current} error={error || (current.length ? snapshot.schedulerError : null)} onOpenTasks={onOpenTasks} pending={pending} onStop={id => void act(id, 'cancel')} />
   }
   if (view === 'compact' && !snapshot.data.length && !error && !snapshot.schedulerError) return null
   const content = <>

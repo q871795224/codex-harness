@@ -95,7 +95,8 @@ it('shows only unfinished tasks from the current conversation in collapsed rows'
   expect(screen.queryAllByText(/结束任务/)).toHaveLength(0)
   expect(screen.queryByText('等待条件：审批人回复后继续')).toBeNull()
   fireEvent.click(toggle)
-  expect(screen.getByText('等待条件：审批人回复后继续')).toBeTruthy()
+  expect(screen.queryByText('等待条件：审批人回复后继续')).toBeNull()
+  expect(screen.getAllByText('暂未收到新回复')).toHaveLength(1)
   expect(screen.getByText(/^最近检查：/)).toBeTruthy()
   expect(screen.getByText(/^下次检查：/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: '查看异步任务' }))
@@ -149,6 +150,64 @@ it('shows sleep wake time and keeps paused, expired and uncertain tasks visible'
     '等待外部结果', '等待用户确认', '已暂停', '等待已到期', '提交中／待核对', '提交结果待核对',
   ])
   expect(runtime.reviewAsyncWait).not.toHaveBeenCalled()
+})
+
+it('formats sleep summaries in local time and avoids repeating the summary in expanded details', async () => {
+  vi.mocked(runtime.listAsyncWaits).mockResolvedValue({ data: [dockTask({
+    target: { type: 'sleep', wakeAt: 1794827437 }, summary: '定时唤醒：1794827437',
+    lastObservation: '定时唤醒：1794827437',
+  })], schedulerError: null })
+  render(<AsyncWaitPanel threadId="origin" view="dock" />)
+  fireEvent.click(await screen.findByRole('button', { name: '展开异步任务：等待审批回复' }))
+  const localTime = new Date('2026-11-16T11:10:37Z').toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  expect(screen.getByText(`定时唤醒：${localTime}`)).toBeTruthy()
+  expect(screen.getByText(`唤醒时间：${localTime}`)).toBeTruthy()
+  expect(screen.queryByText(/1794827437/)).toBeNull()
+  const details = screen.getByRole('button', { name: '停止' }).closest('.async-wait-dock-details')!
+  expect(details.textContent).not.toContain('定时唤醒')
+  expect(details.textContent).not.toContain('最近观察')
+})
+
+it('keeps sleep errors visible instead of replacing them with the scheduled time', async () => {
+  vi.mocked(runtime.listAsyncWaits).mockResolvedValue({ data: [dockTask({
+    target: { type: 'sleep', wakeAt: 1794827437 }, status: 'paused', summary: '来源会话不可用',
+  })], schedulerError: null })
+  render(<AsyncWaitPanel threadId="origin" view="dock" />)
+  expect(await screen.findByText('来源会话不可用')).toBeTruthy()
+})
+
+it('stops a wait through the native cancel action, disables duplicate submissions and removes the card', async () => {
+  vi.mocked(runtime.listAsyncWaits).mockResolvedValue({ data: [dockTask()], schedulerError: null })
+  let finish!: () => void
+  vi.mocked(runtime.asyncWaitAction).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve(dockTask({ status: 'cancelled' })) }))
+  render(<AsyncWaitPanel threadId="origin" view="dock" />)
+  fireEvent.click(await screen.findByRole('button', { name: '展开异步任务：等待审批回复' }))
+  fireEvent.click(screen.getByRole('button', { name: '停止' }))
+  expect(runtime.asyncWaitAction).toHaveBeenCalledExactlyOnceWith('reply', 'cancel')
+  expect((screen.getByRole('button', { name: '停止中…' }) as HTMLButtonElement).disabled).toBe(true)
+  vi.mocked(runtime.listAsyncWaits).mockResolvedValue({ data: [dockTask({ status: 'cancelled' })], schedulerError: null })
+  await act(async () => finish())
+  expect(screen.queryByRole('region', { name: '当前会话的异步任务' })).toBeNull()
+})
+
+it('shows stop failures and lets the user retry', async () => {
+  vi.mocked(runtime.listAsyncWaits).mockResolvedValue({ data: [dockTask()], schedulerError: null })
+  vi.mocked(runtime.asyncWaitAction).mockRejectedValueOnce(new Error('cancel unavailable'))
+  render(<AsyncWaitPanel threadId="origin" view="dock" />)
+  fireEvent.click(await screen.findByRole('button', { name: '展开异步任务：等待审批回复' }))
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: '停止' })))
+  expect(screen.getByRole('alert').textContent).toContain('cancel unavailable')
+  expect((screen.getByRole('button', { name: '停止' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+it.each(['dispatching', 'uncertain'] as const)('requires reviewing a %s task instead of offering stop', async status => {
+  vi.mocked(runtime.listAsyncWaits).mockResolvedValue({ data: [dockTask({ status })], schedulerError: null })
+  const openTasks = vi.fn()
+  render(<AsyncWaitPanel threadId="origin" view="dock" onOpenTasks={openTasks} />)
+  fireEvent.click(await screen.findByRole('button', { name: '展开异步任务：等待审批回复' }))
+  expect(screen.queryByRole('button', { name: '停止' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '查看异步任务' }))
+  expect(openTasks).toHaveBeenCalledOnce()
 })
 
 it('hides an empty conversation dock and surfaces errors without claiming checks are healthy', async () => {
