@@ -305,6 +305,34 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
   const accepted = { turn: { id: 'turn-1', status: 'inProgress' as const, items: [], error: null, startedAt: 1, completedAt: null, durationMs: null } }
   const input = [{ type: 'text' as const, text: 'usage analysis', text_elements: [] }]
 
+  it('sends to an explicit background draft and preserves the selected conversation through start, queue and steer', async () => {
+    const { result } = await draft()
+    act(() => { result.current.setThreadDraftContent('draft', true) })
+    vi.mocked(appServer.resumeThread).mockResolvedValueOnce(resumeResponse('active'))
+    await act(async () => { await result.current.selectThread('active') })
+    vi.mocked(appServer.startTurn).mockResolvedValueOnce(accepted)
+    await act(async () => { await result.current.sendMessage(input, 'queue', [], undefined, 'draft') })
+    expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'draft', input }))
+    expect(result.current.selectedThreadId).toBe('active')
+    for (const mode of ['queue', 'interject'] as const) {
+      await act(async () => { await result.current.sendMessage(input, mode, [], undefined, 'draft') })
+      expect(mode === 'queue' ? appServer.addQueue : appServer.steerTurn).toHaveBeenLastCalledWith(expect.objectContaining({ threadId: 'draft', input }))
+      expect(result.current.selectedThreadId).toBe('active')
+    }
+  })
+
+  it('rejects a delayed send to a closed or archived destination', async () => {
+    const { result } = await draft()
+    await act(async () => {
+      await expect(result.current.sendMessage(input, 'queue', [], undefined, 'missing')).rejects.toThrow('目标会话已不可用')
+    })
+    await act(async () => { await result.current.setViewMode('archived') })
+    await act(async () => {
+      await expect(result.current.sendMessage(input, 'queue', [], undefined, 'archived')).rejects.toThrow('目标会话已不可用')
+    })
+    expect(appServer.startTurn).not.toHaveBeenCalled()
+  })
+
   it('keeps the selected workspace after switching away and back before the first submission', async () => {
     const { result } = await draft()
     act(() => { result.current.setThreadDraftContent('draft', true) })
