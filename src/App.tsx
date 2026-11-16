@@ -1116,6 +1116,11 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                     }}
                   />
                 )}
+                {tab === 'chat' && <AsyncWaitPanel
+                  threadId={harness.currentThread.id}
+                  view="dock"
+                  onOpenTasks={() => setTab(ASYNC_WAIT_TAB_KEY)}
+                />}
                 <QueueDock
                   queue={currentQueue}
                   pendingSteers={currentSteers}
