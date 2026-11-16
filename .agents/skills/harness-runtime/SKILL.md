@@ -1,6 +1,6 @@
 ---
 name: harness-runtime
-description: Manage the running Codex Harness application, settings, Router, workspaces, sessions, plugins, project metadata, notifications, and durable asynchronous waits.
+description: Manage the running Codex Harness application, locate messages from copied references, and manage settings, Router, workspaces, sessions, plugins, project metadata, notifications, and durable asynchronous waits.
 ---
 
 # Harness 管理与运行能力
@@ -17,6 +17,7 @@ python3 /absolute/path/to/harness-runtime/harnessctl.py capabilities
 ## 按任务选择入口
 
 - 管理设置、Router、工作区/会话、插件、项目元数据、通知或排查SeaTalk连接：读[管理操作](references/management.md)。`settings list`给出当前可编辑的字段、范围和生效时间；`capabilities`确认实际支持的方法。
+- 用户提供 `harness-message://` 消息引用、要求精准排查某条消息：读[消息定位](references/messages.md)，使用 `messages get REF` 只读取得会话位置和原始消息。
 - 等外部回复、构建、审批或资源就绪，并在满足条件后继续当前任务：读[异步等待](references/async-waits.md)。优先使用受控 CI、SDP、SeaTalk 或 sleep；自定义任务由 Harness 向用户确认后才激活。登记或提交待确认提案后结束当前轮。
 - 读取或维护项目正文、决定、待办及历史：优先使用已提供的原生项目工具；旧会话与Claude使用`harness-project-doc` Skill自带的`project-doc` CLI。这里的`projects`只管理元数据。
 

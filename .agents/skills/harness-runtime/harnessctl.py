@@ -164,6 +164,8 @@ def parser():
     read = notices.add_parser("read"); read.add_argument("id", nargs="?"); read.add_argument("--all", action="store_true")
     seatalk = groups.add_parser("seatalk", help="只读连接与会话分支诊断").add_subparsers(dest="action", required=True)
     seatalk.add_parser("status"); seatalk.add_parser("bindings")
+    messages = groups.add_parser("messages", help="按复制的消息引用只读定位会话和消息").add_subparsers(dest="action", required=True)
+    messages.add_parser("get").add_argument("reference")
     waits = groups.add_parser("async-waits", help="Harness 原生异步等待").add_subparsers(dest="action", required=True)
     waits.add_parser("list")
     get = waits.add_parser("get")
@@ -219,6 +221,7 @@ def operation(args):
         if bool(args.id) == bool(args.all): raise ClientError("请提供通知ID或--all")
         return "notifications.markRead", {"all": True} if args.all else {"id": args.id}
     if group == "seatalk": return "seatalk." + action, {}
+    if group == "messages": return "messages.get", {"reference": args.reference}
     if group == "async-waits":
         if action in {"list", "get"}: return "asyncWaits.list", {}
         if action in {"create", "ci", "sdp", "seatalk", "sleep", "custom"}:

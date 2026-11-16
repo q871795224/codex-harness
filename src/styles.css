@@ -329,7 +329,7 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .conversation-turn > .user-message { margin-bottom: 18px; }
 .message-actions { display: flex; align-items: center; gap: 2px; min-height: 22px; margin-top: 4px; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
 .user-message .message-actions { justify-content: flex-end; }
-.user-message:hover .message-actions, .final-answer:hover .message-actions, .message-actions:focus-within { opacity: 1; pointer-events: auto; }
+.message:hover > .message-actions, .final-answer:hover > .message-actions, .message-actions:focus-within { opacity: 1; pointer-events: auto; }
 .message-actions button { position: relative; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #9298a2; cursor: pointer; }
 .message-actions button:hover:not(:disabled) { background: #f0f2f6; color: #5267bd; }
 .message-actions button:focus-visible { outline: 2px solid rgba(82, 104, 196, .35); outline-offset: 1px; }

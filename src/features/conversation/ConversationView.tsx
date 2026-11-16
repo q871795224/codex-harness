@@ -8,7 +8,7 @@ import { UserMessageContent } from './UserMessageContent'
 import { PersistentUserInputCard, matchesQuestionNavigation } from './PersistentUserInputCard'
 import type { QuestionNavigation } from '../../core/questions/types'
 import { asyncUserInputAnswered, asyncUserInputRequest } from './asyncUserInput'
-import { memo, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   Archive,
   ArchiveRestore,
@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Command,
   Copy,
+  Link2,
   FileCode2,
   GitBranch,
   GitFork,
@@ -36,6 +37,7 @@ import {
 } from 'lucide-react'
 import type { ApprovalRequest, PendingSteer, SendShortcut, Thread, ThreadItemEntry, Turn, Workspace } from '../../core/domain/codex'
 import { itemText, threadTitle } from '../../core/domain/codex'
+import { messageLocator } from '../../core/domain/messageLocator'
 import { formatDuration, truncate } from '../../core/domain/format'
 import { displayCommand } from './commandDisplay'
 import { groupTranscriptTurns, summarizeProcessRows, type TranscriptItem, type TranscriptTurn } from './transcript'
@@ -44,6 +46,8 @@ import { writeClipboard } from '../markdown/clipboard'
 import { Markdown } from '../markdown/Markdown'
 import { WorkingStatus } from './ConversationStats'
 import { collectNativeAgentActivities, type NativeAgentActivity } from './agentActivity'
+
+const MessageThreadContext = createContext<string | null>(null)
 
 interface ConversationHeaderProps {
   automaticWorkspace?: boolean
@@ -336,6 +340,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
 
   return (
     <SkillCatalogContext.Provider value={skillCatalog}>
+    <MessageThreadContext.Provider value={provider === 'codex' ? threadId ?? null : null}>
     <section className="conversation-pane" aria-label="对话内容">
       {working && <div className="conversation-working-line" aria-hidden><span /></div>}
       <div className="conversation-scroll" ref={scrollRef} tabIndex={0} onKeyDown={handleVimKeyDown} onScroll={(event) => {
@@ -487,6 +492,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
         <ArrowDownToLine size={17} />
       </button>
     </section>
+    </MessageThreadContext.Provider>
     </SkillCatalogContext.Provider>
   )
 }
@@ -629,6 +635,7 @@ function TranscriptTurnView({ turn, historyThreadId, agentLabel, working, workin
                   entry={row.entry}
                   agentText={row.agentText}
                   showAgentLabel={false}
+                  hideMessageActions
                   rawMode={false}
                   rawOverrides={rawOverrides}
                   onRawOverrideToggle={onRawOverrideToggle}
@@ -640,6 +647,7 @@ function TranscriptTurnView({ turn, historyThreadId, agentLabel, working, workin
               {working && <WorkingStatus key={turn.turnId} startedAt={workingStartedAt} />}
               {!working && turn.status !== 'inProgress' && (
                 <MessageActions
+                  entry={turn.finalRows[0].entry}
                   copyText={copyableTranscriptText(turn.finalRows)}
                   onFork={onFork ? () => onFork(turn.turnId) : undefined}
                   forking={forking}
@@ -787,6 +795,7 @@ const ThreadItemView = memo(function ThreadItemView({
   entry,
   agentText,
   showAgentLabel = true,
+  hideMessageActions = false,
   agentLabel = 'Codex',
   rawMode,
   rawOverrides,
@@ -798,6 +807,7 @@ const ThreadItemView = memo(function ThreadItemView({
   entry: ThreadItemEntry
   agentText?: string
   showAgentLabel?: boolean
+  hideMessageActions?: boolean
   agentLabel?: string
   rawMode: boolean
   rawOverrides?: ReadonlySet<string>
@@ -825,7 +835,7 @@ const ThreadItemView = memo(function ThreadItemView({
         <div className="user-bubble">
           <UserMessageContent item={item} text={text} cwd={cwd ?? null} raw={effectiveRaw} />
         </div>
-        {text && <MessageActions copyText={text} rawActive={rawActive} onToggleRaw={rawToggle} />}
+        <MessageActions entry={entry} copyText={text} rawActive={rawActive} onToggleRaw={rawToggle} />
       </article>
     ) : null
   }
@@ -834,6 +844,7 @@ const ThreadItemView = memo(function ThreadItemView({
       <article className="message agent-message">
         {showAgentLabel && <div className="message-label"><Bot size={15} />{agentLabel}</div>}
         <MessageBody text={agentText ?? item.text ?? ''} raw={effectiveRaw} cwd={cwd} />
+        {!hideMessageActions && <MessageActions entry={entry} />}
         {workingStartedAt !== undefined && <WorkingStatus key={entry.turnId} startedAt={workingStartedAt} />}
       </article>
     )
@@ -857,7 +868,8 @@ const ThreadItemView = memo(function ThreadItemView({
   return <GenericActivityItem item={item} />
 })
 
-function MessageActions({ copyText, onFork, forking = false, rawActive = false, onToggleRaw, trailingActions }: {
+function MessageActions({ entry, copyText, onFork, forking = false, rawActive = false, onToggleRaw, trailingActions }: {
+  entry?: ThreadItemEntry
   copyText?: string
   onFork?: () => void
   forking?: boolean
@@ -867,8 +879,22 @@ function MessageActions({ copyText, onFork, forking = false, rawActive = false, 
   trailingActions?: ReactNode
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [referenceState, setReferenceState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const threadId = useContext(MessageThreadContext)
+  const reference = entry ? messageLocator(threadId, entry) : undefined
   const canCopy = Boolean(copyText?.trim())
-  if (!canCopy && !onFork && !onToggleRaw && !trailingActions) return null
+  if (!canCopy && !reference && !onFork && !onToggleRaw && !trailingActions) return null
+
+  const copyReference = async () => {
+    if (!reference) return
+    try {
+      await writeClipboard(reference)
+      setReferenceState('copied')
+    } catch {
+      setReferenceState('failed')
+    }
+    window.setTimeout(() => setReferenceState('idle'), 1_500)
+  }
 
   const copy = async () => {
     if (!copyText) return
@@ -886,6 +912,11 @@ function MessageActions({ copyText, onFork, forking = false, rawActive = false, 
       {canCopy && (
         <button type="button" className={copyState} onClick={() => void copy()} aria-label="复制消息" data-tip="copy">
           {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
+        </button>
+      )}
+      {reference && (
+        <button type="button" className={referenceState} onClick={() => void copyReference()} aria-label="复制消息引用" data-tip={referenceState === 'copied' ? '已复制消息引用' : referenceState === 'failed' ? '复制失败，请重试' : '复制消息引用'}>
+          {referenceState === 'copied' ? <Check size={13} /> : <Link2 size={13} />}
         </button>
       )}
       {onToggleRaw && (
