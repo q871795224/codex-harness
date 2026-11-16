@@ -31,6 +31,7 @@ fn is_read(method: &str) -> bool {
             | "config.read"
             | "workspaces.list"
             | "sessions.list"
+            | "messages.get"
             | "plugins.list"
             | "skills.list"
             | "mcp.list"
@@ -194,6 +195,7 @@ mod tests {
             "notifications.list",
             "seatalk.status",
             "seatalk.bindings",
+            "messages.get",
         ] {
             let mut query = request(method);
             query.method = method.into();

@@ -1,4 +1,5 @@
 import { settingsCatalog, settingsGroup, readSettings, updateSettings } from './settings'
+import { readMessage } from './messages'
 import { pluginSettings, validatePluginPatch } from './pluginSettings'
 import { keys, number, sameJson } from './validation'
 import { notifications } from '../notifications/service'
@@ -89,6 +90,9 @@ export function createManagementHandler(get: () => ManagementContext) {
       throw new Error('应用目录尚未加载完成，请稍后查询')
     }
     switch (method) {
+      case 'messages.get':
+        keys(p, ['reference'], true)
+        return readMessage(text(p, 'reference'))
       case 'projects.list':
         if (!get().onboarding) throw new Error('项目会话接入服务不可用')
         return { data: await get().onboarding!.listProjects() }

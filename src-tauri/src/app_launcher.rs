@@ -248,8 +248,8 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let script = dir.join("fake-goland");
         let content = format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nsleep 6\n",
-            args_file.display()
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}.tmp'\nmv '{}.tmp' '{}'\nsleep 6\n",
+            args_file.display(), args_file.display(), args_file.display()
         );
         std::fs::write(&script, content).expect("writes fake goland");
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))

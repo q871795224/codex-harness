@@ -34,6 +34,7 @@ export const managementMethods = {
   'workspaces.hide': true,
   'workspaces.show': true,
   'sessions.list': false,
+  'messages.get': false,
   'sessions.create': true,
   'sessions.select': true,
   'sessions.rename': true,

@@ -18,6 +18,10 @@ const FILES: &[(&str, &str)] = &[
         "references/async-waits.md",
         include_str!("../../.agents/skills/harness-runtime/references/async-waits.md"),
     ),
+    (
+        "references/messages.md",
+        include_str!("../../.agents/skills/harness-runtime/references/messages.md"),
+    ),
 ];
 pub const NAME: &str = "harness-runtime";
 

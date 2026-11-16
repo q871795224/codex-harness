@@ -67,6 +67,14 @@ class CLITest(unittest.TestCase):
         self.assertIn('异步任务不存在', err)
         self.assertEqual(self.calls[0]['method'], 'asyncWaits.list')
 
+    def test_message_reference_is_sent_intact_to_read_only_lookup(self):
+        reference = 'harness-message://codex/origin/turn/item%2Fid'
+        code, out, _ = self.run_cli('messages', 'get', reference)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.calls[0]['method'], 'messages.get')
+        self.assertEqual(self.calls[0]['params'], {'reference': reference})
+        self.assertEqual(json.loads(out)['result']['reference'], reference)
+
     def test_creation_uses_origin_environment_and_one_request(self):
         file = self.root / 'wait.json'
         file.write_text(json.dumps({'id': 'wait-one', 'title': 'Wait', 'checkerPath': '/tmp/check.py', 'continuation': 'Review'}))

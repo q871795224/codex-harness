@@ -36,6 +36,7 @@ Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnes
 | `workspaces.add` / `workspaces.show` | `{path}` | 验证并登记 Git 工作区，取消隐藏，更新界面；回读可见和持久化导航状态 |
 | `workspaces.hide` | `{root}` | 沿界面的移除语义隐藏，保留目录和会话；回读导航状态 |
 | `sessions.list` | `{}` | 当前已加载会话视图的元数据；complete=false，不包含消息正文 |
+| `messages.get` | `{reference}` | 按 `harness-message://codex/THREAD/TURN/ITEM` 只读返回指定会话元数据和原始消息 item，支持未加载历史；不切换或续跑会话 |
 | `sessions.create` | `{provider?,cwd?}` | 创建空会话；Codex省略cwd时沿用自动Router，显式cwd优先；不发送模型轮次 |
 | `sessions.select` | `{id}` | 使用已有 openThread 流程打开会话 |
 | `sessions.rename` | `{id,name}` | 重命名当前视图已加载的会话 |
