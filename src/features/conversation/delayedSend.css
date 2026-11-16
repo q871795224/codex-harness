@@ -1,12 +1,10 @@
 .follow-up-menu.delayed-send-menu { width: 200px; }
 .follow-up-menu.delayed-send-menu button { flex-direction: row; align-items: center; gap: 8px; font-size: 12px; }
-.delayed-send-menu p { margin: 5px 8px; color: #7b8492; font-size: 10px; line-height: 1.5; }
 .delayed-send-status { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 0 3px 7px; color: #596baf; font-size: 11px; }
 .delayed-send-hint { color: #7b8492; }
 .delayed-send-status button { margin-left: auto; padding: 3px 6px; border: 0; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; font-size: 11px; }
 .delayed-send-status button:hover:not(:disabled) { background: #eef0f8; }
 .delayed-send-status button:disabled { opacity: .5; cursor: default; }
 .app-shell[data-theme='dark'] .delayed-send-status { color: #a6b7f5; }
-.app-shell[data-theme='dark'] .delayed-send-menu p,
 .app-shell[data-theme='dark'] .delayed-send-hint { color: #929aaa; }
 .app-shell[data-theme='dark'] .delayed-send-status button:hover:not(:disabled) { background: #303744; }
