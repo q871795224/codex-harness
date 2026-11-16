@@ -1,7 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { FileArchive, LoaderCircle, X } from 'lucide-react'
 import type { ConversationService } from '../../core/conversations/types'
-import type { AgentRunService } from '../../core/agent-runs/types'
 import type { ProjectDocService } from '../../core/project-docs/types'
 import type { ConversationBannerProps, PluginStorage } from '../../extensions/types'
 import type { CompactionResult } from '../../features/project-doc/types'
@@ -26,8 +25,7 @@ function remove(id: string) {
   listeners.forEach((listener) => listener())
 }
 export interface CompactionDeps {
-  docs: ProjectDocService; runs: AgentRunService; config: ProjectDocConfig
-  instanceId: string; storage: PluginStorage
+  docs: ProjectDocService; config: ProjectDocConfig; storage: PluginStorage
 }
 export async function requestCompaction(deps: CompactionDeps, threadId: string, manual: boolean): Promise<void> {
   const projectId = await deps.docs.threadProject(threadId)
@@ -98,7 +96,7 @@ export function CompactionBanner({ deps, props }: { deps: CompactionDeps; props:
     if (cards.get(state.projectId)?.phase !== 'confirm') return
     publish({ ...state, phase: 'running' })
     try {
-      const result = await compactProject(deps, state.projectId, props.threadId, props.checkoutRoot)
+      const result = await compactProject(deps, state.projectId, props.checkoutRoot)
       publish({ ...state, phase: 'done', result })
     } catch (error) {
       publish({ ...state, phase: 'error', error: String(error) })

@@ -53,8 +53,7 @@ export const projectDocPlugin: HarnessPlugin = {
   activate(ctx) {
     const service = ctx.services.get<ProjectDocService>('harness.projectDocs')
     const compaction: CompactionDeps = {
-      docs: service, runs: ctx.services.get<AgentRunService>('harness.agentRuns'),
-      config: readProjectDocConfig(ctx.config), instanceId: ctx.instanceId, storage: ctx.storage,
+      docs: service, config: readProjectDocConfig(ctx.config), storage: ctx.storage,
     }
     const conversations = ctx.services.optional<ConversationService>('harness.conversations')
     const onboarding = ctx.services.optional<ProjectOnboardingService>('harness.projectOnboarding')

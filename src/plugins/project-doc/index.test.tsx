@@ -10,16 +10,19 @@ afterEach(() => {
   archiveStore.clearSelect()
 })
 
-it.each(['codex', 'claude'] as const)('keeps compaction usable without legacy archive actions for %s', async (provider) => {
+it.each(['codex', 'claude'] as const)('compacts ephemerally without an Agent Run service or legacy archive actions for %s', async (provider) => {
   const projectId = crypto.randomUUID()
   const docs = {
     threadProject: vi.fn(async () => projectId),
     measure: vi.fn(async () => ({ seq: 1, tokens: 12000 })),
+    beginCompaction: vi.fn(async () => ({ jobId: 'job', content: 'original', archivePath: '/archive' })),
+    generateArchive: vi.fn(async () => 'new body'),
+    completeCompaction: vi.fn(async () => ({ newSeq: 2, beforeTokens: 12000, afterTokens: 3000, archivePath: '/archive' })),
+    cancelCompaction: vi.fn(async () => {}),
   }
-  const runs = { start: vi.fn() }
   const host = new PluginHost([projectDocPlugin], {
     storage: () => ({ get: async () => null, set: async () => {} }),
-    services: { 'harness.projectDocs': docs, 'harness.agentRuns': runs, 'harness.notifications': {} },
+    services: { 'harness.projectDocs': docs, 'harness.notifications': {} },
   })
   try {
     await host.syncInstances([projectDocDefaultInstance])
@@ -38,9 +41,13 @@ it.each(['codex', 'claude'] as const)('keeps compaction usable without legacy ar
     </>)
     expect(screen.queryByRole('button', { name: '归档到项目' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '精简项目文档' }))
-    await screen.findByRole('button', { name: '整理并归档' })
+    const confirm = await screen.findByRole('button', { name: '整理并归档' })
     expect(docs.measure).toHaveBeenCalledWith(projectId)
-    expect(runs.start).not.toHaveBeenCalled()
+    expect(docs.generateArchive).not.toHaveBeenCalled()
+    fireEvent.click(confirm)
+    await screen.findByText('项目文档已整理')
+    expect(docs.generateArchive).toHaveBeenCalledOnce()
+    expect(docs.completeCompaction).toHaveBeenCalledWith(projectId, 'job', 'new body')
   } finally {
     await host.dispose()
   }
