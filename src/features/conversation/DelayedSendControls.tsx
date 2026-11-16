@@ -35,7 +35,6 @@ export function DelayedSendMenu({ onSelect, onClose }: {
     {([1, 5, 10] as const).map(minutes => <button type="button" role="menuitem" key={minutes} onClick={() => onSelect(minutes)}>
       <Clock3 size={13} />{minutes} 分钟后发送
     </button>)}
-    <p>需保持应用运行；关闭后取消计时，草稿保留</p>
   </div>
 }
 
