@@ -6,7 +6,7 @@ export interface SuperbotRunConfig { reset?: boolean; model?: string | null; thi
 export interface SuperbotSession {
   seatalk_kind?: 'root' | 'thread' | null; seatalk_following?: boolean | null; parent_session_id?: string | null
   id: string; title: string; status: string; read_only: boolean; runtime_id: string | null
-  repository_context?: { git: { url: string; base_branch?: string }[] } | null
+  repository_context?: { git: { url: string; base_branch?: string | null }[] } | null
   run_config: SuperbotRunConfig | null; created_at: string; updated_at: string
 }
 export interface SuperbotModel {
