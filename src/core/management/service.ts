@@ -164,7 +164,7 @@ export function createManagementHandler(get: () => ManagementContext) {
         const beforeCwd = h.threads.find(t => t.id === id)?.cwd
         let afterCwd = beforeCwd
         if (method === 'router.correct') {
-          const target = actual === null ? await runtime.routerWorkspaceDirectory() : h.workspaces.find(w => w.root === actual)?.checkoutRoot
+          const target = actual === null ? await runtime.routerGeneralDirectory() : h.workspaces.find(w => w.root === actual)?.checkoutRoot
           if (!target) throw new Error('目标工作区已移除')
           await h.correctRouteWorkspace(id, actual)
           afterCwd = await waitFor(() => get().harness.threads.find(t => t.id === id)?.cwd === target ? target : undefined)

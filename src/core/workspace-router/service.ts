@@ -4,7 +4,7 @@ import { diagnosticErrorCode, runtime } from '../runtime/bridge'
 import { DEFAULT_ROUTER_SETTINGS, loadRouterSettings, type RouterSettings } from './settings'
 import { routingExamples } from './examples'
 
-export const ROUTER_PROMPT_VERSION = 5
+export const ROUTER_PROMPT_VERSION = 6
 export const DECISION_MODEL = 'chinese-decision-2b'
 export const DECISION_ENDPOINT = 'http://10.251.137.89:5050/harness-router/decision2'
 export const ROUTER_INSTRUCTIONS = `你是工作区选择助手。根据提供的工作区目录，为用户本次需求选择工作区。
@@ -174,16 +174,17 @@ export async function prepareRouterPreview(input: UserInput[], candidates: Route
   const prepared = await prepareRouterPrompt(input, candidates, settings)
   return [`developerInstructions\n${prepared.developerInstructions}`, ...prepared.input.map((item, index) => `input[${index}]\n${item.type === 'text' ? item.text : JSON.stringify(item)}`), `outputSchema\n${JSON.stringify(prepared.outputSchema, null, 2)}`].join('\n\n')
 }
-async function generateChoice(cwd: string, input: UserInput[], candidates: RouteCandidate[], settings: RouterSettings): Promise<RouteChoice> {
+async function generateChoice(input: UserInput[], candidates: RouteCandidate[], settings: RouterSettings): Promise<RouteChoice> {
   if (routerBackend(input, candidates, settings).backend === 'decision2') {
     const result = await runtime.evaluateRouterDecision(await routerPromptInput(input, candidates, settings))
     return parseRouteChoice(JSON.stringify({ primary: result.primary, related: [] }), candidates)
   }
   const prepared = await prepareRouterPrompt(input, candidates, settings)
-  return parseRouteChoice(await runRouterTask(cwd, prepared.input, prepared.developerInstructions, prepared.outputSchema, settings, 'workspace-router'), candidates)
+  const neutralCwd = await runtime.routerWorkspaceDirectory()
+  return parseRouteChoice(await runRouterTask(neutralCwd, prepared.input, prepared.developerInstructions, prepared.outputSchema, settings, 'workspace-router'), candidates)
 }
 
-export async function routeWorkspace(threadId: string, cwd: string, input: UserInput[], workspaces: Workspace[]): Promise<RouteRecord> {
+export async function routeWorkspace(threadId: string, _cwd: string, input: UserInput[], workspaces: Workspace[]): Promise<RouteRecord> {
   const settings = await loadRouterSettings()
   const candidates = await routingCandidates(workspaces, settings)
   const backend = routerBackend(input, candidates, settings)
@@ -195,7 +196,7 @@ export async function routeWorkspace(threadId: string, cwd: string, input: UserI
   await writeRouteRecord(record)
   void runtime.recordClientDiagnostic({ level: 'info', area: 'workspace-router', event: 'routing.started', threadId, attemptId: record.id, model: record.model, effort: record.effort }).catch(() => undefined)
   try {
-    record.choice = candidates.length ? await generateChoice(cwd, input, candidates, settings) : { primary: null, related: [] }
+    record.choice = candidates.length ? await generateChoice(input, candidates, settings) : { primary: null, related: [] }
     record.status = 'selected'; record.completedAt = Date.now(); record.durationMs = record.completedAt - record.createdAt
     await writeRouteRecord(record)
     void runtime.recordClientDiagnostic({ level: 'info', area: 'workspace-router', event: 'routing.selected', threadId, attemptId: record.id, durationMs: record.durationMs }).catch(() => undefined)

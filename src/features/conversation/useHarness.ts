@@ -1180,8 +1180,8 @@ export function useHarness() {
     }
     setBusy((current) => ({ ...current, threadWorkspace: true }))
     try {
-      const neutral = general ? await runtime.routerWorkspaceDirectory() : null
-      if (general && neutral !== checkoutRoot) throw new Error('通用会话目录已变化，请重试')
+      const generalDirectory = general ? await runtime.routerGeneralDirectory() : null
+      if (general && generalDirectory !== checkoutRoot) throw new Error('通用会话目录已变化，请重试')
       const mapped = general ? {} : await runtime.mapThreadWorkspaces([checkoutRoot])
       const workspace = general ? { root: checkoutRoot, checkoutRoot, branch: null, sha: null } : mapped[checkoutRoot]
       if (!workspace) throw new Error('所选目录不是可用的 Git checkout。')
@@ -1259,7 +1259,7 @@ export function useHarness() {
     if (!thread || viewMode === 'archived' || activeTurnIdsRef.current[threadId] || submittingThreadsRef.current.has(threadId)) throw new Error('请先停止或等待当前轮完成，再切换工作区')
     const record = await readRouteRecord(threadId)
     if (!record || (actual !== null && !record.candidates.some(c => c.root === actual))) throw new Error('路由记录或目标工作区不可用')
-    const target = actual === null ? await runtime.routerWorkspaceDirectory() : workspaces.find(w => w.root === actual)?.checkoutRoot
+    const target = actual === null ? await runtime.routerGeneralDirectory() : workspaces.find(w => w.root === actual)?.checkoutRoot
     if (!target) throw new Error('目标工作区已移除，请手动选择工作区')
     await giveRouteFeedback(threadId, false, actual)
     // Recheck inside applyThreadWorkspace after asynchronous feedback writes.
@@ -1606,7 +1606,7 @@ export function useHarness() {
     const candidate = record.candidates.find((item) => item.root === record.choice?.primary)
     const current = threadsRef.current.find((thread) => thread.id === threadId)
     if (!current || !unstartedDraftThreadIdsRef.current.has(threadId)) throw new Error('待路由会话已不可用，请重新创建会话')
-    const cwd = candidate?.checkoutRoot ?? await runtime.routerWorkspaceDirectory()
+    const cwd = candidate?.checkoutRoot ?? await runtime.routerGeneralDirectory()
     threadsRef.current = threadsRef.current.map((thread) => thread.id === threadId ? { ...thread, cwd } : thread)
     const detail = detailsRef.current[threadId]
     if (detail) detailsRef.current = { ...detailsRef.current, [threadId]: { ...detail, thread: { ...detail.thread, cwd } } }

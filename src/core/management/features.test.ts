@@ -9,7 +9,7 @@ import { defaultAppearancePreferences, defaultKeyboardPreferences } from '../../
 
 vi.mock('../runtime/bridge', () => ({ runtime: {
   getAppState: vi.fn(), setAppState: vi.fn(), routerSummaries: vi.fn(), routerFeedback: vi.fn(),
-  recordClientDiagnostic: vi.fn(), routerWorkspaceDirectory: vi.fn(), seatalkRemoteCall: vi.fn(), projectDocGet: vi.fn(), projectDocWorkspaces: vi.fn(), projectDocSetShortName: vi.fn(), projectDocRename: vi.fn(),
+  recordClientDiagnostic: vi.fn(), routerWorkspaceDirectory: vi.fn(), routerGeneralDirectory: vi.fn(), seatalkRemoteCall: vi.fn(), projectDocGet: vi.fn(), projectDocWorkspaces: vi.fn(), projectDocSetShortName: vi.fn(), projectDocRename: vi.fn(),
 } }))
 vi.mock('../workspace-router/summaries', () => ({ refreshRouterSummaries: vi.fn() }))
 const store = new Map<string, string>()
@@ -135,6 +135,20 @@ it('creates an automatic Codex blank session through the core without invoking a
   context.harness.createThread = vi.fn(async () => { context.harness.threads = [{ id: 'new-thread', cwd: '/general' }] as never; return 'new-thread' })
   expect(await call('sessions.create')).toEqual({ id: 'new-thread', cwd: '/general', provider: 'codex', automaticWorkspace: true })
   expect(context.harness.createThread).toHaveBeenCalledExactlyOnceWith('codex')
+})
+it('confirms a general workspace correction against the project parent directory', async () => {
+  const { context, call } = fixture()
+  context.harness.threads = [{ id: 'thread', cwd: '/old' }] as never
+  const record = { id: 'general-attempt', threadId: 'thread', status: 'started', feedback: 'pending', actualWorkspace: null, candidates: [], history: [] } as unknown as RouteRecord
+  await writeRouteRecord(record)
+  vi.mocked(runtime.routerGeneralDirectory).mockResolvedValue('/projects')
+  context.harness.correctRouteWorkspace = vi.fn(async () => {
+    await recordRouteFeedback(record, 'inaccurate', null)
+    context.harness.threads = [{ id: 'thread', cwd: '/projects' }] as never
+  })
+  expect(await call('router.correct', { threadId: 'thread', actualWorkspace: null })).toMatchObject({ workspaceChanged: true, cwd: '/projects', taskReplayed: false })
+  expect(context.harness.correctRouteWorkspace).toHaveBeenCalledExactlyOnceWith('thread', null)
+  expect(runtime.routerWorkspaceDirectory).not.toHaveBeenCalled()
 })
 it('guards concurrent project changes and reads renamed metadata back from the native service', async () => {
   const { call } = fixture()

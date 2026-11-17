@@ -3,15 +3,12 @@ import { appServer } from '../runtime/appServerClient'
 import { runtime } from '../runtime/bridge'
 import type { RouterCorrection, RouterExample, RouterPromptCandidate, RouterFeedbackRow } from './types'
 import type { RouterSettings } from './settings'
+import { projectScopedExamples, routerExampleRelevance } from './relevance'
 
 interface Source { threadId: string; sourceTurnId: string | null; sourceMessageId: string | null }
 interface Message { text: string | null; hasAttachments: boolean }
 const messages = new Map<string, Message>()
 function clean(text: string): string { return text.replace(/<!-- harness-session:[\s\S]*?-->/g, '').trim() }
-function terms(text: string): Set<string> {
-  const tokens = text.toLowerCase().match(/[a-z][a-z0-9_-]{2,}|[\u4e00-\u9fff]{2,}/g) ?? []
-  return new Set(tokens.flatMap(t => /[\u4e00-\u9fff]/.test(t) ? Array.from({ length: t.length - 1 }, (_, i) => t.slice(i, i + 2)) : [t]))
-}
 async function sourceMessage(source: Source): Promise<Message> {
   if (!source.sourceTurnId || !source.sourceMessageId) return { text: null, hasAttachments: false }
   const key = `${source.threadId}:${source.sourceTurnId}:${source.sourceMessageId}`
@@ -21,7 +18,7 @@ async function sourceMessage(source: Source): Promise<Message> {
   const item = turn?.items.find(i => i.type === 'userMessage' && (i.clientId === source.sourceMessageId || i.id === source.sourceMessageId))
   if (!item) return { text: null, hasAttachments: false }
   const text = clean(itemText(item))
-  const message = { text: text && text.length <= 32000 ? text : null, hasAttachments: item.content?.some(i => i.type !== 'text') ?? false }
+  const message = { text: text && text.length <= 32000 ? text : null, hasAttachments: item.content?.some(i => i.type !== 'text' && i.type !== 'skill') ?? false }
   if (messages.size >= 40) messages.delete(messages.keys().next().value!)
   messages.set(key, message)
   return message
@@ -48,12 +45,15 @@ export async function routingExamples(input: UserInput[], candidates: RouterProm
   const corrections: RouterCorrection[] = await runtime.routerCorrections()
   const allowed = new Set(candidates.map(c => c.root))
   const eligible = corrections.filter(c => c.wrong !== c.correct && (c.correct === null || allowed.has(c.correct)) && (c.wrong === null || allowed.has(c.wrong))).slice(0, 20)
-  const query = terms(clean(input.filter(i => i.type === 'text').map(i => i.text).join('\n')))
+  const relevance = routerExampleRelevance(clean(input.filter(i => i.type === 'text').map(i => i.text).join('\n')), candidates)
   const sources = await withMessages(eligible)
   const recent = settings?.feedbackRule === 'recent'
-  return sources.flatMap(c => {
+  const examples = sources.flatMap(c => {
     if (!c.text || c.hasAttachments) return []
-    const overlap = [...terms(c.text)].filter(t => query.has(t)).length
-    return recent || overlap ? [{ request: c.text, wrong: c.wrong, correct: c.correct, overlap }] : []
-  }).sort((a, b) => recent ? 0 : b.overlap - a.overlap).slice(0, limit).map(({ request, wrong, correct }) => ({ request, wrong, correct }))
+    const score = relevance(c.text)
+    return recent || score.overlap > 0 || score.projectMatches > 0 ? [{ request: c.text, wrong: c.wrong, correct: c.correct, ...score }] : []
+  })
+  return (recent ? examples : projectScopedExamples(examples))
+    .sort((a, b) => recent ? 0 : b.projectMatches - a.projectMatches || b.overlap - a.overlap)
+    .slice(0, limit).map(({ request, wrong, correct }) => ({ request, wrong, correct }))
 }

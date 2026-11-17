@@ -6,7 +6,7 @@ import { runtime } from '../runtime/bridge'
 import { DEFAULT_ROUTER_SETTINGS, ROUTER_SETTINGS_KEY, saveRouterSettings } from './settings'
 import { completeRouteFeedback, parseRouteChoice, readRouteRecord, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord } from './service'
 vi.mock('../runtime/appServerClient', () => ({ appServer: { readConfig: vi.fn(), startThread: vi.fn(), startTurn: vi.fn(), interruptTurn: vi.fn(), unsubscribeThread: vi.fn() } }))
-vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(), prepareDecisionPrompt: vi.fn(), evaluateRouterDecision: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
+vi.mock('../runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', runtime: { routerWorkspaceDirectory: vi.fn(), routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(), prepareDecisionPrompt: vi.fn(), evaluateRouterDecision: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), recordClientDiagnostic: vi.fn(), listenEvents: vi.fn() } }))
 const storage = new Map<string, string>()
 const workspaces = ['/a', '/b'].map((root) => ({ root, checkoutRoot: `${root}/checkout`, name: root.slice(1), branch: 'main', sha: null, createdAt: 1, lastOpenedAt: 1 })) satisfies Workspace[]
 let handle: (event: AppServerEvent) => void
@@ -24,6 +24,7 @@ beforeEach(() => {
   vi.mocked(runtime.getAppState).mockImplementation(async (key) => storage.get(key) ?? null)
   vi.mocked(runtime.setAppState).mockImplementation(async (key, value) => { storage.set(key, value) })
   vi.mocked(runtime.recordClientDiagnostic).mockResolvedValue(undefined)
+  vi.mocked(runtime.routerWorkspaceDirectory).mockResolvedValue('/neutral')
   vi.mocked(runtime.routerSummaries).mockResolvedValue([])
   vi.mocked(runtime.routerCorrections).mockResolvedValue([])
   vi.mocked(runtime.buildRouterPrompt).mockImplementation(async input => ({ context: JSON.stringify({ workspaces: input.candidates, corrections: input.examples }), textTokens: 100, examplesUsed: input.examples.length }))
@@ -46,6 +47,11 @@ it('routes with saved settings in a tool-free ephemeral thread and keeps only ro
   expect([...storage.values()].join('\n')).not.toContain('private request')
   expect(unlisten).toHaveBeenCalledOnce()
   expect(appServer.unsubscribeThread).toHaveBeenCalledWith('router')
+})
+it('classifies from the neutral directory even when the automatic draft has a project cwd', async () => {
+  await routeWorkspace('project-draft', '/a', [textInput('a general question')], workspaces)
+  expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/neutral', runtimeWorkspaceRoots: ['/neutral'], ephemeral: true }))
+  expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/neutral', runtimeWorkspaceRoots: ['/neutral'] }))
 })
 it('defaults to terra medium and preserves related workspace paths separately from the request', async () => {
   const record = await routeWorkspace('source', '/neutral', [textInput('do work')], workspaces)

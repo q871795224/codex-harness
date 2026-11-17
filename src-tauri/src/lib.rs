@@ -678,6 +678,14 @@ fn workspace_router_directory() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn workspace_router_general_directory() -> Result<String, String> {
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| "找不到当前用户的 HOME 目录".to_string())?;
+    workspace_router::general_directory_at(&home)
+}
+
+#[tauri::command]
 async fn workspace_router_corrections(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || store.router_corrections()).await.map_err(|e| e.to_string())?
@@ -1627,6 +1635,7 @@ pub fn run() {
             set_claude_session_archived,
             record_client_diagnostic,
             workspace_router_directory,
+            workspace_router_general_directory,
             workspace_router_summaries,
             workspace_router_corrections,
             workspace_router_feedback,

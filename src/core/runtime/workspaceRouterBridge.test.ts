@@ -7,6 +7,11 @@ it('obtains the neutral router directory through the native bridge', async () =>
   expect(await runtime.routerWorkspaceDirectory()).toBe('/data/workspaces/general')
   expect(invoke).toHaveBeenCalledWith('workspace_router_directory')
 })
+it('obtains the general task directory separately from the neutral router directory', async () => {
+  vi.mocked(invoke).mockResolvedValue('/home/user/sgw')
+  expect(await runtime.routerGeneralDirectory()).toBe('/home/user/sgw')
+  expect(invoke).toHaveBeenLastCalledWith('workspace_router_general_directory')
+})
 it('uses typed native commands for cached summaries, corrections, and the token budget', async () => {
   vi.mocked(invoke).mockResolvedValue([])
   await runtime.routerSummaries(['/a'])
