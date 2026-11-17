@@ -4,15 +4,20 @@
 .async-wait-dock-description strong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .async-wait-dock-description > span { flex: 1; min-width: 0; overflow: hidden; color: #78827e; text-overflow: ellipsis; }
 .async-wait-dock-row .async-wait-status { flex-shrink: 0; font-size: 10px; }
-.async-wait-dock-row:focus-visible, .async-wait-dock-open:focus-visible { outline: 2px solid #7184d0; outline-offset: -2px; }
-.async-wait-dock-details { white-space: normal; }
-.async-wait-dock-details p { margin: 4px 0; white-space: pre-wrap; }
-.async-wait-dock-times { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; color: #78827e; font-size: 11px; }
-.async-wait-dock-open { margin-top: 8px; padding: 3px 7px; border: 1px solid #d7ddf5; border-radius: 5px; background: transparent; color: #5469bf; font: inherit; font-size: 11px; cursor: pointer; }
+.async-wait-dock-row:focus-visible, .async-wait-dock-actions button:focus-visible { outline: 2px solid #7184d0; outline-offset: -2px; }
+.async-wait-dock-details { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.async-wait-dock-times { display: flex; min-width: 0; gap: 16px; overflow-x: auto; color: #78827e; font-size: 11px; font-variant-numeric: tabular-nums; }
+.async-wait-dock-actions { display: flex; flex-shrink: 0; gap: 8px; margin-left: auto; }
+.async-wait-dock-actions button { padding: 3px 7px; border: 1px solid #d7ddf5; border-radius: 5px; background: transparent; color: #5469bf; font: inherit; font-size: 11px; cursor: pointer; }
 .async-wait-dock-open:hover { background: rgba(119, 130, 172, .07); }
+.async-wait-dock-actions .async-wait-dock-stop { border-color: #e4b8b5; color: #b43e36; background: #fff1f0; }
+.async-wait-dock-stop:hover { background: #fce0dd; }
+.async-wait-dock-actions button:disabled { opacity: .55; cursor: wait; }
 .async-wait-dock-error { margin: 8px 10px; color: #a85551; font-size: 12px; }
 .app-shell[data-theme='dark'] .async-wait-dock-description > span, .app-shell[data-theme='dark'] .async-wait-dock-times { color: #a3abb5; }
 .app-shell[data-theme='dark'] .async-wait-dock-open { border-color: #465173; color: #b3c1ee; }
+.app-shell[data-theme='dark'] .async-wait-dock-stop { border-color: #804441; color: #f2aaa4; background: #482f30; }
+.app-shell[data-theme='dark'] .async-wait-dock-stop:hover { background: #5a3535; }
 .app-shell[data-theme='dark'] .async-wait-dock-error { color: #e7a5a0; }
 @media (max-width: 680px) {
   .async-wait-dock-description > span { display: none; }
