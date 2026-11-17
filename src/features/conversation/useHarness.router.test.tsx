@@ -10,7 +10,7 @@ import { readRouteRecord } from '../../core/workspace-router/service'
 import { useHarness } from './useHarness'
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ listen: vi.fn().mockResolvedValue(() => {}) }) }))
 vi.mock('../../core/runtime/bridge', () => ({ diagnosticErrorCode: () => 'request_failed', recordWorkspaceContextDiagnostic: vi.fn(), runtime: { routerSummaries: vi.fn(), routerCorrections: vi.fn(), buildRouterPrompt: vi.fn(), evaluateRouterDecision: vi.fn(),
-  projectDocThreadBinding: vi.fn(), projectDocBindThread: vi.fn(), projectDocLockThreadBinding: vi.fn(), routerWorkspaceDirectory: vi.fn(), recordClientDiagnostic: vi.fn(), listWorkspaces: vi.fn(), listThreadStates: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), setThreadState: vi.fn(),
+  projectDocThreadBinding: vi.fn(), projectDocBindThread: vi.fn(), projectDocLockThreadBinding: vi.fn(), routerWorkspaceDirectory: vi.fn(), routerGeneralDirectory: vi.fn(), recordClientDiagnostic: vi.fn(), listWorkspaces: vi.fn(), listThreadStates: vi.fn(), getAppState: vi.fn(), setAppState: vi.fn(), setThreadState: vi.fn(),
   mapThreadWorkspaces: vi.fn(), listenEvents: vi.fn(), listenTransport: vi.fn(),
 } }))
 vi.mock('../../core/runtime/appServerClient', () => ({ appServer: {
@@ -37,6 +37,7 @@ beforeEach(() => {
   vi.mocked(runtime.projectDocBindThread).mockResolvedValue(undefined)
   vi.mocked(runtime.projectDocLockThreadBinding).mockResolvedValue(undefined)
   vi.mocked(runtime.routerWorkspaceDirectory).mockResolvedValue('/neutral')
+  vi.mocked(runtime.routerGeneralDirectory).mockResolvedValue('/projects')
   vi.mocked(runtime.listWorkspaces).mockResolvedValue(workspaces)
   vi.mocked(runtime.listThreadStates).mockResolvedValue([])
   vi.mocked(runtime.setThreadState).mockResolvedValue(undefined)
@@ -190,15 +191,27 @@ it('does not treat a system continuation as an implicit user acceptance', async 
   expect(appServer.startTurn).toHaveBeenLastCalledWith(expect.objectContaining({ turnTrigger: 'continue-after-failure' }))
   expect((await readRouteRecord('routed'))?.feedback).toBe('pending')
 })
-it('returns a general request to the neutral directory after switching a manually selected draft back to automatic', async () => {
+it('starts a general request at the project parent while classifying from a neutral directory', async () => {
   const { result } = await ready()
   await act(async () => { await result.current.createThread('/a') })
   await act(async () => { await result.current.changeThreadWorkspace('routed', '') })
   routeChoice = '{"primary":null,"related":[]}'
   await act(async () => { await result.current.sendMessage([textInput('a general question')], 'queue') })
-  expect(result.current.currentThread?.cwd).toBe('/neutral')
+  expect(result.current.currentThread?.cwd).toBe('/projects')
   expect(result.current.currentRoute?.choice?.primary).toBeNull()
-  expect(appServer.startTurn).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/neutral', input: [textInput('a general question')] }))
+  expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/neutral', ephemeral: true }))
+  expect(appServer.startTurn).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/projects', input: [textInput('a general question')] }))
+})
+it('keeps the draft without running the task when the general project directory is unavailable', async () => {
+  const { result } = await ready()
+  await act(async () => { await result.current.createThread() })
+  routeChoice = '{"primary":null,"related":[]}'
+  vi.mocked(runtime.routerGeneralDirectory).mockRejectedValueOnce(new Error('通用工作目录不可用'))
+  await act(async () => { await expect(result.current.sendMessage([textInput('general question')], 'queue')).rejects.toThrow('通用工作目录不可用') })
+  expect(result.current.currentThread?.id).toBe('draft')
+  expect(result.current.automaticWorkspace).toBe(true)
+  expect(appServer.startTurn).toHaveBeenCalledOnce()
+  expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'router' }))
 })
 
 it.each(['accurate', 'inaccurate'] as const)('dismisses the card after a successful follow-up and preserves a saved %s vote on reopen', async (feedback) => {
@@ -236,13 +249,13 @@ it('requires an idle turn for correction, then updates cwd without replaying the
   expect(appServer.startTurn).toHaveBeenCalledTimes(calls)
   expect(appServer.interruptTurn).not.toHaveBeenCalled()
 })
-it('can explicitly correct a routed task to the neutral general workspace', async () => {
+it('can explicitly correct a routed task to the general project parent', async () => {
   const { result } = await ready()
   await act(async () => { await result.current.createThread() })
   await act(async () => { await result.current.sendMessage([textInput('work')], 'queue') })
   await finishExecution()
   await act(async () => { await result.current.correctRouteWorkspace('routed', null) })
-  expect(result.current.currentThread?.cwd).toBe('/neutral')
+  expect(result.current.currentThread?.cwd).toBe('/projects')
   expect((await readRouteRecord('routed'))?.actualWorkspace).toBeNull()
 })
 it('retains the saved feedback when applying the corrected directory fails', async () => {

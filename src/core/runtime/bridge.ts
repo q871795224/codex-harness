@@ -126,6 +126,7 @@ export const runtime = {
   prepareDecisionPrompt: (input: RouterPromptInput) => invoke<DecisionPrompt>('workspace_router_prepare_decision', { input }),
   evaluateRouterDecision: (input: RouterPromptInput) => invoke<DecisionResult>('workspace_router_decision', { input }),
   routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),
+  routerGeneralDirectory: () => invoke<string>('workspace_router_general_directory'),
   reviewAsyncWait: (id: string, revision: number, approve: boolean) => invoke<AsyncWaitTask>('async_wait_review', { id, revision, approve }),
   stageAsyncWaitDraft: (id: string) => invoke<AsyncWaitTask>('async_wait_stage_draft', { id }),
   listAsyncWaits: () => invoke<AsyncWaitSnapshot>('async_wait_list'),

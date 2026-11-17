@@ -1,0 +1,7 @@
+{
+  "dns-api": "别名：DNS API、Core API。该项目的 CI/CD、流水线、测试验收、部署、版本发布和故障排查均归本工作区。需求提到“测试”或“test 环境”时，仍按所属项目选择工作区。",
+  "adr-api": "别名：ADR、adr。处理 ADR 的 recovery group、实例、记录、权重配置（如 default_weight）、接口行为及项目运维问题。",
+  "codex-harness": "别名：Harness、Codex Harness。输入替换、词库、工作区 Router、会话、项目文档、异步任务和内置插件均属于本应用功能。",
+  "yf-agent-skills": "维护个人 skills、hooks 及配套 CLI 的源码、安装和升级。从 SeaTalk 消息发起的 skill 修改，按修改对象归属本工作区。",
+  "digital_employee": "工作对象是 SeaTalk 侧车本身的聊天归档、回复草稿和注入界面。SeaTalk 链接仅作为需求来源时，应按需求中的实际修改对象选工作区。"
+}
