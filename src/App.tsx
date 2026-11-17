@@ -865,7 +865,6 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
         onNewThread={(provider) => { setNotificationsOpen(false); void harness.createThread(provider) }}
         newThreadProvider={harness.newThreadProvider}
         onToggleNewThreadProvider={harness.toggleNewThreadProvider}
-        onNewThreadProvider={harness.setNewThreadProvider}
         claudeStatus={harness.claudeStatus}
         onSearch={(term) => void harness.searchThreads(term)}
         onRefresh={() => void harness.refresh()}

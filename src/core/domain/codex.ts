@@ -228,6 +228,7 @@ export interface Thread {
   harnessProjectTools?: boolean
   id: string
   provider?: 'codex' | 'claude' | 'superbot'
+  channelSource?: 'seatalk'
   sessionId?: string
   forkedFromId?: string | null
   preview: string
