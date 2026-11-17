@@ -148,7 +148,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 }
 .new-chat-button:hover:not(:disabled) { border-color: #bfc4cc; background: #fdfdfd; }
 .new-chat-button:disabled { color: #9297a1; cursor: wait; }
-.new-chat-provider { display: grid; flex: 0 0 35px; place-items: center; width: 35px; height: 38px; padding: 0; border: 1px solid #dcdfe4; border-left: 0; border-radius: 0 11px 11px 0; background: #fff; color: #727986; cursor: pointer; }
+.new-chat-provider { display: grid; flex: 0 0 105px; place-items: center; width: 105px; height: 38px; padding: 0; border: 1px solid #dcdfe4; border-left: 0; border-radius: 0 11px 11px 0; background: #fff; color: #727986; cursor: pointer; }
 .new-chat-provider:hover { background: #f7f8fa; color: #303640; }
 .new-chat-provider:disabled { cursor: not-allowed; opacity: .48; }
 .new-chat-provider-icon { display: block; width: 18px; height: 18px; object-fit: contain; }

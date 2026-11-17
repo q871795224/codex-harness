@@ -127,6 +127,8 @@
 
 ## 状态与 Provider
 
+- Superbot 是公司 Collab 的核心云端会话。`src-tauri/src/superbot.rs` 固定域名与 naming/SuperBot 作用域，凭据只在原生层复用 Multica 默认登录；前端通过 bridge 的封闭操作枚举接入。会话 ID 使用 `superbot:` 前缀、没有本机 cwd，独立聊天页不挂载本机插件与输入注入。首版 HTTP 轮询恢复远端状态，正文/工具记录只留内存，未发送草稿复用核心存储。支持范围和运行环境核对见 [Superbot 会话](../docs/superbot.md)。
+
 - UI 状态、插件实例、插件 Run、输入区未发送草稿和用量快照保存在 `~/.codex-harness/state.sqlite`；草稿只保存文本、折叠粘贴和附件路径，成功发送后清除。已发送的会话正文、凭据和模型 response 不写入 Harness 状态库。
 - 选择器引用的草稿标签复用 `collapsedPastes.reference`；手打路径不自动识别。已发送引用的 UI 元数据通过 `message.references.v1:<clientUserMessageId>` 保存类型、UTF-16 正文区间和文件路径，以正文 SHA-256 校验，恢复时由 App Server `userMessage.clientId` 关联；不保存消息或粘贴正文。队列正文被编辑后旧区间失效。
 - 用量分析的新 `analysis_*` 表永久保存在 `state.sqlite`，不自动过期；旧 `codex_analytics_*` 表保留但不混入新口径。每日统计按事件时间与本机时区分桶；会话/轮次列表分页，汇总覆盖完整筛选范围。只保存 thread/turn ID、低基数标签、细分计数和官方数值 usage。Skill 文件路径和待分词正文只在后台计数期间短暂存在，Skill/MCP/Prompt/Response 正文均不落库。官方计数模式从进程环境读取 `OPENAI_API_KEY`，插件配置和数据库均不得保存密钥。

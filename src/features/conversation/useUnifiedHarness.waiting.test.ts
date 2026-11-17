@@ -13,6 +13,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 vi.mock('../../core/runtime/bridge', () => ({
   diagnosticErrorCode: vi.fn(), recordWorkspaceContextDiagnostic: vi.fn(),
   runtime: {
+    superbotRequest: vi.fn().mockResolvedValue([]),
     recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
     listenClaudeEvents: vi.fn().mockResolvedValue(() => {}),
     listenClaudeTransport: vi.fn().mockResolvedValue(() => {}),
@@ -60,6 +61,7 @@ async function ready() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(runtime.superbotRequest).mockResolvedValue([])
   vi.mocked(appServer.unarchiveThread).mockResolvedValue(undefined)
   vi.mocked(runtime.listClaudeSessions).mockImplementation(async (archived = false) => [{
     id: archived ? 'claude:archived' : 'claude:active', archived,
@@ -72,6 +74,30 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('waiting indicators', () => {
+  it('opens and creates cloud sessions without routing them into Codex or Claude', async () => {
+    const remote = { id: 'remote', title: 'Superbot', status: 'active', read_only: false, run_config: {}, runtime_id: 'cloud', created_at: '2026-11-17T08:00:00Z', updated_at: '2026-11-17T08:00:00Z' }
+    vi.mocked(runtime.superbotRequest).mockImplementation(async request => {
+      if (request.type === 'list') return [remote]
+      if (request.type === 'create') return { ...remote, id: 'new' }
+      if (request.type === 'read') return { session: remote, page: { messages: [], has_more: false, next_cursor: null }, pending: {}, events: [] }
+      return {}
+    })
+    const { result } = await ready()
+    await waitFor(() => expect(result.current.superbot.loaded).toBe(true))
+    vi.mocked(appServer.resumeThread).mockClear()
+    await act(async () => { await result.current.selectThread('superbot:remote') })
+    expect(result.current.selectedProvider).toBe('superbot')
+    expect(result.current.currentThread?.cwd).toBe('')
+    expect(appServer.resumeThread).not.toHaveBeenCalled()
+    await expect(result.current.sendMessage([{ type: 'text', text: 'must not leak', text_elements: [] }], 'queue')).rejects.toThrow('Superbot')
+    await expect(result.current.changeThreadWorkspace('superbot:remote', '/repo')).rejects.toThrow('云端')
+    expect(appServer.startTurn).not.toHaveBeenCalled()
+    expect(runtime.startClaudeTurn).not.toHaveBeenCalled()
+    await act(async () => { await result.current.createThread('superbot') })
+    expect(result.current.selectedThreadId).toBe('superbot:new')
+    expect(runtime.superbotRequest).toHaveBeenCalledWith({ type: 'create' })
+  })
+
   it('dispatches delayed messages to their original provider after switching conversations', async () => {
     const { result } = await ready()
     const input = [{ type: 'text' as const, text: 'later', text_elements: [] }]

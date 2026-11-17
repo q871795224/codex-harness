@@ -1,0 +1,20 @@
+.superbot-view { --superbot-border: #e2e5ea; --superbot-bg: #fff; --superbot-muted: #737b89; --superbot-error: #a12b35; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; height: 100%; color: inherit; }
+.app-shell[data-theme='dark'] .superbot-view { --superbot-border: #333942; --superbot-bg: #20242b; --superbot-muted: #a4adbc; --superbot-error: #ff9ba5; }
+.superbot-header { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--superbot-border); }
+.superbot-header button, .superbot-composer button, .superbot-view .message-column > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--superbot-border); border-radius: 7px; padding: 6px 9px; background: var(--superbot-bg); color: inherit; cursor: pointer; }
+.superbot-header button:disabled, .superbot-composer button:disabled { opacity: .5; cursor: default; }
+.superbot-header .superbot-title { flex: 1; min-width: 60px; border: 0; justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.superbot-header form { display: flex; flex: 1; gap: 6px; min-width: 0; }
+.superbot-header input { min-width: 0; width: 100%; background: var(--superbot-bg); color: inherit; border: 1px solid var(--superbot-border); }
+.superbot-environment, .superbot-send-row > span, .superbot-settings label, .superbot-empty, .superbot-view time { color: var(--superbot-muted); font-size: 12px; }
+.superbot-view time { margin-left: 12px; }
+.superbot-error { color: var(--superbot-error); padding: 8px 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.superbot-view .conversation-scroll { flex: 1; min-height: 0; }
+.superbot-view details { margin-block: 6px; }
+.superbot-view details pre { max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.superbot-composer { width: min(100%, 920px); align-self: center; padding: 12px 20px 18px; box-sizing: border-box; }
+.superbot-settings, .superbot-send-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-block: 8px; }
+.superbot-settings label { display: flex; align-items: center; gap: 8px; }
+.superbot-settings select { max-width: min(230px, 50vw); border: 1px solid var(--superbot-border); border-radius: 6px; padding: 5px; background: var(--superbot-bg); color: inherit; }
+.superbot-composer textarea { width: 100%; min-height: 100px; max-height: 300px; resize: vertical; box-sizing: border-box; padding: 12px; border: 1px solid var(--superbot-border); border-radius: 10px; background: var(--superbot-bg); color: inherit; font: inherit; }
+.superbot-send-row { justify-content: space-between; }

@@ -1,3 +1,4 @@
+import { SuperbotView } from './features/superbot/SuperbotView'
 import { useAsyncWaitPrefill } from './core/async-waits/useAsyncWaitPrefill'
 import { RouterSettings } from './features/settings/RouterSettings'
 import { useRouterSummaries } from './core/workspace-router/react'
@@ -256,6 +257,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   teams: TeamsService
   codex: ReturnType<typeof useCodexCore>
 }) {
+  const superbotConversation = harness.selectedProvider === 'superbot'
+  const localProvider = harness.selectedProvider === 'claude' ? 'claude' : 'codex'
   const restoreCodexProvider = useCodexProviderWatch(harness.phase === 'ready')
   const selectedThreadRef = useRef(harness.selectedThreadId)
   selectedThreadRef.current = harness.selectedThreadId
@@ -381,7 +384,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   )
   // 项目文档：绑定意图（方案乙，pending→locked）由 useProjectBinding 管理；
   // boundProjectId 供审批卡/自动追加用（派生自绑定），pendingProjectConflict 是跳项目 tab 时挂起的冲突 diff 请求。
-  const projectBinding = useProjectBinding(projectDocs, harness.selectedThreadId, harness.currentThread?.cwd ?? null)
+  const projectBinding = useProjectBinding(projectDocs, superbotConversation ? null : harness.selectedThreadId, harness.currentThread?.cwd ?? null)
   const boundProjectId = projectBinding.binding?.projectId ?? null
   const [pendingProjectConflict, setPendingProjectConflict] = useState<{ proposalContent: string; section: string } | null>(null)
   // pending 绑定在输入区显示读取提示或兼容背景卡；发送成功锁定后消耗。
@@ -406,25 +409,25 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   useReleaseNotifications(workspaceRelease.status)
   const threadCwd = harness.currentThread?.cwd ?? null
   const resolvedThreadHeaderActions = plugins.resolvedThreadHeaderActions({
-    provider: harness.selectedProvider,
+    provider: localProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedPluginTabs = plugins.resolvedTabs({
-    provider: harness.selectedProvider,
+    provider: localProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedNewThreadPanels = plugins.resolvedNewThreadPanels({
-    provider: harness.selectedProvider,
+    provider: localProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedComposerActions = plugins.resolvedComposerActions({
-    provider: harness.selectedProvider,
+    provider: localProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
@@ -498,28 +501,28 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
     }
   }, [nativeProjectTools, projectBinding.binding, projectBinding.project, projectCardContent, harness.selectedThreadId, projectDocThreshold])
   const resolvedTurnActions = plugins.resolvedTurnActions({
-    provider: harness.selectedProvider,
+    provider: localProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const conversationBanners = plugins.resolvedConversationBanners({
-    provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd, workspaceRoot: workspace?.root ?? null,
+    provider: localProvider, threadId: harness.selectedThreadId, threadCwd, workspaceRoot: workspace?.root ?? null,
   })
   const resolvedComposerCompletions = plugins.resolvedComposerCompletions({
-    provider: harness.selectedProvider,
+    provider: localProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedQuickActions = plugins.resolvedQuickActions({
-    provider: harness.selectedProvider,
+    provider: localProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
   })
   const resolvedQuickCommands = plugins.resolvedQuickCommands({
-    provider: harness.selectedProvider,
+    provider: localProvider,
     threadId: harness.selectedThreadId,
     threadCwd,
     workspaceRoot: workspace?.root ?? null,
@@ -531,12 +534,12 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
     })
   }, [])
   const codexConversation = harness.selectedProvider === 'codex'
-  const threadHeaderActions = resolvedThreadHeaderActions
-  const pluginTabs = resolvedPluginTabs
-  const newThreadPanels = resolvedNewThreadPanels
-  const composerActions = resolvedComposerActions
-  const quickActions = resolvedQuickActions
-  const quickCommands = resolvedQuickCommands
+  const threadHeaderActions = superbotConversation ? [] : resolvedThreadHeaderActions
+  const pluginTabs = superbotConversation ? [] : resolvedPluginTabs
+  const newThreadPanels = superbotConversation ? [] : resolvedNewThreadPanels
+  const composerActions = superbotConversation ? [] : resolvedComposerActions
+  const quickActions = superbotConversation ? [] : resolvedQuickActions
+  const quickCommands = superbotConversation ? [] : resolvedQuickCommands
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
   const tabFocusable = conversationTabSupportsFocus(selectedPluginTab?.contribution ?? null)
   const tabFocused = focusedTab === tab && tabFocusable
@@ -752,7 +755,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
       key={`${panel.pluginId}:${panel.contribution.id}`}
       panel={panel}
       props={{
-        provider: harness.selectedProvider,
+        provider: localProvider,
         threadId: harness.selectedThreadId,
         threadCwd,
         workspaceRoot: workspace?.root ?? null,
@@ -786,7 +789,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
             key={`${action.pluginId}:${action.contribution.id}`}
             action={action}
             props={{
-              provider: harness.selectedProvider,
+              provider: localProvider,
               threadId: harness.selectedThreadId,
               threadCwd,
               workspaceRoot: workspace?.root ?? null,
@@ -862,6 +865,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
         onNewThread={(provider) => { setNotificationsOpen(false); void harness.createThread(provider) }}
         newThreadProvider={harness.newThreadProvider}
         onToggleNewThreadProvider={harness.toggleNewThreadProvider}
+        onNewThreadProvider={harness.setNewThreadProvider}
         claudeStatus={harness.claudeStatus}
         onSearch={(term) => void harness.searchThreads(term)}
         onRefresh={() => void harness.refresh()}
@@ -888,7 +892,15 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
       <main className="main-pane">
         {notificationsOpen && <NotificationCenter store={notifications} currentThreadId={harness.selectedThreadId} selectedId={selectedNotificationId} onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
         <div className="notification-conversation" hidden={notificationsOpen}>
-        {harness.currentThread ? (
+        {superbotConversation && harness.selectedThreadId ? <SuperbotView
+          key={harness.selectedThreadId} id={harness.selectedThreadId}
+          session={harness.superbot.sessions.find(s => `superbot:${s.id}` === harness.selectedThreadId)}
+          snapshot={harness.superbot.snapshots[harness.selectedThreadId]}
+          service={harness.superbot} draft={composerDrafts[harness.selectedThreadId]?.text ?? ''}
+          draftReady={composerDraftsLoaded} sendShortcut={harness.keyboard.sendShortcut}
+          onArchive={archived => archived ? harness.archiveThread(harness.selectedThreadId!) : harness.unarchiveThread(harness.selectedThreadId!)}
+          onDraft={text => stageAsyncDraft(harness.selectedThreadId!, { text, attachments: [], collapsedPastes: [] })}
+        /> : harness.currentThread ? (
           <Fragment key={harness.draftOrigins?.[harness.currentThread.id] ?? harness.currentThread.id}>
             <ConversationHeader
               thread={harness.currentThread}
@@ -923,7 +935,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                   key={`${action.pluginId}:${action.contribution.id}`}
                   action={action}
                   props={{
-                    provider: harness.selectedProvider,
+                    provider: localProvider,
                     threadId: harness.selectedThreadId,
                     threadCwd,
                     workspaceRoot: workspace?.root ?? null,
@@ -977,7 +989,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
             {tab === 'chat' ? (
               <ConversationView
                 threadId={harness.currentThread.id}
-                provider={harness.selectedProvider}
+                provider={localProvider}
                 items={harness.currentDetail?.items ?? []}
                 turns={harness.currentDetail?.turns ?? []}
                 cwd={harness.currentThread.cwd}
@@ -1029,7 +1041,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                 workingTurnId={currentActiveTurn?.id ?? null}
                 backgroundWorking={harness.isCurrentBackgroundWorking}
                 pendingSteers={currentSteers}
-                workingStartedAt={turnStartedAtMilliseconds(harness.selectedProvider, currentActiveTurn?.startedAt ?? null)}
+                workingStartedAt={turnStartedAtMilliseconds(localProvider, currentActiveTurn?.startedAt ?? null)}
                 banners={<>
                   <AsyncWaitApprovals threadId={harness.selectedThreadId ?? ''} />
                   {asyncPrefill.error && <p role="alert">异步结果预填失败：{asyncPrefill.error}</p>}
@@ -1042,7 +1054,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                     onCorrect={(actual) => harness.correctRouteWorkspace(harness.currentRoute!.threadId, actual)}
                   />}
                   {conversationBanners.map((entry) => <PluginConversationBanner key={entry.instanceId + entry.contribution.id} entry={entry} props={{
-                    provider: harness.selectedProvider, threadId: harness.selectedThreadId, threadCwd,
+                    provider: localProvider, threadId: harness.selectedThreadId, threadCwd,
                     workspaceRoot: workspace?.root ?? null, checkoutRoot: harness.currentThread?.cwd ?? null,
                   }} />)}
                 </>}
@@ -1069,7 +1081,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                 <PluginTabBoundary
                   tab={entry}
                   props={{
-                    provider: harness.selectedProvider,
+                    provider: localProvider,
                     threadId: harness.selectedThreadId,
                     threadCwd,
                     workspaceRoot: workspace?.root ?? null,
@@ -1134,7 +1146,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                 />
                 {composerDraftsLoaded && <Composer
                   key={harness.draftOrigins?.[harness.currentThread.id] ?? harness.currentThread.id}
-                  provider={harness.selectedProvider}
+                  provider={localProvider}
                   threadId={harness.currentThread.id}
                   onMessageAccepted={harness.onMessageAccepted}
                   initialDraft={composerDrafts[harness.currentThread.id]}
@@ -1197,7 +1209,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                         key={`${action.pluginId}:${action.contribution.id}`}
                         action={action}
                         props={{
-                          provider: harness.selectedProvider,
+                          provider: localProvider,
                           threadId: harness.selectedThreadId,
                           threadCwd,
                           workspaceRoot: workspace?.root ?? null,
@@ -1218,7 +1230,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                     key: `${entry.pluginId}:${entry.contribution.id}`,
                     trigger: entry.contribution.trigger,
                     loadItems: (query) => Promise.resolve(entry.contribution.loadItems(query, {
-                      provider: harness.selectedProvider,
+                      provider: localProvider,
                       threadId: harness.selectedThreadId,
                       threadCwd,
                       workspaceRoot: workspace?.root ?? null,
@@ -1257,7 +1269,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
             agentRuns={agentRuns}
             anchorBottom={quickPanelBottom}
             context={{
-              provider: harness.selectedProvider,
+              provider: localProvider,
               threadId: harness.selectedThreadId,
               threadCwd,
               workspaceRoot: workspace?.root ?? null,

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { capabilitiesForProvider, shouldGenerateClaudeTitle } from './useUnifiedHarness'
 
 describe('conversation provider capabilities', () => {
+  it('limits Superbot to cloud conversation controls', () => {
+    expect(capabilitiesForProvider('superbot')).toEqual({ images: false, approvals: false, interrupt: true, resume: true, queue: false, steer: false, fork: false, skills: false, mcpManagement: false })
+  })
+
   it('exposes Claude follow-up controls alongside its supported features', () => {
     expect(capabilitiesForProvider('claude')).toMatchObject({
       images: true,

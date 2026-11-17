@@ -9,6 +9,7 @@
 | 从 Agent 查询或管理 Harness 本身 | [../docs/management.md](../docs/management.md) | 使用应用随附 harness-runtime Skill、harnessctl 或维护本机管理入口时 |
 | 记录已经确认的长期决策和当前状态 | [memory.md](memory.md) | 需要延续历史决策，或任务完成后沉淀结论 |
 | 项目文档维护、会话中途新建/加入、注入与人工精简边界 | [architecture.md](architecture.md) 的“项目文档维护”；中途接入见 [project-doc-onboarding.md](../docs/project-doc-onboarding.md) | 修改项目文档插件或讨论 Agent 管理接口前 |
+| 公司 Collab / Superbot 云端会话 | [../docs/superbot.md](../docs/superbot.md) | 调整 Superbot 登录、会话、模型、云端运行状态与界面前 |
 | 工作区自动选择、简介缓存、最终 Prompt、反馈与后端设置 | [workspace-router.md](workspace-router.md) | 修改 Router 或重新讨论其决策前 |
 | Router模型选型、89服务部署与后续复测 | [router-models.md](router-models.md) | 接入模型、排查服务或复测选型前 |
 | 执行测试、构建、人工检查和黑箱对照 | [test.md](test.md) | 修改代码或验证行为前 |
