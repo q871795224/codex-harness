@@ -3,6 +3,7 @@ import type { Thread } from '../domain/codex'
 export const SUPERBOT_PREFIX = 'superbot:'
 export interface SuperbotRunConfig { reset?: boolean; model?: string | null; thinking_level?: string | null }
 export interface SuperbotSession {
+  seatalk_kind?: 'root' | 'thread' | null; seatalk_following?: boolean | null; parent_session_id?: string | null
   id: string; title: string; status: string; read_only: boolean; runtime_id: string | null
   run_config: SuperbotRunConfig | null; created_at: string; updated_at: string
 }
@@ -42,7 +43,7 @@ export function remoteSuperbotId(id: string): string {
 }
 export function superbotThread(session: SuperbotSession, taskId?: string): Thread {
   return {
-    id: superbotId(session.id), provider: 'superbot', name: session.title, preview: '', cwd: '',
+    id: superbotId(session.id), provider: 'superbot', channelSource: session.seatalk_kind ? 'seatalk' : undefined, name: session.title, preview: '', cwd: '',
     createdAt: Date.parse(session.created_at) / 1000, updatedAt: Date.parse(session.updated_at) / 1000,
     recencyAt: Date.parse(session.updated_at) / 1000,
     status: taskId ? { type: 'active', activeFlags: [] } : { type: 'idle' },

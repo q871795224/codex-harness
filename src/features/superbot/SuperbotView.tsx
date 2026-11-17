@@ -45,7 +45,7 @@ export function SuperbotView({ id, session, snapshot, service, draft, onDraft, s
   return <>
     {thread && <ConversationHeader thread={thread} workspace={null} gitContextResolved={false}
       archived={selected?.status === 'archived'} isWorking={active} pinned={pinned}
-      workspaceChanging={false} canChangeWorkspace={false} environmentLabel="公司云端 · naming"
+      workspaceChanging={false} canChangeWorkspace={false} environmentLabel={selected?.seatalk_kind ? 'SeaTalk · 公司云端' : '公司云端 · naming'}
       readOnly={selected?.read_only || service.busy} onRename={title => void run(() => service.rename(id, title))}
       onArchive={() => void archive(true)} onUnarchive={() => void archive(false)}
       onTogglePinned={() => onTogglePinned?.()} onChooseWorkspace={() => {}}

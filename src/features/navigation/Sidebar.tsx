@@ -1,4 +1,6 @@
-import type { ConversationProvider } from '../conversation/useUnifiedHarness'
+import { conversationProviderLabels, nextConversationProvider, type ConversationProvider } from '../../core/domain/conversationProvider'
+import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
+import harnessIcon from '../../../icon/codex-harness.svg'
 import {
   useEffect,
   useMemo,
@@ -13,6 +15,8 @@ import {
   Archive,
   ArchiveRestore,
   Bell,
+  Bot,
+  MessageSquareText,
   Blocks,
   CheckCheck,
   ChevronDown,
@@ -77,7 +81,6 @@ interface SidebarProps {
   onArchiveOldThreads: () => void
   onNewThread: (provider?: ConversationProvider) => void
   newThreadProvider: ConversationProvider
-  onNewThreadProvider?: (provider: ConversationProvider) => void
   onToggleNewThreadProvider: () => void
   claudeStatus?: ClaudeRuntimeStatus | null
   onSearch: (term: string) => void
@@ -128,7 +131,6 @@ export function Sidebar({
   onNewThread,
   newThreadProvider,
   onToggleNewThreadProvider,
-  onNewThreadProvider,
   claudeStatus = null,
   onSearch,
   onRefresh,
@@ -164,6 +166,7 @@ export function Sidebar({
   const [draggedThreadId, setDraggedThreadId] = useState<string | null>(null)
   const [threadDrop, setThreadDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const claudeAvailable = Boolean(claudeStatus?.available)
+  const nextProvider = nextConversationProvider(newThreadProvider, claudeAvailable)
   const onSearchRef = useRef(onSearch)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchStarted = useRef(false)
@@ -475,12 +478,13 @@ export function Sidebar({
           {creatingThread ? <LoaderCircle size={16} className="spin" /> : <CirclePlus size={17} />}
           新会话
         </button>
-        <select className="new-chat-provider" aria-label="新会话类型" value={newThreadProvider}
-          disabled={creatingThread} onChange={event => onNewThreadProvider ? onNewThreadProvider(event.target.value as ConversationProvider) : onToggleNewThreadProvider()}>
-          <option value="codex">Codex</option>
-          <option value="claude" disabled={!claudeAvailable}>Claude</option>
-          <option value="superbot">Superbot</option>
-        </select>
+        <button className="new-chat-provider" type="button" onClick={onToggleNewThreadProvider} disabled={creatingThread}
+          aria-label={`切换到 ${conversationProviderLabels[nextProvider]} 新会话`}
+          title={`${conversationProviderLabels[newThreadProvider]} · 点击切换到 ${conversationProviderLabels[nextProvider]}`}>
+          {newThreadProvider === 'codex'
+            ? <img className="new-chat-provider-icon" src={import.meta.env.MODE === 'dev' ? harnessDevIcon : harnessIcon} alt="Codex" />
+            : newThreadProvider === 'claude' ? <Sparkles size={16} aria-hidden /> : <Bot size={16} aria-hidden />}
+        </button>
       </div>
 
       <div className={`sidebar-scroll ${navigationLayout === 'list' && providerSplit.claude.length > 0 ? 'split-mode' : ''}`}>
@@ -656,7 +660,7 @@ export function Sidebar({
           </>
         )}
         {providerSplit.superbot.length > 0 && <section className="workspace-group single-list-group">
-          <div className="workspace-row static"><Sparkles size={16} /><span>Superbot · 公司云端</span><em>{providerSplit.superbot.length}</em></div>
+          <div className="workspace-row static"><Bot size={16} /><span>Superbot</span><em>{providerSplit.superbot.length}</em></div>
           {renderThreadList(providerSplit.superbot, 'all.superbot')}
         </section>}
 
@@ -817,6 +821,7 @@ function ThreadList({
               {pinned && <i className="pinned-marker" aria-hidden />}
               <StatusDot badge={badge} />
               <NumberBadge number={numberHint ?? 0} visible={showNumberHint && numberHint !== undefined} />
+              {thread.channelSource === 'seatalk' && <MessageSquareText size={12} aria-label="SeaTalk 会话" />}
               <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
               <time>{badge === 'approval' ? '等待处理' : workingThreadIds[thread.id] || isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
             </button>
