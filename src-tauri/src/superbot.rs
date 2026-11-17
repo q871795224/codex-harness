@@ -2,7 +2,7 @@
 use reqwest::{redirect::Policy, Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{fs, path::Path, time::Duration};
+use std::{collections::BTreeMap, fs, path::Path, time::Duration};
 
 const SERVER: &str = "https://collab.shopee.io";
 const WORKSPACE: &str = "33b7cc93-d26a-4a40-9fa9-3508f379e732";
@@ -94,12 +94,59 @@ fn session(value: &Value) -> Result<Value, String> {
     if value["workspace_id"] != WORKSPACE || value["agent_id"] != AGENT {
         return Err("会话不属于 naming 工作区的 Superbot".into());
     }
+    let kind = value["seatalk_kind"]
+        .as_str()
+        .filter(|kind| ["root", "thread"].contains(kind));
+    let archived = kind == Some("thread")
+        && value["seatalk_archived_at"]
+            .as_str()
+            .is_some_and(|at| !at.is_empty());
+    let status = if kind == Some("thread") {
+        if archived {
+            "archived"
+        } else {
+            "active"
+        }
+    } else {
+        value["status"].as_str().unwrap_or("active")
+    };
+    let title = value["title"]
+        .as_str()
+        .filter(|title| !title.trim().is_empty())
+        .unwrap_or("新对话");
     Ok(json!({
-        "id": value["id"], "title": value["title"], "status": value["status"],
-        "read_only": value["read_only"].as_bool().unwrap_or(true),
+        "seatalk_kind": kind, "parent_session_id": value["parent_session_id"], "seatalk_following": value["seatalk_following"].as_bool(),
+        "id": value["id"], "title": title, "status": status,
+        "read_only": value["read_only"].as_bool().unwrap_or(true) || value["closed_at"].as_str().is_some(),
         "run_config": {"model": value["run_config"]["model"].as_str(), "thinking_level": value["run_config"]["thinking_level"].as_str()}, "runtime_id": value["runtime_id"],
         "created_at": value["created_at"], "updated_at": value["updated_at"],
     }))
+}
+
+// Collab deliberately lists browser chats and SeaTalk chats in separate endpoints.
+// SeaTalk thread archives belong to the current user, not the global chat status.
+fn merge_sessions(normal: &Value, seatalk: &Value, archived: bool) -> Result<Value, String> {
+    let normal = normal.as_array().ok_or("无法解析 Superbot 会话列表")?;
+    let seatalk = seatalk["sessions"]
+        .as_array()
+        .ok_or("无法解析 SeaTalk 会话列表")?;
+    let mut merged = BTreeMap::new();
+    for raw in normal.iter().chain(seatalk) {
+        if raw["agent_id"] != AGENT {
+            continue;
+        }
+        let value = session(raw)?;
+        merged.insert(value["id"].as_str().unwrap().to_string(), value);
+    }
+    Ok(Value::Array(
+        merged
+            .into_values()
+            .filter(|value| (value["status"] == "archived") == archived)
+            .filter(|value| {
+                archived || value["seatalk_kind"] != "thread" || value["seatalk_following"] != false
+            })
+            .collect(),
+    ))
 }
 
 // Collab creates sessions against the catalog's original system runtime, then
@@ -260,13 +307,15 @@ impl SuperbotClient {
                     "/api/chat/sessions"
                 };
                 let raw = self.api(token, Method::GET, path, None).await?;
-                let rows = raw.as_array().ok_or("无法解析 Superbot 会话列表")?;
-                Ok(Value::Array(
-                    rows.iter()
-                        .filter(|s| s["agent_id"] == AGENT)
-                        .map(session)
-                        .collect::<Result<Vec<_>, _>>()?,
-                ))
+                let seatalk = self
+                    .api(
+                        token,
+                        Method::GET,
+                        &format!("/api/workspaces/{WORKSPACE}/seatalk/private/sessions"),
+                        None,
+                    )
+                    .await?;
+                merge_sessions(&raw, &seatalk, archived)
             }
             Request::Catalog {} => {
                 let config = self.api(token, Method::GET, "/api/config", None).await?;
@@ -421,10 +470,15 @@ impl SuperbotClient {
                 if pending["task_id"].as_str().is_some() {
                     return Err("请先停止运行中的任务再归档".into());
                 }
+                let path = if selected["seatalk_kind"].as_str().is_some() {
+                    format!("/api/workspaces/{WORKSPACE}/seatalk/private/sessions/{id}/archived")
+                } else {
+                    format!("/api/chat/sessions/{id}/archive")
+                };
                 self.api(
                     token,
                     Method::PATCH,
-                    &format!("/api/chat/sessions/{id}/archive"),
+                    &path,
                     Some(json!({"archived":archived})),
                 )
                 .await?;
@@ -653,5 +707,111 @@ mod tests {
             serde_json::to_value(RunConfig::default()).unwrap(),
             json!({})
         );
+    }
+    fn seatalk_fixture(id: &str) -> Value {
+        let mut row = session_fixture();
+        row["id"] = json!(id);
+        row["seatalk_kind"] = json!("thread");
+        row["seatalk_following"] = json!(true);
+        row["parent_session_id"] = json!(AGENT);
+        row["title"] = json!("");
+        row
+    }
+    #[tokio::test]
+    async fn lists_both_chat_sources_like_the_company_chat_sidebar() {
+        let normal = json!([session_fixture(), {"id":WORKSPACE, "agent_id":AGENT, "workspace_id":WORKSPACE, "status":"active", "read_only":false}]);
+        let channel: Vec<_> = (1..=6)
+            .map(|n| seatalk_fixture(&format!("00000000-0000-4000-8000-{n:012}")))
+            .collect();
+        let (client, worker) = fixture(vec![
+            ("GET", "/api/chat/sessions".into(), None, 200, normal),
+            (
+                "GET",
+                format!("/api/workspaces/{WORKSPACE}/seatalk/private/sessions"),
+                None,
+                200,
+                json!({"sessions":channel}),
+            ),
+        ]);
+        let result = client
+            .execute("fixture-key", Request::List { archived: false })
+            .await
+            .unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 8);
+        assert_eq!(
+            rows.iter()
+                .filter(|r| r["seatalk_kind"] == "thread")
+                .count(),
+            6
+        );
+        assert_eq!(rows.iter().filter(|r| r["title"] == "新对话").count(), 8);
+        worker.join().unwrap();
+    }
+    #[test]
+    fn deduplicates_before_applying_seatalk_user_archive_and_following_state() {
+        let mut archived = seatalk_fixture(AGENT);
+        archived["seatalk_archived_at"] = json!("2026-11-17T08:00:00Z");
+        let mut unfollowed = seatalk_fixture(WORKSPACE);
+        unfollowed["seatalk_following"] = json!(false);
+        let normal = json!([session_fixture()]);
+        let channels = json!({"sessions":[archived,unfollowed]});
+        assert_eq!(
+            merge_sessions(&normal, &channels, false).unwrap(),
+            json!([])
+        );
+        let result = merge_sessions(&normal, &channels, true).unwrap();
+        assert_eq!(result.as_array().unwrap().len(), 1);
+        assert_eq!(result[0]["id"], AGENT);
+        assert_eq!(result[0]["status"], "archived");
+        assert_eq!(result[0]["parent_session_id"], AGENT);
+        assert!(merge_sessions(&normal, &json!({}), false).is_err());
+        let mut user_active = seatalk_fixture(AGENT);
+        user_active["status"] = json!("archived");
+        assert_eq!(
+            merge_sessions(&json!([]), &json!({"sessions":[user_active]}), false)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+    #[tokio::test]
+    async fn archives_seatalk_threads_using_the_user_scoped_endpoint() {
+        let (client, worker) = fixture(vec![
+            (
+                "GET",
+                format!("/api/chat/sessions/{AGENT}"),
+                None,
+                200,
+                seatalk_fixture(AGENT),
+            ),
+            (
+                "GET",
+                format!("/api/chat/sessions/{AGENT}/pending-task"),
+                None,
+                200,
+                json!({}),
+            ),
+            (
+                "PATCH",
+                format!("/api/workspaces/{WORKSPACE}/seatalk/private/sessions/{AGENT}/archived"),
+                Some(json!({"archived":true})),
+                200,
+                json!({}),
+            ),
+        ]);
+        client
+            .execute(
+                "fixture-key",
+                Request::Archive {
+                    id: AGENT.into(),
+                    archived: true,
+                },
+            )
+            .await
+            .unwrap();
+        worker.join().unwrap();
     }
 }

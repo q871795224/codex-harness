@@ -1,3 +1,4 @@
+import { nextConversationProvider, type ConversationProvider } from '../../core/domain/conversationProvider'
 import { useSuperbotHarness } from '../superbot/useSuperbotHarness'
 import type { MessageReference } from '../../core/domain/codex'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -9,7 +10,7 @@ import type { TurnCompletedEvent } from '../../core/conversations/types'
 import { hasUnansweredAsyncInput } from './asyncUserInput'
 import { isClaudeSessionWorking } from '../../core/claude/types'
 
-export type ConversationProvider = 'codex' | 'claude' | 'superbot'
+export type { ConversationProvider } from '../../core/domain/conversationProvider'
 const SELECTED_CONVERSATION_KEY = 'selectedConversationId'
 
 export interface ConversationCapabilities {
@@ -89,7 +90,7 @@ export function useUnifiedHarness() {
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
 
   const toggleNewThreadProvider = useCallback(() => {
-    setNewThreadProviderState(current => current === 'codex' ? claude.status?.available ? 'claude' : 'superbot' : current === 'claude' ? 'superbot' : 'codex')
+    setNewThreadProviderState(current => nextConversationProvider(current, Boolean(claude.status?.available)))
   }, [claude.status?.available])
 
   useEffect(() => {
@@ -451,7 +452,6 @@ export function useUnifiedHarness() {
   return {
     ...codex,
     superbot,
-    setNewThreadProvider: setNewThreadProviderState,
     threads,
     details,
     approvals,
