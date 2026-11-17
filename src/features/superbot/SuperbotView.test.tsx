@@ -20,6 +20,14 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Superbot conversation controls', () => {
+  it('waits for saved drafts before mounting the shared composer', () => {
+    const { rerender } = render(<SuperbotView {...props()} draftReady={false} draft={undefined} />)
+    expect(screen.queryByPlaceholderText('给 Superbot 发送消息')).toBeNull()
+    expect(onDraft).not.toHaveBeenCalled()
+    rerender(<SuperbotView {...props()} draftReady draft={{ text: 'restored draft', attachments: [], collapsedPastes: [] }} />)
+    expect((screen.getByPlaceholderText('给 Superbot 发送消息') as HTMLTextAreaElement).value).toBe('restored draft')
+  })
+
   it('round-trips a controlled draft without resetting input or causing render loops', () => {
     function Controlled() {
       const [draft, update] = useState<ComposerDraft>(props().draft)

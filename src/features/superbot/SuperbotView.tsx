@@ -75,7 +75,7 @@ export function SuperbotView({ id, session, snapshot, service, draft, onDraft, s
         {(localError || service.error) && <div className="composer-inline-error" role="alert">{localError || service.error}</div>}
         {!snapshot && !service.error && <p role="status">正在读取会话…</p>}
       </>} />
-    {selected?.status !== 'archived' && <div className="input-column">
+    {draftReady && selected?.status !== 'archived' && <div className="input-column">
       <Composer provider="superbot" threadId={id} initialDraft={initialDraft} disabled={!draftReady || !snapshot || readOnly}
         working={active} foreignActive={false} busy={service.busy} contextUsage={null} workspaceRoot={null}
         sendShortcut={sendShortcut} focusRequest={focusRequest} models={[]} settings={codexSettings}
