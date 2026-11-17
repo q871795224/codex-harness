@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronRight,
   Command,
+  Cloud,
   Copy,
   Link2,
   FileCode2,
@@ -43,13 +44,15 @@ import { displayCommand } from './commandDisplay'
 import { groupTranscriptTurns, summarizeProcessRows, type TranscriptItem, type TranscriptTurn } from './transcript'
 import { runtime } from '../../core/runtime/bridge'
 import { writeClipboard } from '../markdown/clipboard'
-import { Markdown } from '../markdown/Markdown'
+import { Markdown, MarkdownLocalFilesContext } from '../markdown/Markdown'
 import { WorkingStatus } from './ConversationStats'
 import { collectNativeAgentActivities, type NativeAgentActivity } from './agentActivity'
 
 const MessageThreadContext = createContext<string | null>(null)
 
 interface ConversationHeaderProps {
+  environmentLabel?: string
+  readOnly?: boolean
   automaticWorkspace?: boolean
   thread: Thread
   workspace: Workspace | null
@@ -72,7 +75,7 @@ interface ConversationHeaderProps {
   headerActions?: ReactNode
 }
 
-export function ConversationHeader({ automaticWorkspace = false, thread, workspace, gitContextResolved, archived, isWorking, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
+export function ConversationHeader({ environmentLabel, readOnly = false, automaticWorkspace = false, thread, workspace, gitContextResolved, archived, isWorking, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -108,6 +111,7 @@ export function ConversationHeader({ automaticWorkspace = false, thread, workspa
               setTitle(threadTitle(thread))
               setEditingTitle(true)
             }}
+            disabled={readOnly}
             title="重命名会话"
           >
             <h1>{threadTitle(thread)}</h1>
@@ -115,13 +119,16 @@ export function ConversationHeader({ automaticWorkspace = false, thread, workspa
           </button>
         )}
         <div className="thread-context">
+          {environmentLabel ? <span><Cloud size={13} />{environmentLabel}</span> : <>
           <span><GitBranch size={13} />{automaticWorkspace ? '自动选择工作区' : workspace?.name ?? '未分组'}</span>
           {!automaticWorkspace && <span>{threadGitContextLabel(thread.gitInfo, gitContextResolved)}</span>}
+          </>}
           {thread.forkedFromId && (
             <button type="button" className="thread-origin" onClick={() => onOpenThread?.(thread.forkedFromId!)} title="打开分支来源会话">
               <GitFork size={12} />来自 {thread.forkedFromId.slice(0, 8)}
             </button>
           )}
+          {!environmentLabel && <>
           <button
             type="button"
             className="thread-path"
@@ -131,6 +138,7 @@ export function ConversationHeader({ automaticWorkspace = false, thread, workspa
           >
             {workspaceChanging ? '正在选择…' : automaticWorkspace ? '手动选择' : thread.cwd}
           </button>
+          </>}
           {projectName && (
             <button
               type="button"
@@ -158,7 +166,7 @@ export function ConversationHeader({ automaticWorkspace = false, thread, workspa
         <button
           type="button"
           className="header-action"
-          disabled={!archived && isWorking}
+          disabled={readOnly || (!archived && isWorking)}
           onClick={archived ? onUnarchive : onArchive}
           title={archived ? '恢复会话' : '归档会话'}
         >
@@ -185,7 +193,7 @@ export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode 
 
 interface ConversationViewProps {
   threadId?: string
-  provider?: 'codex' | 'claude'
+  provider?: 'codex' | 'claude' | 'superbot'
   items: ThreadItemEntry[]
   turns: Turn[]
   cwd: string
@@ -327,7 +335,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
     return answered ? [{ ...entry, item: { ...entry.item, phase: 'commentary' as const } }] : []
   })
   const rawTranscriptRows = transcriptItems.map((entry) => ({ entry, agentText: undefined, showAgentLabel: true }))
-  const agentLabel = provider === 'claude' ? 'Claude' : 'Codex'
+  const agentLabel = provider === 'superbot' ? 'Superbot' : provider === 'claude' ? 'Claude' : 'Codex'
   const turnDetails = turns.map((turn) => ({ id: turn.id, status: turn.status, error: turn.error, itemsView: turn.itemsView }))
   const activeTurnIndex = turnDetails.findIndex((turn) => turn.id === workingTurnId)
   if (workingTurnId && activeTurnIndex >= 0) turnDetails[activeTurnIndex] = { ...turnDetails[activeTurnIndex], status: 'inProgress' }
@@ -339,6 +347,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
   const agentActivities = collectNativeAgentActivities(items, agentApprovalCounts)
 
   return (
+    <MarkdownLocalFilesContext.Provider value={provider !== 'superbot'}>
     <SkillCatalogContext.Provider value={skillCatalog}>
     <MessageThreadContext.Provider value={provider === 'codex' ? threadId ?? null : null}>
     <section className="conversation-pane" aria-label="对话内容">
@@ -374,6 +383,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
                 <div className="fresh-thread">
                   <div className="fresh-thread-mark"><Bot size={18} /></div>
                   <p>
+                    {provider === 'superbot' ? '在公司云端开启一段新的 Superbot 会话吧。' : <>
                     在
                     <span className="fresh-workspace-select">
                       <select
@@ -391,7 +401,8 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
                       </select>
                       <ChevronDown size={14} aria-hidden />
                     </span>
-                    开启一段新的 {provider === 'claude' ? 'Claude' : 'Codex'} 会话吧。
+                    开启一段新的 {provider === 'claude' ? 'Claude' : 'Codex'} 会话吧。</>}
+
                   </p>
                 </div>
                 {newThreadHeader && <div className="fresh-thread-header">{newThreadHeader}</div>}
@@ -494,6 +505,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
     </section>
     </MessageThreadContext.Provider>
     </SkillCatalogContext.Provider>
+    </MarkdownLocalFilesContext.Provider>
   )
 }
 
