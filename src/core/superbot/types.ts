@@ -16,7 +16,7 @@ export interface SuperbotMessage {
 }
 export interface SuperbotCursor { created_at: string; id: string }
 export interface SuperbotTaskEvent {
-  seq: number; type: string; tool?: string; content?: string; text?: string
+  seq: number; call_id?: string; type: string; tool?: string; content?: string; text?: string
   input?: unknown; output?: unknown; result?: unknown
 }
 export interface SuperbotSnapshot {

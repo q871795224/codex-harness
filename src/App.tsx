@@ -896,10 +896,14 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
           key={harness.selectedThreadId} id={harness.selectedThreadId}
           session={harness.superbot.sessions.find(s => `superbot:${s.id}` === harness.selectedThreadId)}
           snapshot={harness.superbot.snapshots[harness.selectedThreadId]}
-          service={harness.superbot} draft={composerDrafts[harness.selectedThreadId]?.text ?? ''}
+          service={harness.superbot} draft={composerDrafts[harness.selectedThreadId]}
+          codexSettings={codex.settingsForThread(null)}
+          pinned={harness.navigation.pinnedThreadIds.includes(harness.selectedThreadId)}
+          onTogglePinned={() => harness.toggleThreadPinned(harness.selectedThreadId!)}
+          focusRequest={composerFocusRequest} conversationFocusRequest={conversationFocusRequest}
           draftReady={composerDraftsLoaded} sendShortcut={harness.keyboard.sendShortcut}
           onArchive={archived => archived ? harness.archiveThread(harness.selectedThreadId!) : harness.unarchiveThread(harness.selectedThreadId!)}
-          onDraft={text => stageAsyncDraft(harness.selectedThreadId!, { text, attachments: [], collapsedPastes: [] })}
+          onDraft={draft => stageAsyncDraft(harness.selectedThreadId!, draft)}
         /> : harness.currentThread ? (
           <Fragment key={harness.draftOrigins?.[harness.currentThread.id] ?? harness.currentThread.id}>
             <ConversationHeader

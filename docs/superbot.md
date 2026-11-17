@@ -15,7 +15,7 @@ Superbot 是 Harness 的第三种会话。它连接公司 Collab 的 naming 工�
 
 Rust `superbot.rs` 是唯一 Collab 网络入口，固定访问 `https://collab.shopee.io`，请求携带 naming workspace header。IPC 使用封闭的操作枚举，不接受 URL、HTTP method 或通用 API path。原生层验证远端会话的 workspace、agent、只读和归档状态，拒绝重定向；错误信息不回显响应正文或 token。
 
-会话 ID 使用 `superbot:<remote UUID>`，没有本机 cwd。模型目录由公共 runtime 的模型发现接口返回。Collab 创建新会话时会记录目录中的旧系统 DEMS runtime；发送前要求当前公共 DEMS Cloud 在线，且会话绑定也是同一系统所有者的公共 DEMS runtime，拒绝个人或私有 runtime。真正的 dispatch 和运行环境选择沿用 Collab 服务端。
+会话 ID 使用 `superbot:<remote UUID>`，没有本机 cwd。标题栏、消息、执行过程、模型选择和输入框复用 Codex/Claude 的共享会话组件；Superbot 只适配数据与能力，不维护单独的样式。模型目录由公共 runtime 的模型发现接口返回。Collab 创建新会话时会记录目录中的旧系统 DEMS runtime；发送前要求当前公共 DEMS Cloud 在线，且会话绑定也是同一系统所有者的公共 DEMS runtime，拒绝个人或私有 runtime。真正的 dispatch 和运行环境选择沿用 Collab 服务端。
 
 第一版使用 HTTP 轮询：当前会话运行中约 2.5 秒刷新状态、最新历史和任务记录，空闲时约 15 秒刷新；会话列表约 30 秒刷新，已观察到的后台运行也会继续核对。请求串行续排，不把网络延迟叠加为无界并发。断开窗口或退出 Harness 不停止云端任务，重新打开后从远端恢复。此版本未接 WebSocket，也不承诺逐 token 流式显示。
 
