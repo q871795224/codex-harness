@@ -9,6 +9,7 @@ mod app_launcher;
 mod app_server;
 mod turn_ownership;
 mod claude_runtime;
+mod superbot;
 mod clipboard_image;
 mod codex_analytics;
 mod codex_radar;
@@ -58,6 +59,7 @@ struct AppState {
     app_server: Arc<AppServerManager>,
     async_waits: Arc<async_waits::AsyncWaits>,
     claude_runtime: Arc<ClaudeRuntime>,
+    superbot: superbot::SuperbotClient,
     diagnostics: Arc<DiagnosticLog>,
     local_connector: LocalConnector,
     question_links: question_links::QuestionLinkInbox,
@@ -75,6 +77,12 @@ struct AppState {
     release_start: tokio::sync::Mutex<()>,
     usage_refresh: tokio::sync::Mutex<()>,
     workspace_cache: Arc<Mutex<HashMap<String, Option<Workspace>>>>,
+}
+
+#[tauri::command]
+async fn superbot_request(state: State<'_, AppState>, request: superbot::Request) -> Result<Value, String> {
+    let home = std::env::var_os("HOME").ok_or("无法定位用户目录")?;
+    state.superbot.request(&std::path::PathBuf::from(home).join(".multica/config.json"), request).await
 }
 
 #[tauri::command]
@@ -1571,6 +1579,7 @@ pub fn run() {
                 app_server: manager,
                 async_waits,
                 claude_runtime,
+                superbot: superbot::SuperbotClient::new()?,
                 diagnostics: diagnostics.clone(),
                 local_connector: LocalConnector::new(),
                 question_links: question_links::QuestionLinkInbox::default(),
@@ -1592,6 +1601,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            superbot_request,
             async_wait_list,
             async_wait_create,
             async_wait_review,

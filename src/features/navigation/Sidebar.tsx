@@ -1,3 +1,4 @@
+import type { ConversationProvider } from '../conversation/useUnifiedHarness'
 import {
   useEffect,
   useMemo,
@@ -43,8 +44,6 @@ import type {
 } from '../../core/domain/codex'
 import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, normalizeSidebarListSplitRatio, sortThreads, sortWorkspaces } from '../../core/domain/codex'
 import { relativeTime, truncate } from '../../core/domain/format'
-import harnessDevIcon from '../../../icon/codex-harness-dev.svg'
-import harnessIcon from '../../../icon/codex-harness.svg'
 import { resolveThreadBadge } from './threadBadge'
 import { visibleThreadOrder, visibleThreads } from './visibleThreads'
 import type { ClaudeRuntimeStatus } from '../../core/claude/types'
@@ -76,8 +75,9 @@ interface SidebarProps {
   onSelectThread: (threadId: string) => void
   onSelectWorkspace: (root: string) => void
   onArchiveOldThreads: () => void
-  onNewThread: (provider?: 'codex' | 'claude') => void
-  newThreadProvider: 'codex' | 'claude'
+  onNewThread: (provider?: ConversationProvider) => void
+  newThreadProvider: ConversationProvider
+  onNewThreadProvider?: (provider: ConversationProvider) => void
   onToggleNewThreadProvider: () => void
   claudeStatus?: ClaudeRuntimeStatus | null
   onSearch: (term: string) => void
@@ -128,6 +128,7 @@ export function Sidebar({
   onNewThread,
   newThreadProvider,
   onToggleNewThreadProvider,
+  onNewThreadProvider,
   claudeStatus = null,
   onSearch,
   onRefresh,
@@ -148,7 +149,6 @@ export function Sidebar({
   onOpenPlugins,
   onVisibleThreadOrder,
 }: SidebarProps) {
-  const isDevelopmentFlavor = import.meta.env.MODE === 'dev'
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -285,6 +285,7 @@ export function Sidebar({
     const unsorted: Thread[] = []
     const roots = new Set(orderedWorkspaces.map((workspace) => workspace.root))
     for (const thread of orderedThreads) {
+      if (thread.provider === 'superbot') continue
       const root = threadRoots[thread.id]
       if (root && roots.has(root)) byRoot.set(root, [...(byRoot.get(root) ?? []), thread])
       else unsorted.push(thread)
@@ -296,11 +297,13 @@ export function Sidebar({
   const listSections = useMemo(() => {
     const sections: { key: string; threads: Thread[] }[] = [{ key: 'all.codex', threads: providerSplit.codex }]
     if (providerSplit.claude.length > 0) sections.push({ key: 'all.claude', threads: providerSplit.claude })
+    if (providerSplit.superbot.length > 0) sections.push({ key: 'all.superbot', threads: providerSplit.superbot })
     return sections
   }, [providerSplit])
 
   const allWorkspacesExpanded = orderedWorkspaces.length > 0 && orderedWorkspaces.every((workspace) => expanded[workspace.root] ?? true)
-  const visibleThreadIds = useMemo(() => visibleThreadOrder({
+  const visibleThreadIds = useMemo(() => {
+    const ids = visibleThreadOrder({
     layout: navigationLayout,
     orderedThreads,
     orderedWorkspaceRoots: orderedWorkspaces.map((workspace) => workspace.root),
@@ -311,7 +314,9 @@ export function Sidebar({
     sidebarUnpinnedCount,
     pinnedThreadIds,
     listSections,
-  }), [expanded, grouped, listSections, navigationLayout, orderedThreads, orderedWorkspaces, pinnedThreadIds, sidebarUnpinnedCount, visibleCounts])
+    })
+    return navigationLayout === 'list' ? ids : [...ids, ...visibleThreads(providerSplit.superbot, visibleCounts['all.superbot'], undefined, pinnedThreadIds, sidebarUnpinnedCount).map(t => t.id)]
+  }, [expanded, grouped, listSections, navigationLayout, orderedThreads, orderedWorkspaces, pinnedThreadIds, sidebarUnpinnedCount, visibleCounts, providerSplit.superbot])
 
   useEffect(() => onVisibleThreadOrder(visibleThreadIds), [onVisibleThreadOrder, visibleThreadIds])
 
@@ -470,21 +475,12 @@ export function Sidebar({
           {creatingThread ? <LoaderCircle size={16} className="spin" /> : <CirclePlus size={17} />}
           新会话
         </button>
-        <button
-          className="new-chat-provider"
-          type="button"
-          onClick={onToggleNewThreadProvider}
-          disabled={creatingThread || (newThreadProvider === 'codex' && !claudeAvailable)}
-          aria-label={newThreadProvider === 'codex' ? '切换到 Claude 新会话' : '切换到 Codex 新会话'}
-          aria-pressed={newThreadProvider === 'claude'}
-          title={newThreadProvider === 'codex'
-            ? claudeAvailable ? '切换到 Claude 新会话' : 'Claude Provider 不可用'
-            : '切换到 Codex 新会话'}
-        >
-          {newThreadProvider === 'codex'
-            ? <img className="new-chat-provider-icon" src={isDevelopmentFlavor ? harnessDevIcon : harnessIcon} alt="" />
-            : <Sparkles size={16} aria-hidden />}
-        </button>
+        <select className="new-chat-provider" aria-label="新会话类型" value={newThreadProvider}
+          disabled={creatingThread} onChange={event => onNewThreadProvider ? onNewThreadProvider(event.target.value as ConversationProvider) : onToggleNewThreadProvider()}>
+          <option value="codex">Codex</option>
+          <option value="claude" disabled={!claudeAvailable}>Claude</option>
+          <option value="superbot">Superbot</option>
+        </select>
       </div>
 
       <div className={`sidebar-scroll ${navigationLayout === 'list' && providerSplit.claude.length > 0 ? 'split-mode' : ''}`}>
@@ -557,7 +553,7 @@ export function Sidebar({
           </div>
         </div>
 
-        {workspaces.length === 0 && viewMode === 'active' && (
+        {workspaces.length === 0 && providerSplit.superbot.length === 0 && viewMode === 'active' && (
           <div className="workspace-empty static">
             <FolderGit2 size={18} />
             <span>暂无 Git 主工作区</span>
@@ -659,6 +655,11 @@ export function Sidebar({
             )}
           </>
         )}
+        {providerSplit.superbot.length > 0 && <section className="workspace-group single-list-group">
+          <div className="workspace-row static"><Sparkles size={16} /><span>Superbot · 公司云端</span><em>{providerSplit.superbot.length}</em></div>
+          {renderThreadList(providerSplit.superbot, 'all.superbot')}
+        </section>}
+
       </div>
 
       <div className="sidebar-footer">
@@ -852,14 +853,16 @@ function SidebarPinButton({ pinned, subject, onToggle }: { pinned: boolean; subj
   )
 }
 
-export function splitThreadsByProvider(threads: Thread[]): { codex: Thread[]; claude: Thread[] } {
+export function splitThreadsByProvider(threads: Thread[]): { codex: Thread[]; claude: Thread[]; superbot: Thread[] } {
   const codex: Thread[] = []
   const claude: Thread[] = []
+  const superbot: Thread[] = []
   for (const thread of threads) {
-    if (thread.provider === 'claude') claude.push(thread)
+    if (thread.provider === 'superbot') superbot.push(thread)
+    else if (thread.provider === 'claude') claude.push(thread)
     else codex.push(thread)
   }
-  return { codex, claude }
+  return { codex, claude, superbot }
 }
 
 export function reorderThreadIds(ids: string[], draggedId: string, targetId: string, edge: 'before' | 'after'): string[] {

@@ -1,3 +1,4 @@
+import type { SuperbotRequest } from '../superbot/types'
 import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection, RouterFeedbackPage, DecisionPrompt, DecisionResult } from '../workspace-router/types'
 import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
 import type { ApprovalRequest } from '../domain/codex'
@@ -191,6 +192,10 @@ export const runtime = {
       }).catch(() => undefined)
       throw error
     }
+  },
+
+  superbotRequest<T>(request: SuperbotRequest): Promise<T> {
+    return invoke<T>('superbot_request', { request })
   },
 
   claudeRuntimeStatus(): Promise<ClaudeRuntimeStatus> {

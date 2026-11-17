@@ -16,7 +16,7 @@ describe('sidebar manual ordering', () => {
 })
 
 describe('sidebar provider split', () => {
-  const thread = (id: string, provider?: 'codex' | 'claude'): Thread => ({ id, provider } as Thread)
+  const thread = (id: string, provider?: 'codex' | 'claude' | 'superbot'): Thread => ({ id, provider } as Thread)
 
   it('puts codex and legacy (provider-less) threads first, claude threads second', () => {
     const legacy = thread('legacy')
@@ -27,6 +27,14 @@ describe('sidebar provider split', () => {
     const { codex, claude } = splitThreadsByProvider([legacy, claudeA, codexA, claudeB, codexB])
     expect(codex.map(({ id }) => id)).toEqual(['legacy', 'codex-a', 'codex-b'])
     expect(claude.map(({ id }) => id)).toEqual(['claude-a', 'claude-b'])
+  })
+
+  it('keeps Superbot sessions in their cloud group', () => {
+    const remote = thread('superbot:remote', 'superbot')
+    const groups = splitThreadsByProvider([remote, thread('local', 'codex')])
+    expect(groups.superbot).toEqual([remote])
+    expect(groups.codex.map(t => t.id)).toEqual(['local'])
+    expect(groups.claude).toEqual([])
   })
 
   it('tolerates an all-codex or all-claude list', () => {

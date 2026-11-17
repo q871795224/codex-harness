@@ -260,7 +260,7 @@ export function createManagementHandler(get: () => ManagementContext) {
       case 'sessions.list':
         return { source: 'live conversation view', coverage: 'loaded view only; search and pagination may omit sessions', complete: false,
           view: h.viewMode, selectedThreadId: h.selectedThreadId, data: h.threads.map((thread) => ({ id: thread.id, name: thread.name,
-            cwd: thread.cwd, provider: thread.id.startsWith('claude:') ? 'claude' : 'codex', createdAt: thread.createdAt,
+            cwd: thread.cwd, provider: thread.provider ?? (thread.id.startsWith('claude:') ? 'claude' : 'codex'), createdAt: thread.createdAt,
             updatedAt: thread.updatedAt, activeTurnId: h.activeTurnIds[thread.id] ?? null })) }
       case 'sessions.create': {
         if (p.cwd === undefined) {
@@ -303,9 +303,10 @@ export function createManagementHandler(get: () => ManagementContext) {
       }
       case 'plugins.list': {
         const threadId = typeof p.threadId === 'string' ? p.threadId : p.workspaceRoot === undefined ? h.selectedThreadId : null
+        if (threadId?.startsWith('superbot:')) throw new Error('Superbot 暂不接入 Harness 插件')
         const thread = h.threads.find((candidate) => candidate.id === threadId)
         const context: PluginViewContext = { provider: p.provider === undefined
-          ? threadId ? threadId.startsWith('claude:') ? 'claude' : 'codex' : h.selectedProvider : provider(p),
+          ? threadId ? threadId.startsWith('claude:') ? 'claude' : 'codex' : h.selectedProvider === 'claude' ? 'claude' : 'codex' : provider(p),
           threadId, threadCwd: typeof p.cwd === 'string' ? p.cwd : thread?.cwd ?? null,
           workspaceRoot: typeof p.workspaceRoot === 'string' ? p.workspaceRoot
             : h.workspaces.find((workspace) => workspace.root === (threadId ? h.threadRoots[threadId] : null))?.root ?? null }
