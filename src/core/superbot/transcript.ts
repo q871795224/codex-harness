@@ -15,7 +15,7 @@ export function superbotTranscript(snapshot?: SuperbotSnapshot): { turns: Turn[]
   }
   const queuedTasks = new Set((snapshot.pending.queued_tasks ?? []).map(task => task.task_id))
   for (const message of snapshot.page.messages) {
-    if (message.task_status === 'queued' || (message.task_id && queuedTasks.has(message.task_id))) continue
+    if ((message.task_status === 'queued' && message.task_id !== snapshot.pending.task_id) || (message.task_id && queuedTasks.has(message.task_id))) continue
     const id = message.task_id ?? (message.role === 'assistant' ? turns.at(-1)?.id : undefined) ?? `message:${message.id}`
     const turn = getTurn(id)
     const time = Date.parse(message.created_at) / 1000

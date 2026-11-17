@@ -4,7 +4,7 @@ import type { SuperbotSnapshot } from './types'
 const snapshot = (values: Partial<SuperbotSnapshot>): SuperbotSnapshot => ({ session: {} as SuperbotSnapshot['session'], page: { messages: [], has_more: false, next_cursor: null }, pending: {}, events: [], ...values })
 describe('Superbot shared transcript adapter', () => {
   it('does not present queued messages as completed conversation turns', () => {
-    const page = { has_more: false, next_cursor: null, messages: [{ id: 'queued-message', role: 'user', content: 'later', task_id: 'queued', created_at: '2026-11-17T08:00:00Z' }] }
+    const page = { has_more: false, next_cursor: null, messages: [{ id: 'queued-message', role: 'user', content: 'later', task_id: 'queued', task_status: 'queued', created_at: '2026-11-17T08:00:00Z' }] }
     expect(superbotTranscript(snapshot({ page, pending: { queued_tasks: [{ task_id: 'queued', status: 'queued' }] } })).turns).toEqual([])
     expect(superbotTranscript(snapshot({ page, pending: { task_id: 'queued', queued_tasks: [] } })).turns[0].status).toBe('inProgress')
   })
