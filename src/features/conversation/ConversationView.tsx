@@ -53,6 +53,7 @@ const MessageThreadContext = createContext<string | null>(null)
 interface ConversationHeaderProps {
   environmentLabel?: string
   readOnly?: boolean
+  renameDisabled?: boolean
   automaticWorkspace?: boolean
   thread: Thread
   workspace: Workspace | null
@@ -75,7 +76,7 @@ interface ConversationHeaderProps {
   headerActions?: ReactNode
 }
 
-export function ConversationHeader({ environmentLabel, readOnly = false, automaticWorkspace = false, thread, workspace, gitContextResolved, archived, isWorking, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
+export function ConversationHeader({ environmentLabel, readOnly = false, renameDisabled = readOnly, automaticWorkspace = false, thread, workspace, gitContextResolved, archived, isWorking, pinned, workspaceChanging, canChangeWorkspace, projectName, onOpenProject, onRename, onArchive, onUnarchive, onTogglePinned, onChooseWorkspace, onOpenThread, headerActions }: ConversationHeaderProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(threadTitle(thread))
 
@@ -111,7 +112,7 @@ export function ConversationHeader({ environmentLabel, readOnly = false, automat
               setTitle(threadTitle(thread))
               setEditingTitle(true)
             }}
-            disabled={readOnly}
+            disabled={renameDisabled}
             title="重命名会话"
           >
             <h1>{threadTitle(thread)}</h1>
@@ -119,7 +120,7 @@ export function ConversationHeader({ environmentLabel, readOnly = false, automat
           </button>
         )}
         <div className="thread-context">
-          {environmentLabel ? <span><Cloud size={13} />{environmentLabel}</span> : <>
+          {environmentLabel ? <span className="thread-environment" title={environmentLabel}><Cloud size={13} /><span>{environmentLabel}</span></span> : <>
           <span><GitBranch size={13} />{automaticWorkspace ? '自动选择工作区' : workspace?.name ?? '未分组'}</span>
           {!automaticWorkspace && <span>{threadGitContextLabel(thread.gitInfo, gitContextResolved)}</span>}
           </>}
@@ -841,7 +842,7 @@ const ThreadItemView = memo(function ThreadItemView({
   if (item.type === 'userMessage') {
     const text = itemText(item)
     const attachments = (item.content ?? []).filter((content) => content.type === 'localImage' || content.type === 'image' || content.type === 'mention')
-    return text || attachments.length ? (
+    return text || attachments.length || item.remoteAttachments?.length ? (
       <article className="message user-message">
         <div className="message-label"><UserRound size={14} />你</div>
         <div className="user-bubble">

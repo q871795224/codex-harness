@@ -439,11 +439,15 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
 
   async function sendComposerMessage(threadId: string, input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string, delayed = false) {
     const submittedDraft = queuedComposerDraftsRef.current[threadId]
-    const prepared = await prepareProjectInput(projectDocs, threadId, input, projectDocThreshold, harness.threads.find(thread => thread.id === threadId)?.harnessProjectTools === true)
+    const cloud = threadId.startsWith('superbot:')
+    const prepared = cloud ? { input, projectId: null } : await prepareProjectInput(projectDocs, threadId, input, projectDocThreshold, harness.threads.find(thread => thread.id === threadId)?.harnessProjectTools === true)
     if (!delayed && selectedThreadRef.current !== threadId) throw new Error('会话已切换，消息未发送；请回到来源会话继续')
     scrollRequestSequence.current += 1
     setScrollToLatestRequest({ threadId, sequence: scrollRequestSequence.current })
-    await harness.sendMessage(prepared.input, mode, references, titleSource, threadId)
+    if (cloud) {
+      const content = input.filter(item => item.type === 'text').map(item => item.text).join('\n')
+      await harness.superbot.send(threadId, content, harness.superbot.settingsForThread(threadId), submittedDraft?.attachments.map(file => file.path), mode)
+    } else await harness.sendMessage(prepared.input, mode, references, titleSource, threadId)
     const targetId = draftReplacementIdsRef.current[threadId] ?? threadId
     if (submittedDraft) setConsumedComposerDrafts((current) => ({ ...current, [targetId]: submittedDraft }))
     if (sameComposerDraft(queuedComposerDraftsRef.current[targetId], submittedDraft)) {
@@ -538,8 +542,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const pluginTabs = superbotConversation ? [] : resolvedPluginTabs
   const newThreadPanels = superbotConversation ? [] : resolvedNewThreadPanels
   const composerActions = superbotConversation ? [] : resolvedComposerActions
-  const quickActions = superbotConversation ? [] : resolvedQuickActions
-  const quickCommands = superbotConversation ? [] : resolvedQuickCommands
+  const quickActions = resolvedQuickActions
+  const quickCommands = resolvedQuickCommands
   const selectedPluginTab = pluginTabs.find((entry) => pluginTabKey(entry.pluginId, entry.contribution.id) === tab) ?? null
   const tabFocusable = conversationTabSupportsFocus(selectedPluginTab?.contribution ?? null)
   const tabFocused = focusedTab === tab && tabFocusable
@@ -896,6 +900,15 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
           session={harness.superbot.sessions.find(s => `superbot:${s.id}` === harness.selectedThreadId)}
           snapshot={harness.superbot.snapshots[harness.selectedThreadId]}
           service={harness.superbot} draft={composerDrafts[harness.selectedThreadId]}
+          followUpMode={harness.keyboard.followUpMode} onFollowUpModeChange={harness.setFollowUpMode}
+          inputColumnRef={inputColumnRef} consumedDraft={consumedComposerDrafts[harness.selectedThreadId]}
+          delayedSend={delayedSend.pending[harness.selectedThreadId]}
+          onCancelDelayedSend={() => delayedSend.cancel(harness.selectedThreadId!)}
+          onScheduleSend={(minutes, input, mode) => {
+            const threadId = harness.selectedThreadId!
+            const draft = queuedComposerDraftsRef.current[threadId]
+            if (draft) delayedSend.schedule(threadId, minutes, { input, mode, draft })
+          }}
           codexSettings={codex.settingsForThread(null)}
           pinned={harness.navigation.pinnedThreadIds.includes(harness.selectedThreadId)}
           onTogglePinned={() => harness.toggleThreadPinned(harness.selectedThreadId!)}
@@ -1266,18 +1279,19 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
       </main>
       {quickPanelsVisible && harness.currentThread && (
         <div className="notification-quick-panels" hidden={notificationsOpen}>
-          <QuickCommandPanel workspaceRoot={workspace?.root} threadId={harness.selectedThreadId} commands={quickCommands} release={workspaceRelease} anchorBottom={quickPanelBottom} />
+          <QuickCommandPanel workspaceRoot={workspace?.root} threadId={harness.selectedThreadId} commands={quickCommands} release={superbotConversation ? undefined : workspaceRelease} anchorBottom={quickPanelBottom} />
           <QuickActionPanel
             actions={quickActions}
             agentRuns={agentRuns}
             anchorBottom={quickPanelBottom}
+            disabledReason={superbotConversation ? 'Superbot 没有本机工作区，暂不能启动本机 Agent 任务' : undefined}
             context={{
               provider: localProvider,
               threadId: harness.selectedThreadId,
               threadCwd,
               workspaceRoot: workspace?.root ?? null,
               checkoutRoot: harness.currentThread.cwd,
-              disabled: harness.currentForeignActive,
+              disabled: superbotConversation || harness.currentForeignActive,
             }}
           />
         </div>

@@ -8,6 +8,7 @@ const SERVER: &str = "https://collab.shopee.io";
 const WORKSPACE: &str = "33b7cc93-d26a-4a40-9fa9-3508f379e732";
 const AGENT: &str = "281fd131-9fe9-4a14-bdd7-36ec840e5e15";
 const LOGIN: &str = "请先执行 multica --server-url https://collab.shopee.io login";
+const MAX_ATTACHMENT: u64 = 20 * 1024 * 1024;
 const MAX_RESPONSE: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -19,6 +20,21 @@ pub struct RunConfig {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_level: Option<String>,
+}
+
+#[derive(Default, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum FollowUpMode {
+    #[default]
+    Queue,
+    Interject,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum QueuedAction {
+    Steer,
+    Remove,
 }
 
 #[derive(Deserialize)]
@@ -38,6 +54,15 @@ pub enum Request {
         id: String,
         content: String,
         run_config: RunConfig,
+        #[serde(default)]
+        attachment_paths: Vec<String>,
+        #[serde(default)]
+        mode: FollowUpMode,
+    },
+    QueuedAction {
+        id: String,
+        task_id: String,
+        action: QueuedAction,
     },
     Stop {
         id: String,
@@ -51,6 +76,37 @@ pub enum Request {
         id: String,
         archived: bool,
     },
+}
+
+fn attachment_metadata(path: &str) -> Result<fs::Metadata, String> {
+    let path = Path::new(path);
+    if !path.is_absolute() {
+        return Err("请选择本机附件".into());
+    }
+    let metadata = fs::metadata(path).map_err(|_| "无法读取所选附件")?;
+    if !metadata.is_file() || metadata.len() > MAX_ATTACHMENT {
+        return Err("附件必须是 20 MiB 以内的普通文件".into());
+    }
+    Ok(metadata)
+}
+
+fn attachment_bytes(path: &str) -> Result<(String, Vec<u8>), String> {
+    use std::io::Read;
+    attachment_metadata(path)?;
+    let name = Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or("附件文件名无效")?
+        .to_string();
+    let file = fs::File::open(path).map_err(|_| "无法读取所选附件")?;
+    let mut bytes = Vec::new();
+    file.take(MAX_ATTACHMENT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "无法读取所选附件")?;
+    if bytes.len() as u64 > MAX_ATTACHMENT {
+        return Err("附件超过 20 MiB".into());
+    }
+    Ok((name, bytes))
 }
 
 pub struct SuperbotClient {
@@ -89,6 +145,19 @@ fn uuid(value: &str) -> Result<&str, String> {
     Ok(value)
 }
 
+fn repository_context(value: &Value) -> Value {
+    let rows: Vec<&Value> = if let Some(rows) = value["git"].as_array() {
+        rows.iter().collect()
+    } else if value["url"].is_string() {
+        vec![value]
+    } else {
+        return Value::Null;
+    };
+    json!({"git": rows.into_iter().filter_map(|row| {
+        Some(json!({"url": row["url"].as_str()?, "base_branch": row["base_branch"].as_str()}))
+    }).collect::<Vec<_>>()})
+}
+
 fn session(value: &Value) -> Result<Value, String> {
     uuid(value["id"].as_str().ok_or("Superbot 返回无效会话")?)?;
     if value["workspace_id"] != WORKSPACE || value["agent_id"] != AGENT {
@@ -117,6 +186,7 @@ fn session(value: &Value) -> Result<Value, String> {
     Ok(json!({
         "seatalk_kind": kind, "parent_session_id": value["parent_session_id"], "seatalk_following": value["seatalk_following"].as_bool(),
         "id": value["id"], "title": title, "status": status,
+        "repository_context": repository_context(&value["repository_context"]),
         "read_only": value["read_only"].as_bool().unwrap_or(true) || value["closed_at"].as_str().is_some(),
         "run_config": {"model": value["run_config"]["model"].as_str(), "thinking_level": value["run_config"]["thinking_level"].as_str()}, "runtime_id": value["runtime_id"],
         "created_at": value["created_at"], "updated_at": value["updated_at"],
@@ -222,6 +292,10 @@ impl SuperbotClient {
         if let Some(body) = body {
             req = req.json(&body);
         }
+        self.response(req, writing).await
+    }
+
+    async fn response(&self, req: reqwest::RequestBuilder, writing: bool) -> Result<Value, String> {
         let mut response = req.send().await.map_err(|_| {
             if writing {
                 "Superbot 请求中断，结果未知；请刷新会话核对后再操作，勿直接重发"
@@ -257,6 +331,41 @@ impl SuperbotClient {
             return Ok(Value::Null);
         }
         serde_json::from_slice(&bytes).map_err(|_| "无法解析 Superbot 响应，请刷新核对状态".into())
+    }
+
+    async fn upload(&self, token: &str, id: &str, path: &str) -> Result<String, String> {
+        let (name, bytes) = attachment_bytes(path)?;
+        let mime = mime_guess::from_path(&name).first_or_octet_stream();
+        let form = reqwest::multipart::Form::new()
+            .text("chat_session_id", id.to_string())
+            .part(
+                "file",
+                reqwest::multipart::Part::bytes(bytes)
+                    .file_name(name)
+                    .mime_str(mime.as_ref())
+                    .map_err(|_| "附件类型无效")?,
+            );
+        #[cfg(test)]
+        let endpoint = self.endpoint.as_deref().unwrap_or(SERVER);
+        #[cfg(not(test))]
+        let endpoint = SERVER;
+        let raw = self
+            .response(
+                self.http
+                    .post(format!("{endpoint}/api/upload-file"))
+                    .bearer_auth(token)
+                    .header("X-Workspace-ID", WORKSPACE)
+                    .multipart(form),
+                true,
+            )
+            .await?;
+        if raw["chat_session_id"]
+            .as_str()
+            .is_some_and(|session| session != id)
+        {
+            return Err("附件不属于当前会话".into());
+        }
+        Ok(uuid(raw["id"].as_str().ok_or("附件上传未返回有效回执")?)?.into())
     }
 
     async fn cloud(&self, token: &str) -> Result<String, String> {
@@ -391,19 +500,40 @@ impl SuperbotClient {
                 id,
                 content,
                 run_config,
+                attachment_paths,
+                mode,
             } => {
-                if content.trim().is_empty() || content.len() > 256 * 1024 {
+                if (content.trim().is_empty() && attachment_paths.is_empty())
+                    || content.len() > 256 * 1024
+                {
                     return Err("请输入 256 KiB 以内的消息".into());
                 }
                 let selected = self.load(token, &id, true).await?;
+                if attachment_paths.len() > 10 {
+                    return Err("每次最多上传 10 个附件".into());
+                }
+                if !attachment_paths.is_empty() && selected["seatalk_kind"].as_str().is_some() {
+                    return Err("SeaTalk 来源会话暂不支持上传附件".into());
+                }
+                for path in &attachment_paths {
+                    attachment_metadata(path)?;
+                }
                 let runtimes = self.api(token, Method::GET, "/api/runtimes", None).await?;
                 validate_public_runtime(&runtimes, selected["runtime_id"].as_str())?;
-                let accepted = self
+                let mut attachment_ids = Vec::new();
+                for path in attachment_paths {
+                    attachment_ids.push(self.upload(token, &id, &path).await?);
+                }
+                let mut body = json!({"content":content,"run_config":run_config});
+                if !attachment_ids.is_empty() {
+                    body["attachment_ids"] = json!(attachment_ids);
+                }
+                let mut accepted = self
                     .api(
                         token,
                         Method::POST,
                         &format!("/api/chat/sessions/{id}/messages"),
-                        Some(json!({"content":content,"run_config":run_config})),
+                        Some(body),
                     )
                     .await?;
                 if accepted["message_id"].as_str().is_none_or(str::is_empty)
@@ -413,7 +543,62 @@ impl SuperbotClient {
                         "Superbot 未返回有效发送回执，结果未知；请刷新历史核对，勿直接重发".into(),
                     );
                 }
+                if mode == FollowUpMode::Interject && accepted["queued"] == true {
+                    let task = accepted["task_id"].as_str().unwrap();
+                    let steering = if uuid(task).is_err() {
+                        Err("无效任务".into())
+                    } else {
+                        self.api(
+                            token,
+                            Method::POST,
+                            &format!("/api/chat/sessions/{id}/queued-tasks/{task}/steer"),
+                            None,
+                        )
+                        .await
+                    };
+                    match steering {
+                        Ok(_) => {
+                            accepted["delivery_mode"] = json!("guidance");
+                        }
+                        // The message has already been accepted into the server queue. Never reject
+                        // the send or invite a duplicate submission when promotion fails.
+                        Err(_) => {
+                            accepted["follow_up_error"] =
+                                json!("消息已排队，暂未转为插话；请刷新队列后操作");
+                        }
+                    }
+                }
                 Ok(accepted)
+            }
+            Request::QueuedAction {
+                id,
+                task_id,
+                action,
+            } => {
+                self.load(token, &id, true).await?;
+                uuid(&task_id)?;
+                let pending = self
+                    .api(
+                        token,
+                        Method::GET,
+                        &format!("/api/chat/sessions/{id}/pending-task"),
+                        None,
+                    )
+                    .await?;
+                if !pending["queued_tasks"]
+                    .as_array()
+                    .is_some_and(|tasks| tasks.iter().any(|task| task["task_id"] == task_id))
+                {
+                    return Err("排队消息已变化，请刷新后操作".into());
+                }
+                let path = match action {
+                    QueuedAction::Steer => {
+                        if pending["can_guide"] != true { return Err("云端当前暂不支持插话".into()); }
+                        format!("/api/chat/sessions/{id}/queued-tasks/{task_id}/steer")
+                    }
+                    QueuedAction::Remove => format!("/api/tasks/{task_id}/cancel?expected_status=queued&chat_session_id={id}&queue_action=remove"),
+                };
+                self.api(token, Method::POST, &path, None).await
             }
             Request::Stop { id, task_id } => {
                 self.load(token, &id, true).await?;
@@ -559,7 +744,17 @@ mod tests {
                 let mut body = vec![0; size];
                 reader.read_exact(&mut body).unwrap();
                 if let Some(expected) = expected {
-                    assert_eq!(serde_json::from_slice::<Value>(&body).unwrap(), expected);
+                    if let Some(parts) = expected["multipart_contains"].as_array() {
+                        let body = String::from_utf8(body).unwrap();
+                        for part in parts {
+                            assert!(
+                                body.contains(part.as_str().unwrap()),
+                                "missing multipart field {part}"
+                            );
+                        }
+                    } else {
+                        assert_eq!(serde_json::from_slice::<Value>(&body).unwrap(), expected);
+                    }
                 }
                 let response = response.to_string();
                 let redirect = if status == 302 {
@@ -607,6 +802,8 @@ mod tests {
                 Request::Send {
                     id: AGENT.into(),
                     content: "hello".into(),
+                    attachment_paths: vec![],
+                    mode: FollowUpMode::Queue,
                     run_config: RunConfig {
                         reset: None,
                         model: Some("opus".into()),
@@ -716,6 +913,217 @@ mod tests {
         row["parent_session_id"] = json!(AGENT);
         row["title"] = json!("");
         row
+    }
+    #[tokio::test]
+    async fn uploads_a_selected_image_before_sending_its_id_without_local_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("screenshot.png");
+        fs::write(&path, "fixture-image-bytes").unwrap();
+        let (client, worker) = fixture(vec![
+            (
+                "GET",
+                format!("/api/chat/sessions/{AGENT}"),
+                None,
+                200,
+                session_fixture(),
+            ),
+            ("GET", "/api/runtimes".into(), None, 200, runtimes_fixture()),
+            (
+                "POST",
+                "/api/upload-file".into(),
+                Some(
+                    json!({"multipart_contains": ["name=\"chat_session_id\"", AGENT, "name=\"file\"", "filename=\"screenshot.png\"", "Content-Type: image/png", "fixture-image-bytes"]}),
+                ),
+                200,
+                json!({"id":WORKSPACE, "chat_session_id":AGENT}),
+            ),
+            (
+                "POST",
+                format!("/api/chat/sessions/{AGENT}/messages"),
+                Some(json!({"content":"", "run_config":{}, "attachment_ids":[WORKSPACE]})),
+                200,
+                json!({"message_id":WORKSPACE, "task_id":AGENT}),
+            ),
+        ]);
+        let result = client
+            .execute(
+                "fixture-key",
+                Request::Send {
+                    id: AGENT.into(),
+                    content: "".into(),
+                    run_config: RunConfig::default(),
+                    attachment_paths: vec![path.to_str().unwrap().into()],
+                    mode: FollowUpMode::Queue,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(result["message_id"], WORKSPACE);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn bounds_selected_file_reads_and_rejects_directories_and_relative_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("large.bin");
+        fs::File::create(&path)
+            .unwrap()
+            .set_len(MAX_ATTACHMENT + 1)
+            .unwrap();
+        assert!(attachment_bytes(path.to_str().unwrap())
+            .unwrap_err()
+            .contains("20 MiB"));
+        assert!(attachment_bytes(temp.path().to_str().unwrap()).is_err());
+        assert!(attachment_bytes("relative.png").is_err());
+    }
+
+    #[test]
+    fn normalizes_only_repository_fields_used_in_the_cloud_header() {
+        let repo = json!({"url":"https://git.example/team/repo.git", "base_branch":"main", "private_metadata":"not exposed"});
+        let expected =
+            json!({"git":[{"url":"https://git.example/team/repo.git", "base_branch":"main"}]});
+        assert_eq!(repository_context(&repo), expected);
+        assert_eq!(
+            repository_context(&json!({"git":[repo, {"url":42}]})),
+            expected
+        );
+        assert_eq!(repository_context(&Value::Null), Value::Null);
+    }
+
+    #[tokio::test]
+    async fn does_not_upload_to_seatalk_or_read_only_sessions() {
+        for seatalk in [false, true] {
+            let mut row = session_fixture();
+            row["read_only"] = json!(!seatalk);
+            if seatalk {
+                row["seatalk_kind"] = json!("thread");
+            }
+            let (client, worker) = fixture(vec![(
+                "GET",
+                format!("/api/chat/sessions/{AGENT}"),
+                None,
+                200,
+                row,
+            )]);
+            assert!(client
+                .execute(
+                    "fixture-key",
+                    Request::Send {
+                        id: AGENT.into(),
+                        content: "hello".into(),
+                        run_config: RunConfig::default(),
+                        attachment_paths: vec!["/not-read".into()],
+                        mode: FollowUpMode::Queue
+                    }
+                )
+                .await
+                .is_err());
+            worker.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn preserves_accepted_queue_receipt_when_promotion_fails_without_resending() {
+        for status in [200, 409] {
+            let (client, worker) = fixture(vec![
+                (
+                    "GET",
+                    format!("/api/chat/sessions/{AGENT}"),
+                    None,
+                    200,
+                    session_fixture(),
+                ),
+                ("GET", "/api/runtimes".into(), None, 200, runtimes_fixture()),
+                (
+                    "POST",
+                    format!("/api/chat/sessions/{AGENT}/messages"),
+                    Some(json!({"content":"direction", "run_config":{}})),
+                    200,
+                    json!({"message_id":WORKSPACE,"task_id":WORKSPACE,"queued":true}),
+                ),
+                (
+                    "POST",
+                    format!("/api/chat/sessions/{AGENT}/queued-tasks/{WORKSPACE}/steer"),
+                    None,
+                    status,
+                    json!({"task_id":WORKSPACE}),
+                ),
+            ]);
+            let result = client
+                .execute(
+                    "fixture-key",
+                    Request::Send {
+                        id: AGENT.into(),
+                        content: "direction".into(),
+                        run_config: RunConfig::default(),
+                        attachment_paths: vec![],
+                        mode: FollowUpMode::Interject,
+                    },
+                )
+                .await
+                .unwrap();
+            assert_eq!(result["task_id"], WORKSPACE);
+            assert_eq!(result["queued"], true);
+            if status == 200 {
+                assert_eq!(result["delivery_mode"], "guidance");
+            } else {
+                assert!(result["follow_up_error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("已排队"));
+            }
+            worker.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn removes_only_a_verified_queued_message_from_the_source_session() {
+        let (client, worker) = fixture(vec![
+            ("GET", format!("/api/chat/sessions/{AGENT}"), None, 200, session_fixture()),
+            ("GET", format!("/api/chat/sessions/{AGENT}/pending-task"), None, 200, json!({"task_id":AGENT,"queued_tasks":[{"task_id":WORKSPACE}]})),
+            ("POST", format!("/api/tasks/{WORKSPACE}/cancel?expected_status=queued&chat_session_id={AGENT}&queue_action=remove"), None, 200, json!({})),
+        ]);
+        client
+            .execute(
+                "fixture-key",
+                Request::QueuedAction {
+                    id: AGENT.into(),
+                    task_id: WORKSPACE.into(),
+                    action: QueuedAction::Remove,
+                },
+            )
+            .await
+            .unwrap();
+        worker.join().unwrap();
+        let (client, worker) = fixture(vec![
+            (
+                "GET",
+                format!("/api/chat/sessions/{AGENT}"),
+                None,
+                200,
+                session_fixture(),
+            ),
+            (
+                "GET",
+                format!("/api/chat/sessions/{AGENT}/pending-task"),
+                None,
+                200,
+                json!({"task_id":WORKSPACE,"queued_tasks":[]}),
+            ),
+        ]);
+        assert!(client
+            .execute(
+                "fixture-key",
+                Request::QueuedAction {
+                    id: AGENT.into(),
+                    task_id: WORKSPACE.into(),
+                    action: QueuedAction::Remove
+                }
+            )
+            .await
+            .unwrap_err()
+            .contains("排队消息已变化"));
+        worker.join().unwrap();
     }
     #[tokio::test]
     async fn lists_both_chat_sources_like_the_company_chat_sidebar() {

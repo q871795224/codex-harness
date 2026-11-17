@@ -10,6 +10,19 @@ import { QuickActionPanel } from './QuickActionPanel'
 afterEach(cleanup)
 
 describe('QuickActionPanel result return', () => {
+  it('retains the cloud conversation panel with local jobs disabled and an explanation', () => {
+    const run = vi.fn()
+    render(<QuickActionPanel actions={[{ pluginId: 'builtin.quick-agent', instanceId: 'job', contribution: { id: 'job', label: '分析问题', run } }]}
+      context={{ provider: 'codex', threadId: 'superbot:cloud', threadCwd: null, workspaceRoot: null, checkoutRoot: null, disabled: true }}
+      agentRuns={new FakeAgentRuns([])} disabledReason="Superbot 没有本机工作区" />)
+    fireEvent.click(screen.getByRole('button', { name: '打开快捷 Agent' }))
+    expect(screen.getByText('Superbot 没有本机工作区')).toBeTruthy()
+    const launch = screen.getByRole('button', { name: '启动 分析问题' }) as HTMLButtonElement
+    expect(launch.disabled).toBe(true)
+    fireEvent.click(launch)
+    expect(run).not.toHaveBeenCalled()
+  })
+
   it('manually returns a completed delegated result and marks the run', async () => {
     const service = new FakeAgentRuns([delegatedRun()])
     renderPanel(service)

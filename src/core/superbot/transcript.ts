@@ -13,7 +13,9 @@ export function superbotTranscript(snapshot?: SuperbotSnapshot): { turns: Turn[]
     turns.push(turn); byId.set(id, turn)
     return turn
   }
+  const queuedTasks = new Set((snapshot.pending.queued_tasks ?? []).map(task => task.task_id))
   for (const message of snapshot.page.messages) {
+    if (message.task_status === 'queued' || (message.task_id && queuedTasks.has(message.task_id))) continue
     const id = message.task_id ?? (message.role === 'assistant' ? turns.at(-1)?.id : undefined) ?? `message:${message.id}`
     const turn = getTurn(id)
     const time = Date.parse(message.created_at) / 1000
@@ -25,7 +27,7 @@ export function superbotTranscript(snapshot?: SuperbotSnapshot): { turns: Turn[]
     else if (message.task_status === 'cancelled') turn.status = 'interrupted'
     if (message.failure_reason) { turn.status = 'failed'; turn.error = { message: message.failure_reason } }
     turn.items.push(message.role === 'user'
-      ? { id: message.id, type: 'userMessage', providerMessageId: message.id, content: [textInput(message.content)] }
+      ? { id: message.id, type: 'userMessage', providerMessageId: message.id, content: [textInput(message.content)], remoteAttachments: message.attachments?.filter(file => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(file.id)).map(file => ({ name: file.filename || '附件', url: `https://collab.shopee.io/api/attachments/${file.id}/download?workspace_slug=naming` })) }
       : { id: message.id, type: 'agentMessage', text: message.content, phase: 'final_answer' })
   }
   const activeTurnId = snapshot.pending.task_id ?? null

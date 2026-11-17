@@ -26,7 +26,7 @@ export interface ConversationCapabilities {
 }
 
 export function capabilitiesForProvider(provider: ConversationProvider): ConversationCapabilities {
-  if (provider === 'superbot') return { images: false, approvals: false, interrupt: true, resume: true, queue: false, steer: false, fork: false, skills: false, mcpManagement: false }
+  if (provider === 'superbot') return { images: true, approvals: false, interrupt: true, resume: true, queue: true, steer: true, fork: false, skills: false, mcpManagement: false }
   if (provider === 'claude') {
     return {
       images: true,
@@ -190,8 +190,9 @@ export function useUnifiedHarness() {
   const onMessageAccepted = useCallback((listener: (threadId: string) => void) => {
     const disposeCodex = codex.onMessageAccepted(listener)
     const disposeClaude = claude.onMessageAccepted(listener)
-    return () => { disposeCodex(); disposeClaude() }
-  }, [claude.onMessageAccepted, codex.onMessageAccepted])
+    const disposeSuperbot = superbot.onMessageAccepted(listener)
+    return () => { disposeCodex(); disposeClaude(); disposeSuperbot() }
+  }, [claude.onMessageAccepted, codex.onMessageAccepted, superbot.onMessageAccepted])
 
   const onTurnCompleted = useCallback((listener: (event: TurnCompletedEvent) => void) => {
     const disposeCodex = codex.onTurnCompleted(listener)

@@ -4,6 +4,7 @@ import { runtime } from '../../core/runtime/bridge'
 import { loadMessageReferences } from './messageReferences'
 
 export function UserMessageContent({ item, text, cwd, raw = false }: { item: ThreadItem; text: string; cwd: string | null; raw?: boolean }) {
+  const [remoteError, setRemoteError] = useState<string | null>(null)
   const [resolved, setResolved] = useState<{ clientId: string; text: string; references: MessageReference[] } | null>(null)
   const clientId = typeof item.clientId === 'string' ? item.clientId : null
   useEffect(() => {
@@ -30,6 +31,10 @@ export function UserMessageContent({ item, text, cwd, raw = false }: { item: Thr
   let imageIndex = 0
   const attachments = (item.content ?? []).filter((content) => content.type === 'localImage' || content.type === 'image' || content.type === 'mention')
   return <>
+    {item.remoteAttachments?.length ? <div className="user-attachments">{item.remoteAttachments.map((file, index) =>
+      <button key={index} type="button" className="reference-chip" title="在浏览器查看附件" onClick={() => void runtime.openExternalUrl(file.url).catch(error => setRemoteError(String(error)))}>[{file.name}]</button>
+    )}</div> : null}
+    {remoteError && <span role="alert" className="reference-open-error">无法打开附件：{remoteError}</span>}
     {text && (raw ? <pre className="raw-response">{text}</pre> : <div>{parts}</div>)}
     {attachments.length > 0 && <div className="user-attachments">{attachments.map((attachment, index) => {
       const path = attachment.type === 'image' ? attachment.url : attachment.path

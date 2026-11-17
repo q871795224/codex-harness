@@ -18,6 +18,51 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Superbot session lifecycle', () => {
+  it('defaults to Opus 5.5 medium and retains independent choices across conversation switches', async () => {
+    const { result } = renderHook(() => useSuperbotHarness(false))
+    await waitFor(() => expect(result.current.loaded).toBe(true))
+    expect(result.current.settingsForThread('superbot:a')).toEqual({ model: 'claude-opus-5-5', thinking_level: 'medium' })
+    act(() => result.current.updateSettings('superbot:a', { model: 'other', thinking_level: 'high' }))
+    act(() => result.current.select('superbot:b'))
+    expect(result.current.settingsForThread('superbot:b')).toEqual({ model: 'claude-opus-5-5', thinking_level: 'medium' })
+    expect(result.current.settingsForThread('superbot:a')).toEqual({ model: 'other', thinking_level: 'high' })
+  })
+
+  it('keeps the running task when a follow-up is accepted into its remote queue', async () => {
+    const running: SuperbotSnapshot = { ...snapshot(), pending: { task_id: 'active', supports_queue: true, queued_tasks: [] } }
+    call.mockImplementation(async r => r.type === 'list' ? [session] : r.type === 'send' ? { task_id: 'queued', queued: true } : running)
+    const { result } = renderHook(() => useSuperbotHarness(false))
+    await act(async () => { await result.current.read('superbot:a') })
+    const accepted = vi.fn()
+    act(() => { result.current.onMessageAccepted(accepted) })
+    await act(async () => { await result.current.send('superbot:a', 'follow-up', {}, ['/tmp/report.pdf'], 'queue') })
+    expect(result.current.activeTurnIds['superbot:a']).toBe('active')
+    expect(accepted).not.toHaveBeenCalled()
+    expect(call).toHaveBeenCalledWith({ type: 'send', id: 'a', content: 'follow-up', run_config: {}, attachment_paths: ['/tmp/report.pdf'] })
+  })
+
+  it('consumes an accepted interjection even when promotion fails and reports the queue fallback', async () => {
+    const lastRead = deferred<SuperbotSnapshot>()
+    const { result } = renderHook(() => useSuperbotHarness(false))
+    await act(async () => { await result.current.read('superbot:a') })
+    call.mockImplementation(r => r.type === 'send' ? Promise.resolve({ task_id: 'queued', queued: true, follow_up_error: '消息已排队' }) : lastRead.promise)
+    await act(async () => { await expect(result.current.send('superbot:a', 'direction', {}, [], 'interject')).resolves.toBeUndefined() })
+    expect(result.current.error).toBe('消息已排队')
+    expect(call.mock.calls.filter(([r]) => r.type === 'send')).toHaveLength(1)
+    expect(call).toHaveBeenCalledWith({ type: 'send', id: 'a', content: 'direction', run_config: {}, mode: 'interject' })
+  })
+
+  it('notifies correction feedback only when a queued message becomes active', async () => {
+    const { result } = renderHook(() => useSuperbotHarness(false))
+    const accepted = vi.fn()
+    act(() => { result.current.onMessageAccepted(accepted) })
+    call.mockResolvedValueOnce({ ...snapshot(), pending: { task_id: 'active', queued_tasks: [{ task_id: 'queued', status: 'queued' }] } })
+    await act(async () => { await result.current.read('superbot:a') })
+    expect(accepted).not.toHaveBeenCalled()
+    call.mockResolvedValueOnce({ ...snapshot(), pending: { task_id: 'queued', queued_tasks: [] } })
+    await act(async () => { await result.current.read('superbot:a') })
+    expect(accepted).toHaveBeenCalledExactlyOnceWith('superbot:a')
+  })
   it('refreshes archive views and drops a late response from the old view', async () => {
     const old = deferred<unknown>()
     call.mockImplementation(r => r.type === 'list' ? r.archived ? Promise.resolve([{ ...session, id: 'archived', status: 'archived' }]) : old.promise : Promise.resolve(snapshot()))

@@ -71,6 +71,9 @@ interface ComposerProps {
   settings: ThreadCodexSettings
   claudeModels?: ClaudeModel[]
   claudeSettings?: ClaudeSessionSettings
+  superbotAttachments?: boolean
+  superbotQueue?: boolean
+  superbotSteer?: boolean
   superbotModels?: SuperbotModel[]
   superbotSettings?: SuperbotRunConfig
   onSuperbotSettingsChange?: (settings: SuperbotRunConfig) => void
@@ -82,7 +85,7 @@ interface ComposerProps {
   onFollowUpModeChange: (mode: FollowUpMode) => void
   threadId?: string
   onMessageAccepted?: (listener: (threadId: string) => void) => () => void
-  onSend: (input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string) => Promise<void> | void
+  onSend: (input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string, attachments?: ComposerAttachment[]) => Promise<void> | void
   delayedSend?: DelayedSend
   onCancelDelayedSend?: () => void
   onScheduleSend?: (minutes: 1 | 5 | 10, input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[], titleSource?: string) => void
@@ -130,7 +133,9 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ threadId, onMessageAccepted, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, superbotModels = [], superbotSettings, onSuperbotSettingsChange, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ threadId, onMessageAccepted, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, superbotAttachments = false, superbotQueue = false, superbotSteer = false, superbotModels = [], superbotSettings, onSuperbotSettingsChange, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+  const canAttach = provider !== 'superbot' || superbotAttachments
+  const supportsFollowUp = provider !== 'superbot' || superbotQueue
   const disabled = externallyDisabled || Boolean(delayedSend)
   const [delayMenuOpen, setDelayMenuOpen] = useState(false)
   const sendButtonRef = useRef<HTMLButtonElement>(null)
@@ -456,13 +461,15 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
 
   useEffect(() => { setHighlightedSuggestion(0) }, [triggerKind, triggerQuery])
 
-  const submission = useMemo(() => provider === 'codex'
+  const submission = useMemo(() => provider === 'superbot'
+    ? { input: [{ type: 'text' as const, text: expandedText, text_elements: [] }], references: [] }
+    : provider === 'codex'
     ? composerSubmission(text, collapsedPastes, attachments)
     : { input: composerInputs(expandedText, attachments, collapsedPastes.length > 0, false), references: [] },
   [provider, text, attachments, collapsedPastes, expandedText])
 
   const submitDraft = async () => {
-    if (!hasContent || disabled || busy || imageUnsupported || (provider === 'superbot' && working)) return
+    if (!hasContent || disabled || busy || imageUnsupported || (!supportsFollowUp && working)) return
     const sentDraft = currentDraftRef.current
     const command = provider === 'superbot' ? null : parseComposerCommand(expandedText, attachments.length > 0)
     if (command) {
@@ -488,7 +495,8 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
     }
     else {
       try {
-        await onSend(submission.input, followUpMode, submission.references, titleSourceText(text, collapsedPastes))
+        if (provider === 'superbot') await onSend(submission.input, followUpMode, submission.references, titleSourceText(text, collapsedPastes), attachments)
+        else await onSend(submission.input, followUpMode, submission.references, titleSourceText(text, collapsedPastes))
       } catch {
         return
       }
@@ -517,10 +525,10 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
   }
 
   const canSchedule = Boolean(onScheduleSend) && hasContent && !disabled && !busy && !attachmentBusy && !imageUnsupported
-    && !parseComposerCommand(expandedText, attachments.length > 0)
+    && (provider === 'superbot' || !parseComposerCommand(expandedText, attachments.length > 0))
   useEffect(() => { if (!canSchedule) setDelayMenuOpen(false) }, [canSchedule])
 
-  const stopping = working && (!hasContent || provider === 'superbot')
+  const stopping = working && (!hasContent || !supportsFollowUp)
   const runPrimaryAction = () => stopping ? onStop() : submit()
 
   const chooseSuggestion = async (suggestion: ComposerSuggestion) => {
@@ -586,7 +594,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
   }
 
   const addFiles = async () => {
-    if (provider === 'superbot') return
+    if (!canAttach) return
     setAttachmentBusy(true)
     try {
       const paths = await runtime.chooseComposerFiles()
@@ -724,7 +732,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
           onPaste={(event) => {
             if (clipboardHasImage(event.clipboardData)) {
               event.preventDefault()
-              if (provider === 'superbot') { setActionError('Superbot 暂只支持文字消息'); return }
+              if (!canAttach) { setActionError('此会话不支持上传附件'); return }
               setAttachmentBusy(true)
               setActionError(null)
               void runtime.pasteComposerImage()
@@ -839,7 +847,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
         {actionError && <div className="composer-inline-error">{actionError}</div>}
         <div className="composer-footer">
           <div className="composer-left-actions">
-            {provider !== 'superbot' && <button type="button" className="composer-icon-button" disabled={disabled || busy || attachmentBusy} onClick={() => void addFiles()} title="添加图片或文件" aria-label="添加图片或文件"><Plus size={17} /></button>}
+            {canAttach && <button type="button" className="composer-icon-button" disabled={disabled || busy || attachmentBusy} onClick={() => void addFiles()} title="添加图片或文件" aria-label="添加图片或文件"><Plus size={17} /></button>}
             {provider === 'codex' && <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
               <option value="on-request">On request</option>
               <option value="untrusted">Untrusted</option>
@@ -915,12 +923,13 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
                 const model = superbotModels.find(candidate => candidate.id === event.target.value)
                 onSuperbotSettingsChange?.(model ? { model: model.id, thinking_level: model.thinking?.default_level ?? '' } : { reset: true })
               }}>
-                <option value="">Superbot 默认模型</option>
+                <option value="">跟随 Collab 默认</option>
                 {superbotSettings.model && !selectedSuperbotModel && <option value={superbotSettings.model}>{superbotSettings.model}</option>}
                 {superbotModels.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select>
               <select className="effort-select" data-effort={reasoningEffortTone(superbotSettings.thinking_level ?? '')} aria-label="Superbot 推理强度" title="推理强度" value={superbotSettings.thinking_level ?? ''} disabled={settingsLocked || !selectedSuperbotModel?.thinking?.supported_levels.length} onChange={event => onSuperbotSettingsChange?.({ ...superbotSettings, thinking_level: event.target.value })}>
                 <option value="">默认</option>
+                {superbotSettings.thinking_level && !selectedSuperbotModel?.thinking?.supported_levels.some(level => level.value === superbotSettings.thinking_level) && <option value={superbotSettings.thinking_level}>{superbotSettings.thinking_level}</option>}
                 {selectedSuperbotModel?.thinking?.supported_levels.map(level => <option key={level.value} value={level.value}>{level.label}</option>)}
               </select>
             </div>}
@@ -955,13 +964,13 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
                   onScheduleSend?.(minutes, submission.input, followUpMode, submission.references, titleSourceText(text, collapsedPastes))
                 }}
               />}
-              {provider !== 'superbot' && working && !foreignActive && (
+              {supportsFollowUp && working && !foreignActive && (
                 <button type="button" className="follow-up-toggle" disabled={busy} onClick={() => { setDelayMenuOpen(false); setModeOpen((open) => !open) }} title={`默认：${followUpMode === 'queue' ? '排队' : '插话'}`} aria-label="选择后续消息默认行为"><ChevronDown size={13} /></button>
               )}
               {working && !foreignActive && modeOpen && (
                 <div className="follow-up-menu">
                   <button type="button" className={followUpMode === 'queue' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('queue'); setModeOpen(false) }}><strong>默认排队</strong><small>当前回合完成后，开始新的回合</small></button>
-                  <button type="button" className={followUpMode === 'interject' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('interject'); setModeOpen(false) }}><strong>默认插话</strong><small>不停止当前回合，追加新的方向</small></button>
+                  <button type="button" disabled={provider === 'superbot' && !superbotSteer} title={provider === 'superbot' && !superbotSteer ? '云端当前暂不支持插话' : undefined} className={followUpMode === 'interject' ? 'selected' : ''} onClick={() => { onFollowUpModeChange('interject'); setModeOpen(false) }}><strong>默认插话</strong><small>不停止当前回合，追加新的方向</small></button>
                 </div>
               )}
             </div>
