@@ -97,7 +97,7 @@ fn session(value: &Value) -> Result<Value, String> {
     Ok(json!({
         "id": value["id"], "title": value["title"], "status": value["status"],
         "read_only": value["read_only"].as_bool().unwrap_or(true),
-        "run_config": value["run_config"], "runtime_id": value["runtime_id"],
+        "run_config": {"model": value["run_config"]["model"].as_str(), "thinking_level": value["run_config"]["thinking_level"].as_str()}, "runtime_id": value["runtime_id"],
         "created_at": value["created_at"], "updated_at": value["updated_at"],
     }))
 }
@@ -465,8 +465,10 @@ mod tests {
         }
         assert!(uuid(AGENT).is_ok());
         assert!(session(&json!({"agent_id":"other","workspace_id":WORKSPACE})).is_err());
-        let clean = session(&json!({"agent_id":AGENT,"workspace_id":WORKSPACE,"id":AGENT,"session_metadata":{"secret":"body"},"title":"test"})).unwrap();
+        let clean = session(&json!({"agent_id":AGENT,"workspace_id":WORKSPACE,"id":AGENT,"session_metadata":{"secret":"body"},"run_config":{"model":"opus","debug":{"worker_ref":"other"}},"title":"test"})).unwrap();
         assert!(clean.get("session_metadata").is_none());
+        assert_eq!(clean["run_config"]["model"], "opus");
+        assert!(clean["run_config"].get("debug").is_none());
     }
     fn fixture(
         rows: Vec<(&'static str, String, Option<Value>, u16, Value)>,
