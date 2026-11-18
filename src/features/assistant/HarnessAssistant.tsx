@@ -29,10 +29,11 @@ interface Props {
   codex: Pick<ReturnType<typeof useCodexCore>, 'models' | 'loading' | 'settingsForThread' | 'syncThreadSettings' | 'updateThreadSettings'>
   disabled: boolean
   pinned: readonly string[]
+  openRequest?: number
   onMutate(session: AssistantSession, action: Mutation): Promise<void>
 }
 
-export function HarnessAssistant({ harness, codex, disabled, pinned, onMutate }: Props) {
+export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest = 0, onMutate }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const [threadId, setThreadId] = useState<string | null>(null)
@@ -164,6 +165,13 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, onMutate }:
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally { setLoading(false) }
   }
+
+  const handledOpenRequest = useRef(0)
+  useEffect(() => {
+    if (openRequest === handledOpenRequest.current) return
+    handledOpenRequest.current = openRequest
+    void open()
+  }, [openRequest])
 
   async function send(id: string, input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[]) {
     if (disabled) throw new Error('Harness 暂不可用，草稿已保留。')

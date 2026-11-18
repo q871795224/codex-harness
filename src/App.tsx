@@ -1,3 +1,4 @@
+import { DesktopPetNotifications, useDesktopPet } from './features/desktop-pet/useDesktopPet'
 import { HarnessAssistant } from './features/assistant/HarnessAssistant'
 import { SuperbotView } from './features/superbot/SuperbotView'
 import { useAsyncWaitPrefill } from './core/async-waits/useAsyncWaitPrefill'
@@ -281,6 +282,26 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const suppressTabClickRef = useRef(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pluginsOpen, setPluginsOpen] = useState(false)
+  const [petAssistantRequest, setPetAssistantRequest] = useState(0)
+  const petVisible = useDesktopPet(target => {
+    if (target.assistant) {
+      setSettingsOpen(false)
+      setPluginsOpen(false)
+      setPetAssistantRequest(current => current + 1)
+      return
+    }
+    if (!target.threadId) {
+      openNotifications(target.notificationId ?? undefined)
+      return
+    }
+    void harness.openThread(target.threadId).then(() => {
+      if (target.notificationId) notifications.markRead(target.notificationId)
+      selectMode('conversation')
+      setTab('chat')
+      setFocusedTab(null)
+      setNotificationsOpen(false)
+    }).catch(error => harness.notify('无法打开宠物提醒关联的会话', 'error', error))
+  }, error => harness.notify('无法恢复桌面宠物', 'error', error))
   const questionNavigation = useQuestionLinks(
     harness.phase === 'ready',
     async (id) => {
@@ -894,7 +915,10 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
         onToggle={() => harness.setSidebarCollapsed(!harness.navigation.sidebarCollapsed)}
       />
       <main className="main-pane">
-        {notificationsOpen && <NotificationCenter store={notifications} currentThreadId={harness.selectedThreadId} selectedId={selectedNotificationId} onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
+        {notificationsOpen && <NotificationCenter store={notifications} currentThreadId={harness.selectedThreadId} selectedId={selectedNotificationId}
+          reminderThread={petVisible && harness.currentThread && harness.viewMode === 'active' ? {
+            id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd,
+          } : undefined} onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
         <div className="notification-conversation" hidden={notificationsOpen}>
         {superbotConversation && harness.selectedThreadId ? <SuperbotView
           key={harness.selectedThreadId} id={harness.selectedThreadId}
@@ -1297,7 +1321,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
           />
         </div>
       )}
-      <HarnessAssistant harness={harness} codex={codex} disabled={harness.phase !== 'ready'} pinned={harness.navigation.pinnedThreadIds}
+      {petVisible && <DesktopPetNotifications harness={harness} />}
+      <HarnessAssistant openRequest={petAssistantRequest} harness={harness} codex={codex} disabled={harness.phase !== 'ready'} pinned={harness.navigation.pinnedThreadIds}
         onMutate={async (session, action) => {
           if (action !== 'archive') {
             await harness.setThreadPinned(session.id, action === 'pin')

@@ -1,3 +1,4 @@
+import type { DesktopPetActivity, DesktopPetCatalog, DesktopPetOpenTarget, DesktopPetSnapshot, PetKey } from '../desktop-pet/types'
 import type { SuperbotRequest } from '../superbot/types'
 import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection, RouterFeedbackPage, DecisionPrompt, DecisionResult } from '../workspace-router/types'
 import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
@@ -338,6 +339,30 @@ export const runtime = {
     const bytes = await invoke<ArrayBuffer | number[]>('read_markdown_image', { path, cwd: cwd ?? null })
     return bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer
   },
+
+  desktopPetCatalog: () => invoke<DesktopPetCatalog>('desktop_pet_catalog'),
+  desktopPetSelect: (key: PetKey) => invoke<void>('desktop_pet_select', { key }),
+  desktopPetSnapshot: () => invoke<DesktopPetSnapshot>('desktop_pet_snapshot'),
+  desktopPetPublish: (activity: DesktopPetActivity) => invoke<void>('desktop_pet_publish', { activity }),
+  desktopPetVisibility: (visible?: boolean) => invoke<boolean>('desktop_pet_visibility', { visible: visible ?? null }),
+  desktopPetOpen: (assistant: boolean) => invoke<void>('desktop_pet_open', { assistant }),
+  async desktopPetImport(format: 'folder' | 'frames'): Promise<PetKey | null> {
+    if (format === 'folder') {
+      const folder = await open({ directory: true, multiple: false, title: '选择 Codex 宠物目录' })
+      return typeof folder === 'string' ? invoke<PetKey>('desktop_pet_import', { folder, frames: null }) : null
+    }
+    const paths = await open({ multiple: true, title: '选择透明 PNG 或 WebP', filters: [{ name: '宠物图片', extensions: ['png', 'webp'] }] })
+    const frames = Array.isArray(paths) ? paths : paths ? [paths] : []
+    return frames.length ? invoke<PetKey>('desktop_pet_import', { folder: null, frames }) : null
+  },
+  async desktopPetAsset(key: PetKey): Promise<ArrayBuffer> {
+    const bytes = await invoke<ArrayBuffer | number[]>('desktop_pet_asset', { key })
+    return bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer
+  },
+  listenDesktopPetChanges: (handler: () => void) => listen('desktop-pet:changed', handler),
+  listenDesktopPetVisibility: (handler: (visible: boolean) => void) => listen<boolean>('desktop-pet:visibility', event => handler(event.payload)),
+  listenDesktopPetOpen: (handler: (target: DesktopPetOpenTarget) => void) => listen<DesktopPetOpenTarget>('desktop-pet:open', event => handler(event.payload)),
+  startDesktopPetDragging: () => getCurrentWindow().startDragging(),
 
   async chooseComposerFiles(): Promise<string[]> {
     const paths = await open({
