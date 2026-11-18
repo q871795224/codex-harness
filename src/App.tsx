@@ -1,3 +1,6 @@
+import { useDesktopAssistantHost } from './features/desktop-pet/desktopAssistantHost'
+import type { AssistantSession } from './features/assistant/sessionAssistant'
+import type { AssistantMutation } from './core/desktop-pet/assistantTypes'
 import { DesktopPetNotifications, useDesktopPet } from './features/desktop-pet/useDesktopPet'
 import { HarnessAssistant } from './features/assistant/HarnessAssistant'
 import { SuperbotView } from './features/superbot/SuperbotView'
@@ -282,14 +285,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const suppressTabClickRef = useRef(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pluginsOpen, setPluginsOpen] = useState(false)
-  const [petAssistantRequest, setPetAssistantRequest] = useState(0)
   const petVisible = useDesktopPet(target => {
-    if (target.assistant) {
-      setSettingsOpen(false)
-      setPluginsOpen(false)
-      setPetAssistantRequest(current => current + 1)
-      return
-    }
     if (!target.threadId) {
       openNotifications(target.notificationId ?? undefined)
       return
@@ -830,6 +826,30 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
     )
   }
 
+  async function mutateAssistantSession(session: AssistantSession, action: AssistantMutation) {
+    if (action !== 'archive') {
+      await harness.setThreadPinned(session.id, action === 'pin')
+      return
+    }
+    if (!composerDraftsRestored) throw new Error('草稿状态尚未恢复，请稍后重试。')
+    const draft = queuedComposerDraftsRef.current[session.id]
+    if (draft && composerDraftHasContent(draft)) throw new Error('会话有未发送草稿。')
+    if (harness.workingThreadIds[session.id] || harness.waitingThreadIds[session.id] || harness.queues[session.id]?.length) {
+      throw new Error('会话仍在运行、等待回复或有排队消息。')
+    }
+    if (session.provider === 'claude' && (await runtime.readClaudeSessionStatus(session.id, session.cwd)).active) {
+      throw new Error('Claude 会话仍在运行。')
+    }
+    if (session.provider === 'superbot') {
+      const snapshot = await harness.superbot.read(session.id)
+      if (snapshot.pending.task_id || snapshot.pending.queued_tasks?.length || snapshot.session.read_only) {
+        throw new Error('Superbot 会话仍有任务或处于只读状态。')
+      }
+    }
+    await harness.archiveThread(session.id, true)
+  }
+  useDesktopAssistantHost({ harness, codex, onMutate: mutateAssistantSession }, petVisible)
+
   return (
     <div
       className="app-shell"
@@ -1322,29 +1342,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
         </div>
       )}
       {petVisible && <DesktopPetNotifications harness={harness} />}
-      <HarnessAssistant openRequest={petAssistantRequest} harness={harness} codex={codex} disabled={harness.phase !== 'ready'} pinned={harness.navigation.pinnedThreadIds}
-        onMutate={async (session, action) => {
-          if (action !== 'archive') {
-            await harness.setThreadPinned(session.id, action === 'pin')
-            return
-          }
-          if (!composerDraftsRestored) throw new Error('草稿状态尚未恢复，请稍后重试。')
-          const draft = queuedComposerDraftsRef.current[session.id]
-          if (draft && composerDraftHasContent(draft)) throw new Error('会话有未发送草稿。')
-          if (harness.workingThreadIds[session.id] || harness.waitingThreadIds[session.id] || harness.queues[session.id]?.length) {
-            throw new Error('会话仍在运行、等待回复或有排队消息。')
-          }
-          if (session.provider === 'claude' && (await runtime.readClaudeSessionStatus(session.id, session.cwd)).active) {
-            throw new Error('Claude 会话仍在运行。')
-          }
-          if (session.provider === 'superbot') {
-            const snapshot = await harness.superbot.read(session.id)
-            if (snapshot.pending.task_id || snapshot.pending.queued_tasks?.length || snapshot.session.read_only) {
-              throw new Error('Superbot 会话仍有任务或处于只读状态。')
-            }
-          }
-          await harness.archiveThread(session.id, true)
-        }} />
+      <HarnessAssistant hideLauncher={petVisible} harness={harness} codex={codex} disabled={harness.phase !== 'ready'}
+        pinned={harness.navigation.pinnedThreadIds} onMutate={mutateAssistantSession} />
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
           codexUpdate={codexUpdate}

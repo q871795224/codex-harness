@@ -2758,6 +2758,7 @@ export function useHarness() {
     resetThread,
     setThreadDraftContent,
     generateConversationTitle,
+    assistantThreadId: assistantThreadRef.current,
     assistantThread: {
       submitting: Boolean(submissionPhases[assistantThreadRef.current ?? '']),
       create: createAssistantThread,

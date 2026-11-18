@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-assistant",
+  "description": "Local assistant window event subscriptions and attachment picker.",
+  "windows": ["desktop-assistant"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "dialog:allow-open"]
+}
