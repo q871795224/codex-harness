@@ -214,10 +214,11 @@ export function selectedRadarRow(rows: PickerRow[], settings: Pick<ThreadCodexSe
 }
 
 export function defaultRadarRow(rows: PickerRow[]): PickerRow | null {
-  const ranked = rows.filter((row) => (row.group === 'reference' || row.group === 'agi') && row.coverage !== null && row.coverage / (row.requiredTasks ?? 64) > 40 / 64 && row.score !== null && Number.isFinite(row.score))
+  const references = rows.filter((row) => row.group === 'reference')
+  const ranked = references.filter((row) => row.coverage !== null && row.coverage / (row.requiredTasks ?? 64) > 40 / 64 && row.score !== null && Number.isFinite(row.score))
     .sort((left, right) => right.score! - left.score! || (left.price ?? Infinity) - (right.price ?? Infinity))
   const [highest, second] = ranked
-  if (!highest) return rows.find((row) => row.defaultCursor) ?? rows[0] ?? null
+  if (!highest) return references.find((row) => row.defaultCursor) ?? references[0] ?? rows.find((row) => row.group === 'fallback') ?? null
   if (second && highest.score! - second.score! <= 2 && highest.price !== null && second.price !== null && second.price < highest.price) return second
   return highest
 }

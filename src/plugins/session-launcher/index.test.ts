@@ -52,7 +52,7 @@ describe('session launcher model selection', () => {
       ['agi', 'gpt-6-astra', 'medium'],
       ['simple', 'gpt-6-luna', 'max'],
     ])
-    expect(defaultRadarRow(rows)).toBe(rows[2])
+    expect(defaultRadarRow(rows)).toBe(rows[0])
     expect(rows[1]).toMatchObject({ score: 106.96, price: 2.029284, minutes: 9.35 })
     expect(rows[2]).toMatchObject({ score: 110.46, price: 2.297875, minutes: 8.87 })
     expect(selectedRadarRow(rows, { model: 'gpt-6-astra', effort: 'medium' })).toBe(rows[2])
@@ -124,12 +124,23 @@ describe('session launcher model selection', () => {
 
   it('ranks current four-task coverage by its actual denominator', () => {
     const sol = { ...row('gpt-6.1-sol', 'high'), score: 122.84, coverage: 4, requiredTasks: 4 }
-    const astra = { ...row('gpt-6-astra', 'medium'), group: 'agi' as const, score: 127.17, coverage: 4, requiredTasks: 4 }
-    expect(defaultRadarRow([sol, astra])).toEqual(astra)
+    const lower = { ...row('gpt-5.6-sol', 'high', true), score: 110, coverage: 4, requiredTasks: 4 }
+    expect(defaultRadarRow([lower, sol])).toEqual(sol)
   })
 
-  it('compares only reference and AGI, choosing a cheaper runner-up within two score points', () => {
-    const highest = { ...row('astra', 'medium'), group: 'agi' as const, score: 110, price: 3 }
+  it('excludes AGI and hard rows even when they score higher or carry the default cursor', () => {
+    const reference = { ...row('gpt-6.1-sol', 'high'), score: 119.592, price: 0.699 }
+    const agi = { ...row('gpt-6-astra', 'medium', true), group: 'agi' as const, score: 125.288, price: 1.919 }
+    const hard = { ...row('gpt-6.2-astra', 'xhigh'), group: 'hard' as const, score: 149.775 }
+    expect(defaultRadarRow([hard, agi, reference])).toBe(reference)
+    expect(defaultRadarRow([hard, agi, row('reference', 'low')])?.model).toBe('reference')
+    expect(defaultRadarRow([hard, agi])).toBeNull()
+    const fallback = { ...row('configured', 'low'), group: 'fallback' as const }
+    expect(defaultRadarRow([agi, fallback])).toBe(fallback)
+  })
+
+  it('compares reference models, choosing a cheaper runner-up within two score points', () => {
+    const highest = { ...row('reference', 'medium'), score: 110, price: 3 }
     const second = { ...row('sol', 'high'), score: 108, price: 1 }
     const excluded = { ...row('hard', 'high'), group: 'hard' as const, score: 150, price: 0.1 }
     expect(defaultRadarRow([excluded, highest, second])).toBe(second)
