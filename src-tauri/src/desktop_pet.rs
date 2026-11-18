@@ -4,7 +4,9 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use image::{DynamicImage, ImageFormat, ImageReader, RgbaImage};
+use image::{
+    codecs::webp::WebPDecoder, DynamicImage, ImageDecoder, ImageFormat, ImageReader, RgbaImage,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
@@ -17,6 +19,9 @@ const VISIBLE: &str = "desktopPet.visible";
 const POSITION: &str = "desktopPet.position";
 const MAX_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_FRAMES: usize = 32;
+const MAX_IDLE_ANIMATIONS: usize = 128;
+const MAX_IDLE_ANIMATION_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_IDLE_BUNDLE_BYTES: u64 = 128 * 1024 * 1024;
 const CELL_WIDTH: u32 = 192;
 const CELL_HEIGHT: u32 = 208;
 const COLUMNS: u32 = 8;
@@ -46,6 +51,15 @@ struct Manifest {
     spritesheet_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     idle_frames: Option<u8>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    idle_animations: Vec<IdleAnimation>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IdleAnimation {
+    path: PathBuf,
+    duration_ms: u32,
 }
 
 fn version_one() -> u8 {
@@ -60,6 +74,7 @@ pub(crate) struct Pet {
     description: String,
     version: u8,
     idle_frames: u8,
+    idle_animation_durations: Vec<u32>,
 }
 
 #[derive(Serialize)]
@@ -92,6 +107,7 @@ enum PetStatus {
 
 #[derive(Serialize)]
 pub(crate) struct Snapshot {
+    visible: bool,
     pet: Option<Pet>,
     activity: Activity,
 }
@@ -149,6 +165,7 @@ pub(crate) fn handle_window_event(window: &tauri::Window, event: &tauri::WindowE
                 .state::<AppState>()
                 .store
                 .set_app_state(VISIBLE, "false");
+            let _ = changed(app);
             let _ = app.emit_to("main", "desktop-pet:visibility", false);
         }
         _ => {}
@@ -251,6 +268,14 @@ fn manifest(dir: &Path, source: Source) -> Result<(Manifest, PathBuf), String> {
     }
     let image = inside(&dir.join(image), &dir)?;
     dimensions(&manifest, source)?;
+    if manifest.idle_animations.len() > MAX_IDLE_ANIMATIONS
+        || manifest
+            .idle_animations
+            .iter()
+            .any(|clip| !relative_path(&clip.path) || !(100..=30_000).contains(&clip.duration_ms))
+    {
+        return Err("待机动作路径、数量或时长无效。".into());
+    }
     Ok((manifest, image))
 }
 
@@ -279,12 +304,35 @@ fn asset(manifest: &Manifest, image: &Path, source: Source) -> Result<Vec<u8>, S
     Ok(bytes)
 }
 
+fn idle_animation(directory: &Path, clip: &IdleAnimation) -> Result<Vec<u8>, String> {
+    let path = inside(
+        &directory.join(&clip.path),
+        &directory.canonicalize().map_err(io)?,
+    )?;
+    let bytes = read_bytes(&path, MAX_IDLE_ANIMATION_BYTES)?;
+    let decoder = WebPDecoder::new(Cursor::new(&bytes)).map_err(io)?;
+    let (width, height) = decoder.dimensions();
+    if !decoder.has_animation()
+        || !decoder.color_type().has_alpha()
+        || width > 1024
+        || height > 1024
+    {
+        return Err("待机动作需为宽高均不超过 1024 像素的透明 WebP 动画。".into());
+    }
+    Ok(bytes)
+}
+
 fn describe(key: PetKey, manifest: Manifest) -> Pet {
     Pet {
         name: manifest.display_name,
         description: manifest.description,
         version: manifest.sprite_version_number,
         idle_frames: manifest.idle_frames.unwrap_or(6),
+        idle_animation_durations: manifest
+            .idle_animations
+            .iter()
+            .map(|clip| clip.duration_ms)
+            .collect(),
         key,
     }
 }
@@ -322,16 +370,17 @@ fn selected(state: &AppState) -> Result<Option<PetKey>, String> {
         .and_then(|stored| serde_json::from_str(stored).ok()))
 }
 
-fn snapshot(state: &AppState) -> Result<Snapshot, String> {
-    let pet = selected(state)?
-        .and_then(|key| find(&key).ok().map(|(manifest, _)| describe(key, manifest)));
-    Ok(Snapshot {
-        pet,
-        activity: state.desktop_pet_activity.lock().map_err(io)?.clone(),
-    })
+fn selected_pet(state: &AppState) -> Result<Option<Pet>, String> {
+    Ok(selected(state)?
+        .and_then(|key| find(&key).ok().map(|(manifest, _)| describe(key, manifest))))
 }
 
-fn save_import(root: &Path, mut manifest: Manifest, bytes: &[u8]) -> Result<PetKey, String> {
+fn save_import(
+    root: &Path,
+    mut manifest: Manifest,
+    bytes: &[u8],
+    source_folder: Option<&Path>,
+) -> Result<PetKey, String> {
     fs::create_dir_all(root).map_err(io)?;
     let staging = tempfile::Builder::new()
         .prefix(".pet-")
@@ -351,6 +400,19 @@ fn save_import(root: &Path, mut manifest: Manifest, bytes: &[u8]) -> Result<PetK
     }
     .into();
     fs::write(staging.path().join(&manifest.spritesheet_path), bytes).map_err(io)?;
+    if let Some(source) = source_folder.filter(|_| !manifest.idle_animations.is_empty()) {
+        fs::create_dir(staging.path().join("idle")).map_err(io)?;
+        let mut total = 0;
+        for (index, clip) in manifest.idle_animations.iter_mut().enumerate() {
+            let animation = idle_animation(source, clip)?;
+            total += animation.len() as u64;
+            if total > MAX_IDLE_BUNDLE_BYTES {
+                return Err("待机动作共计不能超过 128 MiB。".into());
+            }
+            clip.path = PathBuf::from(format!("idle/{index}.webp"));
+            fs::write(staging.path().join(&clip.path), animation).map_err(io)?;
+        }
+    }
     fs::write(
         staging.path().join("pet.json"),
         serde_json::to_vec(&manifest).map_err(io)?,
@@ -367,7 +429,7 @@ fn import_folder(destination: &Path, directory: &Path) -> Result<PetKey, String>
     let (manifest, image) = manifest(directory, Source::Codex)?;
     let bytes = asset(&manifest, &image, Source::Codex)?;
     validate_transparent(reader(&bytes)?.decode().map_err(io)?)?;
-    save_import(destination, manifest, &bytes)
+    save_import(destination, manifest, &bytes, Some(directory))
 }
 
 fn validate_transparent(picture: DynamicImage) -> Result<RgbaImage, String> {
@@ -420,8 +482,10 @@ fn import_frames(destination: &Path, mut paths: Vec<PathBuf>) -> Result<PetKey, 
             sprite_version_number: 0,
             spritesheet_path: String::new(),
             idle_frames: Some(frames),
+            idle_animations: Vec::new(),
         },
         &bytes.into_inner(),
+        None,
     )
 }
 
@@ -499,13 +563,25 @@ pub(crate) async fn desktop_pet_select(
 pub(crate) async fn desktop_pet_asset(
     window: WebviewWindow,
     key: PetKey,
+    animation: Option<usize>,
 ) -> Result<tauri::ipc::Response, String> {
     if !matches!(window.label(), "main" | LABEL) {
         return Err("无权读取宠物资源。".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let (manifest, path) = find(&key)?;
-        asset(&manifest, &path, key.source).map(tauri::ipc::Response::new)
+        let directory = package_directory(&root(key.source)?, &key.directory)?;
+        let (manifest, path) = manifest(&directory, key.source)?;
+        let bytes = match animation {
+            Some(index) => {
+                let clip = manifest
+                    .idle_animations
+                    .get(index)
+                    .ok_or("待机动作不存在。")?;
+                idle_animation(&directory, clip)?
+            }
+            None => asset(&manifest, &path, key.source)?,
+        };
+        Ok(tauri::ipc::Response::new(bytes))
     })
     .await
     .map_err(io)?
@@ -517,7 +593,11 @@ pub(crate) fn desktop_pet_snapshot(
     state: State<'_, AppState>,
 ) -> Result<Snapshot, String> {
     pet_only(&window)?;
-    snapshot(&state)
+    Ok(Snapshot {
+        visible: window.is_visible().map_err(io)?,
+        pet: selected_pet(&state)?,
+        activity: state.desktop_pet_activity.lock().map_err(io)?.clone(),
+    })
 }
 
 #[tauri::command]
@@ -657,7 +737,7 @@ pub(crate) async fn desktop_pet_visibility(
     let should_show =
         visible.unwrap_or(state.store.get_app_state(VISIBLE)?.as_deref() == Some("true"));
     if should_show {
-        if snapshot(&state)?.pet.is_none() {
+        if selected_pet(&state)?.is_none() {
             if visible.is_none() {
                 return Ok(false);
             }
@@ -672,6 +752,7 @@ pub(crate) async fn desktop_pet_visibility(
             .store
             .set_app_state(VISIBLE, if should_show { "true" } else { "false" })?;
     }
+    changed(&app)?;
     app.emit_to("main", "desktop-pet:visibility", should_show)
         .map_err(io)?;
     Ok(should_show)
@@ -824,6 +905,47 @@ mod tests {
             );
         }
         assert_eq!(list_at(&imported, Source::Harness).len(), 2);
+    }
+
+    #[test]
+    fn imports_idle_actions_with_the_package_and_rejects_unsafe_files_atomically() {
+        let fixture = tempfile::tempdir().unwrap();
+        let folder = fixture.path().join("pet");
+        let destination = fixture.path().join("imported");
+        fs::create_dir(&folder).unwrap();
+        write_asset(&folder.join("image.png"), 1536, 1872, [255, 0, 0, 255]);
+        let preview = include_bytes!("../tests/fixtures/desktop-pet-idle.webp");
+        fs::write(folder.join("dance.webp"), preview).unwrap();
+        let mut original = serde_json::json!({
+            "id": "test", "displayName": "Test", "spritesheetPath": "image.png",
+            "idleAnimations": [
+                {"path": "dance.webp", "durationMs": 200},
+                {"path": "missing.webp", "durationMs": 200}
+            ]
+        });
+        let manifest_path = folder.join("pet.json");
+        fs::write(&manifest_path, original.to_string()).unwrap();
+        assert!(import_folder(&destination, &folder).is_err());
+        assert!(fs::read_dir(&destination).unwrap().next().is_none());
+
+        original["idleAnimations"][1]["path"] = serde_json::json!("../outside.webp");
+        fs::write(&manifest_path, original.to_string()).unwrap();
+        assert!(import_folder(&destination, &folder)
+            .unwrap_err()
+            .contains("待机动作路径"));
+        assert!(fs::read_dir(&destination).unwrap().next().is_none());
+
+        original["idleAnimations"].as_array_mut().unwrap().pop();
+        fs::write(&manifest_path, original.to_string()).unwrap();
+        let key = import_folder(&destination, &folder).unwrap();
+        let imported = destination.join(&key.directory);
+        let (manifest, _) = manifest(&imported, Source::Harness).unwrap();
+        fs::remove_file(folder.join("dance.webp")).unwrap();
+        assert_eq!(
+            idle_animation(&imported, &manifest.idle_animations[0]).unwrap(),
+            preview
+        );
+        assert_eq!(describe(key, manifest).idle_animation_durations, vec![200]);
     }
 
     #[test]

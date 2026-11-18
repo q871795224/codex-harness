@@ -366,8 +366,8 @@ export const runtime = {
     const frames = Array.isArray(paths) ? paths : paths ? [paths] : []
     return frames.length ? invoke<PetKey>('desktop_pet_import', { folder: null, frames }) : null
   },
-  async desktopPetAsset(key: PetKey): Promise<ArrayBuffer> {
-    const bytes = await invoke<ArrayBuffer | number[]>('desktop_pet_asset', { key })
+  async desktopPetAsset(key: PetKey, animation?: number): Promise<ArrayBuffer> {
+    const bytes = await invoke<ArrayBuffer | number[]>('desktop_pet_asset', animation === undefined ? { key } : { key, animation })
     return bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer
   },
   listenDesktopPetChanges: (handler: () => void) => listen('desktop-pet:changed', handler),

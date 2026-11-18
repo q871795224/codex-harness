@@ -9,6 +9,7 @@ export interface DesktopPet {
   description: string
   version: 0 | 1 | 2
   idleFrames: number
+  idleAnimationDurations: number[]
 }
 
 export interface DesktopPetCatalog {
@@ -26,6 +27,7 @@ export interface DesktopPetActivity {
 }
 
 export interface DesktopPetSnapshot {
+  visible: boolean
   pet: DesktopPet | null
   activity: DesktopPetActivity
 }

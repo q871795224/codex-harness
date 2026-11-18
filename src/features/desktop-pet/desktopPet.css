@@ -4,6 +4,7 @@ html.desktop-pet-root, .desktop-pet-root body, .desktop-pet-root #root { width: 
 .desktop-pet button { cursor: pointer; }
 .desktop-pet-character { position: relative; display: grid; place-items: center; width: 123px; height: 133px; padding: 0; border: 0; background: transparent; color: #808bac; user-select: none; touch-action: none; }
 .desktop-pet-sprite { display: block; width: 100%; aspect-ratio: 192 / 208; background-repeat: no-repeat; }
+.desktop-pet-idle-animation { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .desktop-pet-notice { position: absolute; top: 3px; right: 4px; display: grid; min-width: 18px; height: 18px; padding: 0 3px; place-items: center; box-sizing: border-box; border-radius: 10px; font-weight: 700; background: #2d554e; color: #e5fff5; }
 .desktop-pet[data-status='waiting'] .desktop-pet-notice { background: #74532b; color: #fff4d7; }
 .desktop-pet[data-status='failed'] .desktop-pet-notice { background: #743b48; color: #fff3f5; }
