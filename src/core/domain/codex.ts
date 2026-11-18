@@ -372,6 +372,7 @@ export type UserInput =
   | { type: 'mention'; name: string; path: string }
 
 export interface ThreadItem extends JsonObject {
+  remoteAttachments?: { name: string; url: string }[]
   type: string
   id?: string
   text?: string

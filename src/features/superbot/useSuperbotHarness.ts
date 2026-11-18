@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { runtime } from '../../core/runtime/bridge'
-import { mergeSuperbotMessages, remoteSuperbotId, superbotId, superbotThread, type SuperbotCursor, type SuperbotModel, type SuperbotRunConfig, type SuperbotSession, type SuperbotSnapshot } from '../../core/superbot/types'
+import { DEFAULT_SUPERBOT_CONFIG, mergeSuperbotMessages, remoteSuperbotId, superbotId, superbotThread, type SuperbotCursor, type SuperbotModel, type SuperbotRunConfig, type SuperbotSession, type SuperbotSnapshot } from '../../core/superbot/types'
 
 export function useSuperbotHarness(archived: boolean) {
   const [sessions, setSessions] = useState<SuperbotSession[]>([])
   const [snapshots, setSnapshots] = useState<Record<string, SuperbotSnapshot>>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [runConfigs, setRunConfigs] = useState<Record<string, SuperbotRunConfig>>({})
+  const runConfigsRef = useRef(runConfigs)
+  runConfigsRef.current = runConfigs
+  const settingsForThread = useCallback((id: string) => runConfigsRef.current[id] ?? DEFAULT_SUPERBOT_CONFIG, [])
+  const updateSettings = useCallback((id: string, config: SuperbotRunConfig) => {
+    runConfigsRef.current = { ...runConfigsRef.current, [id]: config }
+    setRunConfigs(runConfigsRef.current)
+  }, [])
+  const acceptedListeners = useRef(new Set<(id: string) => void>())
+  const onMessageAccepted = useCallback((listener: (id: string) => void) => {
+    acceptedListeners.current.add(listener)
+    return () => { acceptedListeners.current.delete(listener) }
+  }, [])
   const [models, setModels] = useState<SuperbotModel[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -31,6 +44,10 @@ export function useSuperbotHarness(archived: boolean) {
     const result = await runtime.superbotRequest<SuperbotSnapshot>({ type: 'read', id: remoteSuperbotId(id),
       ...(before ? { before_created_at: before.created_at, before_id: before.id } : {}) })
     if (epoch !== (requestEpoch.current[id] ?? 0)) return result
+    const previousQueued = snapshotRef.current[id]?.pending.queued_tasks ?? []
+    if (previousQueued.some(task => task.task_id === result.pending.task_id)) {
+      for (const listener of acceptedListeners.current) listener(id)
+    }
     setSnapshots(current => {
       const previous = current[id]
       return { ...current, [id]: { ...result, page: {
@@ -89,13 +106,23 @@ export function useSuperbotHarness(archived: boolean) {
     setSessions(current => [session, ...current.filter(s => s.id !== session.id)])
     return superbotId(session.id)
   }), [action])
-  const send = useCallback((id: string, content: string, run_config: SuperbotRunConfig) => action(async () => {
+  const send = useCallback((id: string, content: string, run_config: SuperbotRunConfig, attachment_paths: string[] = [], mode: 'queue' | 'interject' = 'queue') => action(async () => {
     requestEpoch.current[id] = (requestEpoch.current[id] ?? 0) + 1
-    const result = await runtime.superbotRequest<{ task_id: string }>({ type: 'send', id: remoteSuperbotId(id), content, run_config })
+    const result = await runtime.superbotRequest<{ task_id: string; queued?: boolean; delivery_mode?: string; follow_up_error?: string }>({ type: 'send', id: remoteSuperbotId(id), content, run_config, ...(attachment_paths.length ? { attachment_paths } : {}), ...(mode === 'interject' ? { mode } : {}) })
     requestEpoch.current[id] = (requestEpoch.current[id] ?? 0) + 1
     // The send has been accepted. A failed refresh must never cause a duplicate send.
-    setSnapshots(current => current[id] ? { ...current, [id]: { ...current[id], pending: { task_id: result.task_id, status: 'pending' } } } : current)
+    if (result.queued !== true && result.delivery_mode !== 'guidance') {
+      setSnapshots(current => current[id] ? { ...current, [id]: { ...current[id], pending: { ...current[id].pending, task_id: result.task_id, status: 'pending' } } } : current)
+    }
+    if (result.queued !== true || result.delivery_mode === 'guidance') {
+      for (const listener of acceptedListeners.current) listener(id)
+    }
+    if (result.follow_up_error) setError(result.follow_up_error)
     void read(id).catch(e => setError(String(e)))
+  }), [action, read])
+  const queuedAction = useCallback((id: string, task_id: string, operation: 'steer' | 'remove') => action(async () => {
+    await runtime.superbotRequest({ type: 'queuedAction', id: remoteSuperbotId(id), task_id, action: operation })
+    await read(id)
   }), [action, read])
   const stop = useCallback((id: string) => action(async () => {
     const task = snapshotRef.current[id]?.pending.task_id
@@ -117,5 +144,5 @@ export function useSuperbotHarness(archived: boolean) {
   }), [action, refresh])
   const threads = useMemo(() => sessions.map(s => superbotThread(s, snapshots[superbotId(s.id)]?.pending.task_id)), [sessions, snapshots])
   const activeTurnIds = useMemo(() => Object.fromEntries(Object.entries(snapshots).flatMap(([id, s]) => s.pending.task_id ? [[id, s.pending.task_id]] : [])), [snapshots])
-  return { loaded, sessions, threads, snapshots, models, busy, error, activeTurnIds, refresh, read, catalog, create, send, stop, rename, archive, select: setSelectedId }
+  return { settingsForThread, updateSettings, onMessageAccepted, queuedAction, loaded, sessions, threads, snapshots, models, busy, error, activeTurnIds, refresh, read, catalog, create, send, stop, rename, archive, select: setSelectedId }
 }

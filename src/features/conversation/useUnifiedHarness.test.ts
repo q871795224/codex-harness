@@ -3,7 +3,7 @@ import { capabilitiesForProvider, shouldGenerateClaudeTitle } from './useUnified
 
 describe('conversation provider capabilities', () => {
   it('limits Superbot to cloud conversation controls', () => {
-    expect(capabilitiesForProvider('superbot')).toEqual({ images: false, approvals: false, interrupt: true, resume: true, queue: false, steer: false, fork: false, skills: false, mcpManagement: false })
+    expect(capabilitiesForProvider('superbot')).toEqual({ images: true, approvals: false, interrupt: true, resume: true, queue: true, steer: true, fork: false, skills: false, mcpManagement: false })
   })
 
   it('exposes Claude follow-up controls alongside its supported features', () => {

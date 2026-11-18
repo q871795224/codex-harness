@@ -10,9 +10,10 @@ interface QuickActionPanelProps {
   context: QuickActionProps
   agentRuns: AgentRunService
   anchorBottom?: number
+  disabledReason?: string
 }
 
-export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: QuickActionPanelProps) {
+export function QuickActionPanel({ actions, context, agentRuns, anchorBottom, disabledReason }: QuickActionPanelProps) {
   const [open, setOpen] = useState(false)
   const [startingId, setStartingId] = useState<string | null>(null)
   const [expandedInstanceId, setExpandedInstanceId] = useState<string | null>(null)
@@ -101,6 +102,7 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
               <Bot size={15} />快捷 Agent
             </button>
           </header>
+          {disabledReason && <p className="quick-action-note" role="status">{disabledReason}</p>}
           <div className="quick-action-list">
             {actions.map((action) => {
               const actionRuns = runsForQuickAction(runs, action.instanceId, context.threadId)
@@ -117,7 +119,7 @@ export function QuickActionPanel({ actions, context, agentRuns, anchorBottom }: 
                       type="button"
                       disabled={context.disabled || startingId !== null}
                       onClick={() => void run(action)}
-                      title={accessibleLabel}
+                      title={disabledReason ?? accessibleLabel}
                       aria-label={`启动 ${action.contribution.label}`}
                     >
                       <span className={`quick-action-play ${status}`}>

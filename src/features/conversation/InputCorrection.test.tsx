@@ -144,3 +144,17 @@ it('keeps feedback visible when sending fails', async () => {
   expect(screen.getByRole('textbox', { name: '纠正反馈' })).toBeTruthy()
   expect(input().value).toBe('会话')
 })
+
+it('corrects Superbot input and hides feedback only after its message is accepted', async () => {
+  let accepted!: (threadId: string) => void
+  await act(async () => { render(<Composer {...props} provider="superbot" threadId="superbot:one" onMessageAccepted={listener => { accepted = listener; return () => {} }} />) })
+  const editor = screen.getByPlaceholderText('给 Superbot 发送消息') as HTMLTextAreaElement
+  fireEvent.change(editor, { target: { value: '哈尼斯绘画' } })
+  await settle()
+  expect(editor.value).toBe('Harness会话')
+  expect(screen.getByRole('textbox', { name: '纠正反馈' })).toBeTruthy()
+  act(() => accepted('another'))
+  expect(screen.getByRole('textbox', { name: '纠正反馈' })).toBeTruthy()
+  act(() => accepted('superbot:one'))
+  expect(screen.queryByRole('textbox', { name: '纠正反馈' })).toBeNull()
+})

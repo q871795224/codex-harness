@@ -8,11 +8,12 @@ interface QueueDockProps {
   pendingSteers: PendingSteer[]
   working: boolean
   canMutate: boolean
+  canPromote?: boolean
   busy: Record<string, boolean>
-  onEdit: (queueId: string, text: string) => void
+  onEdit?: (queueId: string, text: string) => void
   onRemove: (queueId: string) => void
   onPromote: (queue: QueuedSubmission) => void
-  onStart: () => void
+  onStart?: () => void
 }
 
 export function QueueDock({
@@ -20,6 +21,7 @@ export function QueueDock({
   pendingSteers,
   working,
   canMutate,
+  canPromote = true,
   busy,
   onEdit,
   onRemove,
@@ -55,7 +57,7 @@ export function QueueDock({
               <span>排队消息</span>
               {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
             </button>
-            {!working && canMutate && (
+            {!working && canMutate && onStart && (
               <button className="queue-start" type="button" onClick={onStart}><Play size={13} />继续队列</button>
             )}
           </div>
@@ -77,7 +79,7 @@ export function QueueDock({
                           if (event.key === 'Escape') setEditing(null)
                           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
                             event.preventDefault()
-                            onEdit(item.id, editing.text)
+                            onEdit?.(item.id, editing.text)
                             setEditing(null)
                           }
                         }}
@@ -87,14 +89,14 @@ export function QueueDock({
                       <div className="queue-actions">
                         {isEditing ? (
                           <>
-                            <button type="button" title="保存修改" onClick={() => { onEdit(item.id, editing.text); setEditing(null) }}><Check size={14} /></button>
+                            <button type="button" title="保存修改" onClick={() => { onEdit?.(item.id, editing.text); setEditing(null) }}><Check size={14} /></button>
                             <button type="button" title="取消修改" onClick={() => setEditing(null)}><X size={14} /></button>
                           </>
                         ) : (
                           <>
-                            <button type="button" title="修改排队消息" disabled={isBusy} onClick={() => setEditing({ id: item.id, text: queueText(item) })}><Pencil size={14} /></button>
+                            {onEdit && <button type="button" title="修改排队消息" disabled={isBusy} onClick={() => setEditing({ id: item.id, text: queueText(item) })}><Pencil size={14} /></button>}
                             <button type="button" title="撤回排队消息" disabled={isBusy} onClick={() => onRemove(item.id)}><Trash2 size={14} /></button>
-                            <button type="button" title={working ? '改为插话' : '运行中才能插话'} disabled={isBusy || !working} onClick={() => onPromote(item)}><Send size={14} /></button>
+                            <button type="button" title={working ? '改为插话' : '运行中才能插话'} disabled={isBusy || !working || !canPromote} onClick={() => onPromote(item)}><Send size={14} /></button>
                           </>
                         )}
                       </div>

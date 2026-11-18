@@ -1,10 +1,12 @@
 import type { Thread } from '../domain/codex'
 
+export const DEFAULT_SUPERBOT_CONFIG: SuperbotRunConfig = { model: 'claude-opus-5-5', thinking_level: 'medium' }
 export const SUPERBOT_PREFIX = 'superbot:'
 export interface SuperbotRunConfig { reset?: boolean; model?: string | null; thinking_level?: string | null }
 export interface SuperbotSession {
   seatalk_kind?: 'root' | 'thread' | null; seatalk_following?: boolean | null; parent_session_id?: string | null
   id: string; title: string; status: string; read_only: boolean; runtime_id: string | null
+  repository_context?: { git: { url: string; base_branch?: string | null }[] } | null
   run_config: SuperbotRunConfig | null; created_at: string; updated_at: string
 }
 export interface SuperbotModel {
@@ -13,8 +15,10 @@ export interface SuperbotModel {
 }
 export interface SuperbotMessage {
   id: string; role: string; content: string; task_id?: string | null; task_status?: string
+  attachments?: { id: string; filename: string; content_type?: string }[]
   created_at: string; failure_reason?: string | null
 }
+export interface SuperbotQueuedTask { task_id: string; status: string; content?: string; created_at?: string; message_id?: string }
 export interface SuperbotCursor { created_at: string; id: string }
 export interface SuperbotTaskEvent {
   seq: number; call_id?: string; type: string; tool?: string; content?: string; text?: string
@@ -23,7 +27,7 @@ export interface SuperbotTaskEvent {
 export interface SuperbotSnapshot {
   session: SuperbotSession
   page: { messages: SuperbotMessage[]; has_more: boolean; next_cursor: SuperbotCursor | null }
-  pending: { task_id?: string; status?: string }
+  pending: { task_id?: string; status?: string; supports_queue?: boolean; can_guide?: boolean; queued_tasks?: SuperbotQueuedTask[] }
   events: SuperbotTaskEvent[]
 }
 export type SuperbotRequest =
@@ -31,7 +35,8 @@ export type SuperbotRequest =
   | { type: 'catalog' }
   | { type: 'create' }
   | { type: 'read'; id: string; before_created_at?: string; before_id?: string }
-  | { type: 'send'; id: string; content: string; run_config: SuperbotRunConfig }
+  | { type: 'send'; id: string; content: string; run_config: SuperbotRunConfig; attachment_paths?: string[]; mode?: 'queue' | 'interject' }
+  | { type: 'queuedAction'; id: string; task_id: string; action: 'steer' | 'remove' }
   | { type: 'stop'; id: string; task_id: string }
   | { type: 'rename'; id: string; title: string }
   | { type: 'archive'; id: string; archived: boolean }
