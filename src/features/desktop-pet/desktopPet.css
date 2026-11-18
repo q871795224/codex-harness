@@ -20,3 +20,4 @@ html.desktop-pet-root, .desktop-pet-root body, .desktop-pet-root #root { width: 
 .desktop-pet-settings button { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .desktop-pet-settings button:hover:not(:disabled) { background: var(--project-selected); }
 .desktop-pet-settings :is(button, select):disabled { opacity: .55; cursor: default; }
+.desktop-pet-idle-animation { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }

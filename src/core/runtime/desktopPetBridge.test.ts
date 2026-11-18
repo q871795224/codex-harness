@@ -23,3 +23,10 @@ it('loads pet assets through the native command using only an asset key', async 
   expect([...new Uint8Array(result)]).toEqual([0x89, 0x50])
   expect(invoke).toHaveBeenLastCalledWith('desktop_pet_asset', { key })
 })
+
+it('requests an idle animation by its index in the selected pet package', async () => {
+  vi.mocked(invoke).mockResolvedValueOnce([0x52, 0x49])
+  const key = { source: 'harness' as const, directory: 'example' }
+  expect([...new Uint8Array(await runtime.desktopPetAsset(key, 0))]).toEqual([0x52, 0x49])
+  expect(invoke).toHaveBeenLastCalledWith('desktop_pet_asset', { key, animation: 0 })
+})

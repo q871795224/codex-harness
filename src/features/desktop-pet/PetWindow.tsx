@@ -2,7 +2,8 @@ import { Bell, GripHorizontal, PawPrint, X } from 'lucide-react'
 import { useEffect, useState, type PointerEvent } from 'react'
 import type { DesktopPetActivity, DesktopPetSnapshot } from '../../core/desktop-pet/types'
 import { runtime } from '../../core/runtime/bridge'
-import { PetSprite, usePetImage } from './PetSprite'
+import { PetSprite, usePetImage, useReducedMotion } from './PetSprite'
+import { useIdleAnimation } from './useIdleAnimation'
 import './desktopPet.css'
 
 const labels: Record<DesktopPetActivity['status'], string> = {
@@ -16,6 +17,10 @@ export default function PetWindow() {
   const pet = snapshot?.pet
   const activity = snapshot?.activity
   const { url, error } = usePetImage(pet?.key)
+  const reducedMotion = useReducedMotion()
+  const idleAnimation = useIdleAnimation(pet, Boolean(
+    snapshot?.visible && activity?.status === 'idle' && url && !reducedMotion,
+  ))
   useEffect(() => {
     let disposed = false
     let remove: (() => void) | undefined
@@ -49,7 +54,9 @@ export default function PetWindow() {
     <button className="desktop-pet-character" type="button" aria-label="打开 Harness 助理"
       title={pet?.name ?? 'Harness 助理'} onPointerMove={look} onPointerLeave={() => setDirection(undefined)}
       onClick={() => handle(runtime.desktopPetOpen(true))}>
-      {pet && url ? <PetSprite pet={pet} url={url} status={activity?.status} direction={direction} /> : <PawPrint size={38} />}
+      {idleAnimation
+        ? <img className="desktop-pet-idle-animation" src={idleAnimation} alt="" draggable={false} />
+        : pet && url ? <PetSprite pet={pet} url={url} status={activity?.status} direction={direction} /> : <PawPrint size={38} />}
     </button>
     <div className="desktop-pet-controls">
       <button type="button" className="desktop-pet-grip" aria-label="拖动桌面宠物" title="拖动桌面宠物"
