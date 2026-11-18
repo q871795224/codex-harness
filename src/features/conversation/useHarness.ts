@@ -225,13 +225,21 @@ export function useHarness() {
   const threadListRequestRef = useRef(0)
   const threadSearchRef = useRef('')
   const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [submissionPhases, setSubmissionPhases] = useState<Partial<Record<string, 'sending' | 'routing'>>>({})
+  const setSubmissionPhase = useCallback((threadId: string, phase: 'sending' | 'routing' | null) => {
+    setSubmissionPhases((current) => {
+      if (phase) return { ...current, [threadId]: phase }
+      const next = { ...current }
+      delete next[threadId]
+      return next
+    })
+  }, [])
   const [forkingTurnId, setForkingTurnId] = useState<string | null>(null)
 
   const selectedThreadIdRef = useRef<string | null>(null)
   const nextThreadCwdRef = useRef<string | null>(null)
   const threadsRef = useRef<Thread[]>([])
   const pendingRestartRef = useRef<Record<string, PendingSteer[]>>({})
-  const continuingFailedThreadsRef = useRef(new Set<string>())
   const locallyStartingRef = useRef(new Set<string>())
   const unstartedDraftThreadIdsRef = useRef(new Set<string>())
   const pendingCatalogThreadIdsRef = useRef(new Set<string>())
@@ -1639,6 +1647,8 @@ export function useHarness() {
 
     // Keep the mounted composer and its pending draft across the thread-id change.
     for (const listener of draftReplacementListenersRef.current) listener(threadId, replacementId)
+    submittingThreadsRef.current.add(replacementId)
+    setSubmissionPhases((current) => ({ ...current, [replacementId]: current[threadId] }))
     draftOriginsRef.current = { ...draftOriginsRef.current, [replacementId]: draftOriginsRef.current[threadId] ?? threadId }
     setDraftOrigins(draftOriginsRef.current)
     const replacementDetail = startedThreadDetail(response)
@@ -1798,19 +1808,20 @@ export function useHarness() {
       throw new Error('该会话正由其他客户端运行；请等待当前轮结束。')
     }
     submittingThreadsRef.current.add(threadId)
-    setBusy((current) => ({ ...current, composer: true }))
+    setSubmissionPhase(threadId, 'sending')
+    let startedThreadId = threadId
     try {
       if (!activeTurnId) {
         let record: RouteRecord | null = null
         const pending = automaticWorkspacesRef.current[threadId] ?? (await runtime.getAppState(pendingRouteKey(threadId)) === 'true')
         if (pending) {
-          setBusy((current) => ({ ...current, workspaceRouter: true }))
+          setSubmissionPhase(threadId, 'routing')
           const source = threadsRef.current.find((thread) => thread.id === threadId)
           if (!source) throw new Error('待路由会话不存在')
           record = await routeWorkspace(threadId, source.cwd, input, workspaces)
           await prepareRoutedDraft(threadId, record)
         }
-        const startedThreadId = await recreateDraftThreadForSelectedCwd(threadId)
+        startedThreadId = await recreateDraftThreadForSelectedCwd(threadId)
         if (record) {
           record = { ...record, threadId: startedThreadId }
           await writeRouteRecord(record)
@@ -1858,9 +1869,13 @@ export function useHarness() {
       throw error
     } finally {
       submittingThreadsRef.current.delete(threadId)
-      setBusy((current) => ({ ...current, composer: false, workspaceRouter: submittingThreadsRef.current.size > 0 }))
+      setSubmissionPhase(threadId, null)
+      if (startedThreadId !== threadId) {
+        submittingThreadsRef.current.delete(startedThreadId)
+        setSubmissionPhase(startedThreadId, null)
+      }
     }
-  }, [completeRouteFeedbackOnSend, loadQueue, maybeGenerateThreadTitle, notify, prepareRoutedDraft, recreateDraftThreadForSelectedCwd, setAutomaticWorkspace, startTurn, updateDetail, updateThread, workspaces])
+  }, [completeRouteFeedbackOnSend, loadQueue, maybeGenerateThreadTitle, notify, prepareRoutedDraft, recreateDraftThreadForSelectedCwd, setAutomaticWorkspace, setSubmissionPhase, startTurn, updateDetail, updateThread, workspaces])
 
   const prepareRemoteThread = useCallback(async (threadId: string): Promise<boolean> => {
     const response = await appServer.resumeThread(resumeThreadRequest(threadId, threadsRef.current.find((thread) => thread.id === threadId)?.cwd))
@@ -1898,7 +1913,7 @@ export function useHarness() {
 
   const continueAfterFailure = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
-    if (!threadId || activeTurnIdsRef.current[threadId] || continuingFailedThreadsRef.current.has(threadId)) return
+    if (!threadId || activeTurnIdsRef.current[threadId] || submittingThreadsRef.current.has(threadId)) return
     const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
     const latestTurn = detailsRef.current[threadId]?.turns.at(-1)
     if (!latestTurn || latestTurn.status !== 'failed') return
@@ -1906,17 +1921,17 @@ export function useHarness() {
       notify('当前会话不接受继续输入。', 'warning')
       return
     }
-    continuingFailedThreadsRef.current.add(threadId)
-    setBusy((current) => ({ ...current, composer: true }))
+    submittingThreadsRef.current.add(threadId)
+    setSubmissionPhase(threadId, 'sending')
     try {
       await startTurn(threadId, '继续', undefined, 'continue-after-failure')
     } catch (error) {
       notify('无法继续会话', 'error', error, { threadId })
     } finally {
-      continuingFailedThreadsRef.current.delete(threadId)
-      setBusy((current) => ({ ...current, composer: false }))
+      submittingThreadsRef.current.delete(threadId)
+      setSubmissionPhase(threadId, null)
     }
-  }, [notify, startTurn])
+  }, [notify, setSubmissionPhase, startTurn])
 
   const stopTurn = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
@@ -2634,7 +2649,11 @@ export function useHarness() {
     selectedWorkspaceRoot,
     nextThreadCwd,
     viewMode,
-    busy,
+    busy: {
+      ...busy,
+      composer: Boolean(submissionPhases[selectedThreadId ?? '']),
+      workspaceRouter: submissionPhases[selectedThreadId ?? ''] === 'routing',
+    },
     forkingTurnId,
     currentThread,
     currentDetail,
