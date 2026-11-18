@@ -57,6 +57,16 @@ describe('thread catalog listing', () => {
     await expect(listThreadPage(client, mode)).resolves.toEqual({ data: history, nextCursor: null })
   })
 
+  it.each(['active', 'archived'] as const)('keeps temporary requests out of the %s catalog and search results', async (mode) => {
+    const client = transport()
+    const ordinary = thread('user-thread', 9)
+    vi.mocked(client.listThreads).mockResolvedValue({
+      data: [{ ...thread('assistant-request', 10), ephemeral: true }, ordinary],
+      nextCursor: 'next',
+    })
+    await expect(listThreadPage(client, mode, 'assistant')).resolves.toEqual({ data: [ordinary], nextCursor: 'next' })
+  })
+
   it('reads every active page until the cursor is exhausted', async () => {
     const client = transport()
     vi.mocked(client.listThreads)

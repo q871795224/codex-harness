@@ -1297,7 +1297,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
           />
         </div>
       )}
-      <HarnessAssistant disabled={harness.phase !== 'ready'} pinned={harness.navigation.pinnedThreadIds}
+      <HarnessAssistant sendShortcut={harness.keyboard.sendShortcut} disabled={harness.phase !== 'ready'} pinned={harness.navigation.pinnedThreadIds}
         onMutate={async (session, action) => {
           if (action !== 'archive') {
             await harness.setThreadPinned(session.id, action === 'pin')

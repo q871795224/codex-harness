@@ -25,7 +25,7 @@ afterEach(() => {
 it('opens a dialog, suggests the requested action and waits for explicit confirmation', async () => {
   const onMutate = vi.fn().mockResolvedValue(undefined)
   vi.mocked(interpretSessionRequest).mockResolvedValue({ action: 'archive', provider: 'codex', scope: 'active', query: 'Router', recentDays: null, previousRows: [] })
-  render(<HarnessAssistant disabled={false} pinned={[]} onMutate={onMutate} />)
+  render(<HarnessAssistant sendShortcut="mod-enter" disabled={false} pinned={[]} onMutate={onMutate} />)
   const launcher = screen.getByRole('button', { name: '助理' })
   fireEvent.click(launcher)
   screen.getByRole('dialog', { name: 'Harness 助理' })
@@ -43,11 +43,36 @@ it('opens a dialog, suggests the requested action and waits for explicit confirm
 
 it('keeps a failed operation visible and offers a retry', async () => {
   const onMutate = vi.fn().mockRejectedValue(new Error('会话仍在运行'))
-  render(<HarnessAssistant disabled={false} pinned={[]} onMutate={onMutate} />)
+  render(<HarnessAssistant sendShortcut="mod-enter" disabled={false} pinned={[]} onMutate={onMutate} />)
   fireEvent.click(screen.getByRole('button', { name: '助理' }))
   fireEvent.click(screen.getByRole('button', { name: '最近会话' }))
   fireEvent.click(await screen.findByRole('button', { name: '置顶Router 调研' }))
   fireEvent.click(screen.getByRole('button', { name: '确认置顶' }))
   await screen.findByRole('alert')
   expect(screen.getByRole('button', { name: '置顶Router 调研' })).toBeDefined()
+})
+
+
+it('uses the shared multiline composer and honors the Harness send shortcut', async () => {
+  vi.mocked(interpretSessionRequest).mockResolvedValue({ action: 'list', provider: 'all', scope: 'active', query: '', recentDays: null, previousRows: [] })
+  render(<HarnessAssistant sendShortcut="mod-enter" disabled={false} pinned={[]} onMutate={vi.fn()} />)
+  const launcher = screen.getByRole('button', { name: '助理' })
+  fireEvent.click(launcher)
+  const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '给助理发消息' })
+  expect(input.tagName).toBe('TEXTAREA')
+  expect(document.activeElement).toBe(input)
+  const message = '查一下 Router 会话\n只看最近一周'
+  fireEvent.change(input, { target: { value: message } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true, isComposing: true })
+  expect(interpretSessionRequest).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: '添加图片或文件' })).toBeNull()
+  expect(screen.queryByRole('combobox')).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: '关闭 Harness 助理' }))
+  fireEvent.click(launcher)
+  expect(input.value).toBe(message)
+  fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
+  await waitFor(() => expect(interpretSessionRequest).toHaveBeenCalledExactlyOnceWith(message, []))
+  expect(input.value).toBe('')
 })

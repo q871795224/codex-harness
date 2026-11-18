@@ -1,10 +1,11 @@
 import type { SuperbotModel, SuperbotRunConfig } from '../../core/superbot/types'
 import './inputCorrection.css'
+import { ComposerSendButton, ComposerTextarea } from './ComposerControls'
 import { useInputCorrection } from './useInputCorrection'
 import { addReplacement } from '../../core/input-correction/settings'
 import type { Correction } from '../../core/input-correction/engine'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react'
-import { ChevronDown, Clock3, FileText, Image, NotebookPen, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
+import { ChevronDown, Clock3, FileText, Image, NotebookPen, Plus, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput, MessageReference } from '../../core/domain/codex'
 import type { ComposerCompletionItem } from '../../extensions/types'
@@ -21,7 +22,6 @@ import {
   insertCollapsedPaste,
   insertComposerPrompt,
   isSupportedImagePath,
-  matchesSendShortcut,
   reconcileCollapsedPastes,
   reconcilePasteEdit,
   reasoningEffortTone,
@@ -360,20 +360,6 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
     if (!working) setModeOpen(false)
   }, [working])
 
-  useLayoutEffect(() => {
-    const textarea = ref.current
-    if (!textarea || composing) return
-    const maximumHeight = 124
-    textarea.style.height = '0px'
-    const nextHeight = Math.min(textarea.scrollHeight, maximumHeight)
-    textarea.style.height = `${Math.max(28, nextHeight)}px`
-    textarea.style.overflowY = textarea.scrollHeight > maximumHeight ? 'auto' : 'hidden'
-    if (highlightRef.current) {
-      highlightRef.current.style.width = `${textarea.clientWidth}px`
-      highlightRef.current.scrollTop = textarea.scrollTop
-    }
-  }, [composing, text])
-
   useEffect(() => {
     const textarea = ref.current
     if (!textarea || typeof ResizeObserver === 'undefined') return
@@ -709,8 +695,12 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
             <ProjectCardHighlight text={text} pastes={collapsedPastes} corrections={correction.edits} />
           </div>
           {correctionHover && <div className="composer-correction-tooltip" role="tooltip" aria-label="纠正前的原文" style={{ left: correctionHover.left, top: correctionHover.top }}>原文：{correctionHover.original}</div>}
-        <textarea
-          ref={ref}
+        <ComposerTextarea
+          textareaRef={ref}
+          highlightRef={highlightRef}
+          composing={composing}
+          sendShortcut={sendShortcut}
+          onSendShortcut={() => void submit()}
           value={text}
           onScroll={(event) => { setCorrectionHover(null); if (highlightRef.current) highlightRef.current.scrollTop = event.currentTarget.scrollTop }}
           onBlur={() => setCorrectionHover(null)}
@@ -799,21 +789,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
               setSuggestionsDismissed(true)
               return
             }
-            if (matchesSendShortcut({
-              key: event.key,
-              metaKey: event.metaKey,
-              ctrlKey: event.ctrlKey,
-              shiftKey: event.shiftKey,
-              altKey: event.altKey,
-              isComposing: event.nativeEvent.isComposing,
-              keyCode: event.keyCode,
-            }, sendShortcut)) {
-              event.preventDefault()
-              void submit()
-            }
           }}
-          rows={1}
-          wrap="soft"
         />
         </div>
         {suggestionsOpen && (
@@ -935,10 +911,9 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
             </div>}
             {provider !== 'superbot' && <ContextRing usage={contextUsage} provider={provider} />}
             <div className="send-control">
-              <button
-                type="button"
+              <ComposerSendButton
                 ref={sendButtonRef}
-                className={`send-button${stopping ? ' stop' : ''}`}
+                className={stopping ? 'stop' : undefined}
                 disabled={disabled || busy || attachmentBusy || (!working && !hasContent) || (hasContent && imageUnsupported)}
                 onClick={() => { setDelayMenuOpen(false); void runPrimaryAction() }}
                 onContextMenu={(event) => {
@@ -955,8 +930,8 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
                 title={stopping ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队' : '插话') : '发送消息（右键可延迟发送）'}
                 aria-label={stopping ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队消息' : '插话') : '发送消息'}
               >
-                {delayedSend ? <Clock3 size={17} /> : stopping ? <Square size={13} fill="currentColor" /> : <Send size={17} />}
-              </button>
+                {delayedSend ? <Clock3 size={17} /> : stopping ? <Square size={13} fill="currentColor" /> : null}
+              </ComposerSendButton>
               {delayMenuOpen && canSchedule && <DelayedSendMenu
                 onClose={() => { setDelayMenuOpen(false); sendButtonRef.current?.focus() }}
                 onSelect={(minutes) => {

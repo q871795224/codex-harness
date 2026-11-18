@@ -80,7 +80,7 @@ async function readSessions(provider: AssistantSession['provider'], archived: bo
   const threads = provider === 'codex'
     ? await listAllThreads(appServer, archived ? 'archived' : 'active')
     : (await runtime.superbotRequest<SuperbotSession[]>({ type: 'list', archived })).map(session => superbotThread(session))
-  return threads.filter(thread => !thread.ephemeral).map(thread => ({
+  return threads.map(thread => ({
     id: thread.id, title: threadTitle(thread), cwd: thread.cwd, updatedAt: thread.recencyAt ?? thread.updatedAt, provider, archived,
   }))
 }

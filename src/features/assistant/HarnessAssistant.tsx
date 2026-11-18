@@ -1,6 +1,8 @@
-import { Archive, ArrowUp, MessageCircle, Pin, PinOff, X } from 'lucide-react'
+import { Archive, MessageCircle, Pin, PinOff, X } from 'lucide-react'
 import { useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import { interpretSessionRequest, queryAssistantSessions, type AssistantSession, type SessionRequest } from './sessionAssistant'
+import type { SendShortcut } from '../../core/domain/codex'
+import { ComposerSendButton, ComposerTextarea } from '../conversation/ComposerControls'
 import './assistant.css'
 
 type Mutation = 'archive' | 'pin' | 'unpin'
@@ -10,15 +12,16 @@ const pageSize = 12
 const listRequest: SessionRequest = { action: 'list', provider: 'all', scope: 'active', query: '', recentDays: null, previousRows: [] }
 
 interface Props {
+  sendShortcut: SendShortcut
   disabled: boolean
   pinned: readonly string[]
   onMutate(session: AssistantSession, action: Mutation): Promise<void>
 }
 
-export function HarnessAssistant({ disabled, pinned, onMutate }: Props) {
+export function HarnessAssistant({ sendShortcut, disabled, pinned, onMutate }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
-  const input = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
   const running = useRef(false)
   const [draft, setDraft] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -75,9 +78,9 @@ export function HarnessAssistant({ disabled, pinned, onMutate }: Props) {
     }
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!draft.trim() || running.current) return
+  function submit(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
+    if (disabled || !draft.trim() || running.current) return
     void search(draft.trim())
     setDraft('')
   }
@@ -156,11 +159,18 @@ export function HarnessAssistant({ disabled, pinned, onMutate }: Props) {
           <button type="button" onClick={() => setConfirmation(null)}>取消</button>
           <button type="button" className="harness-assistant-primary" disabled={disabled} onClick={() => void apply()}>确认{labels[confirmation.action]}</button>
         </div>}
-        <form onSubmit={submit}>
-          <input ref={input} aria-label="给助理发消息" placeholder="例如：找一下最近的 Router 会话" value={draft}
-            maxLength={1000} onChange={event => setDraft(event.target.value)} />
-          <button type="submit" className="harness-assistant-primary" aria-label="发送给助理" disabled={disabled || busy || !draft.trim()}><ArrowUp size={18} /></button>
-        </form>
+        <div className="harness-assistant-composer composer-zone">
+          <form className={`composer-card${disabled ? ' disabled' : ''}`} onSubmit={submit}>
+            <ComposerTextarea textareaRef={input} aria-label="给助理发消息" placeholder="例如：找一下最近的 Router 会话"
+              sendShortcut={sendShortcut} onSendShortcut={submit} value={draft} disabled={disabled}
+              maxLength={1000} onChange={event => setDraft(event.target.value)} />
+            <div className="composer-footer">
+              <div className="composer-actions">
+                <ComposerSendButton type="submit" aria-label="发送给助理" title="发送给助理" disabled={disabled || busy || !draft.trim()} />
+              </div>
+            </div>
+          </form>
+        </div>
       </dialog>
     </div>
   )
