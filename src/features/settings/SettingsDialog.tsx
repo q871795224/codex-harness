@@ -1,5 +1,6 @@
 import { useSettingsReload } from '../../core/runtime/settingsEvents'
 import { InputCorrectionSettings } from './InputCorrectionSettings'
+import { CompassSettings } from './CompassSettings'
 import { RouterSettings } from './RouterSettings'
 import { HistorySettings } from './HistorySettings'
 import type { useCodexUpdate } from '../codex/useCodexUpdate'
@@ -76,7 +77,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'input-correction' | 'router' | 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
+type SettingsPage = 'input-correction' | 'router' | 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'compass' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -98,6 +99,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
     'conversation-stats': { heading: '底部信息', kicker: 'CONVERSATION' },
     keyboard: { heading: '快捷键', kicker: 'KEYBOARD' },
     models: { heading: '模型', kicker: 'CODEX' },
+    compass: { heading: 'Compass', kicker: 'LLM' },
     'thread-title': { heading: '会话标题', kicker: 'AUTOMATION' },
     router: { heading: '工作区 Router', kicker: 'AUTOMATION' },
     recap: { heading: '会话回顾', kicker: 'AUTOMATION' },
@@ -169,6 +171,9 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
             <button type="button" className={page === 'models' ? 'selected' : ''} aria-current={page === 'models' ? 'page' : undefined} onClick={() => setPage('models')}>
               <BrainCircuit size={16} />模型
             </button>
+            <button type="button" className={page === 'compass' ? 'selected' : ''} aria-current={page === 'compass' ? 'page' : undefined} onClick={() => setPage('compass')}>
+              <Server size={16} />Compass
+            </button>
             <button type="button" className={page === 'thread-title' ? 'selected' : ''} aria-current={page === 'thread-title' ? 'page' : undefined} onClick={() => setPage('thread-title')}>
               <MessageSquareText size={16} />会话标题
             </button>
@@ -207,6 +212,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           {page === 'history' && <HistorySettings />}
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
           {page === 'models' && <ModelsSettings codex={codex} claudeModels={claudeModels} />}
+          {page === 'compass' && <CompassSettings />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'router' && <RouterSettings models={codex.models} workspaces={workspaces} />}
           {page === 'recap' && <RecapSettings codex={codex} settings={recapGeneration} onChange={onRecapGeneration} />}

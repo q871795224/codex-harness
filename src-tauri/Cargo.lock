@@ -558,6 +558,7 @@ dependencies = [
  "portable-pty",
  "reqwest",
  "rusqlite",
+ "security-framework",
  "semver",
  "serde",
  "serde_json",

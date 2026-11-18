@@ -14,6 +14,7 @@ mod clipboard_image;
 mod codex_analytics;
 mod codex_radar;
 mod codex_update;
+mod compass;
 mod diagnostics;
 mod git_workspace;
 mod handover_store;
@@ -724,6 +725,32 @@ async fn workspace_router_decision(input: workspace_router_context::PromptInput)
 }
 fn router_now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64
+}
+
+#[tauri::command]
+async fn compass_status() -> Result<compass::Status, String> {
+    tauri::async_runtime::spawn_blocking(compass::status)
+        .await
+        .map_err(|_| "无法读取 Compass 设置")?
+}
+
+#[tauri::command]
+async fn compass_save(model: String, api_key: Option<String>) -> Result<compass::Status, String> {
+    tauri::async_runtime::spawn_blocking(move || compass::save(&model, api_key))
+        .await
+        .map_err(|_| "无法保存 Compass 设置")?
+}
+
+#[tauri::command]
+async fn compass_remove() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(compass::remove)
+        .await
+        .map_err(|_| "无法清除 Compass 设置")?
+}
+
+#[tauri::command]
+async fn compass_probe() -> Result<(), String> {
+    compass::complete("Reply with the single word OK.").await.map(|_| ())
 }
 
 #[tauri::command]
@@ -1644,6 +1671,10 @@ pub fn run() {
             workspace_router_build_prompt,
             workspace_router_prepare_decision,
             workspace_router_decision,
+            compass_status,
+            compass_save,
+            compass_remove,
+            compass_probe,
             open_diagnostics_directory,
             runtime_versions,
             codex_update_status,
