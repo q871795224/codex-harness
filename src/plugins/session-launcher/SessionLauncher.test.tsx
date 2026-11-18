@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import type { CodexModel, ThreadCodexSettings } from '../../core/domain/codex'
@@ -8,32 +8,32 @@ import { SessionLauncher } from './index'
 
 afterEach(cleanup)
 it('defaults over inherited settings once, then preserves manual choices across refresh and remount', async () => {
-  const models: CodexModel[] = ['gpt-5.6-sol', 'gpt-6-astra'].map((model) => ({ id: model, model, displayName: model, description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'low', description: '' }], defaultReasoningEffort: 'low', inputModalities: ['text'], isDefault: false }))
-  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: models.map((m, i) => ({ group: 'reference' as const, model: m.model, effort: 'low', score: 100 + i * 5, coverage: 50, price: 1 + i, minutes: 1, bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: i === 0 })) })) }
+  const models: CodexModel[] = ['gpt-6.1-sol', 'gpt-6-astra'].map((model) => ({ id: model, model, displayName: model, description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: '' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], isDefault: false }))
+  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: models.map((m, i) => ({ group: 'reference' as const, model: m.model, effort: 'medium', score: 100 + i * 5, coverage: 50, price: 1 + i, minutes: 1, bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: i === 0 })) })) }
   const values = new Map<string, unknown>()
   const storage: PluginStorage = { get: async <T,>(key: string) => (values.get(key) ?? null) as T | null, set: async (key, value) => { values.set(key, value) } }
   const changed = vi.fn()
   function Host() {
-    const [settings, setSettings] = useState<ThreadCodexSettings>({ model: 'gpt-5.6-sol', effort: 'low', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null })
+    const [settings, setSettings] = useState<ThreadCodexSettings>({ model: 'gpt-6-astra', effort: 'medium', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null })
     return <SessionLauncher radar={radar} storage={storage} notifications={{ publish: vi.fn() }} threadId="selection-test" threadCwd={null} workspaceRoot={null} isNewThread models={models} settings={settings} disabled={false} onSettingsChange={(patch) => { changed(patch); setSettings((old) => ({ ...old, ...patch })) }} />
   }
   const first = render(<Host />)
-  await waitFor(() => expect(changed).toHaveBeenCalledWith({ model: 'gpt-6-astra', effort: 'low' }))
+  await waitFor(() => expect(changed).toHaveBeenCalledWith({ model: 'gpt-6.1-sol', effort: 'medium' }))
   await waitFor(() => expect(values.get('model-initialized:selection-test')).toBe(true))
-  const manual = screen.getByRole('button', { name: /Sol.*low/i })
+  const manual = screen.getByRole('button', { name: /6 Astra.*medium/i })
   fireEvent.click(manual)
-  await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ model: 'gpt-5.6-sol', effort: 'low' }))
+  await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ model: 'gpt-6-astra', effort: 'medium' }))
   first.unmount()
   changed.mockClear()
   render(<Host />)
   await waitFor(() => expect(radar.modelTable).toHaveBeenCalledTimes(2))
-  await screen.findByRole('button', { name: /Sol.*low/i })
+  await screen.findByRole('button', { name: /6\.1 Sol.*medium/i })
   expect(changed).not.toHaveBeenCalled()
 })
 
 it.each(['async', 'sync'] as const)('stops after %s initialization failure across rerenders/remounts, notifies once, and allows manual selection', async (failure) => {
-  const models: CodexModel[] = [{ id: 'gpt-6-astra', model: 'gpt-6-astra', displayName: 'Astra', description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'low', description: '' }], defaultReasoningEffort: 'low', inputModalities: ['text'], isDefault: true }]
-  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [{ group: 'reference' as const, model: 'gpt-6-astra', effort: 'low', score: 100, coverage: 50, price: 1, minutes: 1, bestScore: true, bestPrice: true, bestMinutes: true, automatic: false, defaultCursor: true }] })) }
+  const models: CodexModel[] = [{ id: 'gpt-6.1-sol', model: 'gpt-6.1-sol', displayName: 'Sol', description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: '' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], isDefault: true }]
+  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [{ group: 'reference' as const, model: 'gpt-6.1-sol', effort: 'medium', score: 100, coverage: 50, price: 1, minutes: 1, bestScore: true, bestPrice: true, bestMinutes: true, automatic: false, defaultCursor: true }] })) }
   const storage: PluginStorage = { get: vi.fn(async () => null), set: vi.fn(async () => {}) }
   const notifications = { publish: vi.fn(() => 'notice') }
   const changed = vi.fn().mockImplementationOnce(() => {
@@ -41,7 +41,7 @@ it.each(['async', 'sync'] as const)('stops after %s initialization failure acros
     return Promise.reject(new Error('thread not found'))
   }).mockResolvedValue(undefined)
   function Host() {
-    const [settings, setSettings] = useState<ThreadCodexSettings>({ model: 'gpt-6-astra', effort: 'low', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null })
+    const [settings, setSettings] = useState<ThreadCodexSettings>({ model: 'gpt-6.1-sol', effort: 'medium', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'danger-full-access', serviceTier: null })
     return <SessionLauncher radar={radar} storage={storage} notifications={notifications} threadId={`failure-${failure}`} threadCwd={null} workspaceRoot="/repo" isNewThread models={models} settings={settings} disabled={false} onSettingsChange={(patch) => {
       setSettings((previous) => ({ ...previous }))
       return changed(patch)
@@ -58,10 +58,10 @@ it.each(['async', 'sync'] as const)('stops after %s initialization failure acros
   first.unmount()
   render(<Host />)
   await waitFor(() => expect(radar.modelTable).toHaveBeenCalledTimes(3))
-  await screen.findByRole('button', { name: /Astra.*low/i })
+  await screen.findByRole('button', { name: /6\.1 Sol.*medium/i })
   expect(changed).toHaveBeenCalledTimes(1)
   expect(storage.set).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: /Astra.*low/i }))
+  fireEvent.click(screen.getByRole('button', { name: /6\.1 Sol.*medium/i }))
   await waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
   await waitFor(() => expect(storage.set).toHaveBeenCalledWith(`model-initialized:failure-${failure}`, true))
   expect(notifications.publish).toHaveBeenCalledTimes(1)
@@ -74,8 +74,9 @@ it('renders four-task scores and actual coverage while leaving unavailable metri
   expect(await screen.findByRole('button', { name: /6.1 Sol.*high/i })).toBeTruthy()
   expect(screen.getByRole('columnheader', { name: '雷达分' })).toBeTruthy()
   expect(screen.queryByRole('columnheader', { name: 'IQ' })).toBeNull()
-  expect(screen.getByTitle('覆盖 4/4 道题').textContent).toBe('122.8')
-  expect(screen.getAllByText('—')).toHaveLength(2)
+  expect(screen.getByTitle('覆盖 4/4 道题').textContent).toBe('122.8★')
+  const measuredRow = screen.getByRole('button', { name: /6.1 Sol.*high/i }).closest('tr')!
+  expect(within(measuredRow).getAllByText('—')).toHaveLength(2)
   expect(screen.getByText(/COST 为四项测试 API 等价总费用/)).toBeTruthy()
 })
 
@@ -102,4 +103,22 @@ it('shows incomplete refresh results, preserves the table on failure, and clears
   await screen.findByText('56.0')
   expect(screen.queryByText(/Radar 数据不完整|Radar 更新失败/)).toBeNull()
   expect(radar.modelTable.mock.calls.map(([force]) => force)).toEqual([false, true, true, true])
+})
+
+it('keeps missing models visible and disabled, then enables them when the catalog updates', async () => {
+  const radar = { modelTable: vi.fn(async () => ({ fetchedAt: 1, rows: [] })) }
+  const changed = vi.fn()
+  const props = { radar, storage: { get: async () => null, set: async () => {} }, notifications: { publish: vi.fn() }, threadId: null, threadCwd: null, workspaceRoot: null, isNewThread: true, settings: { model: 'gpt-6.1-sol', effort: 'high', approvalPolicy: 'never' as const, approvalsReviewer: 'user' as const, sandboxMode: 'danger-full-access' as const, serviceTier: null }, disabled: false, onSettingsChange: changed }
+  const view = render(<SessionLauncher {...props} models={[]} />)
+  const astra = await screen.findByRole('button', { name: /6.2 Astra.*medium/ }) as HTMLButtonElement
+  expect(screen.getAllByRole('row')).toHaveLength(8)
+  expect(astra.disabled).toBe(true)
+  fireEvent.click(astra)
+  expect(changed).not.toHaveBeenCalled()
+  const models: CodexModel[] = [{ id: 'gpt-6.2-astra', model: 'gpt-6.2-astra', displayName: 'Astra', description: '', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: '' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], isDefault: false }]
+  view.rerender(<SessionLauncher {...props} models={models} />)
+  expect(astra.disabled).toBe(false)
+  expect(screen.getAllByRole('row')).toHaveLength(8)
+  fireEvent.click(astra)
+  await waitFor(() => expect(changed).toHaveBeenCalledWith({ model: 'gpt-6.2-astra', effort: 'medium' }))
 })

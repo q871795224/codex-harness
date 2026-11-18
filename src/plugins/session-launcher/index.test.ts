@@ -34,109 +34,91 @@ describe('session launcher model selection', () => {
     supportedReasoningEfforts: efforts.map((reasoningEffort) => ({ reasoningEffort, description: '' })),
     defaultReasoningEffort: efforts[0], inputModalities: ['text'], isDefault: false,
   })
-  const row = (model: string, effort: string, defaultCursor = false): PickerRow => ({
-    group: 'reference', model, effort, score: null, coverage: 50, price: null, minutes: null,
-    bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor,
+  const row = (model: string, effort: string, score = 100, price: number | null = 1): PickerRow => ({
+    group: 'reference', model, effort, score, coverage: 4, requiredTasks: 4, price, minutes: 1,
+    bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: false,
   })
 
-  it('places Astra efforts between references and simple tasks with Radar metrics', () => {
+  it('shows exactly seven choices in three groups, independent of website rank or missing models', () => {
     const rows = availableRows([
-      row('gpt-5.6-sol', 'high', true),
-      { ...row('gpt-6-astra', 'low'), score: 106.96, price: 2.029284, minutes: 9.35 },
-      { ...row('gpt-6-astra', 'medium'), score: 110.46, price: 2.297875, minutes: 8.87 },
-      { ...row('gpt-6-luna', 'max'), group: 'simple' },
-    ], [model('gpt-5.6-sol', ['high']), model('gpt-6-luna', ['max']), model('gpt-6-astra', ['low', 'medium', 'high'])], base)
+      row('gpt-5.6-sol', 'high', 150), row('gpt-6.2-astra', 'xhigh', 149),
+      row('gpt-6.2-sol', 'medium', 131), row('gpt-6.1-sol', 'high', 120),
+    ], [model('gpt-6.1-sol', ['medium', 'high'])])
     expect(rows.map(({ group, model, effort }) => [group, model, effort])).toEqual([
-      ['reference', 'gpt-5.6-sol', 'high'],
-      ['agi', 'gpt-6-astra', 'low'],
+      ['reference', 'gpt-6.1-sol', 'medium'],
+      ['reference', 'gpt-6.1-sol', 'high'],
+      ['reference', 'gpt-6.2-sol', 'medium'],
+      ['reference', 'gpt-6.1-terra', 'max'],
+      ['agi', 'gpt-6.2-astra', 'medium'],
       ['agi', 'gpt-6-astra', 'medium'],
       ['simple', 'gpt-6-luna', 'max'],
     ])
-    expect(defaultRadarRow(rows)).toBe(rows[2])
-    expect(rows[1]).toMatchObject({ score: 106.96, price: 2.029284, minutes: 9.35 })
-    expect(rows[2]).toMatchObject({ score: 110.46, price: 2.297875, minutes: 8.87 })
-    expect(selectedRadarRow(rows, { model: 'gpt-6-astra', effort: 'medium' })).toBe(rows[2])
+    expect(rows[1]).toMatchObject({ score: 120, available: true })
+    expect(rows[2]).toMatchObject({ score: 131, available: false })
+    expect(defaultRadarRow(rows)).toBe(rows[1])
+    expect(availableRows(null, [])).toEqual([])
   })
 
-  it('retains measured GPT-6 Luna metrics and filters unsupported efforts', () => {
-    const simple: PickerRow = {
-      ...row('gpt-6-luna', 'max'), group: 'simple', score: 52.9, price: 0.12, minutes: 24, coverage: 39,
-    }
-    const models = [model('gpt-6-luna', ['max'])]
-    expect(availableRows([simple], models, base)).toEqual([simple])
-    expect(selectedRadarRow([simple], { model: 'gpt-6-luna', effort: 'max' })).toBe(simple)
-    expect(availableRows([simple], [model('gpt-6-luna', ['high'])], base)[0]).toMatchObject({ group: 'fallback', score: null })
+  it('retains measured metrics when a model is unavailable, and enables its exact effort when discovered', () => {
+    const measured = row('gpt-6.2-sol', 'medium', 131, 0.779)
+    const rows = availableRows([measured], [model('gpt-6.2-sol', ['high'])])
+    expect(rows[2]).toMatchObject({ score: 131, price: 0.779, available: false })
+    expect(defaultRadarRow(rows)).toBeNull()
+    const updated = availableRows([measured], [model('gpt-6.2-sol', ['medium', 'high'])])
+    expect(updated).toHaveLength(7)
+    expect(updated[2].available).toBe(true)
+    expect(defaultRadarRow(updated)).toBe(updated[2])
   })
 
-  it('retains AGI choices when Radar is unavailable and respects supported efforts', () => {
-    const rows = availableRows([], [model('gpt-5.6-sol', ['high']), model('gpt-6-astra', ['low'])], base)
-    expect(rows.map(({ group, effort }) => [group, effort])).toEqual([['fallback', 'high'], ['agi', 'low']])
-    expect(availableRows([], [model('gpt-5.6-sol', ['high'])], base)).toHaveLength(1)
+  it('keeps seven manual choices during a Radar outage without changing the configured default', () => {
+    const rows = availableRows([], [model('gpt-6-astra', ['medium']), model('gpt-6.1-sol', ['high'])])
+    expect(rows).toHaveLength(7)
+    expect(rows[1]).toMatchObject({ available: true, score: null, price: null, minutes: null })
+    expect(rows[5]).toMatchObject({ available: true, effort: 'medium' })
+    expect(defaultRadarRow(rows)).toBeNull()
+    expect(selectedRadarRow(rows, { model: 'gpt-6-astra', effort: 'medium' })).toBe(rows[5])
+    expect(selectedRadarRow(rows, { model: 'gpt-6-astra', effort: 'low' })).toBeNull()
   })
 
-  it('uses configured model and effort for fallback even when old Sol is available', () => {
-    const models = [model('gpt-5.6-sol', ['high', 'xhigh']), model('gpt-6-luna', ['low', 'high', 'max'])]
-    const settings = { ...base, model: 'gpt-6-luna', effort: 'max' }
-    for (const remote of [[], [row('unavailable', 'high')]]) {
-      expect(availableRows(remote, models, settings)[0]).toMatchObject({ group: 'fallback', model: 'gpt-6-luna', effort: 'max' })
-    }
-    expect(availableRows([], models, { ...settings, effort: 'ultra' })[0].effort).toBe('low')
+  it('compares only the three Sol choices, excluding Terra, both Astras, Luna and unlisted efforts', () => {
+    const sol = row('gpt-6.1-sol', 'high', 120)
+    const excluded = [
+      row('gpt-6.1-terra', 'max', 150), row('gpt-6.2-astra', 'medium', 149),
+      row('gpt-6-astra', 'medium', 148), row('gpt-6-luna', 'max', 147),
+      row('gpt-6.1-sol', 'max', 146), row('gpt-5.6-sol', 'high', 145),
+    ].map((row) => ({ ...row, defaultCursor: true }))
+    expect(defaultRadarRow([...excluded, sol])).toBe(sol)
+    expect(defaultRadarRow(excluded)).toBeNull()
+    expect(defaultRadarRow([{ ...sol, available: false }, ...excluded])).toBeNull()
   })
 
-  it('uses the App Server default when the configured model is unavailable', () => {
-    const models = [model('gpt-5.6-sol', ['xhigh']), { ...model('gpt-6-luna', ['low']), isDefault: true }]
-    expect(availableRows([], models, { ...base, model: 'unavailable' })[0]).toMatchObject({ model: 'gpt-6-luna', effort: 'low' })
-    expect(availableRows([], [], base)).toEqual([])
+  it('uses measured coverage and does not auto-select a sparse or unscored result', () => {
+    const high = row('gpt-6.1-sol', 'high', 120)
+    const sparse = { ...row('gpt-6.2-sol', 'medium', 150), coverage: 2 }
+    expect(defaultRadarRow([sparse, high])).toBe(high)
+    expect(defaultRadarRow([{ ...high, score: null }])).toBeNull()
+    expect(defaultRadarRow([{ ...high, score: NaN }])).toBeNull()
   })
 
-  it('moves existing Astra rows into AGI without duplicating or losing metrics', () => {
-    const rows = availableRows([{ ...row('gpt-6-astra', 'low', true), score: 99, price: 1.23, minutes: 4.5 }], [model('gpt-6-astra', ['low', 'medium'])], base)
-    expect(rows).toHaveLength(2)
-    expect(rows[0]).toMatchObject({ group: 'agi', effort: 'low', score: 99, price: 1.23, minutes: 4.5, defaultCursor: true })
-  })
-
-  it('uses the exact session settings when a Radar row matches', () => {
-    const rows = [row('gpt-5.6-sol', 'high'), row('gpt-5.6-terra', 'max', true)]
-    expect(selectedRadarRow(rows, { model: 'gpt-5.6-sol', effort: 'high' })?.model).toBe('gpt-5.6-sol')
-  })
-
-  it('falls back to the Radar default cursor when the session has no matching row', () => {
-    const rows = [row('gpt-5.6-sol', 'high'), row('gpt-5.6-terra', 'max', true)]
-    expect(selectedRadarRow(rows, { model: 'custom', effort: 'high' })).toBeNull()
-    expect(defaultRadarRow(rows)?.model).toBe('gpt-5.6-terra')
-  })
-
-  it('does not default to an Astra score based on too few tasks', () => {
-    const measured = { ...row('gpt-6.1-sol', 'high', true), score: 104.6 }
-    const sparse = { ...row('gpt-6-astra', 'medium'), group: 'agi' as const, score: 150, coverage: 1 }
-    expect(defaultRadarRow([sparse, measured])).toBe(measured)
-  })
-
-  it('allows Sol high references to become the default alongside fixed Astra choices', () => {
-    const sol = { ...row('gpt-6.1-sol', 'high', true), score: 104.6, price: 0.48 }
-    const rows = availableRows([
-      sol,
-      { ...row('gpt-6-astra', 'low'), group: 'agi', score: 99.9, price: 2.46 },
-      { ...row('gpt-6-astra', 'medium'), group: 'agi', score: 90.1, price: 2.29 },
-    ], [model('gpt-6.1-sol', ['medium', 'high']), model('gpt-6-astra', ['low', 'medium'])], base)
-    expect(defaultRadarRow(rows)).toEqual(sol)
-  })
-
-  it('ranks current four-task coverage by its actual denominator', () => {
-    const sol = { ...row('gpt-6.1-sol', 'high'), score: 122.84, coverage: 4, requiredTasks: 4 }
-    const astra = { ...row('gpt-6-astra', 'medium'), group: 'agi' as const, score: 127.17, coverage: 4, requiredTasks: 4 }
-    expect(defaultRadarRow([sol, astra])).toEqual(astra)
-  })
-
-  it('compares only reference and AGI, choosing a cheaper runner-up within two score points', () => {
-    const highest = { ...row('astra', 'medium'), group: 'agi' as const, score: 110, price: 3 }
-    const second = { ...row('sol', 'high'), score: 108, price: 1 }
-    const excluded = { ...row('hard', 'high'), group: 'hard' as const, score: 150, price: 0.1 }
-    expect(defaultRadarRow([excluded, highest, second])).toBe(second)
-    expect(defaultRadarRow([highest, { ...second, score: 107.99 }])).toBe(highest)
-    expect(defaultRadarRow([highest, { ...second, price: 3 }])).toBe(highest)
+  it('chooses a cheaper runner-up only within two score points', () => {
+    const highest = row('gpt-6.2-sol', 'medium', 131, 1)
+    const second = row('gpt-6.1-sol', 'high', 129, 0.5)
+    expect(defaultRadarRow([highest, second])).toBe(second)
+    expect(defaultRadarRow([highest, { ...second, score: 128.99 }])).toBe(highest)
+    expect(defaultRadarRow([highest, { ...second, price: 1 }])).toBe(highest)
     expect(defaultRadarRow([highest, { ...second, price: null }])).toBe(highest)
-    expect(defaultRadarRow([highest, second, { ...second, model: 'third', score: 107, price: 0.01 }])).toBe(second)
-    expect(defaultRadarRow([{ ...highest, score: null }, second])).toBe(second)
+    expect(defaultRadarRow([{ ...highest, score: 129 }, second])).toBe(second)
+  })
+
+  it('recomputes stars from the displayed comparisons instead of hidden website winners', () => {
+    const rows = availableRows([
+      row('gpt-6.1-sol', 'high', 120, 0.5),
+      row('gpt-6.1-terra', 'max', 140, 2),
+      row('gpt-6.2-astra', 'xhigh', 150, 0.1),
+      row('gpt-6-luna', 'max', 90, 0.01),
+    ], [])
+    expect(rows[1]).toMatchObject({ bestPrice: true, bestScore: false })
+    expect(rows[3]).toMatchObject({ bestScore: true, bestPrice: false })
+    expect(rows[6]).toMatchObject({ bestScore: false, bestPrice: false })
   })
 })
