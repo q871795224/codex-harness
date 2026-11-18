@@ -2,23 +2,26 @@ import { useEffect, useState } from 'react'
 import { runtime } from '../../core/runtime/bridge'
 
 export function CompassSettings() {
-  const [supported, setSupported] = useState(true)
-  const [savedModel, setSavedModel] = useState<string | null>(null)
+  const [savedModel, setSavedModel] = useState('')
   const [model, setModel] = useState('')
-  const [apiKey, setApiKey] = useState('')
+  const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(true)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
     let disposed = false
-    void runtime.compassStatus().then((value) => {
+    void Promise.allSettled([runtime.getAppState('compass.model'), runtime.compassHasKey()]).then(([model, key]) => {
       if (disposed) return
-      setSupported(value.supported)
-      setSavedModel(value.model)
-      setModel(value.model ?? '')
-    }).catch((error) => { if (!disposed) setError(String(error)) })
-      .finally(() => { if (!disposed) setBusy(false) })
+      if (model.status === 'fulfilled') {
+        setSavedModel(model.value ?? '')
+        setModel(model.value ?? '')
+      }
+      if (key.status === 'fulfilled') setHasKey(key.value)
+      if (model.status === 'rejected') setError(String(model.reason))
+      else if (key.status === 'rejected') setError(String(key.reason))
+      setBusy(false)
+    })
     return () => { disposed = true }
   }, [])
 
@@ -36,43 +39,37 @@ export function CompassSettings() {
     }
   }
 
-  const dirty = model.trim() !== (savedModel ?? '') || Boolean(apiKey.trim())
+  const dirty = model.trim() !== savedModel
   return <div className="settings-section codex-settings">
     <section className="codex-setting-card">
       <div className="settings-section-title">
-        <div><h3>公司 Compass 网关</h3><p>连通性测试向所选模型发送一条固定测试消息。配置保存在 macOS 钥匙串。</p></div>
+        <div><h3>公司 Compass 网关</h3>
+          <p>在 <code>~/.codex-harness/secrets</code> 中设置 <code>COMPASS_EXTERNAL_API_KEY</code>。测试连接会重新读取文件并发送一条固定测试消息。</p>
+        </div>
       </div>
-      {supported ? <form onSubmit={(event) => {
+      {hasKey !== null && <p className="settings-shortcut-note">{hasKey ? '已检测到 Compass API Key' : '尚未配置 Compass API Key'}</p>}
+      <form onSubmit={(event) => {
         event.preventDefault()
         void run(async () => {
-          const value = await runtime.saveCompass(model, apiKey.trim() || null)
-          setSavedModel(value.model)
-          setModel(value.model ?? '')
-          setApiKey('')
-        }, '已保存 Compass 配置')
+          const saved = await runtime.saveCompassModel(model)
+          setSavedModel(saved)
+          setModel(saved)
+        }, '已保存 Compass 模型')
       }}>
         <div className="settings-row-list">
           <label className="settings-row"><span>模型名</span>
             <input value={model} disabled={busy} onChange={(event) => { setModel(event.target.value); setStatus('') }} />
           </label>
-          <label className="settings-row"><span>API Key</span>
-            <input type="password" autoComplete="off" value={apiKey} disabled={busy}
-              placeholder={savedModel ? '已保存，留空沿用' : '输入 Compass API Key'}
-              onChange={(event) => { setApiKey(event.target.value); setStatus('') }} />
-          </label>
         </div>
         <div className="title-prompt-actions">
-          <button type="submit" className="primary" disabled={busy || !dirty || !model.trim() || (!savedModel && !apiKey.trim())}>保存配置</button>
+          <button type="submit" className="primary" disabled={busy || !dirty || !model.trim()}>保存模型</button>
           <button type="button" disabled={busy || dirty || !savedModel}
-            onClick={() => void run(runtime.probeCompass, 'Compass 连通性测试通过')}>测试连接</button>
-          <button type="button" disabled={busy || !savedModel} onClick={() => void run(async () => {
-            await runtime.removeCompass()
-            setSavedModel(null)
-            setModel('')
-            setApiKey('')
-          }, '已清除 Compass 配置')}>清除配置</button>
+            onClick={() => void run(async () => {
+              setHasKey(await runtime.compassHasKey())
+              await runtime.probeCompass()
+            }, 'Compass 连通性测试通过')}>测试连接</button>
         </div>
-      </form> : <p>Compass 配置目前支持 macOS。</p>}
+      </form>
       {status && <p role="status">{status}</p>}
       {error && <p role="alert">{error}</p>}
     </section>

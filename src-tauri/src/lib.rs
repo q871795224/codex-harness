@@ -15,6 +15,7 @@ mod codex_analytics;
 mod codex_radar;
 mod codex_update;
 mod compass;
+mod secrets;
 mod diagnostics;
 mod git_workspace;
 mod handover_store;
@@ -728,29 +729,27 @@ fn router_now_ms() -> i64 {
 }
 
 #[tauri::command]
-async fn compass_status() -> Result<compass::Status, String> {
-    tauri::async_runtime::spawn_blocking(compass::status)
+async fn compass_has_key() -> Result<bool, String> {
+    let path = store::harness_data_dir()?.join("secrets");
+    tauri::async_runtime::spawn_blocking(move || compass::configured(&path))
         .await
         .map_err(|_| "无法读取 Compass 设置")?
 }
 
 #[tauri::command]
-async fn compass_save(model: String, api_key: Option<String>) -> Result<compass::Status, String> {
-    tauri::async_runtime::spawn_blocking(move || compass::save(&model, api_key))
-        .await
-        .map_err(|_| "无法保存 Compass 设置")?
+fn compass_save_model(state: State<'_, AppState>, model: String) -> Result<String, String> {
+    let model = compass::validate_model(&model)?;
+    state.store.set_app_state(compass::MODEL_KEY, model)?;
+    Ok(model.to_owned())
 }
 
 #[tauri::command]
-async fn compass_remove() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(compass::remove)
+async fn compass_probe(state: State<'_, AppState>) -> Result<(), String> {
+    let model = state.store.get_app_state(compass::MODEL_KEY)?
+        .ok_or("请先在设置中选择 Compass 模型")?;
+    compass::complete(&store::harness_data_dir()?.join("secrets"), &model, "Reply with the single word OK.")
         .await
-        .map_err(|_| "无法清除 Compass 设置")?
-}
-
-#[tauri::command]
-async fn compass_probe() -> Result<(), String> {
-    compass::complete("Reply with the single word OK.").await.map(|_| ())
+        .map(|_| ())
 }
 
 #[tauri::command]
@@ -1671,9 +1670,8 @@ pub fn run() {
             workspace_router_build_prompt,
             workspace_router_prepare_decision,
             workspace_router_decision,
-            compass_status,
-            compass_save,
-            compass_remove,
+            compass_has_key,
+            compass_save_model,
             compass_probe,
             open_diagnostics_directory,
             runtime_versions,

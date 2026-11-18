@@ -1,4 +1,5 @@
 use super::*;
+use std::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn input() -> JevRequest {
@@ -61,6 +62,7 @@ async fn server(
 
 #[test]
 fn reads_only_target_key_without_shell_evaluation() {
+    let parse_key = |content: &str| crate::secrets::parse(content, "VERCEL_API_KEY");
     assert_eq!(
         parse_key("OTHER=hidden\nexport VERCEL_API_KEY = 'fixture-key' # comment\n")
             .unwrap()

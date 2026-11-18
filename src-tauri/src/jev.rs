@@ -2,7 +2,7 @@
 use reqwest::{redirect::Policy, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, fs, io::ErrorKind, path::Path, time::Duration};
+use std::{collections::BTreeMap, path::Path, time::Duration};
 
 const ENDPOINT: &str = "https://ai-gateway.vercel.sh/v1/evaluate";
 const MODEL: &str = "typesafe-ai/jev";
@@ -114,14 +114,14 @@ impl JevClient {
 
     pub fn status(&self, secrets: &Path) -> Result<JevStatus, String> {
         Ok(JevStatus {
-            configured: read_key(secrets)?.is_some(),
+            configured: crate::secrets::read(secrets, "VERCEL_API_KEY")?.is_some(),
             model: MODEL,
         })
     }
 
     pub async fn evaluate(&self, secrets: &Path, input: JevRequest) -> Result<JevResponse, String> {
         let body = request_body(&input)?;
-        let key = read_key(secrets)?
+        let key = crate::secrets::read(secrets, "VERCEL_API_KEY")?
             .ok_or("Jev 未配置：请在 ~/.codex-harness/secrets 设置 VERCEL_API_KEY")?;
         self.send(ENDPOINT, &key, body, &input).await
     }
@@ -184,54 +184,6 @@ fn http_error(status: u16) -> String {
         _ => "请求被拒绝",
     };
     format!("Jev HTTP {status}：{reason}")
-}
-
-fn read_key(path: &Path) -> Result<Option<String>, String> {
-    let content = match fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err("无法读取 Jev 密钥文件".into()),
-    };
-    parse_key(&content)
-}
-
-fn parse_key(content: &str) -> Result<Option<String>, String> {
-    let mut result = None;
-    for line in content.lines() {
-        let line = line.trim().strip_prefix("export ").unwrap_or(line.trim());
-        let Some((name, value)) = line.split_once('=') else {
-            continue;
-        };
-        if name.trim() != "VERCEL_API_KEY" {
-            continue;
-        }
-        let value = value.trim();
-        let value = if value.starts_with(['\'', '"']) {
-            let quote = value.chars().next().unwrap();
-            let Some(end) = value[1..].find(quote).map(|index| index + 1) else {
-                return Err("VERCEL_API_KEY 引号不完整".into());
-            };
-            let tail = value[end + 1..].trim();
-            if !tail.is_empty() && !tail.starts_with('#') {
-                return Err("VERCEL_API_KEY 格式无效".into());
-            }
-            &value[1..end]
-        } else {
-            value
-                .split_once(" #")
-                .map_or(value, |(value, _)| value)
-                .trim()
-        };
-        if value.is_empty() {
-            result = None;
-            continue;
-        }
-        if !value.bytes().all(|byte| byte.is_ascii_graphic()) {
-            return Err("VERCEL_API_KEY 格式无效".into());
-        }
-        result = Some(value.to_owned());
-    }
-    Ok(result)
 }
 
 fn request_body(input: &JevRequest) -> Result<Vec<u8>, String> {

@@ -1,133 +1,43 @@
 use reqwest::{redirect::Policy, Client};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 const ENDPOINT: &str = "https://compass.llm.shopee.io/compass-api/v1/chat/completions";
 const MAX_BODY: usize = 1024 * 1024;
 
-#[derive(Serialize)]
-pub struct Status {
-    supported: bool,
-    model: Option<String>,
-}
+const API_KEY_NAME: &str = "COMPASS_EXTERNAL_API_KEY";
+pub const MODEL_KEY: &str = "compass.model";
 
-#[derive(Deserialize, Serialize)]
 struct Config {
     model: String,
     api_key: String,
 }
 
-impl Config {
-    fn status(&self) -> Status {
-        Status {
-            supported: true,
-            model: Some(self.model.clone()),
-        }
-    }
+pub fn configured(path: &Path) -> Result<bool, String> {
+    Ok(crate::secrets::read(path, API_KEY_NAME)?.is_some())
 }
 
-#[cfg(target_os = "macos")]
-mod credentials {
-    use super::Config;
-    use security_framework::passwords::{
-        delete_generic_password, get_generic_password, set_generic_password,
-    };
-
-    const SERVICE: &str = "codex-harness.compass";
-    const ACCOUNT: &str = "gateway";
-    const ITEM_NOT_FOUND: i32 = -25300;
-
-    pub fn read() -> Result<Option<Config>, String> {
-        match get_generic_password(SERVICE, ACCOUNT) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map(Some)
-                .map_err(|_| "钥匙串中的 Compass 配置无效，请重新保存密钥".into()),
-            Err(error) if error.code() == ITEM_NOT_FOUND => Ok(None),
-            Err(_) => Err("无法读取 macOS 钥匙串中的 Compass 配置".into()),
-        }
-    }
-
-    pub fn write(config: &Config) -> Result<(), String> {
-        let bytes = serde_json::to_vec(config).map_err(|_| "无法编码 Compass 配置")?;
-        set_generic_password(SERVICE, ACCOUNT, &bytes)
-            .map_err(|_| "无法保存 Compass 配置到 macOS 钥匙串".into())
-    }
-
-    pub fn remove() -> Result<(), String> {
-        match delete_generic_password(SERVICE, ACCOUNT) {
-            Ok(()) => Ok(()),
-            Err(error) if error.code() == ITEM_NOT_FOUND => Ok(()),
-            Err(_) => Err("无法从 macOS 钥匙串清除 Compass 配置".into()),
-        }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod credentials {
-    use super::Config;
-
-    const UNSUPPORTED: &str = "Compass 配置需要 macOS 钥匙串";
-
-    pub fn read() -> Result<Option<Config>, String> {
-        Ok(None)
-    }
-
-    pub fn write(_: &Config) -> Result<(), String> {
-        Err(UNSUPPORTED.into())
-    }
-
-    pub fn remove() -> Result<(), String> {
-        Err(UNSUPPORTED.into())
-    }
-}
-
-pub fn status() -> Result<Status, String> {
-    Ok(credentials::read()?.map_or(
-        Status {
-            supported: cfg!(target_os = "macos"),
-            model: None,
-        },
-        |config| config.status(),
-    ))
-}
-
-pub fn save(model: &str, api_key: Option<String>) -> Result<Status, String> {
+pub fn validate_model(model: &str) -> Result<&str, String> {
     let model = model.trim();
     if model.is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
         return Err("请输入有效的 Compass 模型名".into());
     }
-    let api_key = match api_key {
-        Some(key) => key.trim().to_owned(),
-        None => {
-            credentials::read()?
-                .ok_or("请输入 Compass API Key")?
-                .api_key
-        }
-    };
-    if api_key.is_empty()
-        || api_key.len() > 4096
-        || !api_key.bytes().all(|byte| byte.is_ascii_graphic())
-    {
-        return Err("请输入有效的 Compass API Key".into());
-    }
-    let config = Config {
-        model: model.to_owned(),
-        api_key,
-    };
-    credentials::write(&config)?;
-    Ok(config.status())
+    Ok(model)
 }
 
-pub fn remove() -> Result<(), String> {
-    credentials::remove()
+fn load_config(path: &Path, model: &str) -> Result<Config, String> {
+    let model = validate_model(model)?.to_owned();
+    let api_key = crate::secrets::read(path, API_KEY_NAME)?
+        .ok_or("请在 ~/.codex-harness/secrets 中设置 COMPASS_EXTERNAL_API_KEY")?;
+    Ok(Config { model, api_key })
 }
 
-pub async fn complete(prompt: &str) -> Result<String, String> {
-    let config = tauri::async_runtime::spawn_blocking(credentials::read)
+pub async fn complete(secrets: &Path, model: &str, prompt: &str) -> Result<String, String> {
+    let path = secrets.to_owned();
+    let model = model.to_owned();
+    let config = tauri::async_runtime::spawn_blocking(move || load_config(&path, &model))
         .await
-        .map_err(|_| "无法读取 Compass 设置")??
-        .ok_or("请先在设置中配置 Compass")?;
+        .map_err(|_| "无法读取 Compass 设置")??;
     request(ENDPOINT, &config, prompt).await
 }
 
@@ -248,6 +158,30 @@ mod tests {
             (head, serde_json::from_slice(&body).unwrap())
         });
         (endpoint, server)
+    }
+
+    #[test]
+    fn reads_only_the_current_compass_key_from_the_shared_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secrets");
+        assert!(!configured(&path).unwrap());
+        std::fs::write(&path, "VERCEL_API_KEY=other-key").unwrap();
+        assert!(!configured(&path).unwrap());
+        assert!(load_config(&path, "test-model").is_err());
+
+        std::fs::write(
+            &path,
+            "VERCEL_API_KEY=other-key\nCOMPASS_EXTERNAL_API_KEY='new-key'",
+        )
+        .unwrap();
+        assert!(configured(&path).unwrap());
+        let config = load_config(&path, " test-model ").unwrap();
+        assert_eq!(config.api_key, "new-key");
+        assert_eq!(config.model, "test-model");
+
+        std::fs::write(&path, "COMPASS_EXTERNAL_API_KEY=").unwrap();
+        assert!(!configured(&path).unwrap());
+        assert!(load_config(&path, "test-model").is_err());
     }
 
     #[tokio::test]
