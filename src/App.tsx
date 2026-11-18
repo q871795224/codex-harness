@@ -731,6 +731,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
     setTabDrop(null)
   }
 
+  useDesktopAssistantHost({ harness, codex, onMutate: mutateAssistantSession }, petVisible)
+
   if (harness.phase === 'loading') return <LaunchScreen label="正在连接本机 Codex App Server…" />
   if (harness.phase === 'error') {
     return (
@@ -848,7 +850,6 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
     }
     await harness.archiveThread(session.id, true)
   }
-  useDesktopAssistantHost({ harness, codex, onMutate: mutateAssistantSession }, petVisible)
 
   return (
     <div
