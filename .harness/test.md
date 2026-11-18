@@ -17,7 +17,7 @@
 
 ## Radar 诊断
 
-Radar 使用同一份轮转诊断日志，`area` 为 `codex-radar`。`fetch.completed` 记录当前四项测试的数据源、轮次、行数和失败项数；`fetch.failed` 记录失败原因，`cache.hit` / `cache.stale` 区分直接命中缓存和更新失败后返回旧缓存。日志不保存接口响应正文。离线 fixture 对照官网同轮 46 档的分数、费用与耗时，避免混用旧 64 题数据。
+Radar 使用同一份轮转诊断日志，`area` 为 `codex-radar`。`fetch.completed` 记录当前四项测试的数据源、轮次、行数和失败项数；`fetch.failed` 记录失败原因，`cache.hit` / `cache.stale` 区分直接命中缓存和更新失败后返回旧缓存。日志不保存接口响应正文。离线 fixture 对照官网同轮 46 档的分数、费用与耗时，验证原生层完整保留数据，避免混用旧 64 题数据。前端验证固定 7 档的分组、不可用档位保留与恢复、默认只比较三个 Sol 档位，以及手动选择和刷新后的设置保留。
 
 ```bash
 rg --no-filename '"area":"codex-radar"' ~/.codex-harness/logs/harness-*.jsonl | tail -50

@@ -530,6 +530,8 @@ body.sidebar-split-resizing { cursor: row-resize; user-select: none; }
 .radar-table tbody tr:last-child td { border-bottom: 0; }
 .radar-table tbody tr { transition: background .12s ease; }
 .radar-table tbody tr:hover { background: #fafbfc; }
+.radar-table tbody tr.unavailable { opacity: .5; }
+.radar-table tbody tr.unavailable button:disabled { cursor: not-allowed; }
 .radar-table tbody tr.selected { background: #f3f5ff; }
 .radar-table td:first-child { width: 28px; padding: 0 0 0 10px; color: #5268c8; }
 .radar-table td:nth-child(2), .radar-table td:nth-child(3) { text-align: left; }

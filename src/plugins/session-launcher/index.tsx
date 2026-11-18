@@ -21,7 +21,19 @@ export interface PickerRow {
   bestMinutes: boolean
   automatic: boolean
   defaultCursor: boolean
+  available?: boolean
 }
+
+// Keep the launcher compact and independent of website ranking changes.
+const choices = [
+  { group: 'reference', model: 'gpt-6.1-sol', effort: 'medium', defaultEligible: true },
+  { group: 'reference', model: 'gpt-6.1-sol', effort: 'high', defaultEligible: true },
+  { group: 'reference', model: 'gpt-6.2-sol', effort: 'medium', defaultEligible: true },
+  { group: 'reference', model: 'gpt-6.1-terra', effort: 'max', defaultEligible: false },
+  { group: 'agi', model: 'gpt-6.2-astra', effort: 'medium', defaultEligible: false },
+  { group: 'agi', model: 'gpt-6-astra', effort: 'medium', defaultEligible: false },
+  { group: 'simple', model: 'gpt-6-luna', effort: 'max', defaultEligible: false },
+] as const
 
 const yoloInitializedThreads = new Set<string>()
 // Includes failed attempts so switching panels cannot restart automatic retries.
@@ -69,7 +81,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loadedDefaultThread, setLoadedDefaultThread] = useState<string | null>(null)
-  const rows = useMemo(() => availableRows(remoteRows, models, settings), [models, remoteRows, settings])
+  const rows = useMemo(() => availableRows(remoteRows, models), [models, remoteRows])
   const selectedRow = useMemo(() => selectedRadarRow(rows, settings), [rows, settings])
   const defaultRow = useMemo(() => defaultRadarRow(rows), [rows])
   const mode = threadId && !yoloInitializedThreads.has(threadId) ? 'yolo' : launchMode(settings)
@@ -166,10 +178,10 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
             {rows.map((row) => {
               const selected = selectedRow?.model === row.model && selectedRow?.effort === row.effort
               return (
-                <tr key={`${row.model}:${row.effort}`} className={selected ? 'selected' : ''}>
+                <tr key={`${row.model}:${row.effort}`} className={[selected ? 'selected' : '', row.available === false ? 'unavailable' : ''].filter(Boolean).join(' ')}>
                   <td>{selected ? <Check size={14} /> : null}</td>
                   <td><span className={`radar-group ${row.group}`}>{groupLabel(row.group)}</span></td>
-                  <td><button type="button" disabled={disabled || saving} onClick={() => void apply({ model: row.model, effort: row.effort })}><strong>{modelLabel(row.model)}</strong> <span>{row.effort}</span></button></td>
+                  <td><button type="button" disabled={disabled || saving || row.available === false} title={row.available === false ? '当前模型目录暂不支持此档位' : row.model === 'gpt-6.1-terra' ? '仅作参考，不参与默认选择' : undefined} onClick={() => void apply({ model: row.model, effort: row.effort })}><strong>{modelLabel(row.model)}</strong> <span>{row.effort}{row.available === false ? ' · 暂不可用' : ''}</span></button></td>
                   <Metric title={row.coverage === null ? undefined : `覆盖 ${row.coverage}/${row.requiredTasks ?? 64} 道题`} value={row.score === null ? '—' : row.score.toFixed(1)} best={row.bestScore} tone="iq" />
                   <Metric value={row.price === null ? '—' : `$${row.price.toFixed(2)}`} best={row.bestPrice} tone="price" />
                   <Metric value={row.minutes === null ? '—' : `${Math.round(row.minutes)}m`} best={row.bestMinutes} tone="time" />
@@ -181,7 +193,7 @@ export function SessionLauncher({ radar, storage, notifications, threadId, works
         {loading && <div className="radar-table-state"><LoaderCircle className="spin" size={15} />正在加载 Radar 指标…</div>}
       </div>
       <footer className="session-launcher-foot">
-        <span title={error ?? warnings.join('\n')} className={settingsError || error || warnings.length ? 'error' : ''}>{settingsError ?? (error ? (remoteRows?.length ? 'Radar 更新失败，保留上次数据。' : 'Radar 暂不可用，已显示 App Server 模型。') : warnings.length ? `Radar 数据不完整：${warnings.length} 项获取失败，详情见日志。` : '雷达四项测试 · 满分 150 · COST 为四项测试 API 等价总费用 · ★ 最佳指标')}</span>
+        <span title={error ?? warnings.join('\n')} className={settingsError || error || warnings.length ? 'error' : ''}>{settingsError ?? (error ? (remoteRows?.length ? 'Radar 更新失败，保留上次数据。' : 'Radar 暂不可用，仍可手动选择可用模型。') : warnings.length ? `Radar 数据不完整：${warnings.length} 项获取失败，详情见日志。` : '雷达四项测试 · 满分 150 · COST 为四项测试 API 等价总费用 · ★ 最佳指标')}</span>
         <span className={`launch-mode-summary ${mode}`}><Gauge size={13} />{modeLabel(mode)}</span>
       </footer>
     </section>
@@ -214,43 +226,35 @@ export function selectedRadarRow(rows: PickerRow[], settings: Pick<ThreadCodexSe
 }
 
 export function defaultRadarRow(rows: PickerRow[]): PickerRow | null {
-  const references = rows.filter((row) => row.group === 'reference')
-  const ranked = references.filter((row) => row.coverage !== null && row.coverage / (row.requiredTasks ?? 64) > 40 / 64 && row.score !== null && Number.isFinite(row.score))
+  const ranked = rows.filter((row) => row.available !== false && choices.some((choice) => choice.defaultEligible && choice.model === row.model && choice.effort === row.effort)
+    && row.coverage !== null && row.coverage / (row.requiredTasks ?? 64) > 40 / 64 && row.score !== null && Number.isFinite(row.score))
     .sort((left, right) => right.score! - left.score! || (left.price ?? Infinity) - (right.price ?? Infinity))
   const [highest, second] = ranked
-  if (!highest) return references.find((row) => row.defaultCursor) ?? references[0] ?? rows.find((row) => row.group === 'fallback') ?? null
+  if (!highest) return null
   if (second && highest.score! - second.score! <= 2 && highest.price !== null && second.price !== null && second.price < highest.price) return second
   return highest
 }
 
-export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel[], settings: ThreadCodexSettings): PickerRow[] {
+export function availableRows(remoteRows: PickerRow[] | null, models: CodexModel[]): PickerRow[] {
   if (remoteRows === null) return []
-  const supported = remoteRows.filter((row) => modelSupports(models, row.model, row.effort))
-  if (supported.length > 0) return withAgiRows(supported, models)
-  const preferred = models.find((model) => model.model === settings.model) ?? models.find((model) => model.isDefault) ?? models[0]
-  if (!preferred) return []
-  const effort = preferred.supportedReasoningEfforts.some((candidate) => candidate.reasoningEffort === settings.effort)
-    ? settings.effort
-    : preferred.defaultReasoningEffort
-  return withAgiRows([{
-    group: 'fallback', model: preferred.model, effort, score: null, coverage: null, price: null, minutes: null,
-    bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: true,
-  }], models)
-}
-
-function withAgiRows(rows: PickerRow[], models: CodexModel[]): PickerRow[] {
-  const agiRows: PickerRow[] = ['low', 'medium']
-    .filter((effort) => modelSupports(models, 'gpt-6-astra', effort))
-    .map((effort) => ({
-      model: 'gpt-6-astra', effort, score: null, coverage: null, price: null, minutes: null,
+  const rows: PickerRow[] = choices.map(({ group, model, effort }) => {
+    const measured = remoteRows.find((row) => row.model === model && row.effort === effort)
+    return {
+      score: null, coverage: null, price: null, minutes: null,
+      ...measured, group, model, effort,
+      available: modelSupports(models, model, effort),
       bestScore: false, bestPrice: false, bestMinutes: false, automatic: false, defaultCursor: false,
-      ...rows.find((row) => row.model === 'gpt-6-astra' && row.effort === effort),
-      group: 'agi',
-    }))
-  const remaining = rows.filter((row) => !agiRows.some((agi) => agi.model === row.model && agi.effort === row.effort))
-  const simpleIndex = remaining.findIndex((row) => row.group === 'simple')
-  const insertionIndex = simpleIndex < 0 ? remaining.length : simpleIndex
-  return [...remaining.slice(0, insertionIndex), ...agiRows, ...remaining.slice(insertionIndex)]
+    }
+  })
+  // Stars describe the displayed comparisons, never hidden website entries.
+  const compared = rows.filter((row) => row.group !== 'simple')
+  for (const [metric, flag] of [['score', 'bestScore'], ['price', 'bestPrice'], ['minutes', 'bestMinutes']] as const) {
+    const values = compared.flatMap((row) => row[metric] === null ? [] : [row[metric]!])
+    if (!values.length) continue
+    const best = metric === 'score' ? Math.max(...values) : Math.min(...values)
+    for (const row of compared) row[flag] = row[metric] === best
+  }
+  return rows
 }
 
 function modelSupports(models: CodexModel[], modelId: string, effort: string): boolean {
@@ -283,6 +287,9 @@ function groupLabel(group: PickerRow['group']): string {
 }
 
 function modelLabel(model: string): string {
+  if (model === 'gpt-6.2-sol') return '6.2 Sol'
+  if (model === 'gpt-6.2-astra') return '6.2 Astra'
+  if (model === 'gpt-6.1-terra') return '6.1 Terra'
   if (model === 'gpt-6.1-sol') return '6.1 Sol'
   if (model === 'gpt-6-sol') return '6 Sol'
   if (model === 'gpt-6-astra') return '6 Astra'

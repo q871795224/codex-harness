@@ -9,7 +9,6 @@ use std::{
 use tokio::sync::Mutex;
 
 const ORIGIN: &str = "https://codexradar.com";
-const MIN_RANKING_COVERAGE: u64 = 2;
 const RESULTS_PATH: &str = "/data/codex-four-task-results.json";
 const TASKS: [&str; 4] = ["combined", "pompeii", "pelican", "candy"];
 const CACHE_TTL: Duration = Duration::from_secs(30 * 60);
@@ -250,72 +249,14 @@ fn build_model_table(
             .then_with(|| left.effort.cmp(&right.effort))
     });
     rows.dedup_by(|left, right| left.model == right.model && left.effort == right.effort);
-    // Preserve the compact launcher groups without depending on the retired
-    // station recommendations. Ranking requires at least three of four tasks;
-    // the fixed Astra/Luna choices can still display their measured coverage.
-    let mut candidates = Vec::new();
-    let mut references = 0;
-    let mut hard = 0;
-    for mut row in rows {
-        row.group = if row.model == "gpt-6-luna" && row.effort == "max" {
-            "simple"
-        } else if row.model == "gpt-6-astra" && matches!(row.effort.as_str(), "low" | "medium") {
-            "agi"
-        } else if hard < 2 && row.score.is_some() && row.coverage > MIN_RANKING_COVERAGE {
-            hard += 1;
-            "hard"
-        } else if references < 3
-            && supported_reference(&row)
-            && row.score.is_some()
-            && row.coverage > MIN_RANKING_COVERAGE
-        {
-            references += 1;
-            "reference"
-        } else {
-            continue;
-        }
-        .into();
-        candidates.push(row);
-    }
-    if !candidates.iter().any(|row| row.score.is_some()) {
-        return Err("Radar 四项测试暂无足够覆盖的模型数据".into());
-    }
-    let ranked = candidates.iter().filter(|row| row.group != "simple");
-    let best_score = ranked.clone().filter_map(|row| row.score).reduce(f64::max);
-    let best_price = ranked.clone().filter_map(|row| row.price).reduce(f64::min);
-    let best_minutes = ranked.filter_map(|row| row.minutes).reduce(f64::min);
-    let automatic = candidates
-        .iter()
-        .enumerate()
-        .filter(|(_, row)| row.group == "hard" && row.price.is_some())
-        .min_by(|(_, left), (_, right)| left.price.partial_cmp(&right.price).unwrap())
-        .map(|(index, _)| index);
-    let default_cursor = candidates
-        .iter()
-        .position(|row| matches!(row.group.as_str(), "reference" | "agi") && row.score.is_some())
-        .or_else(|| candidates.iter().position(|row| row.score.is_some()));
-    for (index, row) in candidates.iter_mut().enumerate() {
-        row.best_score = row.group != "simple" && row.score.is_some() && row.score == best_score;
-        row.best_price = row.group != "simple" && row.price.is_some() && row.price == best_price;
-        row.best_minutes =
-            row.group != "simple" && row.minutes.is_some() && row.minutes == best_minutes;
-        row.automatic = Some(index) == automatic;
-        row.default_cursor = Some(index) == default_cursor;
-    }
+    // Return every measured model/effort. The launcher owns its seven choices
+    // and checks the App Server catalog before allowing selection. Truncating
+    // here let unavailable new models displace usable entries.
     Ok(RadarModelTable {
-        rows: candidates,
+        rows,
         fetched_at,
         warnings: Vec::new(),
     })
-}
-
-fn supported_reference(row: &RadarModelRow) -> bool {
-    matches!(
-        (row.model.as_str(), row.effort.as_str()),
-        ("gpt-6.1-sol" | "gpt-5.6-sol", "high" | "medium")
-            | ("gpt-5.6-terra", "high" | "xhigh" | "max")
-            | ("gpt-5.6-luna", "xhigh")
-    )
 }
 
 fn unix_seconds() -> u64 {
@@ -375,6 +316,7 @@ mod tests {
         }
         let table = parse_results(&fixture["response"], 42).unwrap();
         assert!(table.warnings.is_empty());
+        assert_eq!(table.rows.len(), 46);
         assert!(table.rows.iter().all(|row| row.price.is_some()));
         let terra = table
             .rows
@@ -483,121 +425,29 @@ mod tests {
     }
 
     #[test]
-    fn does_not_rank_a_one_task_perfect_score_as_a_recommendation() {
-        let mut tiny = row("gpt-5.6-luna", "high", 150.0);
-        tiny.coverage = 1;
-        let table = build_model_table(vec![tiny, row("gpt-6.1-sol", "max", 114.1)], 42).unwrap();
-        assert_eq!(table.rows.len(), 1);
-        assert_eq!(table.rows[0].model, "gpt-6.1-sol");
-        assert!(table.rows[0].best_score);
-    }
-
-    #[test]
-    fn ranks_new_models_without_reusing_legacy_luna_metrics() {
-        let table = build_model_table(
-            vec![
-                row("gpt-6.1-sol", "high", 104.6),
-                row("gpt-6.1-sol", "max", 114.1),
-                row("gpt-6-astra", "xhigh", 121.1),
-                row("gpt-6-astra", "low", 99.9),
-                row("gpt-6-astra", "medium", 90.1),
-                row("gpt-6-luna", "max", 52.9),
-            ],
-            42,
-        )
-        .unwrap();
-        assert_eq!(
-            table.rows.iter().filter(|row| row.group == "hard").count(),
-            2
-        );
-        let luna = table.rows.iter().find(|row| row.group == "simple").unwrap();
-        assert_eq!(luna.model, "gpt-6-luna");
-        assert_eq!(luna.score, Some(52.9));
-        assert!(!luna.best_score);
-        assert_eq!(
-            table
-                .rows
-                .iter()
-                .find(|row| row.default_cursor)
-                .unwrap()
-                .model,
-            "gpt-6.1-sol"
-        );
-    }
-
-    #[test]
-    fn keeps_sol_references_when_other_astra_efforts_score_higher() {
-        let table = build_model_table(
-            vec![
-                row("gpt-6-astra", "xhigh", 121.1),
-                row("gpt-6.1-sol", "max", 114.1),
-                row("gpt-6-astra", "max", 113.7),
-                row("gpt-6-astra", "high", 112.0),
-                row("gpt-6-astra", "ultra", 111.6),
-                row("gpt-6.1-sol", "high", 104.6),
-                row("gpt-6-astra", "low", 99.9),
-                row("gpt-6.1-sol", "medium", 96.0),
-                row("gpt-5.6-sol", "high", 95.0),
-                row("gpt-5.6-luna", "xhigh", 90.0),
-                row("gpt-6-astra", "medium", 90.1),
-                row("gpt-6-luna", "max", 56.3),
-            ],
-            42,
-        )
-        .unwrap();
-        let selections = |group: &str| {
-            table
-                .rows
-                .iter()
-                .filter(|row| row.group == group)
-                .map(|row| (row.model.as_str(), row.effort.as_str()))
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(
-            selections("hard"),
-            vec![("gpt-6-astra", "xhigh"), ("gpt-6.1-sol", "max")]
-        );
-        assert_eq!(
-            selections("reference"),
-            vec![
-                ("gpt-6.1-sol", "high"),
-                ("gpt-6.1-sol", "medium"),
-                ("gpt-5.6-sol", "high")
-            ]
-        );
-        assert_eq!(
-            selections("agi"),
-            vec![("gpt-6-astra", "low"), ("gpt-6-astra", "medium")]
-        );
-        let default = table.rows.iter().find(|row| row.default_cursor).unwrap();
-        assert_eq!(
-            (default.model.as_str(), default.effort.as_str()),
-            ("gpt-6.1-sol", "high")
-        );
-        assert_eq!(default.score, Some(104.6));
-    }
-
-    #[test]
-    fn does_not_include_sol_references_with_insufficient_coverage() {
+    fn preserves_new_models_other_efforts_and_sparse_measurements_without_ranking() {
         let mut sparse = row("gpt-6.1-sol", "high", 110.0);
-        sparse.coverage = MIN_RANKING_COVERAGE;
+        sparse.coverage = 1;
         let table = build_model_table(
             vec![
-                row("gpt-6-astra", "xhigh", 121.1),
-                row("gpt-6.1-sol", "max", 114.1),
+                row("gpt-6.2-astra", "xhigh", 150.0),
+                row("gpt-6.2-sol", "medium", 130.0),
+                row("gpt-6.1-terra", "max", 140.0),
                 sparse,
-                row("gpt-6.1-sol", "medium", 96.0),
+                row("gpt-6.1-sol", "medium", 100.0),
+                row("gpt-6-astra", "medium", 125.0),
+                row("gpt-6-luna", "max", 90.0),
+                row("gpt-5.6-sol", "high", 80.0),
             ],
             42,
         )
         .unwrap();
-        assert!(!table
-            .rows
-            .iter()
-            .any(|row| row.model == "gpt-6.1-sol" && row.effort == "high"));
+        assert_eq!(table.rows.len(), 8);
+        assert!(table.rows.iter().any(|row| row.model == "gpt-6.2-sol"));
+        assert!(table.rows.iter().any(|row| row.coverage == 1));
         assert!(table
             .rows
             .iter()
-            .any(|row| row.group == "reference" && row.effort == "medium"));
+            .all(|row| !row.automatic && !row.default_cursor));
     }
 }
