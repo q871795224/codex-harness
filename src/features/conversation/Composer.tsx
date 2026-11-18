@@ -50,6 +50,7 @@ export interface ComposerProjectCard {
 
 interface ComposerProps {
   variant?: 'assistant'
+  standaloneAssistant?: boolean
   provider?: 'codex' | 'claude' | 'superbot'
   initialDraft?: ComposerDraft
   consumedDraft?: ComposerDraft
@@ -134,7 +135,7 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ threadId, onMessageAccepted, variant, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, superbotAttachments = false, superbotQueue = false, superbotSteer = false, superbotModels = [], superbotSettings, onSuperbotSettingsChange, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ threadId, onMessageAccepted, variant, standaloneAssistant, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, superbotAttachments = false, superbotQueue = false, superbotSteer = false, superbotModels = [], superbotSettings, onSuperbotSettingsChange, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
   const assistant = variant === 'assistant'
   const canAttach = provider !== 'superbot' || superbotAttachments
   const supportsFollowUp = provider !== 'superbot' || superbotQueue
@@ -184,7 +185,7 @@ export function Composer({ threadId, onMessageAccepted, variant, provider = 'cod
     setCollapsedPastes(pastes)
     setText(next)
     setCursor(ref.current?.selectionStart ?? next.length)
-  })
+  }, !standaloneAssistant)
   useEffect(() => { if (correction.revision > 0) setCorrectionFeedbackVisible(true) }, [correction.revision])
   useEffect(() => onMessageAccepted?.((acceptedId) => {
     if (acceptedId !== threadId) return

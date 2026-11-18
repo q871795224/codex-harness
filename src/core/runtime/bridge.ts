@@ -1,3 +1,4 @@
+import type { DesktopAssistantOperations, DesktopAssistantRequest, DesktopAssistantSnapshot } from '../desktop-pet/assistantTypes'
 import type { DesktopPetActivity, DesktopPetCatalog, DesktopPetOpenTarget, DesktopPetSnapshot, PetKey } from '../desktop-pet/types'
 import type { SuperbotRequest } from '../superbot/types'
 import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection, RouterFeedbackPage, DecisionPrompt, DecisionResult } from '../workspace-router/types'
@@ -345,7 +346,17 @@ export const runtime = {
   desktopPetSnapshot: () => invoke<DesktopPetSnapshot>('desktop_pet_snapshot'),
   desktopPetPublish: (activity: DesktopPetActivity) => invoke<void>('desktop_pet_publish', { activity }),
   desktopPetVisibility: (visible?: boolean) => invoke<boolean>('desktop_pet_visibility', { visible: visible ?? null }),
-  desktopPetOpen: (assistant: boolean) => invoke<void>('desktop_pet_open', { assistant }),
+  desktopPetOpen: () => invoke<void>('desktop_pet_open'),
+  desktopPetMenu: () => invoke<void>('desktop_pet_menu'),
+  desktopPetDrag: () => invoke<void>('desktop_pet_drag'),
+  desktopAssistantHide: () => invoke<void>('desktop_assistant_hide'),
+  desktopAssistantRequest: <Action extends keyof DesktopAssistantOperations>(action: Action, args: DesktopAssistantOperations[Action]['args']) =>
+    invoke<DesktopAssistantOperations[Action]['result']>('desktop_assistant_request', { action, args }),
+  desktopAssistantReply: (id: string, result: unknown, error?: string) =>
+    invoke<void>('desktop_assistant_reply', { id, result: result ?? null, error: error ?? null }),
+  desktopAssistantState: (snapshot: DesktopAssistantSnapshot) => invoke<void>('desktop_assistant_state', { snapshot }),
+  listenDesktopAssistantRequest: (handler: (request: DesktopAssistantRequest) => void) => listen<DesktopAssistantRequest>('desktop-assistant:request', event => handler(event.payload)),
+  listenDesktopAssistantState: (handler: (snapshot: DesktopAssistantSnapshot) => void) => listen<DesktopAssistantSnapshot>('desktop-assistant:state', event => handler(event.payload)),
   async desktopPetImport(format: 'folder' | 'frames'): Promise<PetKey | null> {
     if (format === 'folder') {
       const folder = await open({ directory: true, multiple: false, title: '选择 Codex 宠物目录' })
@@ -362,7 +373,6 @@ export const runtime = {
   listenDesktopPetChanges: (handler: () => void) => listen('desktop-pet:changed', handler),
   listenDesktopPetVisibility: (handler: (visible: boolean) => void) => listen<boolean>('desktop-pet:visibility', event => handler(event.payload)),
   listenDesktopPetOpen: (handler: (target: DesktopPetOpenTarget) => void) => listen<DesktopPetOpenTarget>('desktop-pet:open', event => handler(event.payload)),
-  startDesktopPetDragging: () => getCurrentWindow().startDragging(),
 
   async chooseComposerFiles(): Promise<string[]> {
     const paths = await open({

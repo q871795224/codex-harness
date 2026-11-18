@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { correctInput, moveCorrections, manuallyEditedRanges, type Correction, type Range } from '../../core/input-correction/engine'
 import { loadCorrectionSettings, useCorrectionSettings } from '../../core/input-correction/settings'
 
-export function useInputCorrection(text: string, composing: boolean, disabled: boolean, ranges: Range[], textarea: RefObject<HTMLTextAreaElement | null>, apply: (text: string, edits: Correction[]) => void) {
+export function useInputCorrection(text: string, composing: boolean, disabled: boolean, ranges: Range[], textarea: RefObject<HTMLTextAreaElement | null>, apply: (text: string, edits: Correction[]) => void, loadSettings = true) {
   const settings = useCorrectionSettings()
   const [edits, setEdits] = useState<Correction[]>([])
   const [error, setError] = useState('')
@@ -15,10 +15,11 @@ export function useInputCorrection(text: string, composing: boolean, disabled: b
   const latest = useRef({ apply, ranges, edits })
   latest.current = { apply, ranges, edits }
   useEffect(() => {
+    if (!loadSettings) return
     let disposed = false
     void loadCorrectionSettings().then(() => { if (!disposed) setLoaded(true) }).catch((e) => { if (!disposed) setError(String(e)) })
     return () => { disposed = true }
-  }, [])
+  }, [loadSettings])
   useEffect(() => {
     if (previous.current !== text) {
       const remaining = moveCorrections(previous.current, text, latest.current.edits)

@@ -18,6 +18,7 @@ mod compass;
 mod secrets;
 mod diagnostics;
 mod desktop_pet;
+mod desktop_assistant;
 mod git_workspace;
 mod handover_store;
 mod harness_files;
@@ -1597,6 +1598,7 @@ pub fn run() {
         json!({ "harnessVersion": env!("CARGO_PKG_VERSION") }),
     );
     let application = tauri::Builder::default()
+        .manage(desktop_assistant::DesktopAssistant::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
@@ -1690,6 +1692,12 @@ pub fn run() {
             desktop_pet::desktop_pet_snapshot,
             desktop_pet::desktop_pet_publish,
             desktop_pet::desktop_pet_open,
+            desktop_pet::desktop_pet_menu,
+            desktop_pet::desktop_pet_drag,
+            desktop_assistant::desktop_assistant_request,
+            desktop_assistant::desktop_assistant_reply,
+            desktop_assistant::desktop_assistant_state,
+            desktop_assistant::desktop_assistant_hide,
             desktop_pet::desktop_pet_visibility,
             superbot_request,
             async_wait_list,
@@ -1842,7 +1850,10 @@ pub fn run() {
         ];
     application
         .invoke_handler(move |request| {
-            if request.message.webview().label() == desktop_pet::LABEL && !desktop_pet::allows_command(request.message.command()) {
+            let webview = request.message.webview();
+            let command = request.message.command();
+            if (webview.label() == desktop_pet::LABEL && !desktop_pet::allows_command(command))
+                || (webview.label() == desktop_assistant::LABEL && !desktop_assistant::allows_command(command)) {
                 request.resolver.reject("此命令在宠物窗口不可用。");
                 return true;
             }
