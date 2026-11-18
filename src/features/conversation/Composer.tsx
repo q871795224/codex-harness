@@ -49,6 +49,7 @@ export interface ComposerProjectCard {
 }
 
 interface ComposerProps {
+  variant?: 'assistant'
   provider?: 'codex' | 'claude' | 'superbot'
   initialDraft?: ComposerDraft
   consumedDraft?: ComposerDraft
@@ -133,7 +134,8 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ threadId, onMessageAccepted, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, superbotAttachments = false, superbotQueue = false, superbotSteer = false, superbotModels = [], superbotSettings, onSuperbotSettingsChange, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ threadId, onMessageAccepted, variant, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, superbotAttachments = false, superbotQueue = false, superbotSteer = false, superbotModels = [], superbotSettings, onSuperbotSettingsChange, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+  const assistant = variant === 'assistant'
   const canAttach = provider !== 'superbot' || superbotAttachments
   const supportsFollowUp = provider !== 'superbot' || superbotQueue
   const disabled = externallyDisabled || Boolean(delayedSend)
@@ -252,7 +254,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
       .slice(0, 8)
       .map((skill) => ({ kind: 'skill', name: skill.name, path: skill.path, detail: skill.description }))
   }, [attachments.length, claudeModels, fileMatches, models, pluginItems, provider, selectedClaudeModel, selectedModel, skills, suggestionsDismissed, trigger])
-  const suggestionsOpen = Boolean(trigger && !suggestionsDismissed && !(trigger.kind === 'command' && attachments.length > 0))
+  const suggestionsOpen = Boolean(trigger && !(assistant && trigger.kind === 'command') && !suggestionsDismissed && !(trigger.kind === 'command' && attachments.length > 0))
 
   useLayoutEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
   useLayoutEffect(() => { completionProvidersRef.current = completionProviders }, [completionProviders])
@@ -457,7 +459,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
   const submitDraft = async () => {
     if (!hasContent || disabled || busy || imageUnsupported || (!supportsFollowUp && working)) return
     const sentDraft = currentDraftRef.current
-    const command = provider === 'superbot' ? null : parseComposerCommand(expandedText, attachments.length > 0)
+    const command = assistant || provider === 'superbot' ? null : parseComposerCommand(expandedText, attachments.length > 0)
     if (command) {
       if (settingsLocked && ['model', 'reasoning', 'permissions'].includes(command.name)) {
         setActionError('请等待当前回合结束后再修改会话设置。')
@@ -511,7 +513,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
   }
 
   const canSchedule = Boolean(onScheduleSend) && hasContent && !disabled && !busy && !attachmentBusy && !imageUnsupported
-    && (provider === 'superbot' || !parseComposerCommand(expandedText, attachments.length > 0))
+    && (assistant || provider === 'superbot' || !parseComposerCommand(expandedText, attachments.length > 0))
   useEffect(() => { if (!canSchedule) setDelayMenuOpen(false) }, [canSchedule])
 
   const stopping = working && (!hasContent || !supportsFollowUp)
@@ -705,7 +707,8 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
           onScroll={(event) => { setCorrectionHover(null); if (highlightRef.current) highlightRef.current.scrollTop = event.currentTarget.scrollTop }}
           onBlur={() => setCorrectionHover(null)}
           disabled={disabled || busy || attachmentBusy}
-          placeholder={foreignActive ? '等待其他客户端完成当前轮' : provider === 'superbot' ? '给 Superbot 发送消息' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
+          aria-label={assistant ? '给助理发消息' : undefined}
+          placeholder={assistant ? '给 Harness 助理发送消息' : foreignActive ? '等待其他客户端完成当前轮' : provider === 'superbot' ? '给 Superbot 发送消息' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
           onChange={(event) => {
             correction.noteInput()
             const nextText = event.target.value
@@ -824,7 +827,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
         <div className="composer-footer">
           <div className="composer-left-actions">
             {canAttach && <button type="button" className="composer-icon-button" disabled={disabled || busy || attachmentBusy} onClick={() => void addFiles()} title="添加图片或文件" aria-label="添加图片或文件"><Plus size={17} /></button>}
-            {provider === 'codex' && <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
+            {!assistant && provider === 'codex' && <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
               <option value="on-request">On request</option>
               <option value="untrusted">Untrusted</option>
               <option value="never">Never</option>
@@ -836,7 +839,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
               <option value="dontAsk">Don't ask</option>
               <option value="bypassPermissions">Dangerous</option>
             </select>}
-            {provider !== 'superbot' && <>
+            {!assistant && provider !== 'superbot' && <>
             <button
               type="button"
               className={`yolo-mode-button${yoloEnabled ? ' active' : ''}`}
@@ -853,7 +856,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
               <ShieldOff size={14} />
             </button>
             </>}
-            {provider === 'codex' && fastTier && (
+            {!assistant && provider === 'codex' && fastTier && (
               <button
                 type="button"
                 className={`fast-mode-button${fastEnabled ? ' active' : ''}`}

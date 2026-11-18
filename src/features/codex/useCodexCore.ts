@@ -99,7 +99,7 @@ export function useCodexCore() {
     setThreadSettings((current) => settingsEqual(current[threadId], next) ? current : { ...current, [threadId]: next })
   }, [defaults, models])
 
-  const updateThreadSettings = useCallback(async (threadId: string, patch: Partial<ThreadCodexSettings>) => {
+  const updateThreadSettings = useCallback(async (threadId: string, patch: Partial<ThreadCodexSettings>, saveAsDefault = true) => {
     setError(null)
     const previous = threadSettings[threadId] ?? defaults
     const next = normalizeThreadSettings({ ...previous, ...patch }, models)
@@ -123,6 +123,7 @@ export function useCodexCore() {
       throw nextError
     }
 
+    if (!saveAsDefault) return
     const defaultsToPersist: Array<{ keyPath: 'model' | 'service_tier'; value: string }> = []
     if (patch.model !== undefined) defaultsToPersist.push({ keyPath: 'model', value: next.model })
     if (serviceTierChanged) defaultsToPersist.push({ keyPath: 'service_tier', value: next.serviceTier ?? 'default' })

@@ -27,7 +27,7 @@ export async function listThreadPage(
     useStateDbOnly: true,
     ...(searchTerm.trim() ? { searchTerm: searchTerm.trim() } : {}),
   })
-  return { ...page, data: page.data.filter(thread => !thread.ephemeral) }
+  return { ...page, data: page.data.filter(thread => !thread.ephemeral && !thread.harnessAssistant) }
 }
 
 export function listAllActiveThreads(transport: ThreadCatalogTransport): Promise<Thread[]> {

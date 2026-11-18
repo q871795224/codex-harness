@@ -227,6 +227,7 @@ export type ThreadStatus =
 export interface Thread {
   /** Harness has registered client-executed project tools for this conversation. */
   harnessProjectTools?: boolean
+  harnessAssistant?: boolean
   id: string
   provider?: 'codex' | 'claude' | 'superbot'
   channelSource?: 'seatalk'

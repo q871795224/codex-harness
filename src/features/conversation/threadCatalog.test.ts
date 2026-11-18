@@ -61,7 +61,7 @@ describe('thread catalog listing', () => {
     const client = transport()
     const ordinary = thread('user-thread', 9)
     vi.mocked(client.listThreads).mockResolvedValue({
-      data: [{ ...thread('assistant-request', 10), ephemeral: true }, ordinary],
+      data: [{ ...thread('temporary-request', 11), ephemeral: true }, { ...thread('assistant-conversation', 10), harnessAssistant: true }, ordinary],
       nextCursor: 'next',
     })
     await expect(listThreadPage(client, mode, 'assistant')).resolves.toEqual({ data: [ordinary], nextCursor: 'next' })

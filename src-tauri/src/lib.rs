@@ -674,8 +674,12 @@ fn record_client_diagnostic(state: State<'_, AppState>, diagnostic: ClientDiagno
     );
 }
 
+fn assistant_workspace_path(data_dir: &std::path::Path) -> std::path::PathBuf {
+    data_dir.join("workspaces").join("assistant")
+}
+
 fn assistant_directory_at(data_dir: &std::path::Path) -> Result<String, String> {
-    let path = data_dir.join("workspaces").join("assistant");
+    let path = assistant_workspace_path(data_dir);
     std::fs::create_dir_all(&path).map_err(|error| format!("无法创建助理目录：{error}"))?;
     path.canonicalize()
         .map(|path| path.to_string_lossy().into_owned())
