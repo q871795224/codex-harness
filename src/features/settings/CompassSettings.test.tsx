@@ -12,7 +12,7 @@ afterEach(cleanup)
 
 it('saves and clears the password field, then tests with the saved key and model', async () => {
   vi.mocked(runtime.getAppState).mockResolvedValue(null)
-  vi.mocked(runtime.compassHasKey).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+  vi.mocked(runtime.compassHasKey).mockResolvedValue(true).mockResolvedValueOnce(false)
   vi.mocked(runtime.saveCompassModel).mockResolvedValue('test-model')
   vi.mocked(runtime.saveCompassKey).mockResolvedValue(undefined)
   vi.mocked(runtime.probeCompass).mockResolvedValue(undefined)
@@ -34,6 +34,11 @@ it('saves and clears the password field, then tests with the saved key and model
   expect(runtime.probeCompass).not.toHaveBeenCalled()
 
   fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
-  expect((await screen.findByRole('status')).textContent).toBe('Compass 连通性测试通过')
-  expect(runtime.probeCompass).toHaveBeenCalledWith()
+  expect((await screen.findByRole('status')).textContent).toBe('Responses 连通性测试通过')
+  expect(runtime.probeCompass).toHaveBeenNthCalledWith(1, 'responses')
+
+  fireEvent.change(screen.getByLabelText('测试接口'), { target: { value: 'chatCompletions' } })
+  fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
+  expect((await screen.findByRole('status')).textContent).toBe('Chat Completions 连通性测试通过')
+  expect(runtime.probeCompass).toHaveBeenNthCalledWith(2, 'chatCompletions')
 })

@@ -752,12 +752,17 @@ fn compass_save_model(state: State<'_, AppState>, model: String) -> Result<Strin
 }
 
 #[tauri::command]
-async fn compass_probe(state: State<'_, AppState>) -> Result<(), String> {
+async fn compass_probe(state: State<'_, AppState>, api: compass::Api) -> Result<(), String> {
     let model = state.store.get_app_state(compass::MODEL_KEY)?
         .ok_or("请先在设置中选择 Compass 模型")?;
-    compass::complete(&store::harness_data_dir()?.join("secrets"), &model, "Reply with the single word OK.")
-        .await
-        .map(|_| ())
+    compass::complete(
+        &store::harness_data_dir()?.join("secrets"),
+        &model,
+        api,
+        "Reply with the single word OK.",
+    )
+    .await
+    .map(|_| ())
 }
 
 #[tauri::command]

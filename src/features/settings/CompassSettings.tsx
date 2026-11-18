@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react'
-import { runtime } from '../../core/runtime/bridge'
+import { runtime, type CompassApi } from '../../core/runtime/bridge'
+
+const API_LABELS: Record<CompassApi, string> = {
+  responses: 'Responses',
+  chatCompletions: 'Chat Completions',
+}
 
 export function CompassSettings() {
   const [savedModel, setSavedModel] = useState('')
   const [model, setModel] = useState('')
+  const [api, setApi] = useState<CompassApi>('responses')
   const [apiKey, setApiKey] = useState('')
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(true)
@@ -80,14 +86,24 @@ export function CompassSettings() {
           <label className="settings-row"><span>模型名</span>
             <input value={model} disabled={busy} onChange={(event) => { setModel(event.target.value); setStatus('') }} />
           </label>
+          <label className="settings-row"><span>测试接口</span>
+            <select value={api} disabled={busy} onChange={(event) => {
+              setApi(event.target.value as CompassApi)
+              setStatus('')
+              setError('')
+            }}>
+              <option value="responses">{API_LABELS.responses}</option>
+              <option value="chatCompletions">{API_LABELS.chatCompletions}</option>
+            </select>
+          </label>
         </div>
         <div className="title-prompt-actions">
           <button type="submit" className="primary" disabled={busy || !dirty || !model.trim()}>保存模型</button>
           <button type="button" disabled={busy || dirty || !savedModel || Boolean(apiKey.trim())}
             onClick={() => void run(async () => {
               setHasKey(await runtime.compassHasKey())
-              await runtime.probeCompass()
-            }, 'Compass 连通性测试通过')}>测试连接</button>
+              await runtime.probeCompass(api)
+            }, `${API_LABELS[api]} 连通性测试通过`)}>测试连接</button>
         </div>
       </form>
       {status && <p role="status">{status}</p>}

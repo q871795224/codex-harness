@@ -1,12 +1,73 @@
 use reqwest::{redirect::Policy, Client};
-use serde_json::json;
+use serde::Deserialize;
+use serde_json::{json, Value};
 use std::{path::Path, time::Duration};
 
-const ENDPOINT: &str = "https://compass.llm.shopee.io/compass-api/v1/chat/completions";
+const BASE_URL: &str = "https://compass.llm.shopee.io/compass-api/v1";
 const MAX_BODY: usize = 1024 * 1024;
 
 const API_KEY_NAME: &str = "COMPASS_EXTERNAL_API_KEY";
 pub const MODEL_KEY: &str = "compass.model";
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Api {
+    ChatCompletions,
+    Responses,
+}
+
+impl Api {
+    fn path(self) -> &'static str {
+        match self {
+            Self::ChatCompletions => "chat/completions",
+            Self::Responses => "responses",
+        }
+    }
+
+    fn payload(self, model: &str, prompt: &str) -> Value {
+        match self {
+            Self::ChatCompletions => json!({
+                "model": model,
+                "messages": [{ "role": "user", "content": prompt }],
+                "stream": false,
+            }),
+            Self::Responses => json!({
+                "model": model,
+                "input": prompt,
+                "stream": false,
+                "store": false,
+            }),
+        }
+    }
+
+    fn output(self, data: &Value) -> Result<String, String> {
+        let output = match self {
+            Self::ChatCompletions => data
+                .pointer("/choices/0/message/content")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            Self::Responses => {
+                if data["status"] != "completed" {
+                    return Err("Compass Responses 请求未完成".into());
+                }
+                data["output"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|item| item["type"] == "message" && item["role"] == "assistant")
+                    .flat_map(|item| item["content"].as_array().into_iter().flatten())
+                    .filter(|part| part["type"] == "output_text")
+                    .filter_map(|part| part["text"].as_str())
+                    .collect::<String>()
+            }
+        };
+        if output.trim().is_empty() {
+            return Err("Compass 响应缺少文本结果".into());
+        }
+        Ok(output)
+    }
+}
 
 struct Config {
     model: String,
@@ -45,13 +106,18 @@ fn load_config(path: &Path, model: &str) -> Result<Config, String> {
     Ok(Config { model, api_key })
 }
 
-pub async fn complete(secrets: &Path, model: &str, prompt: &str) -> Result<String, String> {
+pub async fn complete(
+    secrets: &Path,
+    model: &str,
+    api: Api,
+    prompt: &str,
+) -> Result<String, String> {
     let path = secrets.to_owned();
     let model = model.to_owned();
     let config = tauri::async_runtime::spawn_blocking(move || load_config(&path, &model))
         .await
         .map_err(|_| "无法读取 Compass 设置")??;
-    request(ENDPOINT, &config, prompt).await
+    request(BASE_URL, &config, api, prompt).await
 }
 
 fn network_error(error: reqwest::Error) -> String {
@@ -63,13 +129,14 @@ fn network_error(error: reqwest::Error) -> String {
     .into()
 }
 
-async fn request(endpoint: &str, config: &Config, prompt: &str) -> Result<String, String> {
-    let body = serde_json::to_vec(&json!({
-        "model": config.model,
-        "messages": [{ "role": "user", "content": prompt }],
-        "stream": false,
-    }))
-    .map_err(|_| "无法编码 Compass 请求")?;
+async fn request(
+    base_url: &str,
+    config: &Config,
+    api: Api,
+    prompt: &str,
+) -> Result<String, String> {
+    let body = serde_json::to_vec(&api.payload(&config.model, prompt))
+        .map_err(|_| "无法编码 Compass 请求")?;
     if body.len() > MAX_BODY {
         return Err("Compass 请求超过 1 MiB 限制".into());
     }
@@ -80,7 +147,7 @@ async fn request(endpoint: &str, config: &Config, prompt: &str) -> Result<String
         .build()
         .map_err(|_| "无法初始化 Compass HTTP 客户端")?;
     let mut response = client
-        .post(endpoint)
+        .post(format!("{}/{}", base_url, api.path()))
         .bearer_auth(&config.api_key)
         .header("Content-Type", "application/json")
         .body(body)
@@ -105,13 +172,8 @@ async fn request(endpoint: &str, config: &Config, prompt: &str) -> Result<String
         bytes.extend_from_slice(&chunk);
     }
 
-    let data: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|_| "Compass 返回了无效 JSON")?;
-    data.pointer("/choices/0/message/content")
-        .and_then(serde_json::Value::as_str)
-        .filter(|text| !text.trim().is_empty())
-        .map(str::to_owned)
-        .ok_or_else(|| "Compass 响应缺少文本结果".into())
+    let data: Value = serde_json::from_slice(&bytes).map_err(|_| "Compass 返回了无效 JSON")?;
+    api.output(&data)
 }
 
 #[cfg(test)]
@@ -134,10 +196,7 @@ mod tests {
         response: &'static str,
     ) -> (String, thread::JoinHandle<(String, serde_json::Value)>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!(
-            "http://{}/compass-api/v1/chat/completions",
-            listener.local_addr().unwrap()
-        );
+        let endpoint = format!("http://{}/compass-api/v1", listener.local_addr().unwrap());
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             stream
@@ -230,7 +289,9 @@ mod tests {
         let (endpoint, server) =
             fake_gateway(200, "", r#"{"choices":[{"message":{"content":"OK"}}]}"#);
         assert_eq!(
-            request(&endpoint, &config(), "fixed probe").await.unwrap(),
+            request(&endpoint, &config(), Api::ChatCompletions, "fixed probe")
+                .await
+                .unwrap(),
             "OK"
         );
         let (head, body) = server.join().unwrap();
@@ -246,6 +307,52 @@ mod tests {
                 "stream": false
             })
         );
+    }
+
+    #[tokio::test]
+    async fn uses_responses_input_and_collects_assistant_text() {
+        let (endpoint, server) = fake_gateway(
+            200,
+            "",
+            r#"{
+            "status":"completed","output":[
+                {"type":"reasoning","summary":[]},
+                {"type":"message","role":"assistant","content":[
+                    {"type":"output_text","text":"Hello "},
+                    {"type":"output_text","text":"World"}
+                ]}
+            ]
+        }"#,
+        );
+        assert_eq!(
+            request(&endpoint, &config(), Api::Responses, "fixed probe")
+                .await
+                .unwrap(),
+            "Hello World"
+        );
+        let (head, body) = server.join().unwrap();
+        assert!(head.starts_with("POST /compass-api/v1/responses HTTP/1.1"));
+        assert!(head
+            .to_ascii_lowercase()
+            .contains("authorization: bearer fake-compass-key\r\n"));
+        assert_eq!(
+            body,
+            json!({"model":"test-model","input":"fixed probe","store":false,"stream":false})
+        );
+    }
+
+    #[test]
+    fn incomplete_or_nontext_responses_do_not_pass_a_text_probe() {
+        assert!(Api::Responses.output(&json!({
+            "status": "incomplete",
+            "output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "partial"}]}]
+        })).is_err());
+        assert!(Api::Responses
+            .output(&json!({
+                "status": "completed",
+                "output": [{"type": "function_call", "name": "test"}]
+            }))
+            .is_err());
     }
 
     #[tokio::test]
@@ -266,7 +373,7 @@ mod tests {
             ),
         ] {
             let (endpoint, server) = fake_gateway(status, headers, body);
-            let error = request(&endpoint, &config(), "fixed probe")
+            let error = request(&endpoint, &config(), Api::ChatCompletions, "fixed probe")
                 .await
                 .unwrap_err();
             server.join().unwrap();

@@ -9,11 +9,13 @@ it('writes credentials without returning them and uses a dedicated connection te
   expect(await runtime.compassHasKey()).toBe(true)
   expect(await runtime.saveCompassModel('test-model')).toBe('test-model')
   await runtime.saveCompassKey('fake-key')
-  await runtime.probeCompass()
+  await runtime.probeCompass('responses')
+  await runtime.probeCompass('chatCompletions')
   expect(vi.mocked(invoke).mock.calls).toEqual([
     ['compass_has_key'],
     ['compass_save_model', { model: 'test-model' }],
     ['compass_save_key', { apiKey: 'fake-key' }],
-    ['compass_probe'],
+    ['compass_probe', { api: 'responses' }],
+    ['compass_probe', { api: 'chatCompletions' }],
   ])
 })
