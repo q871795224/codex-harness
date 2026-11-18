@@ -154,3 +154,39 @@ it('keeps a scheduled assistant send alive after the dialog closes', async () =>
     vi.useRealTimers()
   }
 })
+
+it('drags from the title bar, stays inside the viewport, and keeps the position when reopened', async () => {
+  render(<HarnessAssistant {...fixture()} />)
+  const launcher = screen.getByRole('button', { name: '助理' })
+  fireEvent.click(launcher)
+  await screen.findByRole('textbox', { name: '给助理发消息' })
+  const floatingWindow = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Harness 助理' })
+  const titlebar = screen.getByRole('heading', { name: 'Harness 助理' }).closest('header')!
+  const capture = vi.fn()
+  Object.defineProperty(floatingWindow, 'setPointerCapture', { value: capture })
+  vi.spyOn(floatingWindow, 'getBoundingClientRect').mockReturnValue(new DOMRect(420, 170, 510, 560))
+
+  const closeButton = screen.getByRole('button', { name: '关闭 Harness 助理' })
+  fireEvent.pointerDown(closeButton, { pointerId: 7, button: 0, clientX: 900, clientY: 195 })
+  expect(capture).not.toHaveBeenCalled()
+
+  fireEvent.pointerDown(titlebar, { pointerId: 7, button: 0, clientX: 470, clientY: 195 })
+  expect(capture).toHaveBeenCalledExactlyOnceWith(7)
+  fireEvent.pointerMove(titlebar, { pointerId: 7, clientX: 230, clientY: 120 })
+  expect(floatingWindow.style.left).toBe('180px')
+  expect(floatingWindow.style.top).toBe('95px')
+
+  fireEvent.pointerMove(titlebar, { pointerId: 7, clientX: window.innerWidth + 150, clientY: 0 })
+  expect(floatingWindow.style.left).toBe(`${window.innerWidth - 510}px`)
+  expect(floatingWindow.style.top).toBe('0px')
+  fireEvent.lostPointerCapture(floatingWindow, { pointerId: 7 })
+  fireEvent.click(floatingWindow, { clientX: 0, clientY: 0 })
+  expect(floatingWindow.open).toBe(true)
+  fireEvent.pointerMove(titlebar, { pointerId: 7, clientX: 310, clientY: 160 })
+  expect(floatingWindow.style.left).toBe(`${window.innerWidth - 510}px`)
+
+  fireEvent.click(closeButton)
+  fireEvent.click(launcher)
+  expect(floatingWindow.style.left).toBe(`${window.innerWidth - 510}px`)
+  expect(floatingWindow.style.top).toBe('0px')
+})

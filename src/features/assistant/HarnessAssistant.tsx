@@ -1,5 +1,5 @@
 import { Archive, MessageCircle, Pin, PinOff, X } from 'lucide-react'
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
 import { ASSISTANT_INSTRUCTIONS, assistantInput, assistantVisibleInput, parseSessionRequest, queryAssistantSessions, type AssistantSession, type SessionRequest } from './sessionAssistant'
 import type { MessageReference, UserInput } from '../../core/domain/codex'
 import type { useCodexCore } from '../codex/useCodexCore'
@@ -11,6 +11,14 @@ import type { useUnifiedHarness } from '../conversation/useUnifiedHarness'
 import './assistant.css'
 
 type Mutation = 'archive' | 'pin' | 'unpin'
+type WindowPosition = { left: number; top: number }
+
+function withinViewport(position: WindowPosition, bounds: DOMRect): WindowPosition {
+  return {
+    left: Math.max(0, Math.min(position.left, window.innerWidth - bounds.width)),
+    top: Math.max(0, Math.min(position.top, window.innerHeight - bounds.height)),
+  }
+}
 const labels = { archive: '归档', pin: '置顶', unpin: '取消置顶' }
 const providers = { codex: 'Codex', claude: 'Claude', superbot: 'Superbot' }
 const pageSize = 12
@@ -29,6 +37,24 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, onMutate }:
   const trigger = useRef<HTMLButtonElement>(null)
   const [threadId, setThreadId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [position, setPosition] = useState<WindowPosition>()
+  const drag = useRef<{ pointerId: number; offsetX: number; offsetY: number }>()
+  const titlebarPress = useRef(false)
+  useEffect(() => {
+    if (!dialogOpen) return
+    const keepOnScreen = () => {
+      const bounds = dialog.current?.getBoundingClientRect()
+      if (!bounds) return
+      setPosition(current => {
+        if (!current) return current
+        const next = withinViewport(current, bounds)
+        return next.left === current.left && next.top === current.top ? current : next
+      })
+    }
+    keepOnScreen()
+    window.addEventListener('resize', keepOnScreen)
+    return () => window.removeEventListener('resize', keepOnScreen)
+  }, [dialogOpen])
   const [loading, setLoading] = useState(false)
   const draft = useRef<ComposerDraft>()
   const [consumedDraft, setConsumedDraft] = useState<ComposerDraft>()
@@ -59,14 +85,38 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, onMutate }:
   const [confirmation, setConfirmation] = useState<{ session: AssistantSession; action: Mutation } | null>(null)
 
   function close() {
+    drag.current = undefined
+    titlebarPress.current = false
     dialog.current?.close()
     setDialogOpen(false)
     setConfirmation(null)
     trigger.current?.focus()
   }
 
+  function startDrag(event: PointerEvent<HTMLElement>) {
+    if (event.button !== 0 || drag.current || (event.target as Element).closest('button')) return
+    const floatingWindow = dialog.current
+    if (!floatingWindow) return
+    const bounds = floatingWindow.getBoundingClientRect()
+    floatingWindow.setPointerCapture(event.pointerId)
+    titlebarPress.current = true
+    drag.current = { pointerId: event.pointerId, offsetX: event.clientX - bounds.left, offsetY: event.clientY - bounds.top }
+    event.preventDefault()
+  }
+
+  function moveWindow(event: PointerEvent<HTMLElement>) {
+    const active = drag.current
+    const bounds = dialog.current?.getBoundingClientRect()
+    if (!active || event.pointerId !== active.pointerId || !bounds) return
+    setPosition(withinViewport({ left: event.clientX - active.offsetX, top: event.clientY - active.offsetY }, bounds))
+  }
+
+  function finishDrag(event: PointerEvent<HTMLElement>) {
+    if (drag.current?.pointerId === event.pointerId) drag.current = undefined
+  }
+
   function closeFromBackdrop(event: MouseEvent<HTMLDialogElement>) {
-    if (event.target !== event.currentTarget) return
+    if (event.target !== event.currentTarget || titlebarPress.current) return
     const bounds = event.currentTarget.getBoundingClientRect()
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) close()
   }
@@ -179,9 +229,12 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, onMutate }:
         <MessageCircle size={17} />助理
       </button>
       <dialog ref={dialog} className="harness-assistant-window" aria-labelledby="harness-assistant-title" onClick={closeFromBackdrop}
+        style={position ? { ...position, right: 'auto', bottom: 'auto' } : undefined}
+        onPointerDownCapture={() => { titlebarPress.current = false }}
+        onPointerMove={moveWindow} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}
         onKeyDown={event => event.stopPropagation()}
         onCancel={event => { event.preventDefault(); event.stopPropagation(); close() }}>
-        <header>
+        <header className="harness-assistant-titlebar" onPointerDown={startDrag}>
           <MessageCircle size={19} />
           <h2 id="harness-assistant-title">Harness 助理</h2>
           <button type="button" aria-label="关闭 Harness 助理" onClick={close}><X size={18} /></button>
