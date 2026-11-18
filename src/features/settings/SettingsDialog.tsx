@@ -1,3 +1,4 @@
+import { PetSettings } from '../desktop-pet/PetSettings'
 import { useSettingsReload } from '../../core/runtime/settingsEvents'
 import { InputCorrectionSettings } from './InputCorrectionSettings'
 import { CompassSettings } from './CompassSettings'
@@ -6,7 +7,7 @@ import { HistorySettings } from './HistorySettings'
 import type { useCodexUpdate } from '../codex/useCodexUpdate'
 import { MemorySettings } from './MemorySettings'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, ArrowDown, ArrowUp, Blocks, BrainCircuit, CircleHelp, FolderOpen, GripVertical, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, Blocks, BrainCircuit, CircleHelp, FolderOpen, GripVertical, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, PawPrint, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
 import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, HarnessActionId, HarnessActionShortcuts, RecapGenerationSettings, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
 import { DEFAULT_FONT_SIZES, DEFAULT_RECAP_GENERATION, DEFAULT_THREAD_TITLE_GENERATION, MAX_FONT_SIZE, MIN_FONT_SIZE, threadTitle } from '../../core/domain/codex'
@@ -77,7 +78,7 @@ interface PluginSettingsDialogProps {
   onClose: () => void
 }
 
-type SettingsPage = 'input-correction' | 'router' | 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'compass' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
+type SettingsPage = 'desktop-pet' | 'input-correction' | 'router' | 'history' | 'workspaces' | 'appearance' | 'conversation-stats' | 'keyboard' | 'models' | 'compass' | 'thread-title' | 'recap' | 'memory' | 'handover' | 'skills' | 'mcp'
 
 const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'navigation', label: '导航与列表' },
@@ -94,6 +95,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const pageMeta: Record<SettingsPage, { heading: string; kicker: string }> = {
     workspaces: { heading: '工作区', kicker: 'WORKSPACES' },
+    'desktop-pet': { heading: '桌面宠物', kicker: 'DESKTOP PET' },
     appearance: { heading: '外观', kicker: 'APPEARANCE' },
     history: { heading: '会话历史', kicker: 'CONVERSATION' },
     'conversation-stats': { heading: '底部信息', kicker: 'CONVERSATION' },
@@ -161,6 +163,9 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
             <button type="button" className={page === 'appearance' ? 'selected' : ''} aria-current={page === 'appearance' ? 'page' : undefined} onClick={() => setPage('appearance')}>
               <Palette size={16} />外观
             </button>
+            <button type="button" className={page === 'desktop-pet' ? 'selected' : ''} aria-current={page === 'desktop-pet' ? 'page' : undefined} onClick={() => setPage('desktop-pet')}>
+              <PawPrint size={16} />桌面宠物
+            </button>
             <button type="button" className={page === 'conversation-stats' ? 'selected' : ''} aria-current={page === 'conversation-stats' ? 'page' : undefined} onClick={() => setPage('conversation-stats')}>
               <Activity size={16} />底部信息
             </button>
@@ -207,6 +212,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           </header>
 
           {page === 'workspaces' && <WorkspaceSettings workspaces={workspaces} onAdd={onAddWorkspace} onRemove={onRemoveWorkspace} />}
+          {page === 'desktop-pet' && <PetSettings />}
           {page === 'appearance' && <AppearanceSettings sidebarUnpinnedCount={sidebarUnpinnedCount} onSidebarUnpinnedCount={onSidebarUnpinnedCount} theme={theme} fontSizes={fontSizes} onTheme={onTheme} onFontSize={onFontSize} onResetFontSizes={onResetFontSizes} />}
           {page === 'conversation-stats' && <ConversationStatsSettings preferences={conversationStats} data={conversationStatsData} onChange={onConversationStats} />}
           {page === 'history' && <HistorySettings />}

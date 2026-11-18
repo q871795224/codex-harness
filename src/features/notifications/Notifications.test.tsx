@@ -150,3 +150,13 @@ it('keeps the independent reminder rail open while the conversation is being use
   expect(container.querySelector('.notification-viewport.open')).toBeTruthy()
   expect(screen.queryByRole('button', { name: /展开提醒/ })).toBeNull()
 })
+
+it('lets a desktop pet user follow the active thread from the notification center', async () => {
+  const notifications = store()
+  await notifications.initialize()
+  render(<NotificationCenter store={notifications} currentThreadId="thread-a"
+    reminderThread={{ id: 'thread-a', title: '会话 A' }} onBack={vi.fn()} onAction={vi.fn()} />)
+  fireEvent.click(screen.getByText('提醒当前会话'))
+  fireEvent.click(screen.getByRole('checkbox', { name: '有新一轮结果时提醒' }))
+  expect(notifications.snapshot().records.find(record => record.threadId === 'thread-a')?.watchThread).toBe(true)
+})

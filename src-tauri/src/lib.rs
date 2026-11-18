@@ -17,6 +17,7 @@ mod codex_update;
 mod compass;
 mod secrets;
 mod diagnostics;
+mod desktop_pet;
 mod git_workspace;
 mod handover_store;
 mod harness_files;
@@ -69,6 +70,8 @@ struct AppState {
     jev: jev::JevClient,
     codex_analytics: CodexAnalytics,
     store: Arc<HarnessStore>,
+    desktop_pet_activity: Mutex<desktop_pet::Activity>,
+    desktop_pet_window: tokio::sync::Mutex<()>,
     project_docs: Mutex<Option<Arc<project_doc_store::ProjectDocStore>>>,
     project_doc_proposals: Mutex<Option<project_doc_proposals::ProposalQueue>>,
     project_doc_server: Mutex<Option<project_doc_server::ProjectDocServer>>,
@@ -1593,7 +1596,7 @@ pub fn run() {
         "application.started",
         json!({ "harnessVersion": env!("CARGO_PKG_VERSION") }),
     );
-    tauri::Builder::default()
+    let application = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
@@ -1663,6 +1666,8 @@ pub fn run() {
                 jev: jev::JevClient::new()?,
                 codex_analytics: analytics,
                 store,
+                desktop_pet_activity: Mutex::default(),
+                desktop_pet_window: tokio::sync::Mutex::new(()),
                 project_docs: Mutex::new(None),
                 project_doc_proposals: Mutex::new(None),
                 project_doc_server: Mutex::new(Some(project_doc_server)),
@@ -1676,7 +1681,16 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .on_window_event(desktop_pet::handle_window_event);
+    let invoke: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+            desktop_pet::desktop_pet_catalog,
+            desktop_pet::desktop_pet_import,
+            desktop_pet::desktop_pet_select,
+            desktop_pet::desktop_pet_asset,
+            desktop_pet::desktop_pet_snapshot,
+            desktop_pet::desktop_pet_publish,
+            desktop_pet::desktop_pet_open,
+            desktop_pet::desktop_pet_visibility,
             superbot_request,
             async_wait_list,
             async_wait_create,
@@ -1825,7 +1839,15 @@ pub fn run() {
             paste_composer_image,
             validate_composer_image,
             read_markdown_image,
-        ])
+        ];
+    application
+        .invoke_handler(move |request| {
+            if request.message.webview().label() == desktop_pet::LABEL && !desktop_pet::allows_command(request.message.command()) {
+                request.resolver.reject("此命令在宠物窗口不可用。");
+                return true;
+            }
+            invoke(request)
+        })
         .build(tauri::generate_context!())
         .expect("运行 Codex Harness 时出错")
         .run(|app, event| {
@@ -1841,6 +1863,10 @@ pub fn run() {
                         let _ = app.emit("questions:links-available", ());
                     }
                 }
+            }
+            #[cfg(target_os = "macos")]
+            if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                desktop_pet::reopen_main(app);
             }
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Ok(mut server) = app.state::<AppState>().project_doc_server.lock() {

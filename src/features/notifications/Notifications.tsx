@@ -129,10 +129,11 @@ function ThreadReminderForm({ store, thread, watching, loaded }: { store: Notifi
   </details>
 }
 
-export function NotificationCenter({ store, currentThreadId, selectedId, onBack, onAction }: {
+export function NotificationCenter({ store, currentThreadId, selectedId, reminderThread, onBack, onAction }: {
   store: NotificationStore
   currentThreadId: string | null
   selectedId?: string
+  reminderThread?: ReminderThread
   onBack: () => void
   onAction: (action: NotificationAction) => Promise<void>
 }) {
@@ -153,6 +154,8 @@ export function NotificationCenter({ store, currentThreadId, selectedId, onBack,
       </header>
       <div className="notification-page-body">
         <div className="notification-heading"><Bell size={22} /><div><h1>通知中心</h1><p>按最新时间排列 · {state.records.filter((record) => !record.read).length} 条未读</p></div></div>
+        {reminderThread && <ThreadReminderForm store={store} thread={reminderThread} loaded={state.loaded}
+          watching={state.records.some(record => record.threadId === reminderThread.id && record.watchThread)} />}
         {state.storageError && <div className="notification-storage-error" role="alert">通知历史暂时无法{state.loaded ? '保存' : '读取'}，本次提醒仍可查看。<button onClick={() => void store.retryStorage()}>重试</button><details><summary>错误详情</summary><pre>{state.storageError}</pre></details></div>}
         <div className="notification-filters">
           <div role="group" aria-label="通知类型">
