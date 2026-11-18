@@ -404,12 +404,13 @@ export function useUnifiedHarness() {
     ? claude.renameSession(threadId, name)
     : codex.renameThread(threadId, name), [claude, codex, superbot.rename])
 
-  const archiveThread = useCallback(async (threadId: string) => {
+  const archiveThread = useCallback(async (threadId: string, fromAssistant = false) => {
     if (threadId.startsWith('superbot:')) await superbot.archive(threadId, true)
     else if (threadId.startsWith('claude:')) await claude.archiveSession(threadId)
+    else if (fromAssistant) await codex.archiveThread(threadId, true)
     else await codex.archiveThread(threadId)
-    if (selectedThreadId === threadId) { selectedThreadIdRef.current = null; setSelectedThreadId(null) }
-  }, [claude, codex, selectedThreadId, superbot.archive])
+    if (selectedThreadIdRef.current === threadId) { selectedThreadIdRef.current = null; setSelectedThreadId(null) }
+  }, [claude, codex, superbot.archive])
 
   const unarchiveThread = useCallback(async (threadId: string) => {
     if (threadId.startsWith('superbot:')) await superbot.archive(threadId, false)

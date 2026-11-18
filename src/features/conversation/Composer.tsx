@@ -1,10 +1,11 @@
 import type { SuperbotModel, SuperbotRunConfig } from '../../core/superbot/types'
 import './inputCorrection.css'
+import { ComposerSendButton, ComposerTextarea } from './ComposerControls'
 import { useInputCorrection } from './useInputCorrection'
 import { addReplacement } from '../../core/input-correction/settings'
 import type { Correction } from '../../core/input-correction/engine'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react'
-import { ChevronDown, Clock3, FileText, Image, NotebookPen, Plus, Send, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
+import { ChevronDown, Clock3, FileText, Image, NotebookPen, Plus, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
 import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput, MessageReference } from '../../core/domain/codex'
 import type { ComposerCompletionItem } from '../../extensions/types'
@@ -21,7 +22,6 @@ import {
   insertCollapsedPaste,
   insertComposerPrompt,
   isSupportedImagePath,
-  matchesSendShortcut,
   reconcileCollapsedPastes,
   reconcilePasteEdit,
   reasoningEffortTone,
@@ -49,6 +49,7 @@ export interface ComposerProjectCard {
 }
 
 interface ComposerProps {
+  variant?: 'assistant'
   provider?: 'codex' | 'claude' | 'superbot'
   initialDraft?: ComposerDraft
   consumedDraft?: ComposerDraft
@@ -133,7 +134,8 @@ interface ComposerSuggestion {
   collapseAsPaste?: boolean
 }
 
-export function Composer({ threadId, onMessageAccepted, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, superbotAttachments = false, superbotQueue = false, superbotSteer = false, superbotModels = [], superbotSettings, onSuperbotSettingsChange, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+export function Composer({ threadId, onMessageAccepted, variant, provider = 'codex', initialDraft, consumedDraft, projectCard = null, onProjectCardDismissed, disabled: externallyDisabled, delayedSend, onCancelDelayedSend, onScheduleSend, working, foreignActive, onTakeOver, takingOver = false, busy: externallyBusy, contextUsage, workspaceRoot, sendShortcut, focusRequest, autoFocus = true, models, settings, claudeModels = [], claudeSettings, superbotAttachments = false, superbotQueue = false, superbotSteer = false, superbotModels = [], superbotSettings, onSuperbotSettingsChange, rawMode, followUpMode, settingsDisabled, onSettingsChange, onClaudeSettingsChange, onFollowUpModeChange, onSend, onCommand, onStop, onDraftChange, onCollapse, actions, completionProviders = [] }: ComposerProps) {
+  const assistant = variant === 'assistant'
   const canAttach = provider !== 'superbot' || superbotAttachments
   const supportsFollowUp = provider !== 'superbot' || superbotQueue
   const disabled = externallyDisabled || Boolean(delayedSend)
@@ -252,7 +254,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
       .slice(0, 8)
       .map((skill) => ({ kind: 'skill', name: skill.name, path: skill.path, detail: skill.description }))
   }, [attachments.length, claudeModels, fileMatches, models, pluginItems, provider, selectedClaudeModel, selectedModel, skills, suggestionsDismissed, trigger])
-  const suggestionsOpen = Boolean(trigger && !suggestionsDismissed && !(trigger.kind === 'command' && attachments.length > 0))
+  const suggestionsOpen = Boolean(trigger && !(assistant && trigger.kind === 'command') && !suggestionsDismissed && !(trigger.kind === 'command' && attachments.length > 0))
 
   useLayoutEffect(() => { onDraftChangeRef.current = onDraftChange }, [onDraftChange])
   useLayoutEffect(() => { completionProvidersRef.current = completionProviders }, [completionProviders])
@@ -360,20 +362,6 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
     if (!working) setModeOpen(false)
   }, [working])
 
-  useLayoutEffect(() => {
-    const textarea = ref.current
-    if (!textarea || composing) return
-    const maximumHeight = 124
-    textarea.style.height = '0px'
-    const nextHeight = Math.min(textarea.scrollHeight, maximumHeight)
-    textarea.style.height = `${Math.max(28, nextHeight)}px`
-    textarea.style.overflowY = textarea.scrollHeight > maximumHeight ? 'auto' : 'hidden'
-    if (highlightRef.current) {
-      highlightRef.current.style.width = `${textarea.clientWidth}px`
-      highlightRef.current.scrollTop = textarea.scrollTop
-    }
-  }, [composing, text])
-
   useEffect(() => {
     const textarea = ref.current
     if (!textarea || typeof ResizeObserver === 'undefined') return
@@ -471,7 +459,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
   const submitDraft = async () => {
     if (!hasContent || disabled || busy || imageUnsupported || (!supportsFollowUp && working)) return
     const sentDraft = currentDraftRef.current
-    const command = provider === 'superbot' ? null : parseComposerCommand(expandedText, attachments.length > 0)
+    const command = assistant || provider === 'superbot' ? null : parseComposerCommand(expandedText, attachments.length > 0)
     if (command) {
       if (settingsLocked && ['model', 'reasoning', 'permissions'].includes(command.name)) {
         setActionError('请等待当前回合结束后再修改会话设置。')
@@ -525,7 +513,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
   }
 
   const canSchedule = Boolean(onScheduleSend) && hasContent && !disabled && !busy && !attachmentBusy && !imageUnsupported
-    && (provider === 'superbot' || !parseComposerCommand(expandedText, attachments.length > 0))
+    && (assistant || provider === 'superbot' || !parseComposerCommand(expandedText, attachments.length > 0))
   useEffect(() => { if (!canSchedule) setDelayMenuOpen(false) }, [canSchedule])
 
   const stopping = working && (!hasContent || !supportsFollowUp)
@@ -709,13 +697,18 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
             <ProjectCardHighlight text={text} pastes={collapsedPastes} corrections={correction.edits} />
           </div>
           {correctionHover && <div className="composer-correction-tooltip" role="tooltip" aria-label="纠正前的原文" style={{ left: correctionHover.left, top: correctionHover.top }}>原文：{correctionHover.original}</div>}
-        <textarea
-          ref={ref}
+        <ComposerTextarea
+          textareaRef={ref}
+          highlightRef={highlightRef}
+          composing={composing}
+          sendShortcut={sendShortcut}
+          onSendShortcut={() => void submit()}
           value={text}
           onScroll={(event) => { setCorrectionHover(null); if (highlightRef.current) highlightRef.current.scrollTop = event.currentTarget.scrollTop }}
           onBlur={() => setCorrectionHover(null)}
           disabled={disabled || busy || attachmentBusy}
-          placeholder={foreignActive ? '等待其他客户端完成当前轮' : provider === 'superbot' ? '给 Superbot 发送消息' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
+          aria-label={assistant ? '给助理发消息' : undefined}
+          placeholder={assistant ? '给 Harness 助理发送消息' : foreignActive ? '等待其他客户端完成当前轮' : provider === 'superbot' ? '给 Superbot 发送消息' : provider === 'claude' ? '给 Claude 发送消息' : '给 Codex 发送消息'}
           onChange={(event) => {
             correction.noteInput()
             const nextText = event.target.value
@@ -799,21 +792,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
               setSuggestionsDismissed(true)
               return
             }
-            if (matchesSendShortcut({
-              key: event.key,
-              metaKey: event.metaKey,
-              ctrlKey: event.ctrlKey,
-              shiftKey: event.shiftKey,
-              altKey: event.altKey,
-              isComposing: event.nativeEvent.isComposing,
-              keyCode: event.keyCode,
-            }, sendShortcut)) {
-              event.preventDefault()
-              void submit()
-            }
           }}
-          rows={1}
-          wrap="soft"
         />
         </div>
         {suggestionsOpen && (
@@ -848,7 +827,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
         <div className="composer-footer">
           <div className="composer-left-actions">
             {canAttach && <button type="button" className="composer-icon-button" disabled={disabled || busy || attachmentBusy} onClick={() => void addFiles()} title="添加图片或文件" aria-label="添加图片或文件"><Plus size={17} /></button>}
-            {provider === 'codex' && <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
+            {!assistant && provider === 'codex' && <select className="approval-select" value={settings.approvalPolicy} disabled={settingsLocked} onChange={(event) => updateSettings({ approvalPolicy: event.target.value as ApprovalPolicy })} aria-label="审批模式" title="审批模式">
               <option value="on-request">On request</option>
               <option value="untrusted">Untrusted</option>
               <option value="never">Never</option>
@@ -860,7 +839,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
               <option value="dontAsk">Don't ask</option>
               <option value="bypassPermissions">Dangerous</option>
             </select>}
-            {provider !== 'superbot' && <>
+            {!assistant && provider !== 'superbot' && <>
             <button
               type="button"
               className={`yolo-mode-button${yoloEnabled ? ' active' : ''}`}
@@ -877,7 +856,7 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
               <ShieldOff size={14} />
             </button>
             </>}
-            {provider === 'codex' && fastTier && (
+            {!assistant && provider === 'codex' && fastTier && (
               <button
                 type="button"
                 className={`fast-mode-button${fastEnabled ? ' active' : ''}`}
@@ -935,10 +914,9 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
             </div>}
             {provider !== 'superbot' && <ContextRing usage={contextUsage} provider={provider} />}
             <div className="send-control">
-              <button
-                type="button"
+              <ComposerSendButton
                 ref={sendButtonRef}
-                className={`send-button${stopping ? ' stop' : ''}`}
+                className={stopping ? 'stop' : undefined}
                 disabled={disabled || busy || attachmentBusy || (!working && !hasContent) || (hasContent && imageUnsupported)}
                 onClick={() => { setDelayMenuOpen(false); void runPrimaryAction() }}
                 onContextMenu={(event) => {
@@ -955,8 +933,8 @@ export function Composer({ threadId, onMessageAccepted, provider = 'codex', init
                 title={stopping ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队' : '插话') : '发送消息（右键可延迟发送）'}
                 aria-label={stopping ? '停止当前回合' : working ? (followUpMode === 'queue' ? '排队消息' : '插话') : '发送消息'}
               >
-                {delayedSend ? <Clock3 size={17} /> : stopping ? <Square size={13} fill="currentColor" /> : <Send size={17} />}
-              </button>
+                {delayedSend ? <Clock3 size={17} /> : stopping ? <Square size={13} fill="currentColor" /> : null}
+              </ComposerSendButton>
               {delayMenuOpen && canSchedule && <DelayedSendMenu
                 onClose={() => { setDelayMenuOpen(false); sendButtonRef.current?.focus() }}
                 onSelect={(minutes) => {

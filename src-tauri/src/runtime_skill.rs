@@ -36,6 +36,7 @@ pub fn should_load(method: &str, trigger: Option<&str>) -> bool {
                     | "memory-save"
                     | "workspace-router"
                     | "workspace-router-summary"
+                    | "harness-assistant"
             )
         )
 }
@@ -119,6 +120,7 @@ mod tests {
             "memory-save",
             "workspace-router",
             "workspace-router-summary",
+            "harness-assistant",
         ] {
             assert!(
                 !should_load("turn/start", Some(trigger)),

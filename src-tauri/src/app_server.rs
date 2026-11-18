@@ -136,6 +136,24 @@ fn wait_thread_unavailable(value: &Value) -> bool {
                     .any(|c| c.as_os_str() == "archived_sessions")
             })
 }
+fn is_assistant_cwd(value: &Value, workspace: Option<&std::path::Path>) -> bool {
+    workspace.is_some() && value["cwd"].as_str().map(std::path::Path::new) == workspace
+}
+
+fn annotate_assistant_threads(response: &mut Value, workspace: Option<&std::path::Path>) {
+    let mark = |thread: &mut Value| {
+        if is_assistant_cwd(thread, workspace) {
+            thread["harnessAssistant"] = Value::Bool(true);
+        }
+    };
+    if let Some(thread) = response.get_mut("thread") {
+        mark(thread);
+    }
+    if let Some(threads) = response.get_mut("data").and_then(Value::as_array_mut) {
+        threads.iter_mut().for_each(mark);
+    }
+}
+
 fn wait_thread_idle(value: &Value) -> bool {
     matches!(
         value.pointer("/thread/status/type").and_then(Value::as_str),
@@ -343,7 +361,19 @@ impl AppServerManager {
         Ok(turn)
     }
     pub async fn request(&self, method: String, mut params: Value) -> Result<Value, String> {
-        let register_tools = method == "thread/start" && params["ephemeral"] != true;
+        let thread_response = matches!(
+            method.as_str(), "thread/start" | "thread/resume" | "thread/fork" |
+            "thread/read" | "thread/list" | "thread/unarchive"
+        );
+        let assistant_workspace = if thread_response {
+            crate::store::harness_data_dir().ok()
+                .map(|data_dir| crate::assistant_workspace_path(&data_dir))
+                .and_then(|path| path.canonicalize().ok())
+        } else {
+            None
+        };
+        let register_tools = method == "thread/start" && params["ephemeral"] != true
+            && !is_assistant_cwd(&params, assistant_workspace.as_deref());
         if register_tools {
             let tools = params.as_object_mut().ok_or("thread/start 参数无效")?
                 .entry("dynamicTools").or_insert_with(|| json!([]));
@@ -468,7 +498,10 @@ impl AppServerManager {
                     self.project_tools.register(thread)?;
                 }
             }
-            if matches!(method.as_str(), "thread/start" | "thread/resume" | "thread/fork" | "thread/read" | "thread/list" | "thread/unarchive") { self.project_tools.annotate(response)?; }
+            if thread_response {
+                self.project_tools.annotate(response)?;
+                annotate_assistant_threads(response, assistant_workspace.as_deref());
+            }
         }
         if method == "thread/resume" {
             if let Ok(response) = &mut result {
@@ -1895,4 +1928,19 @@ mod tests {
         assert_eq!(usage["contextWindow"], 200000);
         assert!(!usage.to_string().contains("must not be copied"));
     }
+}
+
+#[cfg(test)]
+#[test]
+fn marks_only_threads_in_the_assistant_workspace() {
+    let cwd = std::path::Path::new("/fixture/workspaces/assistant");
+    let mut response = json!({
+        "thread": {"cwd": cwd},
+        "data": [{"cwd": cwd}, {"cwd": "/other/workspaces/assistant"}, {"cwd": "/fixture/workspaces/assistant-other"}],
+    });
+    annotate_assistant_threads(&mut response, Some(cwd));
+    assert_eq!(response["thread"]["harnessAssistant"], true);
+    assert_eq!(response["data"][0]["harnessAssistant"], true);
+    assert!(response["data"][1].get("harnessAssistant").is_none());
+    assert!(response["data"][2].get("harnessAssistant").is_none());
 }

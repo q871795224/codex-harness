@@ -674,6 +674,35 @@ fn record_client_diagnostic(state: State<'_, AppState>, diagnostic: ClientDiagno
     );
 }
 
+fn assistant_workspace_path(data_dir: &std::path::Path) -> std::path::PathBuf {
+    data_dir.join("workspaces").join("assistant")
+}
+
+fn assistant_directory_at(data_dir: &std::path::Path) -> Result<String, String> {
+    let path = assistant_workspace_path(data_dir);
+    std::fs::create_dir_all(&path).map_err(|error| format!("无法创建助理目录：{error}"))?;
+    path.canonicalize()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| format!("无法解析助理目录：{error}"))
+}
+
+#[tauri::command]
+fn assistant_workspace_directory() -> Result<String, String> {
+    assistant_directory_at(&store::harness_data_dir()?)
+}
+
+#[cfg(test)]
+#[test]
+fn assistant_uses_its_own_workspace() {
+    let data = tempfile::tempdir().unwrap();
+    let directory = assistant_directory_at(data.path()).unwrap();
+    assert_eq!(
+        std::path::PathBuf::from(directory),
+        data.path().canonicalize().unwrap().join("workspaces/assistant")
+    );
+    assert!(!data.path().join("workspaces/general").exists());
+}
+
 #[tauri::command]
 fn workspace_router_directory() -> Result<String, String> {
     workspace_router::directory_at(&store::harness_data_dir()?)
@@ -1674,6 +1703,7 @@ pub fn run() {
             set_claude_session_archived,
             record_client_diagnostic,
             workspace_router_directory,
+            assistant_workspace_directory,
             workspace_router_general_directory,
             workspace_router_summaries,
             workspace_router_corrections,

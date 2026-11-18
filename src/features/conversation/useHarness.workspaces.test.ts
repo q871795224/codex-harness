@@ -137,3 +137,17 @@ describe('workspace settings', () => {
     expect(result.current.workspaces).toEqual([workspace])
   })
 })
+
+it('saves an explicit pin state without toggling a repeated assistant request', async () => {
+  const { result } = await ready()
+  await act(async () => {
+    await result.current.setThreadPinned('outside-loaded-view', true)
+    await result.current.setThreadPinned('outside-loaded-view', true)
+  })
+  expect(result.current.navigation.pinnedThreadIds).toEqual(['outside-loaded-view'])
+  const saved = vi.mocked(runtime.setAppState).mock.calls.filter(([key]) => key === NAVIGATION_PREFERENCES_KEY).at(-1)?.[1]
+  expect(JSON.parse(saved!).pinnedThreadIds).toEqual(['outside-loaded-view'])
+
+  await act(async () => { await result.current.setThreadPinned('outside-loaded-view', false) })
+  expect(result.current.navigation.pinnedThreadIds).toEqual([])
+})

@@ -17,6 +17,7 @@ vi.mock('../../core/runtime/bridge', () => ({
   runtime: {
     recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
     projectDocThreadBinding: vi.fn().mockResolvedValue(null),
+    assistantWorkspaceDirectory: vi.fn().mockResolvedValue('/data/workspaces/assistant'),
     routerWorkspaceDirectory: vi.fn().mockResolvedValue('/neutral'),
     listWorkspaces: vi.fn().mockResolvedValue([]),
     listThreadStates: vi.fn().mockResolvedValue([]),
@@ -542,4 +543,51 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
     expect(result.current.currentThread?.id).toBe('draft')
     expect(result.current.activeTurnId).toBe('turn-1')
   })
+})
+
+it('checks the real Codex status before an assistant archive and surfaces provider failures', async () => {
+  const { result } = await ready()
+  vi.mocked(appServer.readThread).mockResolvedValueOnce({
+    thread: { ...thread('active'), status: { type: 'active', activeFlags: [] } },
+  })
+  await act(async () => {
+    await expect(result.current.archiveThread('active', true)).rejects.toThrow('会话正在运行')
+  })
+  expect(appServer.archiveThread).not.toHaveBeenCalled()
+
+  vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('active') })
+  vi.mocked(appServer.archiveThread).mockRejectedValueOnce(new Error('offline'))
+  await act(async () => {
+    await expect(result.current.archiveThread('active', true)).rejects.toThrow('offline')
+  })
+  expect(result.current.threads.map(item => item.id)).toContain('active')
+
+  await act(async () => { await result.current.archiveThread('active', true) })
+  expect(result.current.threads.map(item => item.id)).not.toContain('active')
+})
+
+
+it('starts the hidden assistant in YOLO and routes its follow-ups through the native queue and steer', async () => {
+  const { result } = await ready()
+  const id = 'assistant-private'
+  const cwd = '/data/workspaces/assistant'
+  vi.mocked(appServer.startThread).mockResolvedValueOnce({
+    ...resumeResponse(id), thread: { ...thread(id), cwd, harnessAssistant: true },
+  })
+  vi.mocked(appServer.startTurn).mockResolvedValueOnce({ turn: { ...turn('assistant-turn'), status: 'inProgress' } })
+  await act(async () => { await result.current.assistantThread.create('assistant instructions') })
+  expect(appServer.startThread).toHaveBeenCalledWith(expect.objectContaining({
+    cwd, developerInstructions: 'assistant instructions', approvalPolicy: 'never', sandbox: 'danger-full-access',
+  }))
+  expect(appServer.startThread).not.toHaveBeenCalledWith(expect.objectContaining({ ephemeral: true }))
+  expect(result.current.threads.map(item => item.id)).not.toContain(id)
+  expect(result.current.selectedThreadId).not.toBe(id)
+
+  const input = [{ type: 'localImage' as const, path: '/fixture.png' }]
+  await act(async () => { await result.current.assistantThread.send(id, input, 'interject') })
+  expect(appServer.startTurn).toHaveBeenCalledWith(expect.objectContaining({ threadId: id, input, turnTrigger: 'harness-assistant' }))
+  await act(async () => { await result.current.assistantThread.send(id, input, 'queue') })
+  expect(appServer.addQueue).toHaveBeenCalledWith(expect.objectContaining({ threadId: id, input }))
+  await act(async () => { await result.current.assistantThread.send(id, input, 'interject') })
+  expect(appServer.steerTurn).toHaveBeenCalledWith(expect.objectContaining({ threadId: id, expectedTurnId: 'assistant-turn', input }))
 })

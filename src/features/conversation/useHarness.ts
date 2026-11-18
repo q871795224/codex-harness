@@ -1,5 +1,6 @@
 import { retargetDraftProjectInput } from './draftProjectInput'
-import { isRouterThread, pendingRouteKey, readRouteRecord, completeRouteFeedback, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord, writeRouteRecord, type RouteRecord } from '../../core/workspace-router/service'
+import { isStructuredCodexTaskThread } from '../../core/runtime/structuredCodexTask'
+import { pendingRouteKey, readRouteRecord, completeRouteFeedback, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord, writeRouteRecord, type RouteRecord } from '../../core/workspace-router/service'
 import { questionRequestIdentity } from '../../core/questions/identity'
 import type { QuestionEvent } from '../../core/questions/types'
 import type { MessageReference } from '../../core/domain/codex'
@@ -183,11 +184,15 @@ export function useHarness() {
   const [workspaceCatalog, setWorkspaces] = useState<Workspace[]>([])
   const [threadRoots, setThreadRoots] = useState<Record<string, string | null>>({})
   const [threadGitCwds, setThreadGitCwds] = useState<Record<string, string>>({})
+  const assistantThreadRef = useRef<string | null>(null)
+  const assistantStartRef = useRef<Promise<string> | null>(null)
   const [threadStates, setThreadStates] = useState<Record<string, ThreadUiState>>({})
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
   const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
   const [threadPlans, setThreadPlans] = useState<Record<string, TurnPlanStep[]>>({})
   const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
+  const navigationRef = useRef(navigation)
+  const navigationWrite = useRef(Promise.resolve())
   const workspaces = useMemo(() => workspaceCatalog.filter((workspace) => !navigation.hiddenWorkspaceRoots.includes(workspace.root)), [workspaceCatalog, navigation.hiddenWorkspaceRoots])
   const [appearance, setAppearance] = useState<AppearancePreferences>(defaultAppearancePreferences)
   const [keyboard, setKeyboard] = useState<KeyboardPreferences>(defaultKeyboardPreferences)
@@ -377,13 +382,18 @@ export function useHarness() {
     } catch (error) { notify('消息已发送，但路由反馈保存失败', 'warning', error, { threadId }) }
   }, [notify])
 
-  const updateNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
-    setNavigation((current) => {
-      const next = change(current)
-      void runtime.setAppState(NAVIGATION_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
-      return next
-    })
+  const saveNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
+    const next = change(navigationRef.current)
+    navigationRef.current = next
+    setNavigation(next)
+    const save = navigationWrite.current.then(() => runtime.setAppState(NAVIGATION_PREFERENCES_KEY, JSON.stringify(next)))
+    navigationWrite.current = save.catch(() => undefined)
+    return save
   }, [])
+
+  const updateNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
+    void saveNavigation(change).catch(() => undefined)
+  }, [saveNavigation])
 
   const setNavigationLayout = useCallback((layout: NavigationLayout) => {
     updateNavigation((current) => ({ ...current, layout }))
@@ -426,6 +436,13 @@ export function useHarness() {
       pinnedThreadIds: togglePinnedIdentifier(current.pinnedThreadIds, threadId),
     }))
   }, [updateNavigation])
+
+  const setThreadPinned = useCallback((threadId: string, pinned: boolean) => saveNavigation((current) => ({
+    ...current,
+    pinnedThreadIds: current.pinnedThreadIds.includes(threadId) === pinned
+      ? current.pinnedThreadIds
+      : togglePinnedIdentifier(current.pinnedThreadIds, threadId),
+  })), [saveNavigation])
 
   const toggleWorkspacePinned = useCallback((workspaceRoot: string) => {
     updateNavigation((current) => ({
@@ -597,6 +614,7 @@ export function useHarness() {
   }, [])
 
   const persistBadge = useCallback((threadId: string, badge: Badge, lastReadAt: number | null = null) => {
+    if (assistantThreadRef.current === threadId) return
     setThreadStates((current) => ({
       ...current,
       [threadId]: {
@@ -1698,6 +1716,46 @@ export function useHarness() {
     return replacementId
   }, [mapThreadRoots, rememberNextThreadCwd])
 
+  const createAssistantThread = useCallback((developerInstructions: string) => {
+    if (assistantThreadRef.current) return Promise.resolve(assistantThreadRef.current)
+    if (assistantStartRef.current) return assistantStartRef.current
+    const start = (async () => {
+      const cwd = await runtime.assistantWorkspaceDirectory()
+      const yolo = yoloModeSettings(true)
+      const savedId = await runtime.getAppState('assistantThreadId')
+      if (savedId) {
+        try {
+          const { thread } = await appServer.readThread({ threadId: savedId, includeTurns: false })
+          if (thread.harnessAssistant) {
+            const response = await appServer.resumeThread({
+              ...resumeThreadRequest(savedId, cwd), developerInstructions,
+              approvalPolicy: yolo.approvalPolicy, approvalsReviewer: yolo.approvalsReviewer, sandbox: yolo.sandboxMode,
+            })
+            assistantThreadRef.current = savedId
+            await applyResumedThread(savedId, response)
+            return savedId
+          }
+        } catch (error) {
+          if (!isMissingRollout(error) && !isArchivedThreadError(error)) throw error
+        }
+      }
+      const response = await appServer.startThread({
+        cwd, runtimeWorkspaceRoots: [cwd], developerInstructions,
+        approvalPolicy: yolo.approvalPolicy, approvalsReviewer: yolo.approvalsReviewer, sandbox: yolo.sandboxMode,
+        config: { project_doc_max_bytes: 0 },
+      })
+      const id = response.thread.id
+      const detail = startedThreadDetail(response)
+      assistantThreadRef.current = id
+      detailsRef.current = { ...detailsRef.current, [id]: detail }
+      setDetails(current => ({ ...current, [id]: detail }))
+      void runtime.setAppState('assistantThreadId', id).catch(error => notify('助理会话已打开，但无法保存恢复记录。', 'warning', error))
+      return id
+    })().finally(() => { assistantStartRef.current = null })
+    assistantStartRef.current = start
+    return start
+  }, [applyResumedThread, notify])
+
   const startTurn = useCallback(async (
     threadId: string,
     text: string | null,
@@ -1728,7 +1786,7 @@ export function useHarness() {
         inputs ?? (text ? [textInput(text)] : []),
         thread,
         detail,
-        trigger,
+        assistantThreadRef.current === threadId ? 'harness-assistant' : trigger,
       )
       const requestCwd = typeof request.cwd === 'string' ? request.cwd : null
       const requestRuntimeWorkspaceRoots = Array.isArray(request.runtimeWorkspaceRoots)
@@ -1773,7 +1831,7 @@ export function useHarness() {
           const saved = await updateRouteRecord(route.id, (latest) => ({ ...latest, status: 'started', sourceMessageId: clientId, sourceTurnId: response.turn.id }))
           setRouteRecords((current) => ({ ...current, [threadId]: saved }))
         } catch (error) { notify('消息已发送，但路由记录更新失败', 'warning', error, { threadId }) }
-      } else if (!trigger && inputs?.length) await completeRouteFeedbackOnSend(threadId, clientId)
+      } else if (!trigger && assistantThreadRef.current !== threadId && inputs?.length) await completeRouteFeedbackOnSend(threadId, clientId)
       if (!completedTurnIdsRef.current.delete(response.turn.id)) setActiveTurn(threadId, response.turn.id, true)
       if (firstSubmission) {
         // A refresh failure must not turn an accepted message into a send failure.
@@ -1791,7 +1849,8 @@ export function useHarness() {
   const sendMessage = useCallback(async (input: UserInput[], mode: 'interject' | 'queue', references: MessageReference[] = [], titleSource?: string, targetThreadId?: string) => {
     const threadId = targetThreadId ?? selectedThreadIdRef.current
     if (!threadId || input.length === 0) return
-    if (targetThreadId && (viewModeRef.current !== 'active' || !threadsRef.current.some(thread => thread.id === threadId && thread.canAcceptDirectInput !== false))) throw new Error('目标会话已不可用，草稿已保留')
+    const assistant = assistantThreadRef.current === threadId
+    if (!assistant && targetThreadId && (viewModeRef.current !== 'active' || !threadsRef.current.some(thread => thread.id === threadId && thread.canAcceptDirectInput !== false))) throw new Error('目标会话已不可用，草稿已保留')
     if (submittingThreadsRef.current.has(threadId)) throw new Error('消息正在发送，请稍候')
     const text = input
       .filter((item): item is Extract<UserInput, { type: 'text' }> => item.type === 'text')
@@ -1811,6 +1870,10 @@ export function useHarness() {
     setSubmissionPhase(threadId, 'sending')
     let startedThreadId = threadId
     try {
+      if (!activeTurnId && assistant) {
+        await startTurn(threadId, null, input, 'harness-assistant', references)
+        return
+      }
       if (!activeTurnId) {
         let record: RouteRecord | null = null
         const pending = automaticWorkspacesRef.current[threadId] ?? (await runtime.getAppState(pendingRouteKey(threadId)) === 'true')
@@ -1855,7 +1918,7 @@ export function useHarness() {
         mode,
       })
       if (result.kind === 'queued') {
-        await completeRouteFeedbackOnSend(threadId, clientUserMessageId)
+        if (!assistant) await completeRouteFeedbackOnSend(threadId, clientUserMessageId)
         await loadQueue(threadId)
         return
       }
@@ -1863,7 +1926,7 @@ export function useHarness() {
         ...current,
         [threadId]: [...(current[threadId] ?? []), result.pending],
       }))
-      await completeRouteFeedbackOnSend(threadId, clientUserMessageId)
+      if (!assistant) await completeRouteFeedbackOnSend(threadId, clientUserMessageId)
     } catch (error) {
       notify('无法发送消息', 'error', error, { threadId })
       throw error
@@ -1933,8 +1996,8 @@ export function useHarness() {
     }
   }, [notify, setSubmissionPhase, startTurn])
 
-  const stopTurn = useCallback(async () => {
-    const threadId = selectedThreadIdRef.current
+  const stopTurn = useCallback(async (targetThreadId?: string) => {
+    const threadId = targetThreadId ?? selectedThreadIdRef.current
     if (!threadId) return
     const turnId = activeTurnIdsRef.current[threadId]
     if (!turnId || !ownedActiveThreadsRef.current[threadId]) return
@@ -1975,8 +2038,8 @@ export function useHarness() {
     }
   }, [loadQueue, notify])
 
-  const removeQueue = useCallback(async (queueId: string) => {
-    const threadId = selectedThreadIdRef.current
+  const removeQueue = useCallback(async (queueId: string, targetThreadId?: string) => {
+    const threadId = targetThreadId ?? selectedThreadIdRef.current
     if (!threadId) return
     try {
       await appServer.deleteQueue(threadId, queueId)
@@ -1986,8 +2049,8 @@ export function useHarness() {
     }
   }, [notify])
 
-  const promoteQueue = useCallback(async (queue: QueuedSubmission) => {
-    const threadId = selectedThreadIdRef.current
+  const promoteQueue = useCallback(async (queue: QueuedSubmission, targetThreadId?: string) => {
+    const threadId = targetThreadId ?? selectedThreadIdRef.current
     if (!threadId) return
     const activeTurnId = activeTurnIdsRef.current[threadId]
     if (!activeTurnId || !ownedActiveThreadsRef.current[threadId]) {
@@ -2009,8 +2072,8 @@ export function useHarness() {
     }
   }, [loadQueue, notify])
 
-  const startQueue = useCallback(async () => {
-    const threadId = selectedThreadIdRef.current
+  const startQueue = useCallback(async (targetThreadId?: string) => {
+    const threadId = targetThreadId ?? selectedThreadIdRef.current
     if (!threadId || activeTurnIdsRef.current[threadId]) return
     const queue = queues[threadId] ?? []
     if (queue.length === 0) return
@@ -2037,10 +2100,17 @@ export function useHarness() {
     }
   }, [notify, updateDetail, updateThread])
 
-  const archiveThread = useCallback(async (threadId: string) => {
+  const archiveThread = useCallback(async (threadId: string, fromAssistant = false) => {
     try {
       const archivedThread = threadsRef.current.find((thread) => thread.id === threadId)
       const emptyDraft = isUnstartedLocalThread(threadId)
+      if (fromAssistant) {
+        const { thread } = await appServer.readThread({ threadId, includeTurns: false })
+        if (thread.status.type === 'active' || activeTurnIdsRef.current[threadId] || locallyStartingRef.current.has(threadId)) {
+          throw new Error('会话正在运行，请在当前轮结束后归档。')
+        }
+        if (emptyDraft || draftContentThreadIdsRef.current.has(threadId)) throw new Error('会话有未发送草稿。')
+      }
       if (emptyDraft && draftContentThreadIdsRef.current.has(threadId)) {
         notify('会话有未发送草稿，请先发送或清空草稿后再归档。', 'warning', undefined, { threadId })
         return
@@ -2082,6 +2152,7 @@ export function useHarness() {
       }
       notify(emptyDraft ? '已关闭空白会话' : '已归档会话', 'info', undefined, { threadId, silent: true })
     } catch (error) {
+      if (fromAssistant) throw error
       notify('无法归档会话', 'error', error, { threadId })
     }
   }, [isUnstartedLocalThread, notify, rememberNextThreadCwd])
@@ -2244,7 +2315,7 @@ export function useHarness() {
     const method = event.method
     const params = event.params ?? {}
     if (!method) return
-    if (isRouterThread(eventThreadId(params) ?? '')) return
+    if (isStructuredCodexTaskThread(eventThreadId(params) ?? '')) return
 
     if (handleTitleGeneratorEvent(method, params)) return
     if (handleRecapGeneratorEvent(method, params)) return
@@ -2272,7 +2343,7 @@ export function useHarness() {
 
     if (method === 'thread/started') {
       const thread = params.thread as Thread | undefined
-      if (thread && !thread.ephemeral) {
+      if (thread && !thread.ephemeral && !thread.harnessAssistant) {
         // Started/resumed notifications do not carry archive membership.
         void refreshThreads().catch((error) => notify(`无法刷新会话`, 'error', error))
       }
@@ -2461,7 +2532,7 @@ export function useHarness() {
           const badge: Badge = turn.status === 'failed' ? 'error' : selectedThreadIdRef.current === threadId ? null : 'success'
           persistBadge(threadId, badge)
         }
-        if (completedThread && !completedThread.ephemeral) {
+        if (completedThread && !completedThread.ephemeral && !completedThread.harnessAssistant) {
           noteRecapTurnFinished(threadId)
           const completedEvent: TurnCompletedEvent = {
             threadId,
@@ -2533,6 +2604,7 @@ export function useHarness() {
         if (disposed) return
         setWorkspaces(restored.workspaces)
         setThreadStates(restored.threadStates)
+        navigationRef.current = restored.navigation
         setNavigation(restored.navigation)
         setAppearance(restored.appearance)
         setKeyboard(restored.keyboard)
@@ -2686,6 +2758,16 @@ export function useHarness() {
     resetThread,
     setThreadDraftContent,
     generateConversationTitle,
+    assistantThread: {
+      submitting: Boolean(submissionPhases[assistantThreadRef.current ?? '']),
+      create: createAssistantThread,
+      send: (threadId: string, input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[]) =>
+        sendMessage(input, mode, references, undefined, threadId),
+      stop: stopTurn,
+      removeQueue,
+      promoteQueue,
+      startQueue,
+    },
     startTurnInThread: (threadId: string, prompt: string, trigger?: CodexTurnTrigger) => startTurn(threadId, prompt, undefined, trigger),
     sendMessage,
     prepareRemoteThread,
@@ -2708,6 +2790,7 @@ export function useHarness() {
     setWorkspaceSort,
     setManualThreadOrder,
     toggleThreadPinned,
+    setThreadPinned,
     toggleWorkspacePinned,
     setSidebarWidth,
     setSidebarUnpinnedCount,
