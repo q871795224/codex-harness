@@ -131,6 +131,50 @@ it('does not steal selection or discard the draft when the user switches away du
   expect(result.current.selectedThreadId).toBe('other')
   expect(appServer.startTurn).toHaveBeenLastCalledWith(expect.objectContaining({ threadId: 'routed', cwd: '/b' }))
 })
+it('keeps a new session editable while the source session is routing', async () => {
+  const { result } = await ready()
+  await act(async () => { await result.current.createThread() })
+  let finish!: (response: unknown) => void
+  vi.mocked(appServer.startTurn).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve as never }))
+  let sending!: Promise<void>
+  await act(async () => { sending = result.current.sendMessage([textInput('work')], 'queue') })
+  await waitFor(() => expect(finish).toBeDefined())
+  expect(result.current.busy.composer).toBe(true)
+  expect(result.current.busy.workspaceRouter).toBe(true)
+
+  vi.mocked(appServer.startThread).mockResolvedValueOnce(response('new-draft', '/neutral') as never)
+  await act(async () => { await result.current.createThread() })
+  expect(result.current.selectedThreadId).toBe('new-draft')
+  expect(Boolean(result.current.busy.composer)).toBe(false)
+  expect(Boolean(result.current.busy.workspaceRouter)).toBe(false)
+
+  await act(async () => {
+    finish({ turn: { id: 'routing-turn', status: 'completed', items: [{ type: 'agentMessage', text: routeChoice }] } })
+    await sending
+  })
+  expect(result.current.selectedThreadId).toBe('new-draft')
+  expect(Boolean(result.current.busy.composer)).toBe(false)
+})
+it('keeps the replacement session locked until its routed first message is accepted', async () => {
+  const { result } = await ready()
+  await act(async () => { await result.current.createThread() })
+  const start = vi.mocked(appServer.startTurn).getMockImplementation()!
+  let accept!: (response: typeof accepted) => void
+  vi.mocked(appServer.startTurn).mockImplementation(async (params) => {
+    if (params.threadId === 'router') return start(params)
+    return new Promise((resolve) => { accept = resolve as never })
+  })
+  let sending!: Promise<void>
+  await act(async () => { sending = result.current.sendMessage([textInput('work')], 'queue') })
+  await waitFor(() => expect(accept).toBeDefined())
+  expect(result.current.selectedThreadId).toBe('routed')
+  expect(result.current.busy.composer).toBe(true)
+  await expect(result.current.sendMessage([textInput('duplicate')], 'queue')).rejects.toThrow('消息正在发送')
+  await act(async () => { accept(accepted); await sending })
+  expect(result.current.busy.composer).toBe(false)
+  expect(result.current.busy.workspaceRouter).toBe(false)
+})
+
 it('failed follow-up sends do not imply accurate feedback', async () => {
   const { result } = await ready()
   await act(async () => { await result.current.createThread() })

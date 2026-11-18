@@ -450,6 +450,16 @@ export function useUnifiedHarness() {
     else await codex.resetThread()
   }, [codex, createThread, selectedProvider])
 
+  const busy: Record<string, boolean> = {
+    ...codex.busy,
+    ...(selectedProvider === 'claude' ? claude.busy : {}),
+    ...(selectedProvider === 'superbot' ? { createThread: superbot.busy } : {}),
+    composer: selectedProvider === 'claude'
+      ? Boolean(claude.busy.composer)
+      : selectedThreadId === codex.selectedThreadId && codex.busy.composer,
+    workspaceRouter: selectedThreadId === codex.selectedThreadId && codex.busy.workspaceRouter,
+  }
+
   return {
     ...codex,
     superbot,
@@ -480,7 +490,7 @@ export function useUnifiedHarness() {
     isCurrentWorking: Boolean(activeTurnId || (selectedThreadId && workingThreadIds[selectedThreadId])),
     isCurrentBackgroundWorking: selectedProvider === 'claude' && !activeTurnId
       && isClaudeSessionWorking(claude.sessionActivities[selectedThreadId ?? '']),
-    busy: selectedProvider === 'superbot' ? { ...codex.busy, createThread: superbot.busy } : selectedProvider === 'claude' ? { ...codex.busy, ...claude.busy } : codex.busy,
+    busy,
     queues,
     pendingSteers: selectedProvider === 'claude' && selectedThreadId ? { ...codex.pendingSteers, [selectedThreadId]: [] } : codex.pendingSteers,
     selectThread,

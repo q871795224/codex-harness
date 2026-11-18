@@ -112,6 +112,8 @@ export function diagnosticErrorCode(error: unknown): DiagnosticErrorCode {
   return 'request_failed'
 }
 
+export type CompassApi = 'chatCompletions' | 'responses'
+
 export const runtime = {
   projectOnboardingRequests: () => invoke<StoredOnboardingRequest[]>('project_onboarding_requests'),
   projectDocPendingOnboardings: () => invoke<Array<OnboardingReceipt & {requestId: string; threadId: string; name: string}>>('project_doc_pending_onboardings'),
@@ -125,6 +127,10 @@ export const runtime = {
   buildRouterPrompt: (input: RouterPromptInput) => invoke<RouterPrompt>('workspace_router_build_prompt', { input }),
   prepareDecisionPrompt: (input: RouterPromptInput) => invoke<DecisionPrompt>('workspace_router_prepare_decision', { input }),
   evaluateRouterDecision: (input: RouterPromptInput) => invoke<DecisionResult>('workspace_router_decision', { input }),
+  compassHasKey: () => invoke<boolean>('compass_has_key'),
+  saveCompassKey: (apiKey: string) => invoke<void>('compass_save_key', { apiKey }),
+  saveCompassModel: (model: string) => invoke<string>('compass_save_model', { model }),
+  probeCompass: (api: CompassApi) => invoke<void>('compass_probe', { api }),
   routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),
   routerGeneralDirectory: () => invoke<string>('workspace_router_general_directory'),
   reviewAsyncWait: (id: string, revision: number, approve: boolean) => invoke<AsyncWaitTask>('async_wait_review', { id, revision, approve }),
