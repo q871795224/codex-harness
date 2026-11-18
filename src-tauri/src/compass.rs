@@ -17,6 +17,19 @@ pub fn configured(path: &Path) -> Result<bool, String> {
     Ok(crate::secrets::read(path, API_KEY_NAME)?.is_some())
 }
 
+pub fn save_key(path: &Path, value: &str) -> Result<(), String> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.len() > 4096
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-._~+/=".contains(&byte))
+    {
+        return Err("请输入有效的 Compass API Key".into());
+    }
+    crate::secrets::write(path, API_KEY_NAME, value)
+}
+
 pub fn validate_model(model: &str) -> Result<&str, String> {
     let model = model.trim();
     if model.is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
@@ -27,8 +40,8 @@ pub fn validate_model(model: &str) -> Result<&str, String> {
 
 fn load_config(path: &Path, model: &str) -> Result<Config, String> {
     let model = validate_model(model)?.to_owned();
-    let api_key = crate::secrets::read(path, API_KEY_NAME)?
-        .ok_or("请在 ~/.codex-harness/secrets 中设置 COMPASS_EXTERNAL_API_KEY")?;
+    let api_key =
+        crate::secrets::read(path, API_KEY_NAME)?.ok_or("请先在设置中保存 Compass API Key")?;
     Ok(Config { model, api_key })
 }
 
@@ -182,6 +195,34 @@ mod tests {
         std::fs::write(&path, "COMPASS_EXTERNAL_API_KEY=").unwrap();
         assert!(!configured(&path).unwrap());
         assert!(load_config(&path, "test-model").is_err());
+    }
+
+    #[test]
+    fn saves_and_rotates_only_the_compass_key_with_private_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secrets");
+        let other = "# Shared settings\nVERCEL_API_KEY=keep-me\n";
+        std::fs::write(&path, format!("{other}export COMPASS_EXTERNAL_API_KEY='old-key'\nCOMPASS_EXTERNAL_API_KEY=older-key\n")).unwrap();
+
+        assert!(save_key(&path, "key\nUNRELATED=bad").is_err());
+        assert_eq!(load_config(&path, "m").unwrap().api_key, "older-key");
+        save_key(&path, " new-key+/= ").unwrap();
+        assert_eq!(load_config(&path, "m").unwrap().api_key, "new-key+/=");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!("{other}COMPASS_EXTERNAL_API_KEY=new-key+/=\n")
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::remove_file(&path).unwrap();
+        save_key(&path, "first-key").unwrap();
+        assert_eq!(load_config(&path, "m").unwrap().api_key, "first-key");
     }
 
     #[tokio::test]

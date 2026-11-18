@@ -737,6 +737,14 @@ async fn compass_has_key() -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn compass_save_key(api_key: String) -> Result<(), String> {
+    let path = store::harness_data_dir()?.join("secrets");
+    tauri::async_runtime::spawn_blocking(move || compass::save_key(&path, &api_key))
+        .await
+        .map_err(|_| "无法保存 Compass API Key")?
+}
+
+#[tauri::command]
 fn compass_save_model(state: State<'_, AppState>, model: String) -> Result<String, String> {
     let model = compass::validate_model(&model)?;
     state.store.set_app_state(compass::MODEL_KEY, model)?;
@@ -1671,6 +1679,7 @@ pub fn run() {
             workspace_router_prepare_decision,
             workspace_router_decision,
             compass_has_key,
+            compass_save_key,
             compass_save_model,
             compass_probe,
             open_diagnostics_directory,

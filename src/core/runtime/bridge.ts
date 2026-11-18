@@ -126,6 +126,7 @@ export const runtime = {
   prepareDecisionPrompt: (input: RouterPromptInput) => invoke<DecisionPrompt>('workspace_router_prepare_decision', { input }),
   evaluateRouterDecision: (input: RouterPromptInput) => invoke<DecisionResult>('workspace_router_decision', { input }),
   compassHasKey: () => invoke<boolean>('compass_has_key'),
+  saveCompassKey: (apiKey: string) => invoke<void>('compass_save_key', { apiKey }),
   saveCompassModel: (model: string) => invoke<string>('compass_save_model', { model }),
   probeCompass: () => invoke<void>('compass_probe'),
   routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),
