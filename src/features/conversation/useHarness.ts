@@ -1,5 +1,6 @@
 import { retargetDraftProjectInput } from './draftProjectInput'
-import { isRouterThread, pendingRouteKey, readRouteRecord, completeRouteFeedback, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord, writeRouteRecord, type RouteRecord } from '../../core/workspace-router/service'
+import { isStructuredCodexTaskThread } from '../../core/runtime/structuredCodexTask'
+import { pendingRouteKey, readRouteRecord, completeRouteFeedback, recordRouteFeedback, relatedWorkspaceInput, routeWorkspace, updateRouteRecord, writeRouteRecord, type RouteRecord } from '../../core/workspace-router/service'
 import { questionRequestIdentity } from '../../core/questions/identity'
 import type { QuestionEvent } from '../../core/questions/types'
 import type { MessageReference } from '../../core/domain/codex'
@@ -188,6 +189,8 @@ export function useHarness() {
   const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
   const [threadPlans, setThreadPlans] = useState<Record<string, TurnPlanStep[]>>({})
   const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
+  const navigationRef = useRef(navigation)
+  const navigationWrite = useRef(Promise.resolve())
   const workspaces = useMemo(() => workspaceCatalog.filter((workspace) => !navigation.hiddenWorkspaceRoots.includes(workspace.root)), [workspaceCatalog, navigation.hiddenWorkspaceRoots])
   const [appearance, setAppearance] = useState<AppearancePreferences>(defaultAppearancePreferences)
   const [keyboard, setKeyboard] = useState<KeyboardPreferences>(defaultKeyboardPreferences)
@@ -377,13 +380,18 @@ export function useHarness() {
     } catch (error) { notify('消息已发送，但路由反馈保存失败', 'warning', error, { threadId }) }
   }, [notify])
 
-  const updateNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
-    setNavigation((current) => {
-      const next = change(current)
-      void runtime.setAppState(NAVIGATION_PREFERENCES_KEY, JSON.stringify(next)).catch(() => undefined)
-      return next
-    })
+  const saveNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
+    const next = change(navigationRef.current)
+    navigationRef.current = next
+    setNavigation(next)
+    const save = navigationWrite.current.then(() => runtime.setAppState(NAVIGATION_PREFERENCES_KEY, JSON.stringify(next)))
+    navigationWrite.current = save.catch(() => undefined)
+    return save
   }, [])
+
+  const updateNavigation = useCallback((change: (current: NavigationPreferences) => NavigationPreferences) => {
+    void saveNavigation(change).catch(() => undefined)
+  }, [saveNavigation])
 
   const setNavigationLayout = useCallback((layout: NavigationLayout) => {
     updateNavigation((current) => ({ ...current, layout }))
@@ -426,6 +434,13 @@ export function useHarness() {
       pinnedThreadIds: togglePinnedIdentifier(current.pinnedThreadIds, threadId),
     }))
   }, [updateNavigation])
+
+  const setThreadPinned = useCallback((threadId: string, pinned: boolean) => saveNavigation((current) => ({
+    ...current,
+    pinnedThreadIds: current.pinnedThreadIds.includes(threadId) === pinned
+      ? current.pinnedThreadIds
+      : togglePinnedIdentifier(current.pinnedThreadIds, threadId),
+  })), [saveNavigation])
 
   const toggleWorkspacePinned = useCallback((workspaceRoot: string) => {
     updateNavigation((current) => ({
@@ -2037,10 +2052,17 @@ export function useHarness() {
     }
   }, [notify, updateDetail, updateThread])
 
-  const archiveThread = useCallback(async (threadId: string) => {
+  const archiveThread = useCallback(async (threadId: string, fromAssistant = false) => {
     try {
       const archivedThread = threadsRef.current.find((thread) => thread.id === threadId)
       const emptyDraft = isUnstartedLocalThread(threadId)
+      if (fromAssistant) {
+        const { thread } = await appServer.readThread({ threadId, includeTurns: false })
+        if (thread.status.type === 'active' || activeTurnIdsRef.current[threadId] || locallyStartingRef.current.has(threadId)) {
+          throw new Error('会话正在运行，请在当前轮结束后归档。')
+        }
+        if (emptyDraft || draftContentThreadIdsRef.current.has(threadId)) throw new Error('会话有未发送草稿。')
+      }
       if (emptyDraft && draftContentThreadIdsRef.current.has(threadId)) {
         notify('会话有未发送草稿，请先发送或清空草稿后再归档。', 'warning', undefined, { threadId })
         return
@@ -2082,6 +2104,7 @@ export function useHarness() {
       }
       notify(emptyDraft ? '已关闭空白会话' : '已归档会话', 'info', undefined, { threadId, silent: true })
     } catch (error) {
+      if (fromAssistant) throw error
       notify('无法归档会话', 'error', error, { threadId })
     }
   }, [isUnstartedLocalThread, notify, rememberNextThreadCwd])
@@ -2244,7 +2267,7 @@ export function useHarness() {
     const method = event.method
     const params = event.params ?? {}
     if (!method) return
-    if (isRouterThread(eventThreadId(params) ?? '')) return
+    if (isStructuredCodexTaskThread(eventThreadId(params) ?? '')) return
 
     if (handleTitleGeneratorEvent(method, params)) return
     if (handleRecapGeneratorEvent(method, params)) return
@@ -2533,6 +2556,7 @@ export function useHarness() {
         if (disposed) return
         setWorkspaces(restored.workspaces)
         setThreadStates(restored.threadStates)
+        navigationRef.current = restored.navigation
         setNavigation(restored.navigation)
         setAppearance(restored.appearance)
         setKeyboard(restored.keyboard)
@@ -2708,6 +2732,7 @@ export function useHarness() {
     setWorkspaceSort,
     setManualThreadOrder,
     toggleThreadPinned,
+    setThreadPinned,
     toggleWorkspacePinned,
     setSidebarWidth,
     setSidebarUnpinnedCount,

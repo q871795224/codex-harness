@@ -1,3 +1,4 @@
+import { HarnessAssistant } from './features/assistant/HarnessAssistant'
 import { SuperbotView } from './features/superbot/SuperbotView'
 import { useAsyncWaitPrefill } from './core/async-waits/useAsyncWaitPrefill'
 import { RouterSettings } from './features/settings/RouterSettings'
@@ -45,7 +46,7 @@ import { useDelayedSend } from './features/conversation/useDelayedSend'
 import { Composer, type ComposerDraft } from './features/conversation/Composer'
 import { DelegationReturnCard } from './features/conversation/DelegationReturnCard'
 import { insertComposerPrompt } from './features/conversation/composerInput'
-import { ComposerDraftWriter, restoreComposerDrafts, sameComposerDraft } from './features/conversation/composerDraftStorage'
+import { composerDraftHasContent, ComposerDraftWriter, restoreComposerDrafts, sameComposerDraft } from './features/conversation/composerDraftStorage'
 import { useHandover } from './features/handover/useHandover'
 import { ConversationStats, turnStartedAtMilliseconds } from './features/conversation/ConversationStats'
 import { RetainedTab } from './features/conversation/RetainedTab'
@@ -1296,6 +1297,29 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
           />
         </div>
       )}
+      <HarnessAssistant disabled={harness.phase !== 'ready'} pinned={harness.navigation.pinnedThreadIds}
+        onMutate={async (session, action) => {
+          if (action !== 'archive') {
+            await harness.setThreadPinned(session.id, action === 'pin')
+            return
+          }
+          if (!composerDraftsRestored) throw new Error('草稿状态尚未恢复，请稍后重试。')
+          const draft = queuedComposerDraftsRef.current[session.id]
+          if (draft && composerDraftHasContent(draft)) throw new Error('会话有未发送草稿。')
+          if (harness.workingThreadIds[session.id] || harness.waitingThreadIds[session.id] || harness.queues[session.id]?.length) {
+            throw new Error('会话仍在运行、等待回复或有排队消息。')
+          }
+          if (session.provider === 'claude' && (await runtime.readClaudeSessionStatus(session.id, session.cwd)).active) {
+            throw new Error('Claude 会话仍在运行。')
+          }
+          if (session.provider === 'superbot') {
+            const snapshot = await harness.superbot.read(session.id)
+            if (snapshot.pending.task_id || snapshot.pending.queued_tasks?.length || snapshot.session.read_only) {
+              throw new Error('Superbot 会话仍有任务或处于只读状态。')
+            }
+          }
+          await harness.archiveThread(session.id, true)
+        }} />
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
           codexUpdate={codexUpdate}

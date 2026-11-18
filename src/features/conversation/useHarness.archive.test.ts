@@ -543,3 +543,24 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
     expect(result.current.activeTurnId).toBe('turn-1')
   })
 })
+
+it('checks the real Codex status before an assistant archive and surfaces provider failures', async () => {
+  const { result } = await ready()
+  vi.mocked(appServer.readThread).mockResolvedValueOnce({
+    thread: { ...thread('active'), status: { type: 'active', activeFlags: [] } },
+  })
+  await act(async () => {
+    await expect(result.current.archiveThread('active', true)).rejects.toThrow('会话正在运行')
+  })
+  expect(appServer.archiveThread).not.toHaveBeenCalled()
+
+  vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('active') })
+  vi.mocked(appServer.archiveThread).mockRejectedValueOnce(new Error('offline'))
+  await act(async () => {
+    await expect(result.current.archiveThread('active', true)).rejects.toThrow('offline')
+  })
+  expect(result.current.threads.map(item => item.id)).toContain('active')
+
+  await act(async () => { await result.current.archiveThread('active', true) })
+  expect(result.current.threads.map(item => item.id)).not.toContain('active')
+})

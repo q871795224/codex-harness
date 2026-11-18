@@ -27,7 +27,11 @@ export function listThreadPage(
   })
 }
 
-export async function listAllActiveThreads(transport: ThreadCatalogTransport): Promise<Thread[]> {
+export function listAllActiveThreads(transport: ThreadCatalogTransport): Promise<Thread[]> {
+  return listAllThreads(transport, 'active')
+}
+
+export async function listAllThreads(transport: ThreadCatalogTransport, mode: ThreadViewMode): Promise<Thread[]> {
   const threads: Thread[] = []
   let cursor: string | null = null
 
@@ -37,7 +41,7 @@ export async function listAllActiveThreads(transport: ThreadCatalogTransport): P
       limit: 100,
       sortKey: 'recency_at',
       sortDirection: 'desc',
-      archived: false,
+      archived: mode === 'archived',
       modelProviders: [],
       useStateDbOnly: true,
     })

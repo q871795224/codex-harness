@@ -7,6 +7,7 @@ export type CodexTurnTrigger =
   | 'conversation-restart'
   | 'continue-after-failure'
   | 'handover'
+  | 'harness-assistant'
   | 'quick-agent'
   | 'recap'
   | 'memory-save'
