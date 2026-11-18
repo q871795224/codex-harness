@@ -8,6 +8,7 @@ import { sameComposerDraft } from '../conversation/composerDraftStorage'
 import { QueueDock } from '../conversation/QueueDock'
 import { useDelayedSend } from '../conversation/useDelayedSend'
 import type { useUnifiedHarness } from '../conversation/useUnifiedHarness'
+import { AssistantLauncher } from './AssistantLauncher'
 import './assistant.css'
 
 type Mutation = 'archive' | 'pin' | 'unpin'
@@ -29,15 +30,18 @@ interface Props {
   codex: Pick<ReturnType<typeof useCodexCore>, 'models' | 'loading' | 'settingsForThread' | 'syncThreadSettings' | 'updateThreadSettings'>
   disabled: boolean
   pinned: readonly string[]
-  openRequest?: number
+  hideLauncher?: boolean
+  standalone?: boolean
+  onClose?(): void
+  onQuery?(request: SessionRequest): ReturnType<typeof queryAssistantSessions>
   onMutate(session: AssistantSession, action: Mutation): Promise<void>
 }
 
-export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest = 0, onMutate }: Props) {
+export function HarnessAssistant({ harness, codex, disabled, pinned, hideLauncher = false, standalone = false, onClose, onQuery, onMutate }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const [threadId, setThreadId] = useState<string | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(standalone)
   const [position, setPosition] = useState<WindowPosition>()
   const drag = useRef<{ pointerId: number; offsetX: number; offsetY: number }>()
   const titlebarPress = useRef(false)
@@ -88,14 +92,18 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest
   function close() {
     drag.current = undefined
     titlebarPress.current = false
-    dialog.current?.close()
-    setDialogOpen(false)
+    if (standalone) {
+      onClose?.()
+    } else {
+      dialog.current?.close()
+      setDialogOpen(false)
+    }
     setConfirmation(null)
     trigger.current?.focus()
   }
 
   function startDrag(event: PointerEvent<HTMLElement>) {
-    if (event.button !== 0 || drag.current || (event.target as Element).closest('button')) return
+    if (standalone || event.button !== 0 || drag.current || (event.target as Element).closest('button')) return
     const floatingWindow = dialog.current
     if (!floatingWindow) return
     const bounds = floatingWindow.getBoundingClientRect()
@@ -117,7 +125,7 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest
   }
 
   function closeFromBackdrop(event: MouseEvent<HTMLDialogElement>) {
-    if (event.target !== event.currentTarget || titlebarPress.current) return
+    if (standalone || event.target !== event.currentTarget || titlebarPress.current) return
     const bounds = event.currentTarget.getBoundingClientRect()
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) close()
   }
@@ -137,7 +145,7 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest
       if (request.referenceIds.some(id => !allowedReferences.current.has(id))) {
         throw new Error('引用的会话已无法定位，请重新查询。')
       }
-      const result = await queryAssistantSessions(request, pinned)
+      const result = await (onQuery ? onQuery(request) : queryAssistantSessions(request, pinned))
       if (version !== resultVersion.current) return
       setRows(result.rows)
       setVisibleCount(pageSize)
@@ -153,7 +161,7 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest
   }
 
   async function open() {
-    if (dialog.current && !dialog.current.open) dialog.current.showModal()
+    if (!standalone && dialog.current && !dialog.current.open) dialog.current.showModal()
     setDialogOpen(true)
     if (threadId) return
     if (disabled || loading) return
@@ -166,12 +174,12 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest
     } finally { setLoading(false) }
   }
 
-  const handledOpenRequest = useRef(0)
   useEffect(() => {
-    if (openRequest === handledOpenRequest.current) return
-    handledOpenRequest.current = openRequest
-    void open()
-  }, [openRequest])
+    if (standalone && !disabled) void open()
+  }, [standalone, disabled])
+  useEffect(() => {
+    if (!standalone && hideLauncher && dialog.current?.open) close()
+  }, [standalone, hideLauncher])
 
   async function send(id: string, input: UserInput[], mode: 'interject' | 'queue', references?: MessageReference[]) {
     if (disabled) throw new Error('Harness 暂不可用，草稿已保留。')
@@ -232,15 +240,16 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest
 
   return (
     <div className="harness-assistant">
-      <button ref={trigger} type="button" className="harness-assistant-launcher" aria-haspopup="dialog" title="打开 Harness 助理"
-        onClick={() => void open()}>
-        <MessageCircle size={17} />助理
-      </button>
-      <dialog ref={dialog} className="harness-assistant-window" aria-labelledby="harness-assistant-title" onClick={closeFromBackdrop}
+      {!standalone && <AssistantLauncher buttonRef={trigger} hidden={hideLauncher} onOpen={() => void open()} />}
+      <dialog ref={dialog} open={standalone || undefined} className={`harness-assistant-window${standalone ? ' standalone' : ''}`}
+        aria-labelledby="harness-assistant-title" onClick={closeFromBackdrop}
         style={position ? { ...position, right: 'auto', bottom: 'auto' } : undefined}
         onPointerDownCapture={() => { titlebarPress.current = false }}
         onPointerMove={moveWindow} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}
-        onKeyDown={event => event.stopPropagation()}
+        onKeyDown={event => {
+          event.stopPropagation()
+          if (standalone && event.key === 'Escape' && !event.defaultPrevented) close()
+        }}
         onCancel={event => { event.preventDefault(); event.stopPropagation(); close() }}>
         <header className="harness-assistant-titlebar" onPointerDown={startDrag}>
           <MessageCircle size={19} />
@@ -300,11 +309,11 @@ export function HarnessAssistant({ harness, codex, disabled, pinned, openRequest
                 if (original) void harness.assistantThread.promoteQueue(original, threadId)
               }}
               onStart={() => void harness.assistantThread.startQueue(threadId)} />
-            <Composer variant="assistant" threadId={threadId} consumedDraft={consumedDraft}
+            <Composer variant="assistant" standaloneAssistant={standalone} threadId={threadId} consumedDraft={consumedDraft}
               disabled={disabled || Boolean(detail?.foreignActive)} busy={busy || harness.assistantThread.submitting}
               working={Boolean(harness.workingThreadIds[threadId])} foreignActive={Boolean(detail?.foreignActive)}
               contextUsage={harness.threadTokenUsages[threadId] ?? null}
-              workspaceRoot={detail?.thread.cwd ?? null}
+              workspaceRoot={standalone ? null : detail?.thread.cwd ?? null}
               sendShortcut={harness.keyboard.sendShortcut} followUpMode={harness.keyboard.followUpMode}
               focusRequest={0} autoFocus={dialogOpen} rawMode={false}
               models={codex.models} settings={codex.settingsForThread(threadId)} settingsDisabled={codex.loading}

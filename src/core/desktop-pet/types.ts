@@ -33,7 +33,6 @@ export interface DesktopPetSnapshot {
 }
 
 export interface DesktopPetOpenTarget {
-  assistant: boolean
   threadId: string | null
   notificationId: string | null
 }

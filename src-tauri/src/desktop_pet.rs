@@ -117,7 +117,6 @@ pub(crate) struct Snapshot {
 struct OpenTarget {
     thread_id: Option<String>,
     notification_id: Option<String>,
-    assistant: bool,
 }
 
 pub(crate) fn allows_command(command: &str) -> bool {
@@ -126,6 +125,8 @@ pub(crate) fn allows_command(command: &str) -> bool {
         "desktop_pet_asset"
             | "desktop_pet_snapshot"
             | "desktop_pet_open"
+            | "desktop_pet_menu"
+            | "desktop_pet_drag"
             | "desktop_pet_visibility"
     )
 }
@@ -149,6 +150,13 @@ pub(crate) fn handle_window_event(window: &tauri::Window, event: &tauri::WindowE
             if let Some(pet) = app.get_webview_window(LABEL) {
                 let _ = pet.destroy();
             }
+            if let Some(assistant) = app.get_webview_window(crate::desktop_assistant::LABEL) {
+                let _ = assistant.destroy();
+            }
+        }
+        crate::desktop_assistant::LABEL => {
+            api.prevent_close();
+            let _ = window.hide();
         }
         LABEL => {
             api.prevent_close();
@@ -622,6 +630,7 @@ fn show_main(app: &AppHandle) -> Result<(), String> {
 }
 
 fn hide_pet(app: &AppHandle, restore_main: bool) -> Result<(), String> {
+    crate::desktop_assistant::hide(app);
     if let Some(pet) = app.get_webview_window(LABEL) {
         if restore_main
             && app
@@ -635,30 +644,83 @@ fn hide_pet(app: &AppHandle, restore_main: bool) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub(crate) fn desktop_pet_open(
-    window: WebviewWindow,
-    app: AppHandle,
-    state: State<'_, AppState>,
-    assistant: bool,
-) -> Result<(), String> {
-    pet_only(&window)?;
+fn open_notice(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
     let activity = state.desktop_pet_activity.lock().map_err(io)?.clone();
-    show_main(&app)?;
+    show_main(app)?;
     app.emit_to(
         "main",
         "desktop-pet:open",
         OpenTarget {
-            thread_id: if assistant { None } else { activity.thread_id },
-            notification_id: if assistant {
-                None
-            } else {
-                activity.notification_id
-            },
-            assistant,
+            thread_id: activity.thread_id,
+            notification_id: activity.notification_id,
         },
     )
     .map_err(io)
+}
+
+#[tauri::command]
+pub(crate) async fn desktop_pet_open(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
+    pet_only(&window)?;
+    crate::desktop_assistant::show(&app)
+}
+
+#[tauri::command]
+pub(crate) async fn desktop_pet_menu(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
+    pet_only(&window)?;
+    use tauri::menu::{Menu, MenuItem};
+    let open = MenuItem::with_id(
+        &app,
+        "desktop-pet-conversation",
+        "打开助理会话",
+        true,
+        None::<&str>,
+    )
+    .map_err(io)?;
+    let notice = MenuItem::with_id(
+        &app,
+        "desktop-pet-notifications",
+        "查看通知",
+        true,
+        None::<&str>,
+    )
+    .map_err(io)?;
+    let hide = MenuItem::with_id(&app, "desktop-pet-hide", "隐藏桌面宠物", true, None::<&str>)
+        .map_err(io)?;
+    let menu = Menu::with_items(&app, &[&open, &notice, &hide]).map_err(io)?;
+    window.popup_menu(&menu).map_err(io)
+}
+
+#[tauri::command]
+pub(crate) async fn desktop_pet_drag(window: WebviewWindow) -> Result<(), String> {
+    pet_only(&window)?;
+    #[cfg(not(target_os = "macos"))]
+    return Err("此版本的桌面宠物仅支持 macOS。".into());
+    #[cfg(target_os = "macos")]
+    {
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGEventSourceButtonState(source_state: i32, button: u32) -> bool;
+        }
+        let initial = window.outer_position().map_err(io)?;
+        let pointer = window.cursor_position().map_err(io)?;
+        let mut last = initial;
+        // Session button state lets an asynchronous long press continue tracking
+        // the same held button without relying on the WebKit event's lifetime.
+        while unsafe { CGEventSourceButtonState(0, 0) } {
+            let current = window.cursor_position().map_err(io)?;
+            let point = tauri::PhysicalPosition::new(
+                initial.x + (current.x - pointer.x).round() as i32,
+                initial.y + (current.y - pointer.y).round() as i32,
+            );
+            if point != last {
+                window.set_position(point).map_err(io)?;
+                last = point;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+        }
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -717,7 +779,7 @@ fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html?desktop-pet".into()),
     )
     .title("Harness 宠物")
-    .inner_size(156.0, 174.0)
+    .inner_size(135.0, 145.0)
     .decorations(false)
     .resizable(false)
     .transparent(true)
@@ -729,6 +791,26 @@ fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
     .visible(false)
     .build()
     .map_err(io)?;
+    window.on_menu_event(|window, event| {
+        let app = window.app_handle().clone();
+        let action = event.id().as_ref().to_owned();
+        tauri::async_runtime::spawn(async move {
+            match action.as_str() {
+                "desktop-pet-conversation" => {
+                    let _ = crate::desktop_assistant::show(&app);
+                }
+                "desktop-pet-notifications" => {
+                    let _ = open_notice(&app);
+                }
+                "desktop-pet-hide" => {
+                    if let Some(pet) = app.get_webview_window(LABEL) {
+                        let _ = pet.close();
+                    }
+                }
+                _ => {}
+            }
+        });
+    });
     let saved = state
         .store
         .get_app_state(POSITION)?
