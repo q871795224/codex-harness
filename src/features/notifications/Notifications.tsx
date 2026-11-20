@@ -130,11 +130,9 @@ function ThreadReminderForm({ store, thread, watching, loaded }: { store: Notifi
 }
 
 export function ConversationReminders({ thread, store }: { thread: ReminderThread; store: NotificationStore }) {
-  const { records, loaded } = useSyncExternalStore(store.subscribe, store.snapshot)
+  const { records } = useSyncExternalStore(store.subscribe, store.snapshot)
   const reminder = records.find(record => record.id === `reminder:${thread.id}` && !record.resolved)
   return <>
-    <ThreadReminderForm key={thread.id} store={store} thread={thread} loaded={loaded}
-      watching={records.some(record => record.threadId === thread.id && record.watchThread)} />
     {reminder?.state === 'done' && <div className="notification-operation-feedback" role="status">
       <span>已到设定的跟进时间。</span>
       <button type="button" onClick={() => store.resolve(reminder.id)}>知道了</button>
@@ -157,10 +155,11 @@ export function OperationFeedback({ store, threadId }: { store: NotificationStor
   </div>
 }
 
-export function NotificationCenter({ store, currentThreadId, selectedId, onBack, onAction }: {
+export function NotificationCenter({ store, currentThreadId, selectedId, reminderThread, onBack, onAction }: {
   store: NotificationStore
   currentThreadId: string | null
   selectedId?: string
+  reminderThread?: ReminderThread
   onBack: () => void
   onAction: (action: NotificationAction) => Promise<void>
 }) {
@@ -182,6 +181,8 @@ export function NotificationCenter({ store, currentThreadId, selectedId, onBack,
       </header>
       <div className="notification-page-body">
         <div className="notification-heading"><Bell size={22} /><div><h1>通知中心</h1><p>错误与告警 · {diagnostics.filter((record) => !record.read).length} 条未读</p></div></div>
+        {reminderThread && <ThreadReminderForm key={reminderThread.id} store={store} thread={reminderThread} loaded={state.loaded}
+          watching={state.records.some(record => record.threadId === reminderThread.id && record.watchThread)} />}
         {state.storageError && <div className="notification-storage-error" role="alert">通知历史暂时无法{state.loaded ? '保存' : '读取'}，本次提醒仍可查看。<button onClick={() => void store.retryStorage()}>重试</button><details><summary>错误详情</summary><pre>{state.storageError}</pre></details></div>}
         <div className="notification-filters">
           <div role="group" aria-label="通知类型">

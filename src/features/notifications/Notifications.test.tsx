@@ -151,13 +151,33 @@ it('keeps the independent reminder rail open while the conversation is being use
   expect(screen.queryByRole('button', { name: /展开提醒/ })).toBeNull()
 })
 
-it('lets the user follow a thread from the conversation reminder control', async () => {
+it('keeps reminder settings in the notification center rather than above the conversation', async () => {
   const notifications = store()
   await notifications.initialize()
-  render(<ConversationReminders store={notifications} thread={{ id: 'thread-a', title: '会话 A' }} />)
+  const { unmount } = render(<ConversationReminders store={notifications} thread={{ id: 'thread-a', title: '会话 A' }} />)
+  expect(screen.queryByText('提醒当前会话')).toBeNull()
+  unmount()
+  render(<NotificationCenter store={notifications} currentThreadId="thread-a" reminderThread={{ id: 'thread-a', title: '会话 A' }}
+    onBack={vi.fn()} onAction={vi.fn()} />)
   fireEvent.click(screen.getByText('提醒当前会话'))
   fireEvent.click(screen.getByRole('checkbox', { name: '有新一轮结果时提醒' }))
   expect(notifications.snapshot().records.find(record => record.threadId === 'thread-a')?.watchThread).toBe(true)
+})
+
+it('keeps existing reminders, watches and due feedback when the conversation has no settings form', async () => {
+  vi.useFakeTimers()
+  const notifications = store()
+  await notifications.initialize()
+  notifications.watchThread({ id: 'thread-a', title: '会话 A' }, true)
+  notifications.remindThread({ id: 'thread-a', title: '会话 A' }, Date.now() + 1000)
+  render(<ConversationReminders store={notifications} thread={{ id: 'thread-a', title: '会话 A' }} />)
+  expect(screen.queryByText('提醒当前会话')).toBeNull()
+  act(() => { vi.advanceTimersByTime(1000); notifications.tick() })
+  expect(screen.getByText('已到设定的跟进时间。')).toBeTruthy()
+  expect(notifications.snapshot().records.find(record => record.id === 'watch:thread-a')?.watchThread).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: '知道了' }))
+  expect(notifications.snapshot().records.find(record => record.id === 'reminder:thread-a')?.resolved).toBe(true)
+  expect(notifications.snapshot().records.find(record => record.id === 'watch:thread-a')?.watchThread).toBe(true)
 })
 
 it('leaves pending workflows alone when reading all diagnostics', async () => {
