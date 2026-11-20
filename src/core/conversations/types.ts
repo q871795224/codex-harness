@@ -6,6 +6,7 @@ export interface TurnCompletedEvent {
   turnId: string
   title: string
   status: Turn['status']
+  errorMessage?: string
 }
 
 export interface ConversationService {

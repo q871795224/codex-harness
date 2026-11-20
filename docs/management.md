@@ -61,8 +61,8 @@ Agent 使用原生 Skill 返回路径旁的 CLI：`python3 /absolute/path/harnes
 | `projects.get` / `projects.update` | `{projectId}` / `{projectId,patch,expected?}` | 项目元数据及关联工作区；仅修改name/shortName，简称最多12字符，不含控制字符或方括号 |
 | `projects.list` | `{}` | 项目元数据列表；接入由用户在界面发起 |
 | `plugins.read` | `{instanceId}` | 已声明的非秘密配置、可编辑字段、隐藏键名和实际生命周期；未知插件不导出配置值 |
-| `notifications.list` | `{threadId?,unread?,offset?,limit?}` | 通知摘要，省略原始details；旧提醒浮层保持关闭 |
-| `notifications.markRead` | `{id}`或`{all:true}` | 保存已读状态，不处理源问题、审批或其他业务动作 |
+| `notifications.list` | `{threadId?,unread?,offset?,limit?}` | 通知中心的错误和告警摘要，省略原始 details |
+| `notifications.markRead` | `{id}`或`{all:true}` | 标记通知中心的错误和告警为已读，源问题和审批仍由其流程处理 |
 | `seatalk.status` / `seatalk.bindings` | `{}` | 只读通道状态和thread/root绑定元数据，不发送消息、领取指令或处理审批 |
 | `config.read` | `{}` | 仅返回 Codex 默认 model、model_reasoning_effort、service_tier、approval_policy |
 | `config.set` | `{key,value}` | 写入上述 Codex 默认值，刷新并核对有效配置；不修改已有会话设置 |

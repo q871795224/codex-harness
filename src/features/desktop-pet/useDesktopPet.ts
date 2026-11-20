@@ -36,7 +36,7 @@ export function useDesktopPet(onOpen: (target: DesktopPetOpenTarget) => void, on
 
 type PetHarness = Pick<ReturnType<typeof useUnifiedHarness>, 'threads' | 'waitingThreadIds' | 'workingThreadIds' | 'selectedThreadId' | 'activeTurnIds' | 'approvals' | 'details' | 'onTurnCompleted'>
 
-export function DesktopPetNotifications({ harness }: { harness: PetHarness }) {
+export function HarnessNotificationSources({ harness, petVisible }: { harness: PetHarness; petVisible: boolean }) {
   // Keep source-owned approval/watch resolution active when the main window is hidden.
   const waitingThreadIds = useMemo(() => Object.fromEntries(Object.entries(harness.waitingThreadIds)
     .filter(([id]) => !harness.details[id]?.thread.harnessAssistant)), [harness.waitingThreadIds, harness.details])
@@ -61,8 +61,9 @@ export function DesktopPetNotifications({ harness }: { harness: PetHarness }) {
   const { records } = useSyncExternalStore(notifications.subscribe, notifications.snapshot)
   const working = Object.values(harness.workingThreadIds).some(Boolean)
   useEffect(() => {
+    if (!petVisible) return
     void runtime.desktopPetPublish(desktopPetActivity(records, working)).catch(() => undefined)
-  }, [records, working])
+  }, [records, working, petVisible])
   useEffect(() => {
     const next = records.reduce((due, record) =>
       !record.resolved && record.remindAt ? Math.min(due, record.remindAt) : due, Infinity)

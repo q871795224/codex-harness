@@ -94,13 +94,19 @@ it('validates project metadata before mutation', async () => {
   expect(runtime.projectDocRename).not.toHaveBeenCalled()
 
 })
-it('marks a notification read without resolving a source-owned pending question', async () => {
+it('lists and marks diagnostics read without modifying source-owned pending questions', async () => {
   const { call } = fixture()
-  store.set('notifications.history', JSON.stringify([{ id: 'notice', source: 'test', title: 'Question', details: 'private error', read: false, state: 'pending', createdAt: 1, updatedAt: 1 }]))
+  const pending = { id: 'notice', source: '会话', title: 'Question', state: 'pending', level: 'warning', read: false, createdAt: 1, updatedAt: 1 }
+  const error = { id: 'failure:thread', source: '会话', title: 'Failure', details: 'private error', level: 'error', read: false, createdAt: 2, updatedAt: 2 }
+  store.set('notifications.history', JSON.stringify([pending, error]))
   const read = await call('notifications.list')
+  expect(read).toMatchObject({ data: [{ id: error.id }] })
   expect(JSON.stringify(read)).not.toContain('private error')
-  expect(await call('notifications.markRead', { id: 'notice' })).toMatchObject({ read: true, sourceActionsResolved: false })
-  expect(JSON.parse(store.get('notifications.history')!)[0]).toMatchObject({ read: true, state: 'pending' })
+  expect(JSON.stringify(read)).not.toContain('Question')
+  expect(await call('notifications.markRead', { all: true })).toMatchObject({ read: true, sourceActionsResolved: false })
+  const saved = JSON.parse(store.get('notifications.history')!)
+  expect(saved.find((record: { id: string }) => record.id === pending.id)).toMatchObject({ read: false, state: 'pending' })
+  expect(saved.find((record: { id: string }) => record.id === error.id)).toMatchObject({ read: true })
 })
 
 it('rejects keyboard conflicts before setters and normalizes valid shortcut spelling', async () => {

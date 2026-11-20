@@ -7,6 +7,8 @@ export interface NotificationAction {
   runId?: string
 }
 export interface NotificationInput {
+  /** Retain this error or warning in the diagnostic notification center. */
+  diagnostic?: boolean;
   /** Keep history without floating alerts or attention badges. */
   silent?: boolean
   id?: string
@@ -39,6 +41,7 @@ export interface NotificationService {
   publish(input: NotificationInput): string
 }
 interface Snapshot {
+  feedback: { id: string; title: string; level: NotificationLevel; threadId?: string; details?: string } | null;
   records: AppNotification[]
   floating: { id: string; expiresAt: number | null }[]
   loaded: boolean
@@ -48,6 +51,19 @@ interface Storage {
   load(): Promise<string | null>
   save(value: string): Promise<void>
 }
+export function isDiagnosticNotification(record: AppNotification): boolean {
+  if (record.silent || record.state === 'running' || !['error', 'warning'].includes(record.level)) return false
+  if (record.diagnostic !== undefined) return record.diagnostic
+  // Preserve actionable diagnostics created before explicit routing was available.
+  if (record.source === '发布') {
+    return record.id.startsWith('release:') || (record.level === 'error' && record.title === '发布操作未完成')
+  }
+  if (record.source === '快捷命令') return record.level === 'error' && record.state === 'done'
+  if (record.source === '会话') return record.level === 'error' && record.id.startsWith('failure:')
+  if (record.source === 'Claude') return record.level === 'error' && record.title === 'Claude 执行失败，请查看详情后重试。'
+  return record.source === '异步等待' && record.id === 'async-wait:scheduler'
+}
+
 export const notificationAttention = (record: NotificationInput): NotificationAttention => record.attention ?? (record.state === 'pending' ? 'action' : 'result')
 export function needsAttention(record: AppNotification, now = Date.now()): boolean {
   if (record.silent || record.resolved || (record.remindAt && record.remindAt > now) || record.state === 'running') return false
@@ -68,7 +84,7 @@ export function attentionGroups(records: AppNotification[], now = Date.now()): N
 }
 
 export function createNotificationStore(storage: Storage) {
-  let state: Snapshot = { records: [], floating: [], loaded: false, storageError: null }
+  let state: Snapshot = { feedback: null, records: [], floating: [], loaded: false, storageError: null }
   let focusedThread: string | null = null
   const listeners = new Set<() => void>()
   let loading: Promise<void> | null = null
@@ -93,6 +109,15 @@ export function createNotificationStore(storage: Storage) {
   }
   const store = {
     snapshot: () => state,
+    showFeedback: (feedback: NonNullable<Snapshot['feedback']>) => {
+      state = { ...state, feedback }
+      emit()
+    },
+    dismissFeedback: (id: string) => {
+      if (state.feedback?.id !== id) return
+      state = { ...state, feedback: null }
+      emit()
+    },
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     initialize: (): Promise<void> => {
       if (loading) return loading
@@ -147,6 +172,10 @@ export function createNotificationStore(storage: Storage) {
       const keys = state.records.filter((record) => !id || record.id === id).map((record) => record.id)
       mutate(keys, (record) => ({ ...record, read: true }))
     },
+    markDiagnosticsRead: () => {
+      const keys = state.records.filter(record => !record.read && isDiagnosticNotification(record)).map(record => record.id)
+      if (keys.length) mutate(keys, record => ({ ...record, read: true }))
+    },
     resolve: (id: string) => {
       if (!state.records.some((record) => record.id === id && !record.resolved)) return
       mutate([id], (record) => ({ ...record, resolved: true, read: true, remindAt: null, state: 'done' }))
@@ -189,7 +218,7 @@ export function createNotificationStore(storage: Storage) {
 }
 function sortRecords(records: AppNotification[]) { return records.sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt) }
 function sameContent(a: AppNotification, b: AppNotification) {
-  return Boolean(a.silent) === Boolean(b.silent) && a.id === b.id && a.level === b.level && a.source === b.source && a.title === b.title
+  return a.diagnostic === b.diagnostic && Boolean(a.silent) === Boolean(b.silent) && a.id === b.id && a.level === b.level && a.source === b.source && a.title === b.title
     && a.message === b.message && a.details === b.details && a.state === b.state && a.attention === b.attention && a.eventKey === b.eventKey
     && a.threadId === b.threadId && a.workspaceRoot === b.workspaceRoot && JSON.stringify(a.actions) === JSON.stringify(b.actions)
 }

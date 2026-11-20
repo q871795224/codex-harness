@@ -6,15 +6,22 @@ import type { NotificationInput } from '../../core/notifications/store'
 
 export function releaseNotification(status: ReleaseRunStatus): NotificationInput {
   const running = status.status === 'running'
+  const failed = status.status === 'failed'
+  const phase = RELEASE_PHASE_LABELS[status.phase]
+  const reason = status.failureSummary ?? status.error
+  const message = running ? phase : failed
+    ? `在「${phase}」阶段停止。${reason ? reason : '该阶段没有返回具体错误，可以打开日志查看。'}`
+    : status.warning ? (status.error ?? '发布已完成，仍有后续事项需要核对。') : '发布流程已完成。'
   return {
     id: `release:${status.runId}`,
     source: '发布',
+    diagnostic: failed || status.warning,
     workspaceRoot: status.workspaceRoot,
     createdAt: status.startedAt,
     updatedAt: status.updatedAt,
-    level: status.status === 'failed' ? 'error' : status.warning ? 'warning' : 'info',
-    title: `发布 ${status.version}${running ? ' 进行中' : status.status === 'failed' ? ' 未完成' : status.warning ? ' 基本完成' : ' 已完成'}`,
-    message: running ? RELEASE_PHASE_LABELS[status.phase] : status.status === 'failed' ? `在“${RELEASE_PHASE_LABELS[status.phase]}”阶段停止，请查看日志后处理。` : status.warning ? '发布已完成，但仍有后续事项需要检查，请查看详情。' : '发布流程已完成。',
+    level: failed ? 'error' : status.warning ? 'warning' : 'info',
+    title: `发布 ${status.version}${running ? ' 进行中' : failed ? ' 未完成' : status.warning ? ' 基本完成' : ' 已完成'}`,
+    message,
     details: [status.error, status.logPath ? `日志：${status.logPath}` : null].filter(Boolean).join('\n') || undefined,
     actions: [{ kind: 'release-log', label: '查看日志', target: status.workspaceRoot, runId: status.runId }],
     state: running ? 'running' : 'done',
@@ -50,7 +57,7 @@ export function useReleaseNotifications(status: ReleaseRunStatus | null) {
           notifications.publish(releaseNotification(next))
           if (next.status !== 'running') roots.current.delete(root)
         }).catch((error) => {
-          if (!disposed) notifications.publish({ id: `release-status:${root}`, level: 'warning', source: '发布', title: '暂时无法读取发布进度', message: '后台发布可能仍在运行，将继续尝试读取。', workspaceRoot: root, details: String(error) })
+          if (!disposed) console.warn('暂时无法读取发布进度', error)
         }).finally(() => pending.delete(root))
       }
     }

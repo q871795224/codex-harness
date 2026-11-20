@@ -84,7 +84,7 @@ describe('unified archive view', () => {
   })
 
   it('clears stale Claude sessions and reports a failed view refresh', async () => {
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     const { result } = await ready()
     vi.mocked(runtime.listClaudeSessions).mockRejectedValueOnce(new Error('offline'))
     await act(async () => { await result.current.setViewMode('archived') })

@@ -63,12 +63,12 @@ it('clears the previous Claude view even when loading the next view fails', asyn
 })
 
 it('archives Claude sessions silently and leaves restore notifications unchanged', async () => {
-  const publish = vi.spyOn(notifications, 'publish')
+  const publish = vi.spyOn(notifications, 'showFeedback')
   const { result } = renderHook(() => useClaudeHarness())
   await waitFor(() => expect(result.current.loaded).toBe(true))
   await act(async () => { await result.current.archiveSession('claude:active') })
-  expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已归档 Claude 会话', silent: true }))
+  expect(publish).not.toHaveBeenCalledWith(expect.objectContaining({ title: '已归档 Claude 会话' }))
   await act(async () => { await result.current.unarchiveSession('claude:active') })
-  expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已恢复 Claude 会话', silent: false }))
+  expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已恢复 Claude 会话' }))
   publish.mockRestore()
 })
