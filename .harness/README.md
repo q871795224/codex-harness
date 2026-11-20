@@ -5,14 +5,16 @@
 | 任务 | 文档 | 读取时机 |
 | --- | --- | --- |
 | 了解模块边界、IPC、App Server、插件和 daemon | [architecture.md](architecture.md) | 改动跨层流程、运行时或插件宿主前 |
+| 桌面宠物、大肥鱼素材与播放、独立助理窗口 | [desktop-pet.md](desktop-pet.md)；使用方式见 [桌面宠物](../docs/desktop-pet.md) 与 [Harness 助理](../docs/harness-assistant.md) | 修改桌宠窗口、拖动、命中区、动画或助理跨窗口 IPC 前 |
 | Agent 能力的 Skill／自定义工具选型，以及自有 Skill 源码、分发与加载 | [skills.md](skills.md) | 新增 Agent 能力、考虑工具迁移或接入自有 Skill 前；发布和审计 Skill 暂保留仓库开发用途 |
 | 从 Agent 查询或管理 Harness 本身 | [../docs/management.md](../docs/management.md) | 使用应用随附 harness-runtime Skill、harnessctl 或维护本机管理入口时 |
-| 记录已经确认的长期决策和当前状态 | [memory.md](memory.md) | 需要延续历史决策，或任务完成后沉淀结论 |
+| 记录跨任务有效的协作决定 | [memory.md](memory.md) | 需要延续长期决定，或任务完成后沉淀可复用结论 |
 | 项目文档维护、会话中途新建/加入、注入与人工精简边界 | [architecture.md](architecture.md) 的“项目文档维护”；中途接入见 [project-doc-onboarding.md](../docs/project-doc-onboarding.md) | 修改项目文档插件或讨论 Agent 管理接口前 |
 | 公司 Collab / Superbot 云端会话 | [../docs/superbot.md](../docs/superbot.md) | 调整 Superbot 登录、会话、模型、云端运行状态与界面前 |
 | 工作区自动选择、简介缓存、最终 Prompt、反馈与后端设置 | [workspace-router.md](workspace-router.md) | 修改 Router 或重新讨论其决策前 |
 | Router模型选型、89服务部署与后续复测 | [router-models.md](router-models.md) | 接入模型、排查服务或复测选型前 |
 | 执行测试、构建、人工检查和黑箱对照 | [test.md](test.md) | 修改代码或验证行为前 |
+| Linux / WSL2 构建与平台支持边界 | [../README.md](../README.md) 的“Linux / WSL2”；CI 范围见 [test.md](test.md#ci-覆盖边界) | 修改平台条件编译、打包或评估 Windows / WSL 可用性前 |
 | 遇到已知的脆弱点、协议差异或数据安全问题 | [pitfall.md](pitfall.md) | 相关路径排查或修改前 |
 | 在固定 UI 区域（侧栏底部操作行、顶部主按钮、会话 tab 栏）新增或修改样式 | [frontend-style.md](frontend-style.md) | 改动这些区域的结构、共用选择器组或深色主题前 |
 | 使用 GitHub 分支、Pull Request、合并或衔接发布 | [github.md](github.md) | 开始交付、操作 PR 或准备 release 分支前 |
@@ -25,3 +27,5 @@
 Codex CLI/Harness 请求对照和 token 成本排查使用项目级 `.agents/skills/harness-codex-audit/SKILL.md`；它只在需要审计时加载。
 
 新增稳定知识时，优先放入职责最匹配的文件；不要在多个文件复制同一条规则。临时排查结果只有在确认长期有用后才写入 `memory.md` 或 `pitfall.md`。
+
+`project-doc-plugin-plan.md`、`project-doc-fix-plan.md` 是历史设计，保留追溯用途；项目文档的现行规则从上表进入，不按旧方案恢复注入、归档或安装路径。

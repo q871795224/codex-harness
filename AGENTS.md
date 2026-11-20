@@ -7,6 +7,7 @@
 - 先读 [.harness/README.md](.harness/README.md)，再按任务类型读取对应文档。
 - Agent 能力的 Skill／自定义工具选型、自有 Skill 源码、App 分发与加载约定读 [.harness/skills.md](.harness/skills.md)。
 - 项目架构读 [.harness/architecture.md](.harness/architecture.md)。
+- 桌面宠物（含大肥鱼）、独立助理窗口、素材和交互边界读 [.harness/desktop-pet.md](.harness/desktop-pet.md)。
 - 工作区 Router 的简介缓存、纠错与后端决策读 [.harness/workspace-router.md](.harness/workspace-router.md)。
 - 项目长期记忆读 [.harness/memory.md](.harness/memory.md)。
 - 测试和验证要求读 [.harness/test.md](.harness/test.md)。
@@ -43,7 +44,7 @@
 
 - UI 状态和输入区未发送草稿保存在 `~/.codex-harness/state.sqlite`；草稿成功发送后清除，不得写入已发送的会话正文、凭据或模型 response。API Workbench 使用独立数据库，Secret 变量只进 macOS Keychain。
 - Harness 复用或启动共享 `codex app-server daemon`；关闭 Harness 不停止 daemon。由 Harness 启动 daemon 时，必须从实际 `.codex` 安装路径推导并显式设置真实用户的 `HOME`、`CODEX_HOME`，文件描述符软限制为 4096。
-- Claude Provider 是独立常驻 daemon；涉及 Claude 时先读 `.harness/architecture.md`，本次 Codex token 工作不主动扩展 Claude 范围。
+- Claude Provider 是独立常驻 daemon；涉及 Claude 时先读 `.harness/architecture.md`，Codex 任务不主动扩展 Claude 范围。
 - 图片使用 App Server 的 `localImage` 输入；普通文件对齐 Codex CLI，选中后把路径写回输入框文本随消息发出，由 agent 自行读取文件内容，不发送结构化 `mention`（App Server 不会把它放进模型上下文）；附件只保留在输入草稿和 Codex 会话中。
 - 斜杠命令先由 `composerCommands.ts` 精确匹配并在本地执行；HTTP(S) 链接经 bridge 打开系统浏览器，不让 WebView 离开应用。
 
