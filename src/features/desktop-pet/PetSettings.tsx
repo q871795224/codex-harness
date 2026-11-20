@@ -75,7 +75,7 @@ export function PetSettings() {
       )}
       <div className="desktop-pet-scale">
         <label>桌面宠物大小 <output>{percent}%</output>
-          <input aria-label="桌面宠物大小" type="range" min={20} max={200} value={percent}
+          <input aria-label="桌面宠物大小" type="range" min={20} max={400} value={percent}
             onChange={event => setSize(event.currentTarget.valueAsNumber)} disabled={!catalog || busy} />
         </label>
         <button type="button" disabled={!catalog || busy || percent === catalog.scalePercent}

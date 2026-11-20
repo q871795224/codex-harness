@@ -16,6 +16,7 @@ pub(crate) const LABEL: &str = "desktop-pet";
 const SELECTED: &str = "desktopPet.selected";
 const DEFAULT_PET: &str = "dafeiyu";
 const SCALE: &str = "desktopPet.scalePercent";
+const PET_SCALE: std::ops::RangeInclusive<u16> = 20..=400;
 const VISIBLE: &str = "desktopPet.visible";
 #[cfg(target_os = "macos")]
 const POSITION: &str = "desktopPet.position";
@@ -399,7 +400,7 @@ fn scale_percent(state: &AppState) -> u16 {
         .ok()
         .flatten()
         .and_then(|value| value.parse().ok())
-        .filter(|value| (20..=200).contains(value))
+        .filter(|value| PET_SCALE.contains(value))
         .unwrap_or(100)
 }
 
@@ -614,12 +615,22 @@ pub(crate) async fn desktop_pet_set_scale(
     percent: u16,
 ) -> Result<(), String> {
     main_only(&window)?;
-    if !(20..=200).contains(&percent) {
-        return Err("桌面宠物大小需在 20%–200% 之间。".into());
+    if !PET_SCALE.contains(&percent) {
+        return Err("桌面宠物大小需在 20%–400% 之间。".into());
     }
     let _window = state.desktop_pet_window.lock().await;
     if let Some(pet) = app.get_webview_window(LABEL) {
+        #[cfg(target_os = "macos")]
+        let position = pet.outer_position().ok();
         pet.set_size(window_size(percent)).map_err(io)?;
+        #[cfg(target_os = "macos")]
+        if let Some(point) =
+            position.and_then(|point| window_position(&pet, Some((point.x, point.y))))
+        {
+            if Some(point) != position {
+                let _ = pet.set_position(point);
+            }
+        }
     }
     state.store.set_app_state(SCALE, &percent.to_string())
 }
@@ -1017,9 +1028,10 @@ fn window_position(
         }
     }
     let monitor = window
-        .primary_monitor()
+        .current_monitor()
         .ok()
         .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
         .or_else(|| monitors.into_iter().next())?;
     let area = monitor.work_area();
     let margin = (18.0 * monitor.scale_factor()) as u32;
