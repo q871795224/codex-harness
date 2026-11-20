@@ -122,6 +122,32 @@ pub(crate) struct Snapshot {
     activity: Activity,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub(crate) struct HitBounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl HitBounds {
+    fn valid(self) -> bool {
+        [self.x, self.y, self.width, self.height]
+            .iter()
+            .all(|value| value.is_finite())
+            && self.x >= 0.0
+            && self.y >= 0.0
+            && self.width > 0.0
+            && self.height > 0.0
+            && self.x + self.width <= 1.000001
+            && self.y + self.height <= 1.000001
+    }
+
+    fn contains(self, x: f64, y: f64) -> bool {
+        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OpenTarget {
@@ -138,6 +164,7 @@ pub(crate) fn allows_command(command: &str) -> bool {
             | "desktop_pet_open"
             | "desktop_pet_menu"
             | "desktop_pet_drag"
+            | "desktop_pet_set_hit_bounds"
             | "desktop_pet_visibility"
     )
 }
@@ -840,6 +867,83 @@ fn drag_origin(
 }
 
 #[tauri::command]
+pub(crate) async fn desktop_pet_set_hit_bounds(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    bounds: Option<HitBounds>,
+) -> Result<(), String> {
+    pet_only(&window)?;
+    if bounds.is_some_and(|bounds| !bounds.valid()) {
+        return Err("无效的桌宠交互范围。".into());
+    }
+    *state.desktop_pet_hit_bounds.lock().map_err(io)? = bounds;
+    Ok(())
+}
+
+// AppKit screen points use one coordinate space across mixed-DPI monitors.
+// Poll globally: an ignored window cannot receive pointer-enter events to re-enable itself.
+#[cfg(target_os = "macos")]
+fn track_hit_bounds(window: WebviewWindow) {
+    use objc2_app_kit::{NSEvent, NSWindow};
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceButtonState(source_state: i32, button: u32) -> bool;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        let mut ignored = true;
+        let mut was_down = false;
+        loop {
+            let (send, receive) = tokio::sync::oneshot::channel();
+            let pet = window.clone();
+            if window
+                .run_on_main_thread(move || {
+                    let step = (|| {
+                        let native = pet.ns_window().ok()?.cast::<NSWindow>();
+                        let native = unsafe { native.as_ref() }?;
+                        let down = unsafe {
+                            CGEventSourceButtonState(0, 0) || CGEventSourceButtonState(0, 1)
+                        };
+                        // Keep the same event owner until release, including during a native drag.
+                        if !down && !was_down {
+                            let frame = native.frame();
+                            let pointer = NSEvent::mouseLocation();
+                            let bounds =
+                                *pet.state::<AppState>().desktop_pet_hit_bounds.lock().ok()?;
+                            let inside = bounds.is_some_and(|bounds| {
+                                bounds.contains(
+                                    (pointer.x - frame.origin.x) / frame.size.width,
+                                    1.0 - (pointer.y - frame.origin.y) / frame.size.height,
+                                )
+                            });
+                            let next = !inside;
+                            if next != ignored {
+                                native.setIgnoresMouseEvents(next);
+                            }
+                            ignored = next;
+                        }
+                        Some((ignored, down))
+                    })();
+                    let _ = send.send(step);
+                })
+                .is_err()
+            {
+                break;
+            }
+            match receive.await {
+                Ok(Some((next, down))) => {
+                    ignored = next;
+                    was_down = down;
+                }
+                _ => break,
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        }
+    });
+}
+
+#[tauri::command]
 pub(crate) async fn desktop_pet_drag(window: WebviewWindow) -> Result<(), String> {
     pet_only(&window)?;
     #[cfg(not(target_os = "macos"))]
@@ -961,6 +1065,9 @@ fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
     .visible(false)
     .build()
     .map_err(io)?;
+    *state.desktop_pet_hit_bounds.lock().map_err(io)? = None;
+    window.set_ignore_cursor_events(true).map_err(io)?;
+    track_hit_bounds(window.clone());
     window.on_menu_event(|window, event| {
         let app = window.app_handle().clone();
         let action = event.id().as_ref().to_owned();
@@ -1044,6 +1151,41 @@ fn window_position(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hit_bounds_exclude_the_canvas_padding_at_every_window_scale() {
+        let bounds = HitBounds {
+            x: 0.3,
+            y: 0.25,
+            width: 0.4,
+            height: 0.6,
+        };
+        assert!(bounds.valid());
+        for percent in [20, 100, 400] {
+            let size = window_size(percent);
+            let contains = |x: f64, y: f64| bounds.contains(x / size.width, y / size.height);
+            assert!(contains(size.width * 0.5, size.height * 0.5));
+            assert!(!contains(size.width * 0.9, size.height * 0.1));
+            assert!(!contains(size.width * 0.1, size.height * 0.9));
+        }
+        assert!(!HitBounds {
+            x: f64::NAN,
+            ..bounds
+        }
+        .valid());
+        assert!(!HitBounds {
+            width: -0.1,
+            ..bounds
+        }
+        .valid());
+        assert!(!HitBounds { x: 0.9, ..bounds }.valid());
+        assert!(!HitBounds {
+            height: 0.0,
+            ..bounds
+        }
+        .valid());
+        assert!(allows_command("desktop_pet_set_hit_bounds"));
+    }
 
     fn write_asset(path: &Path, width: u32, height: u32, color: [u8; 4]) {
         let mut picture = RgbaImage::new(width, height);

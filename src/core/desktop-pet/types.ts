@@ -41,3 +41,11 @@ export interface DesktopPetOpenTarget {
   threadId: string | null
   notificationId: string | null
 }
+
+// Rectangle in fractions of the pet window, independent of screen DPI and pet scale.
+export interface DesktopPetHitBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
