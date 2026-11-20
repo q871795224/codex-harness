@@ -60,7 +60,7 @@ export function petFrame(pet: Pick<DesktopPet, 'version' | 'idleFrames'>, status
 
 export function PetSprite({ pet, url, status = 'idle', direction }: { pet: DesktopPet; url: string; status?: DesktopPetActivity['status']; direction?: number }) {
   const [step, setStep] = useState(0)
-  const reduced = useReducedMotion()
+  const reduced = useReducedMotion() || pet.key.source === 'builtin'
   const custom = pet.version === 0
   const timings = animations[status].timings
   const count = custom ? pet.idleFrames : timings.length

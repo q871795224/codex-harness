@@ -18,6 +18,7 @@ mod compass;
 mod secrets;
 mod diagnostics;
 mod desktop_pet;
+mod desktop_pet_hd;
 mod desktop_assistant;
 mod git_workspace;
 mod handover_store;
@@ -1686,6 +1687,9 @@ pub fn run() {
         .on_window_event(desktop_pet::handle_window_event);
     let invoke: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
             desktop_pet::desktop_pet_catalog,
+            desktop_pet::desktop_pet_download_hd,
+            desktop_pet::desktop_pet_movie,
+            desktop_pet::desktop_pet_set_scale,
             desktop_pet::desktop_pet_import,
             desktop_pet::desktop_pet_select,
             desktop_pet::desktop_pet_asset,

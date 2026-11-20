@@ -11,8 +11,11 @@ export function PetSettings() {
   const [catalog, setCatalog] = useState<DesktopPetCatalog>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [downloading, setDownloading] = useState(false)
+  const [size, setSize] = useState<number>()
   const selected = catalog?.pets.find(pet => token(pet.key) === token(catalog.selected))
   const preview = usePetImage(selected?.key)
+  const percent = size ?? catalog?.scalePercent ?? 100
 
   const refresh = async () => { setCatalog(await runtime.desktopPetCatalog()) }
   async function run(action: () => Promise<unknown>) {
@@ -27,6 +30,11 @@ export function PetSettings() {
     if (!key) return
     await runtime.desktopPetSelect(key)
     await runtime.desktopPetVisibility(true)
+  }
+  async function downloadHd() {
+    setDownloading(true)
+    try { await run(runtime.desktopPetDownloadHd) }
+    finally { setDownloading(false) }
   }
   useEffect(() => { void run(async () => {}) }, [])
   useEffect(() => {
@@ -59,7 +67,20 @@ export function PetSettings() {
         <button type="button" disabled={busy || (!selected && !catalog?.visible)}
           onClick={() => void run(() => runtime.desktopPetVisibility(!catalog?.visible))}>{catalog?.visible ? '隐藏桌面宠物' : '显示桌面宠物'}</button>
       </div>
-      <p>本机 Codex 宠物会自动列出。散图按文件名排序，作为待机动画播放。</p>
+      {catalog?.pets.some(pet => pet.key.source === 'builtin' && pet.key.directory === 'dafeiyu') && (
+        <div className="desktop-pet-setting-actions">
+          {catalog.hdReady ? <span>大肥鱼原画素材已下载</span> :
+            <button type="button" disabled={busy} onClick={() => void downloadHd()}>{downloading ? '正在从 GitHub 下载…' : '下载大肥鱼原画（约 139 MiB）'}</button>}
+        </div>
+      )}
+      <div className="desktop-pet-scale">
+        <label>桌面宠物大小 <output>{percent}%</output>
+          <input aria-label="桌面宠物大小" type="range" min={20} max={200} value={percent}
+            onChange={event => setSize(event.currentTarget.valueAsNumber)} disabled={!catalog || busy} />
+        </label>
+        <button type="button" disabled={!catalog || busy || percent === catalog.scalePercent}
+          onClick={() => void run(async () => { await runtime.desktopPetSetScale(percent); setSize(undefined) })}>应用大小</button>
+      </div>
     </>}
     {(error || preview.error) && <p role="alert">{error || preview.error}</p>}
   </div>

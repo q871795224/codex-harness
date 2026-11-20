@@ -6,4 +6,4 @@
 - DeepSeek 女仆鲸鱼娘设计由 [ZipZipPipe](https://space.bilibili.com/4168597) 创作。这是社区二创形象。
 - 动画由 [PC2005-cloud/dsh-pet 社区](https://github.com/PC2005-cloud/dsh-pet) 制作。[所用版本和素材授权](https://github.com/PC2005-cloud/dsh-pet/tree/fb38ce620576f5ed3735a99536d2b1a4a9eb313f#许可)
 
-Harness 将上述原始透明动画裁切、缩放并转为 WebP。待机动作保留原片段时长，按 15 fps 播放。精灵图从上游的呼吸、移动、点击回应和工作状态动画中抽帧编成。
+随应用提供的精灵图从上游的呼吸、移动、点击回应和工作状态动画中抽帧编成。可选视频来自上游直接发布的 [macOS 透明 MOV 素材](https://github.com/PC2005-cloud/dsh-pet/releases/tag/assets-mov)。Harness 保留该视频包的分辨率、帧率和播放时长。
