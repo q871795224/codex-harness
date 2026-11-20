@@ -1,5 +1,5 @@
 export interface PetKey {
-  source: 'codex' | 'harness'
+  source: 'builtin' | 'codex' | 'harness'
   directory: string
 }
 

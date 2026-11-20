@@ -39,7 +39,7 @@ export function PetSettings() {
   }, [])
 
   return <div className="settings-section codex-settings desktop-pet-settings">
-    <div className="settings-section-title"><PawPrint size={17} /><div><h3>桌面宠物</h3><p>显示在应用上方，点击宠物打开助理，点击铃铛查看待关注事项。</p></div></div>
+    <div className="settings-section-title"><PawPrint size={17} /><div><h3>桌面宠物</h3><p>显示在应用上方，单击宠物打开助理，右键菜单可查看通知。</p></div></div>
     {catalog?.supported === false ? <p>桌面宠物当前支持 macOS。</p> : <>
       <div className="desktop-pet-setting-picker">
         <label>选择宠物 <select disabled={busy || !catalog?.pets.length} value={token(selected?.key ?? null)} onChange={event => {
@@ -48,7 +48,7 @@ export function PetSettings() {
         }}>
           <option value="" disabled>{catalog?.pets.length ? '选择宠物' : '暂无宠物'}</option>
           {catalog?.pets.map(pet => <option key={token(pet.key)} value={token(pet.key)}>{pet.name} · {
-            pet.version === 0 ? '图片' : `Codex v${pet.version}`}{pet.key.source === 'codex' ? ' · Codex 本机' : ''}</option>)}
+            pet.key.source === 'builtin' ? '内置' : pet.version === 0 ? '图片' : `Codex v${pet.version}`}{pet.key.source === 'codex' ? ' · Codex 本机' : ''}</option>)}
         </select></label>
         {selected && preview.url && <div className="desktop-pet-setting-preview"><PetSprite pet={selected} url={preview.url} /></div>}
       </div>

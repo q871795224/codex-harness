@@ -14,6 +14,7 @@ use crate::AppState;
 
 pub(crate) const LABEL: &str = "desktop-pet";
 const SELECTED: &str = "desktopPet.selected";
+const DEFAULT_PET: &str = "dafeiyu";
 const VISIBLE: &str = "desktopPet.visible";
 #[cfg(target_os = "macos")]
 const POSITION: &str = "desktopPet.position";
@@ -29,11 +30,12 @@ const COLUMNS: u32 = 8;
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 enum Source {
+    Builtin,
     Codex,
     Harness,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub(crate) struct PetKey {
     source: Source,
     directory: String,
@@ -199,8 +201,19 @@ fn io(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
-fn root(source: Source) -> Result<PathBuf, String> {
+fn root(app: &AppHandle, source: Source) -> Result<PathBuf, String> {
     match source {
+        Source::Builtin => {
+            let bundled = app.path().resource_dir().map(|dir| dir.join("pets"));
+            if cfg!(debug_assertions)
+                && !bundled
+                    .as_ref()
+                    .is_ok_and(|dir| dir.join(DEFAULT_PET).join("pet.json").is_file())
+            {
+                return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pets"));
+            }
+            bundled.map_err(io)
+        }
         Source::Codex => crate::app_server::resolved_codex_home().map(|dir| dir.join("pets")),
         Source::Harness => crate::store::harness_data_dir().map(|dir| dir.join("pets")),
     }
@@ -337,9 +350,9 @@ fn describe(key: PetKey, manifest: Manifest) -> Pet {
     }
 }
 
-fn find(key: &PetKey) -> Result<(Manifest, PathBuf), String> {
+fn find(app: &AppHandle, key: &PetKey) -> Result<(Manifest, PathBuf), String> {
     manifest(
-        &package_directory(&root(key.source)?, &key.directory)?,
+        &package_directory(&root(app, key.source)?, &key.directory)?,
         key.source,
     )
 }
@@ -362,17 +375,26 @@ fn list_at(root: &Path, source: Source) -> Vec<Pet> {
         .collect()
 }
 
-fn selected(state: &AppState) -> Result<Option<PetKey>, String> {
-    Ok(state
-        .store
-        .get_app_state(SELECTED)?
-        .as_deref()
-        .and_then(|stored| serde_json::from_str(stored).ok()))
+fn selected_key(stored: Option<&str>) -> PetKey {
+    stored
+        .and_then(|stored| serde_json::from_str(stored).ok())
+        .unwrap_or_else(|| PetKey {
+            source: Source::Builtin,
+            directory: DEFAULT_PET.into(),
+        })
 }
 
-fn selected_pet(state: &AppState) -> Result<Option<Pet>, String> {
-    Ok(selected(state)?
-        .and_then(|key| find(&key).ok().map(|(manifest, _)| describe(key, manifest))))
+fn selected(state: &AppState) -> Result<PetKey, String> {
+    Ok(selected_key(
+        state.store.get_app_state(SELECTED)?.as_deref(),
+    ))
+}
+
+fn selected_pet(app: &AppHandle, state: &AppState) -> Result<Option<Pet>, String> {
+    let key = selected(state)?;
+    Ok(find(app, &key)
+        .ok()
+        .map(|(manifest, _)| describe(key, manifest)))
 }
 
 fn save_import(
@@ -496,11 +518,12 @@ pub(crate) async fn desktop_pet_catalog(
     state: State<'_, AppState>,
 ) -> Result<Catalog, String> {
     main_only(&window)?;
-    let mut pets = tauri::async_runtime::spawn_blocking(|| {
-        [Source::Codex, Source::Harness]
+    let resources = app.clone();
+    let mut pets = tauri::async_runtime::spawn_blocking(move || {
+        [Source::Builtin, Source::Codex, Source::Harness]
             .into_iter()
             .flat_map(|source| {
-                root(source)
+                root(&resources, source)
                     .map(|root| list_at(&root, source))
                     .unwrap_or_default()
             })
@@ -508,11 +531,15 @@ pub(crate) async fn desktop_pet_catalog(
     })
     .await
     .map_err(io)?;
-    pets.sort_by_cached_key(|pet| pet.name.to_lowercase());
+    pets.sort_by_cached_key(|pet| (pet.key.source != Source::Builtin, pet.name.to_lowercase()));
+    let selected = selected(&state)?;
     Ok(Catalog {
         supported: cfg!(target_os = "macos"),
         visible: is_visible(&app),
-        selected: selected(&state)?,
+        selected: pets
+            .iter()
+            .any(|pet| pet.key == selected)
+            .then_some(selected),
         pets,
     })
 }
@@ -524,8 +551,9 @@ pub(crate) async fn desktop_pet_import(
     frames: Option<Vec<PathBuf>>,
 ) -> Result<PetKey, String> {
     main_only(&window)?;
+    let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let destination = root(Source::Harness)?;
+        let destination = root(&app, Source::Harness)?;
         match (folder, frames) {
             (Some(path), None) => import_folder(&destination, &path),
             (None, Some(paths)) => import_frames(&destination, paths),
@@ -545,8 +573,9 @@ pub(crate) async fn desktop_pet_select(
 ) -> Result<(), String> {
     main_only(&window)?;
     let validate = key.clone();
+    let resources = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let (manifest, image) = find(&validate)?;
+        let (manifest, image) = find(&resources, &validate)?;
         let bytes = asset(&manifest, &image, validate.source)?;
         validate_transparent(reader(&bytes)?.decode().map_err(io)?)?;
         Ok::<_, String>(())
@@ -568,8 +597,9 @@ pub(crate) async fn desktop_pet_asset(
     if !matches!(window.label(), "main" | LABEL) {
         return Err("无权读取宠物资源。".into());
     }
+    let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let directory = package_directory(&root(key.source)?, &key.directory)?;
+        let directory = package_directory(&root(&app, key.source)?, &key.directory)?;
         let (manifest, path) = manifest(&directory, key.source)?;
         let bytes = match animation {
             Some(index) => {
@@ -595,7 +625,7 @@ pub(crate) fn desktop_pet_snapshot(
     pet_only(&window)?;
     Ok(Snapshot {
         visible: window.is_visible().map_err(io)?,
-        pet: selected_pet(&state)?,
+        pet: selected_pet(window.app_handle(), &state)?,
         activity: state.desktop_pet_activity.lock().map_err(io)?.clone(),
     })
 }
@@ -737,7 +767,7 @@ pub(crate) async fn desktop_pet_visibility(
     let should_show =
         visible.unwrap_or(state.store.get_app_state(VISIBLE)?.as_deref() == Some("true"));
     if should_show {
-        if selected_pet(&state)?.is_none() {
+        if selected_pet(&app, &state)?.is_none() {
             if visible.is_none() {
                 return Ok(false);
             }
@@ -878,6 +908,43 @@ mod tests {
         let mut picture = RgbaImage::new(width, height);
         picture.put_pixel(width / 2, height / 2, image::Rgba(color));
         picture.save(path).unwrap();
+    }
+
+    #[test]
+    fn defaults_to_the_builtin_pet_and_preserves_an_existing_selection() {
+        let default = selected_key(None);
+        assert_eq!(default.source, Source::Builtin);
+        assert_eq!(default.directory, "dafeiyu");
+        assert_eq!(
+            selected_key(Some(r#"{"source":"codex","directory":"my-pet"}"#)),
+            PetKey {
+                source: Source::Codex,
+                directory: "my-pet".into()
+            },
+        );
+    }
+
+    #[test]
+    fn bundled_dafeiyu_has_a_transparent_atlas_and_all_idle_actions() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("pets");
+        let pets = list_at(&root, Source::Builtin);
+        let selected = selected_key(None);
+        assert!(pets
+            .iter()
+            .any(|pet| pet.key == selected && pet.name == "大肥鱼"));
+        let directory = package_directory(&root, &selected.directory).unwrap();
+        let (manifest, image) = manifest(&directory, Source::Builtin).unwrap();
+        let sheet = asset(&manifest, &image, Source::Builtin).unwrap();
+        validate_transparent(reader(&sheet).unwrap().decode().unwrap()).unwrap();
+        assert_eq!(manifest.idle_animations.len(), 89);
+        assert!(manifest
+            .idle_animations
+            .iter()
+            .any(|clip| clip.path.ends_with("舞狮头.webp")));
+        for clip in &manifest.idle_animations {
+            idle_animation(&directory, clip)
+                .unwrap_or_else(|error| panic!("{:?}: {error}", clip.path));
+        }
     }
 
     #[test]
