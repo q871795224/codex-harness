@@ -943,7 +943,9 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
       />
       <main className="main-pane">
         {notificationsOpen && <NotificationCenter store={notifications} currentThreadId={harness.selectedThreadId} selectedId={selectedNotificationId}
-          onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
+          reminderThread={petVisible && harness.currentThread && harness.viewMode === 'active' ? {
+            id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd,
+          } : undefined} onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
         <div className="notification-conversation" hidden={notificationsOpen}>
         <OperationFeedback store={notifications} threadId={harness.selectedThreadId} />
         {superbotConversation && harness.selectedThreadId ? <SuperbotView
