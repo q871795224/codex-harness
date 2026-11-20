@@ -122,6 +122,42 @@ pub(crate) struct Snapshot {
     activity: Activity,
 }
 
+#[derive(Clone, Copy, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Layout {
+    #[default]
+    Original,
+    DafeiyuStill,
+    DafeiyuVideo,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+struct LayoutSize {
+    width: f64,
+    height: f64,
+}
+
+fn layout_size(layout: Layout) -> LayoutSize {
+    #[derive(Deserialize)]
+    struct DafeiyuLayouts {
+        still: LayoutSize,
+        video: LayoutSize,
+    }
+    static DAFEIYU: std::sync::OnceLock<DafeiyuLayouts> = std::sync::OnceLock::new();
+    let sizes = DAFEIYU.get_or_init(|| {
+        serde_json::from_str(include_str!("../pets/dafeiyu/layout.json"))
+            .expect("invalid Dafeiyu layout")
+    });
+    match layout {
+        Layout::Original => LayoutSize {
+            width: 135.0,
+            height: 145.0,
+        },
+        Layout::DafeiyuStill => sizes.still,
+        Layout::DafeiyuVideo => sizes.video,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub(crate) struct HitBounds {
     x: f64,
@@ -165,6 +201,7 @@ pub(crate) fn allows_command(command: &str) -> bool {
             | "desktop_pet_menu"
             | "desktop_pet_drag"
             | "desktop_pet_set_hit_bounds"
+            | "desktop_pet_set_layout"
             | "desktop_pet_visibility"
     )
 }
@@ -431,9 +468,10 @@ fn scale_percent(state: &AppState) -> u16 {
         .unwrap_or(100)
 }
 
-fn window_size(percent: u16) -> tauri::LogicalSize<f64> {
+fn window_size(percent: u16, layout: Layout) -> tauri::LogicalSize<f64> {
     let scale = f64::from(percent) / 100.0;
-    tauri::LogicalSize::new(135.0 * scale, 145.0 * scale)
+    let size = layout_size(layout);
+    tauri::LogicalSize::new((size.width * scale).ceil(), (size.height * scale).ceil())
 }
 
 fn hd_ready() -> bool {
@@ -649,7 +687,11 @@ pub(crate) async fn desktop_pet_set_scale(
     if let Some(pet) = app.get_webview_window(LABEL) {
         #[cfg(target_os = "macos")]
         let position = pet.outer_position().ok();
-        pet.set_size(window_size(percent)).map_err(io)?;
+        pet.set_size(window_size(
+            percent,
+            *state.desktop_pet_layout.lock().map_err(io)?,
+        ))
+        .map_err(io)?;
         #[cfg(target_os = "macos")]
         if let Some(point) =
             position.and_then(|point| window_position(&pet, Some((point.x, point.y))))
@@ -880,6 +922,32 @@ pub(crate) async fn desktop_pet_set_hit_bounds(
     Ok(())
 }
 
+#[tauri::command]
+pub(crate) async fn desktop_pet_set_layout(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    layout: Layout,
+) -> Result<(), String> {
+    pet_only(&window)?;
+    let key = selected(&state)?;
+    if layout != Layout::Original && (key.source != Source::Builtin || key.directory != DEFAULT_PET)
+    {
+        return Err("固定布局仅适用于内置大肥鱼。".into());
+    }
+    let _window = state.desktop_pet_window.lock().await;
+    if *state.desktop_pet_layout.lock().map_err(io)? == layout {
+        return Ok(());
+    }
+    let position = window.outer_position().map_err(io)?;
+    window
+        .set_size(window_size(scale_percent(&state), layout))
+        .map_err(io)?;
+    window.set_position(position).map_err(io)?;
+    window.set_ignore_cursor_events(false).map_err(io)?;
+    *state.desktop_pet_layout.lock().map_err(io)? = layout;
+    Ok(())
+}
+
 // AppKit screen points use one coordinate space across mixed-DPI monitors.
 // Poll globally: an ignored window cannot receive pointer-enter events to re-enable itself.
 #[cfg(target_os = "macos")]
@@ -911,12 +979,15 @@ fn track_hit_bounds(window: WebviewWindow) {
                             let pointer = NSEvent::mouseLocation();
                             let bounds =
                                 *pet.state::<AppState>().desktop_pet_hit_bounds.lock().ok()?;
-                            let inside = bounds.is_some_and(|bounds| {
-                                bounds.contains(
-                                    (pointer.x - frame.origin.x) / frame.size.width,
-                                    1.0 - (pointer.y - frame.origin.y) / frame.size.height,
-                                )
-                            });
+                            let fixed = *pet.state::<AppState>().desktop_pet_layout.lock().ok()?
+                                != Layout::Original;
+                            let inside = fixed
+                                || bounds.is_some_and(|bounds| {
+                                    bounds.contains(
+                                        (pointer.x - frame.origin.x) / frame.size.width,
+                                        1.0 - (pointer.y - frame.origin.y) / frame.size.height,
+                                    )
+                                });
                             let next = !inside;
                             if next != ignored {
                                 native.setIgnoresMouseEvents(next);
@@ -1046,7 +1117,17 @@ fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(LABEL) {
         return window.show().map_err(io);
     }
-    let size = window_size(scale_percent(state));
+    let key = selected(state)?;
+    let layout = if key.source == Source::Builtin && key.directory == DEFAULT_PET {
+        if hd_ready() {
+            Layout::DafeiyuVideo
+        } else {
+            Layout::DafeiyuStill
+        }
+    } else {
+        Layout::Original
+    };
+    let size = window_size(scale_percent(state), layout);
     let window = tauri::WebviewWindowBuilder::new(
         app,
         LABEL,
@@ -1066,7 +1147,10 @@ fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
     .build()
     .map_err(io)?;
     *state.desktop_pet_hit_bounds.lock().map_err(io)? = None;
-    window.set_ignore_cursor_events(true).map_err(io)?;
+    *state.desktop_pet_layout.lock().map_err(io)? = layout;
+    window
+        .set_ignore_cursor_events(layout == Layout::Original)
+        .map_err(io)?;
     track_hit_bounds(window.clone());
     window.on_menu_event(|window, event| {
         let app = window.app_handle().clone();
@@ -1153,6 +1237,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dafeiyu_uses_fixed_compact_native_windows() {
+        assert_eq!(
+            window_size(100, Layout::DafeiyuStill),
+            tauri::LogicalSize::new(72.0, 90.0)
+        );
+        assert_eq!(
+            window_size(100, Layout::DafeiyuVideo),
+            tauri::LogicalSize::new(48.0, 54.0)
+        );
+        assert_eq!(
+            window_size(400, Layout::DafeiyuVideo),
+            tauri::LogicalSize::new(192.0, 216.0)
+        );
+        assert_eq!(
+            window_size(20, Layout::DafeiyuVideo),
+            tauri::LogicalSize::new(10.0, 11.0)
+        );
+        assert_eq!(
+            window_size(100, Layout::Original),
+            tauri::LogicalSize::new(135.0, 145.0)
+        );
+    }
+
+    #[test]
     fn hit_bounds_exclude_the_canvas_padding_at_every_window_scale() {
         let bounds = HitBounds {
             x: 0.3,
@@ -1162,7 +1270,7 @@ mod tests {
         };
         assert!(bounds.valid());
         for percent in [20, 100, 400] {
-            let size = window_size(percent);
+            let size = window_size(percent, Layout::Original);
             let contains = |x: f64, y: f64| bounds.contains(x / size.width, y / size.height);
             assert!(contains(size.width * 0.5, size.height * 0.5));
             assert!(!contains(size.width * 0.9, size.height * 0.1));

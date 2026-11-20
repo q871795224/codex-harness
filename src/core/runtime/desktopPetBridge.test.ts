@@ -38,3 +38,8 @@ it('publishes the same normalized bounds used by the character button, including
   await runtime.desktopPetSetHitBounds(null)
   expect(invoke).toHaveBeenLastCalledWith('desktop_pet_set_hit_bounds', { bounds: null })
 })
+
+it('selects the fixed Dafeiyu native window profile', async () => {
+  await runtime.desktopPetSetLayout('dafeiyu-video')
+  expect(invoke).toHaveBeenLastCalledWith('desktop_pet_set_layout', { layout: 'dafeiyu-video' })
+})

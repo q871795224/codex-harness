@@ -6,6 +6,7 @@ import { PetSprite, usePetImage, useReducedMotion } from './PetSprite'
 import { useIdleAnimation } from './useIdleAnimation'
 import { DafeiyuVideo } from './DafeiyuVideo'
 import { usePetBounds } from './usePetBounds'
+import { dafeiyuArtwork, dafeiyuLayer, petLayout } from './dafeiyuLayout'
 import './desktopPet.css'
 
 const labels: Record<DesktopPetActivity['status'], string> = {
@@ -26,9 +27,12 @@ export default function PetWindow() {
   const pet = snapshot?.pet
   const activity = snapshot?.activity
   const { url, error } = usePetImage(pet?.key)
-  const { artwork, bounds } = usePetBounds(url)
   const hdCount = snapshot?.hdMovieCount ?? 0
   const reducedMotion = useReducedMotion()
+  const hd = hdCount > 0 && !reducedMotion
+  const layout = petLayout(pet?.key, hd)
+  const dafeiyu = layout !== 'original'
+  const { artwork, bounds } = usePetBounds(url, Boolean(pet) && !dafeiyu)
   const idleAnimation = useIdleAnimation(pet, Boolean(
     snapshot?.visible && activity?.status === 'idle' && url && !reducedMotion,
   ))
@@ -54,8 +58,11 @@ export default function PetWindow() {
   const handle = (action: Promise<unknown>) => { void action.catch(reason => setLoadError(String(reason))) }
 
   useEffect(() => {
-    handle(runtime.desktopPetSetHitBounds(bounds))
-  }, [bounds])
+    if (snapshot && !dafeiyu) handle(runtime.desktopPetSetHitBounds(bounds))
+  }, [bounds, dafeiyu, Boolean(snapshot)])
+  useEffect(() => {
+    if (snapshot) handle(runtime.desktopPetSetLayout(layout))
+  }, [layout, Boolean(snapshot)])
 
   function beginPress(event: PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || press.current) return
@@ -87,16 +94,22 @@ export default function PetWindow() {
     if (press.current?.id === event.pointerId) cancelPress()
   }
 
-  return <main className="desktop-pet" data-status={activity?.status ?? 'idle'}>
+  const still = idleAnimation
+    ? <img className="desktop-pet-idle-animation" src={idleAnimation} alt="" draggable={false} />
+    : pet && url ? <PetSprite pet={pet} url={url} status={activity?.status} direction={direction} /> : <PawPrint size={38} />
+  return <main className="desktop-pet" data-status={activity?.status ?? 'idle'} data-layout={layout}>
+    {dafeiyu ? <>
+      <div className="desktop-pet-dafeiyu-layer" style={dafeiyuLayer(false)}>
+        <div className="desktop-pet-artwork" style={dafeiyuArtwork(false)}>{still}</div>
+      </div>
+      {hd && snapshot?.visible && <div className="desktop-pet-dafeiyu-layer desktop-pet-movie-layer" style={dafeiyuLayer(true)}>
+        <div className="desktop-pet-artwork" style={dafeiyuArtwork(true)}><DafeiyuVideo status={activity?.status ?? 'idle'} idleCount={hdCount} /></div>
+      </div>}
+    </> :
     <div className="desktop-pet-artwork" ref={artwork}>
-      {idleAnimation
-        ? <img className="desktop-pet-idle-animation" src={idleAnimation} alt="" draggable={false} />
-        : pet && url ? <PetSprite pet={pet} url={url} status={activity?.status} direction={direction} /> : <PawPrint size={38} />}
-      {hdCount > 0 && snapshot?.visible && !reducedMotion && (
-        <DafeiyuVideo status={activity?.status ?? 'idle'} idleCount={hdCount} />
-      )}
-    </div>
-    <button className="desktop-pet-character" type="button" aria-label="打开 Harness 助理" style={bounds ? {
+      {still}
+    </div>}
+    <button className="desktop-pet-character" type="button" aria-label="打开 Harness 助理" style={dafeiyu ? { inset: 0, width: '100%', height: '100%' } : bounds ? {
       left: `${bounds.x * 100}%`, top: `${bounds.y * 100}%`,
       width: `${bounds.width * 100}%`, height: `${bounds.height * 100}%`,
     } : { visibility: 'hidden' }}

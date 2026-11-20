@@ -4,10 +4,11 @@ import { placeBounds, visibleBounds } from './visibleBounds'
 
 // Sample the displayed frame, including letterboxing, rather than the asset's canvas.
 // The artwork keeps its original size so wide animations are never clipped.
-export function usePetBounds(url?: string) {
+export function usePetBounds(url?: string, enabled = true) {
   const artwork = useRef<HTMLDivElement>(null)
   const [bounds, setBounds] = useState<DesktopPetHitBounds | null>(null)
   useEffect(() => {
+    if (!enabled) return
     const sheet = new Image()
     if (url) sheet.src = url
     const canvas = document.createElement('canvas')
@@ -66,6 +67,6 @@ export function usePetBounds(url?: string) {
     measure()
     const timer = window.setInterval(measure, 100)
     return () => window.clearInterval(timer)
-  }, [url])
+  }, [url, enabled])
   return { artwork, bounds }
 }
