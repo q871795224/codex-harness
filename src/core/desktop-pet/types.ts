@@ -49,3 +49,5 @@ export interface DesktopPetHitBounds {
   width: number
   height: number
 }
+
+export type DesktopPetLayout = 'original' | 'dafeiyu-still' | 'dafeiyu-video'

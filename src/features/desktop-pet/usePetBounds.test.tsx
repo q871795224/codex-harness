@@ -1,9 +1,20 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, renderHook, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { usePetBounds } from './usePetBounds'
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+it('does not sample pixels when the fixed Dafeiyu layout is active', () => {
+  vi.useFakeTimers()
+  const image = vi.fn()
+  vi.stubGlobal('Image', image)
+  const context = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+  renderHook(() => usePetBounds('blob:dafeiyu', false))
+  act(() => { vi.advanceTimersByTime(60_000) })
+  expect(image).not.toHaveBeenCalled()
+  expect(context).not.toHaveBeenCalled()
+})
 
 it('follows the visible video frame, including letterboxing, then returns to the sprite', () => {
   vi.useFakeTimers()
