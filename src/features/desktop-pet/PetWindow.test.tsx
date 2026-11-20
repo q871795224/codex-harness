@@ -60,6 +60,7 @@ it('plays a single random idle action each minute and yields to session activity
     static revokeObjectURL = revokeObjectURL
   })
   const idle: DesktopPetSnapshot = {
+    hdMovieCount: 0,
     visible: true,
     pet: {
       key: { source: 'harness', directory: 'fish' },

@@ -31,6 +31,7 @@
         "font-src": "'self' data:",
         "frame-ancestors": "'none'",
         "img-src": "'self' asset: http://asset.localhost blob: data: https: http:",
+        "media-src": "'self' blob:",
         "object-src": "'none'",
         "script-src": "'self' 'unsafe-eval'",
         "style-src": "'self' 'unsafe-inline'"
@@ -42,6 +43,7 @@
         "font-src": "'self' data:",
         "frame-ancestors": "'none'",
         "img-src": "'self' asset: http://asset.localhost blob: data: https: http:",
+        "media-src": "'self' blob:",
         "object-src": "'none'",
         "script-src": "'self' 'unsafe-eval'",
         "style-src": "'self' 'unsafe-inline'"

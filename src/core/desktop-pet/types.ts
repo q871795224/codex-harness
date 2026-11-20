@@ -13,20 +13,25 @@ export interface DesktopPet {
 }
 
 export interface DesktopPetCatalog {
+  hdReady: boolean
+  scalePercent: number
   supported: boolean
   visible: boolean
   selected: PetKey | null
   pets: DesktopPet[]
 }
 
+export type DesktopPetStatus = 'idle' | 'running' | 'waiting' | 'failed' | 'ready'
+
 export interface DesktopPetActivity {
-  status: 'idle' | 'running' | 'waiting' | 'failed' | 'ready'
+  status: DesktopPetStatus
   count: number
   threadId: string | null
   notificationId: string | null
 }
 
 export interface DesktopPetSnapshot {
+  hdMovieCount: number
   visible: boolean
   pet: DesktopPet | null
   activity: DesktopPetActivity

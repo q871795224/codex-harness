@@ -1,5 +1,5 @@
 import type { DesktopAssistantOperations, DesktopAssistantRequest, DesktopAssistantSnapshot } from '../desktop-pet/assistantTypes'
-import type { DesktopPetActivity, DesktopPetCatalog, DesktopPetOpenTarget, DesktopPetSnapshot, PetKey } from '../desktop-pet/types'
+import type { DesktopPetActivity, DesktopPetCatalog, DesktopPetOpenTarget, DesktopPetSnapshot, DesktopPetStatus, PetKey } from '../desktop-pet/types'
 import type { SuperbotRequest } from '../superbot/types'
 import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection, RouterFeedbackPage, DecisionPrompt, DecisionResult } from '../workspace-router/types'
 import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
@@ -342,6 +342,12 @@ export const runtime = {
   },
 
   desktopPetCatalog: () => invoke<DesktopPetCatalog>('desktop_pet_catalog'),
+  desktopPetDownloadHd: () => invoke<void>('desktop_pet_download_hd'),
+  desktopPetSetScale: (percent: number) => invoke<void>('desktop_pet_set_scale', { percent }),
+  async desktopPetMovie(status: DesktopPetStatus, animation: number | null): Promise<ArrayBuffer> {
+    const bytes = await invoke<ArrayBuffer | number[]>('desktop_pet_movie', { status, animation })
+    return bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer
+  },
   desktopPetSelect: (key: PetKey) => invoke<void>('desktop_pet_select', { key }),
   desktopPetSnapshot: () => invoke<DesktopPetSnapshot>('desktop_pet_snapshot'),
   desktopPetPublish: (activity: DesktopPetActivity) => invoke<void>('desktop_pet_publish', { activity }),

@@ -10,11 +10,12 @@ use image::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
-use crate::AppState;
+use crate::{desktop_pet_hd, AppState};
 
 pub(crate) const LABEL: &str = "desktop-pet";
 const SELECTED: &str = "desktopPet.selected";
 const DEFAULT_PET: &str = "dafeiyu";
+const SCALE: &str = "desktopPet.scalePercent";
 const VISIBLE: &str = "desktopPet.visible";
 #[cfg(target_os = "macos")]
 const POSITION: &str = "desktopPet.position";
@@ -81,6 +82,10 @@ pub(crate) struct Pet {
 
 #[derive(Serialize)]
 pub(crate) struct Catalog {
+    #[serde(rename = "hdReady")]
+    hd_ready: bool,
+    #[serde(rename = "scalePercent")]
+    scale_percent: u16,
     supported: bool,
     visible: bool,
     selected: Option<PetKey>,
@@ -109,6 +114,8 @@ enum PetStatus {
 
 #[derive(Serialize)]
 pub(crate) struct Snapshot {
+    #[serde(rename = "hdMovieCount")]
+    hd_movie_count: usize,
     visible: bool,
     pet: Option<Pet>,
     activity: Activity,
@@ -125,6 +132,7 @@ pub(crate) fn allows_command(command: &str) -> bool {
     matches!(
         command,
         "desktop_pet_asset"
+            | "desktop_pet_movie"
             | "desktop_pet_snapshot"
             | "desktop_pet_open"
             | "desktop_pet_menu"
@@ -384,6 +392,26 @@ fn selected_key(stored: Option<&str>) -> PetKey {
         })
 }
 
+fn scale_percent(state: &AppState) -> u16 {
+    state
+        .store
+        .get_app_state(SCALE)
+        .ok()
+        .flatten()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| (20..=200).contains(value))
+        .unwrap_or(100)
+}
+
+fn window_size(percent: u16) -> tauri::LogicalSize<f64> {
+    let scale = f64::from(percent) / 100.0;
+    tauri::LogicalSize::new(135.0 * scale, 145.0 * scale)
+}
+
+fn hd_ready() -> bool {
+    desktop_pet_hd::directory().is_ok_and(|dir| desktop_pet_hd::installed(&dir))
+}
+
 fn selected(state: &AppState) -> Result<PetKey, String> {
     Ok(selected_key(
         state.store.get_app_state(SELECTED)?.as_deref(),
@@ -534,6 +562,8 @@ pub(crate) async fn desktop_pet_catalog(
     pets.sort_by_cached_key(|pet| (pet.key.source != Source::Builtin, pet.name.to_lowercase()));
     let selected = selected(&state)?;
     Ok(Catalog {
+        hd_ready: hd_ready(),
+        scale_percent: scale_percent(&state),
         supported: cfg!(target_os = "macos"),
         visible: is_visible(&app),
         selected: pets
@@ -542,6 +572,56 @@ pub(crate) async fn desktop_pet_catalog(
             .then_some(selected),
         pets,
     })
+}
+
+#[tauri::command]
+pub(crate) async fn desktop_pet_download_hd(window: WebviewWindow) -> Result<(), String> {
+    main_only(&window)?;
+    if !cfg!(target_os = "macos") {
+        return Err("大肥鱼原画素材仅支持 macOS。".into());
+    }
+    let _download = desktop_pet_hd::DOWNLOAD
+        .try_lock()
+        .map_err(|_| "大肥鱼素材正在下载。")?;
+    tauri::async_runtime::spawn_blocking(
+        || desktop_pet_hd::download(&desktop_pet_hd::directory()?),
+    )
+    .await
+    .map_err(io)??;
+    changed(window.app_handle())
+}
+
+#[tauri::command]
+pub(crate) async fn desktop_pet_movie(
+    window: WebviewWindow,
+    status: desktop_pet_hd::Status,
+    animation: Option<usize>,
+) -> Result<tauri::ipc::Response, String> {
+    pet_only(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        desktop_pet_hd::read(&desktop_pet_hd::directory()?, status, animation)
+            .map(tauri::ipc::Response::new)
+    })
+    .await
+    .map_err(io)?
+}
+
+#[tauri::command]
+pub(crate) async fn desktop_pet_set_scale(
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    percent: u16,
+) -> Result<(), String> {
+    main_only(&window)?;
+    if !(20..=200).contains(&percent) {
+        return Err("桌面宠物大小需在 20%–200% 之间。".into());
+    }
+    let _window = state.desktop_pet_window.lock().await;
+    if let Some(pet) = app.get_webview_window(LABEL) {
+        pet.set_size(window_size(percent)).map_err(io)?;
+    }
+    state.store.set_app_state(SCALE, &percent.to_string())
 }
 
 #[tauri::command]
@@ -623,9 +703,20 @@ pub(crate) fn desktop_pet_snapshot(
     state: State<'_, AppState>,
 ) -> Result<Snapshot, String> {
     pet_only(&window)?;
+    let pet = selected_pet(window.app_handle(), &state)?;
+    let hd_movie_count = if pet
+        .as_ref()
+        .is_some_and(|pet| pet.key.source == Source::Builtin && pet.key.directory == DEFAULT_PET)
+        && hd_ready()
+    {
+        desktop_pet_hd::count()
+    } else {
+        0
+    };
     Ok(Snapshot {
+        hd_movie_count,
         visible: window.is_visible().map_err(io)?,
-        pet: selected_pet(window.app_handle(), &state)?,
+        pet,
         activity: state.desktop_pet_activity.lock().map_err(io)?.clone(),
     })
 }
@@ -803,13 +894,14 @@ fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(LABEL) {
         return window.show().map_err(io);
     }
+    let size = window_size(scale_percent(state));
     let window = tauri::WebviewWindowBuilder::new(
         app,
         LABEL,
         tauri::WebviewUrl::App("index.html?desktop-pet".into()),
     )
     .title("Harness 宠物")
-    .inner_size(135.0, 145.0)
+    .inner_size(size.width, size.height)
     .decorations(false)
     .resizable(false)
     .transparent(true)
@@ -925,7 +1017,7 @@ mod tests {
     }
 
     #[test]
-    fn bundled_dafeiyu_has_a_transparent_atlas_and_all_idle_actions() {
+    fn bundled_dafeiyu_has_a_transparent_fallback_atlas() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("pets");
         let pets = list_at(&root, Source::Builtin);
         let selected = selected_key(None);
@@ -936,15 +1028,7 @@ mod tests {
         let (manifest, image) = manifest(&directory, Source::Builtin).unwrap();
         let sheet = asset(&manifest, &image, Source::Builtin).unwrap();
         validate_transparent(reader(&sheet).unwrap().decode().unwrap()).unwrap();
-        assert_eq!(manifest.idle_animations.len(), 89);
-        assert!(manifest
-            .idle_animations
-            .iter()
-            .any(|clip| clip.path.ends_with("舞狮头.webp")));
-        for clip in &manifest.idle_animations {
-            idle_animation(&directory, clip)
-                .unwrap_or_else(|error| panic!("{:?}: {error}", clip.path));
-        }
+        assert!(manifest.idle_animations.is_empty());
     }
 
     #[test]
