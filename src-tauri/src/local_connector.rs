@@ -71,6 +71,23 @@ struct MessageListResponse {
     messages: Vec<ConnectorMessageDto>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationTitlePage {
+    thread_id: String,
+    anchor_message_id: String,
+    messages: Vec<ConversationTitleMessage>,
+    cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationTitleMessage {
+    message_id: String,
+    #[serde(default)]
+    text: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ConnectorMessageDto {
@@ -197,6 +214,70 @@ impl LocalConnector {
         self.harness_remote_at("http://127.0.0.1:8787", action, input).await
     }
 
+    pub async fn seatalk_title_context(&self, reference: &str) -> Result<String, String> {
+        self.seatalk_title_context_at("http://127.0.0.1:8787", reference).await
+    }
+
+    async fn seatalk_title_context_at(&self, base_url: &str, reference: &str) -> Result<String, String> {
+        if reference.len() > 4096 || !reference.starts_with("seatalk://conversation?")
+            || reference.chars().any(char::is_control) {
+            return Err("SeaTalk 消息引用无效".into());
+        }
+        tokio::time::timeout(Duration::from_secs(8), async {
+            let mut page = self.title_conversation_page(base_url, reference, None, None, 100).await?;
+            let anchor = page.anchor_message_id.clone();
+            // A clicked reply can fall outside the first page. Locate its actual
+            // predecessor, then read from that cursor without inventing message IDs.
+            if !page.messages.iter().any(|message| message.message_id == anchor) {
+                let preceding = self.title_conversation_page(base_url, reference, Some(&anchor), None, 1).await?;
+                let cursor = preceding.cursor.ok_or("未取得 SeaTalk 引用消息")?;
+                let selected = self.title_conversation_page(base_url, reference, None, Some(&cursor), 1).await?;
+                page.messages.extend(selected.messages);
+            }
+            if !page.messages.iter().any(|message| message.message_id == anchor) {
+                return Err("未取得 SeaTalk 引用消息".into());
+            }
+            let mut selected = Vec::new();
+            for id in [&page.thread_id, &anchor] {
+                if let Some(message) = page.messages.iter().find(|message| &message.message_id == id) {
+                    if !selected.iter().any(|m: &&ConversationTitleMessage| m.message_id == message.message_id) {
+                        selected.push(message);
+                    }
+                }
+            }
+            for message in &page.messages {
+                if selected.len() >= 6 { break; }
+                if !selected.iter().any(|m| m.message_id == message.message_id) { selected.push(message); }
+            }
+            let budget = 4000 / selected.len().max(1);
+            let text = selected.into_iter().filter(|message| !message.text.trim().is_empty()).map(|message| {
+                let label = if message.message_id == anchor { "选中消息" }
+                    else if message.message_id == page.thread_id { "主消息" } else { "分支消息" };
+                format!("{label}：{}", truncate(message.text.trim(), budget.saturating_sub(10)))
+            }).collect::<Vec<_>>().join("\n");
+            if text.is_empty() { return Err("SeaTalk 消息没有可用文字正文".into()); }
+            Ok(truncate(&text, 4000))
+        }).await.map_err(|_| "读取 SeaTalk 标题上下文超时".to_string())?
+    }
+
+    async fn title_conversation_page(&self, base_url: &str, reference: &str, before: Option<&str>, after: Option<&str>, limit: u16) -> Result<ConversationTitlePage, String> {
+        let mut url = endpoint(base_url, "local/conversations/messages")?;
+        url.query_pairs_mut().append_pair("ref", reference).append_pair("limit", &limit.to_string());
+        if let Some(cursor) = before { url.query_pairs_mut().append_pair("before", cursor); }
+        if let Some(cursor) = after { url.query_pairs_mut().append_pair("after", cursor); }
+        let mut response = self.client.get(url).send().await.map_err(|_| "无法读取 SeaTalk 引用".to_string())?;
+        // Do not surface upstream errors, which can echo message bodies or credentials.
+        if !response.status().is_success() { return Err("SeaTalk 引用读取失败".into()); }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| "SeaTalk 引用回包无效".to_string())? {
+            if bytes.len() + chunk.len() > 1024 * 1024 { return Err("SeaTalk 引用回包过大".into()); }
+            bytes.extend_from_slice(&chunk);
+        }
+        let value: Value = serde_json::from_slice(&bytes).map_err(|_| "SeaTalk 引用回包无效".to_string())?;
+        if value.get("ok").and_then(Value::as_bool) != Some(true) { return Err("SeaTalk 引用读取失败".into()); }
+        serde_json::from_value(value.get("data").cloned().unwrap_or(Value::Null)).map_err(|_| "SeaTalk 引用缺少消息正文".to_string())
+    }
+
     async fn harness_remote_at(&self, base_url: &str, action: &str, input: Value) -> Result<Value, String> {
         if !matches!(action, "status" | "bindings" | "messages" | "send" | "claim" | "finish") {
             return Err("不支持的 SeaTalk 会话操作".into());
@@ -319,6 +400,69 @@ fn truncate(value: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TITLE_REFERENCE: &str = "seatalk://conversation?v=1&owner_id=11&target_type=group&target_id=123&root_message_id=0000000000000001&message_id=0000000000000004";
+
+    #[tokio::test]
+    async fn title_context_reads_only_the_reference_and_locates_a_paged_anchor() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            let root = "0000000000000001";
+            let anchor = "0000000000000004";
+            let pages = [
+                serde_json::json!({"threadId":root,"anchorMessageId":anchor,"messages":[{"messageId":root,"text":"主消息正文"},{"messageId":"0000000000000002","text":"回复"}],"cursor":"0000000000000002"}),
+                serde_json::json!({"threadId":root,"anchorMessageId":anchor,"messages":[{"messageId":"0000000000000003","text":"之前的回复"}],"cursor":"0000000000000003"}),
+                serde_json::json!({"threadId":root,"anchorMessageId":anchor,"messages":[{"messageId":anchor,"text":"选中问题正文"}],"cursor":anchor}),
+            ];
+            for (index, data) in pages.into_iter().enumerate() {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 8192];
+                let count = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..count]);
+                assert!(request.starts_with("GET /local/conversations/messages?"));
+                let url = Url::parse(&format!("http://127.0.0.1{}", request.split_whitespace().nth(1).unwrap())).unwrap();
+                let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+                assert_eq!(query["ref"], TITLE_REFERENCE);
+                assert!(!query.contains_key("files"));
+                assert!(!query.contains_key("context"));
+                match index {
+                    0 => assert_eq!(query["limit"], "100"),
+                    1 => assert_eq!(query["before"], anchor),
+                    _ => assert_eq!(query["after"], "0000000000000003"),
+                }
+                let body = serde_json::json!({"ok":true,"data":data}).to_string();
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            }
+        });
+        let text = LocalConnector::new().seatalk_title_context_at(&base, TITLE_REFERENCE).await.unwrap();
+        assert!(text.contains("主消息：主消息正文"));
+        assert!(text.contains("选中消息：选中问题正文"));
+        assert!(!text.contains("owner_id"));
+        assert!(text.chars().count() <= 4000);
+        worker.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn title_context_rejects_non_references_and_does_not_echo_upstream_bodies() {
+        use std::io::{Read, Write};
+        let connector = LocalConnector::new();
+        assert!(connector.seatalk_title_context("https://example.com/private").await.is_err());
+        assert!(connector.seatalk_title_context("seatalk://conversation?v=1\nprivate").await.is_err());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 8192];
+            let _ = stream.read(&mut request).unwrap();
+            let body = "private message / secret credential";
+            write!(stream, "HTTP/1.1 409 Conflict\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+        });
+        let error = connector.seatalk_title_context_at(&base, TITLE_REFERENCE).await.unwrap_err();
+        assert_eq!(error, "SeaTalk 引用读取失败");
+        worker.join().unwrap();
+    }
 
     #[tokio::test]
     async fn harness_remote_restricts_actions_and_preserves_the_transport_contract() {

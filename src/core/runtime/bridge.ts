@@ -744,6 +744,9 @@ export const runtime = {
     return invoke('send_question_notification', { baseUrl, account, targetId, input })
   },
 
+  seatalkTitleContext(reference: string): Promise<string> {
+    return invoke<string>('seatalk_title_context', { reference })
+  },
   seatalkRemoteCall<T>(action: 'status' | 'bindings' | 'messages' | 'send' | 'claim' | 'finish', input: Record<string, unknown> = {}): Promise<T> {
     return invoke<T>('seatalk_remote_call', { action, input })
   },
