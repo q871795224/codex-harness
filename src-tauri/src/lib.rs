@@ -316,6 +316,11 @@ struct ClientDiagnostic {
 }
 
 #[tauri::command]
+async fn seatalk_title_context(state: State<'_, AppState>, reference: String) -> Result<String, String> {
+    state.local_connector.seatalk_title_context(&reference).await
+}
+
+#[tauri::command]
 async fn seatalk_remote_call(state: State<'_, AppState>, action: String, input: Value) -> Result<Value, String> {
     state.local_connector.harness_remote(&action, input).await
 }
@@ -1818,6 +1823,7 @@ pub fn run() {
             send_question_notification,
             pending_user_input,
             seatalk_remote_call,
+            seatalk_title_context,
             local_connector_health,
             local_connector_list_messages,
             local_connector_send_message,

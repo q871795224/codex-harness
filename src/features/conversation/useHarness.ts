@@ -109,6 +109,7 @@ import { prependOlderTurns } from './threadHistory'
 import { createProjectDocService } from '../../core/project-docs/service'
 import { finishProjectTitle, projectTitleInstructions, readTitleProject } from './projectTitle'
 import { reduceTitleGeneratorEvent, type TitleGeneratorState } from './titleGenerator'
+import { titleMessageContext } from './titleMessageContext'
 import {
   recapHistoryText,
   recapPrompt,
@@ -1350,6 +1351,8 @@ export function useHarness() {
     let generatorThreadId: string | null = null
     let stage = 'thread/start'
     try {
+      const source = await titleMessageContext(userText, reference => runtime.seatalkTitleContext(reference))
+      const titlePrompt = threadTitlePrompt(source.userText, project, source.messageContext)!
       const response: StartThreadResponse = await appServer.startThread({
         cwd,
         runtimeWorkspaceRoots: [cwd],
@@ -1387,7 +1390,7 @@ export function useHarness() {
       await appServer.startTurn({
         threadId: response.thread.id,
         clientUserMessageId: newClientId(),
-        input: [textInput(prompt)],
+        input: [textInput(titlePrompt)],
         cwd,
         runtimeWorkspaceRoots: [cwd],
         approvalPolicy: 'never',

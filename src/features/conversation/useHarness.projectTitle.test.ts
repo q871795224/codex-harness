@@ -14,6 +14,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 vi.mock('../../core/runtime/bridge', () => ({
   diagnosticErrorCode: vi.fn(), recordWorkspaceContextDiagnostic: vi.fn(),
   runtime: {
+    seatalkTitleContext: vi.fn(),
     recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
     projectDocThreadBinding: vi.fn(async () => ({ projectId: 'memory', phase: 'locked' as const })),
     projectDocGet: vi.fn(async () => ({ projectId: 'memory', name: 'Harness 记忆系统', shortName: null, currentSeq: 1, createdAt: 1, updatedAt: 1 })),
@@ -64,6 +65,28 @@ beforeEach(() => {
   vi.mocked(appServer.resumeThread).mockImplementation(async (params) => resumeResponse(String(params.threadId)))
 })
 afterEach(cleanup)
+
+it('resolves the reference for naming without waiting for or changing the main agent turn', async () => {
+  const reference = 'seatalk://conversation?v=1&owner_id=11&target_type=group&target_id=123&message_id=0000000000000001'
+  let resolveRead!: (text: string) => void
+  vi.mocked(runtime.seatalkTitleContext).mockReturnValue(new Promise(resolve => { resolveRead = resolve }))
+  vi.mocked(appServer.listThreads).mockImplementation(async () => ({ data: [{ ...thread('active'), name: null }], nextCursor: null }))
+  vi.mocked(appServer.resumeThread).mockResolvedValue({ ...resumeResponse('active'), thread: { ...thread('active'), name: null } })
+  vi.mocked(appServer.startThread).mockResolvedValue(resumeResponse('generator'))
+  vi.mocked(appServer.startTurn).mockResolvedValue({ turn: { id: 'main', status: 'inProgress', items: [], error: null, startedAt: 1, completedAt: null, durationMs: null } })
+  const { result } = await ready()
+  await act(async () => { await result.current.selectThread('active') })
+  const input = [{ type: 'text' as const, text: `${reference}\n帮我看看`, text_elements: [] }]
+  await act(async () => { await result.current.sendMessage(input, 'interject') })
+  await waitFor(() => expect(runtime.seatalkTitleContext).toHaveBeenCalledWith(reference))
+  expect(appServer.startTurn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ threadId: 'active', input }))
+  expect(appServer.startThread).not.toHaveBeenCalled()
+  await act(async () => { resolveRead('主消息：DNS 删除工单失败\n选中消息：CMDB service 已删除') })
+  await waitFor(() => expect(appServer.startThread).toHaveBeenCalledTimes(1))
+  const titleRequest = vi.mocked(appServer.startTurn).mock.calls.find(([request]) => request.turnTrigger === 'thread-title')?.[0]
+  expect(JSON.stringify(titleRequest?.input)).toContain('CMDB service 已删除')
+  expect(JSON.stringify(titleRequest?.input)).toContain('帮我看看')
+})
 
 
 it.each(['codex-thread', 'claude:session'])('generates a project title through the shared background service for %s', async (targetId) => {
