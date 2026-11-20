@@ -9,6 +9,7 @@ import { useHarness, type ThreadSelectionSource } from './useHarness'
 import type { TurnCompletedEvent } from '../../core/conversations/types'
 import { hasUnansweredAsyncInput } from './asyncUserInput'
 import { isClaudeSessionWorking } from '../../core/claude/types'
+import { completedTitleContext, titleNeedsResolvedContext } from './titleGenerator'
 
 export type { ConversationProvider } from '../../core/domain/conversationProvider'
 const SELECTED_CONVERSATION_KEY = 'selectedConversationId'
@@ -86,6 +87,26 @@ export function useUnifiedHarness() {
   const [newThreadProvider, setNewThreadProviderState] = useState<ConversationProvider>('codex')
   const selectedThreadIdRef = useRef<string | null>(null)
   const selectionRequestRef = useRef(0)
+  const [pendingClaudeTitles, setPendingClaudeTitles] = useState<Record<string, { cwd: string; userText: string }>>({})
+
+  useEffect(() => {
+    for (const [sessionId, pending] of Object.entries(pendingClaudeTitles)) {
+      const session = claude.sessions.find(candidate => candidate.id === sessionId)
+      const turn = claude.details[sessionId]?.turns[0]
+      if (!session || (session.title === DEFAULT_CLAUDE_SESSION_TITLE && (!turn || turn.status === 'inProgress'))) continue
+      setPendingClaudeTitles(current => {
+        const next = { ...current }
+        delete next[sessionId]
+        return next
+      })
+      const context = completedTitleContext(turn, claude.details[sessionId]?.items.filter(entry => entry.turnId === turn?.id).map(entry => entry.item))
+      if (session.title === DEFAULT_CLAUDE_SESSION_TITLE && context) {
+        void codex.generateConversationTitle(sessionId, pending.cwd, pending.userText, context)
+          .then(title => title ? claude.applyGeneratedTitle(sessionId, title) : undefined)
+          .catch(() => undefined)
+      }
+    }
+  }, [claude.applyGeneratedTitle, claude.details, claude.sessions, codex.generateConversationTitle, pendingClaudeTitles])
 
   useEffect(() => { selectedThreadIdRef.current = selectedThreadId }, [selectedThreadId])
 
@@ -361,9 +382,14 @@ export function useUnifiedHarness() {
       if (!session || session.archived) throw new Error('目标会话已不可用，草稿已保留')
       await claude.sendMessage(threadId, input, mode)
       if (shouldGenerateTitle && session) {
-        void codex.generateConversationTitle(session.id, session.cwd, titleSource ?? userText)
-          .then((title) => title ? claude.applyGeneratedTitle(session.id, title) : undefined)
-          .catch(() => undefined)
+        const source = titleSource ?? userText
+        if (titleNeedsResolvedContext(source)) {
+          setPendingClaudeTitles(current => ({ ...current, [session.id]: { cwd: session.cwd, userText: source } }))
+        } else {
+          void codex.generateConversationTitle(session.id, session.cwd, source)
+            .then((title) => title ? claude.applyGeneratedTitle(session.id, title) : undefined)
+            .catch(() => undefined)
+        }
       }
       return
     }

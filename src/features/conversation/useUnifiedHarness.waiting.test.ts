@@ -15,6 +15,7 @@ vi.mock('../../core/runtime/bridge', () => ({
   runtime: {
     superbotRequest: vi.fn().mockResolvedValue([]),
     recordClientDiagnostic: vi.fn().mockResolvedValue(undefined),
+    projectDocThreadBinding: vi.fn().mockResolvedValue(null),
     listenClaudeEvents: vi.fn().mockResolvedValue(() => {}),
     listenClaudeTransport: vi.fn().mockResolvedValue(() => {}),
     claudeRuntimeStatus: vi.fn().mockResolvedValue({ available: false }),
@@ -72,6 +73,27 @@ beforeEach(() => {
   vi.mocked(appServer.listThreads).mockImplementation(async (params) => page(params.archived ? 'archived' : 'active'))
 })
 afterEach(cleanup)
+
+it('also waits for resolved message content when a new Claude session receives a SeaTalk reference', async () => {
+  vi.mocked(runtime.listClaudeSessions).mockResolvedValue([{
+    id: 'claude:active', archived: false, providerSessionId: null, title: 'Claude 会话', cwd: '/repo', createdAt: 1, updatedAt: 1,
+  }])
+  vi.mocked(appServer.startThread).mockResolvedValue(resumeResponse('generator'))
+  vi.mocked(appServer.startTurn).mockResolvedValue({ turn: { id: 'title-turn', status: 'inProgress', items: [], error: null, startedAt: 1, completedAt: null, durationMs: null } })
+  const { result } = await ready()
+  const reference = 'seatalk://conversation?v=1&owner_id=11&target_type=group&target_id=123&message_id=0000000000000001'
+  await act(async () => { await result.current.sendMessage([{ type: 'text', text: reference, text_elements: [] }], 'interject', [], undefined, 'claude:active') })
+  expect(appServer.startThread).not.toHaveBeenCalled()
+  const emit = vi.mocked(runtime.listenClaudeEvents).mock.calls.at(-1)![0]
+  const turnId = vi.mocked(runtime.startClaudeTurn).mock.calls.at(-1)![0].turnId
+  await act(async () => {
+    emit({ method: 'message/completed', params: { sessionId: 'claude:active', turnId, itemId: 'answer', text: 'CMDB service 已删除，导致 DNS 删除工单校验失败。' } })
+  })
+  expect(appServer.startThread).not.toHaveBeenCalled()
+  await act(async () => { emit({ method: 'turn/completed', params: { sessionId: 'claude:active', turnId } }) })
+  await waitFor(() => expect(appServer.startTurn).toHaveBeenCalledTimes(1))
+  expect(JSON.stringify(vi.mocked(appServer.startTurn).mock.calls[0][0].input)).toContain('CMDB service 已删除')
+})
 
 describe('waiting indicators', () => {
   it('opens and creates cloud sessions without routing them into Codex or Claude', async () => {

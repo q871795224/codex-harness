@@ -108,7 +108,7 @@ import { archiveThreadsBefore, listThreadPage, type ThreadViewMode } from './thr
 import { prependOlderTurns } from './threadHistory'
 import { createProjectDocService } from '../../core/project-docs/service'
 import { finishProjectTitle, projectTitleInstructions, readTitleProject } from './projectTitle'
-import { reduceTitleGeneratorEvent, type TitleGeneratorState } from './titleGenerator'
+import { completedTitleContext, reduceTitleGeneratorEvent, titleNeedsResolvedContext, type TitleGeneratorState } from './titleGenerator'
 import {
   recapHistoryText,
   recapPrompt,
@@ -188,6 +188,7 @@ export function useHarness() {
   const assistantStartRef = useRef<Promise<string> | null>(null)
   const [threadStates, setThreadStates] = useState<Record<string, ThreadUiState>>({})
   const [details, setDetails] = useState<Record<string, ThreadDetail>>({})
+  const [pendingTitleContexts, setPendingTitleContexts] = useState<Record<string, { userText: string; turnId: string }>>({})
   const [threadTokenUsages, setThreadTokenUsages] = useState<Record<string, ThreadTokenUsage>>({})
   const [threadPlans, setThreadPlans] = useState<Record<string, TurnPlanStep[]>>({})
   const [navigation, setNavigation] = useState<NavigationPreferences>(defaultNavigationPreferences)
@@ -1303,10 +1304,11 @@ export function useHarness() {
     persistBadge(threadId, 'working')
   }, [commitTurnOwnership, persistBadge, setThreadStarting, updateDetail, updateThread])
 
-  const generateConversationTitle = useCallback(async (threadId: string, cwd: string, userText: string): Promise<string | null> => {
+  const generateConversationTitle = useCallback(async (threadId: string, cwd: string, userText: string, resolvedContext?: string): Promise<string | null> => {
+    const trigger = resolvedContext ? 'resolved-conversation' : 'first-user-input'
     const projects = createProjectDocService()
     const project = userText.trim() ? await readTitleProject(projects, threadId).catch(() => null) : null
-    const prompt = threadTitlePrompt(userText, project)
+    const prompt = threadTitlePrompt(userText, project, resolvedContext)
     if (!prompt) {
       recordTitleDiagnostic({
         level: 'info',
@@ -1314,7 +1316,7 @@ export function useHarness() {
         threadId,
         stage: 'preflight',
         reason: 'empty_user_input',
-        trigger: 'first-user-input',
+        trigger,
       })
       return null
     }
@@ -1325,7 +1327,7 @@ export function useHarness() {
         threadId,
         stage: 'preflight',
         reason: generatingTitlesRef.current.has(threadId) ? 'in_flight' : 'already_attempted',
-        trigger: 'first-user-input',
+        trigger,
       })
       return null
     }
@@ -1341,10 +1343,10 @@ export function useHarness() {
       threadId,
       attemptId,
       stage: 'thread/start',
-      trigger: 'first-user-input',
+      trigger,
       model: settings.model,
       effort: settings.effort,
-      sourceChars: userText.length,
+      sourceChars: userText.length + (resolvedContext?.length ?? 0),
     })
 
     let generatorThreadId: string | null = null
@@ -1421,7 +1423,7 @@ export function useHarness() {
         generatorThreadId: generatorThreadId ?? undefined,
         attemptId,
         stage,
-        trigger: 'first-user-input',
+        trigger,
         model: settings.model,
         effort: settings.effort,
         errorCode: diagnosticErrorCode(error),
@@ -1431,7 +1433,7 @@ export function useHarness() {
     }
   }, [])
 
-  const maybeGenerateThreadTitle = useCallback(async (threadId: string, userText: string) => {
+  const maybeGenerateThreadTitle = useCallback(async (threadId: string, userText: string, resolvedContext?: string) => {
     const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
     if (!thread) {
       recordTitleDiagnostic({
@@ -1447,7 +1449,7 @@ export function useHarness() {
       })
       return
     }
-    const title = await generateConversationTitle(threadId, thread.cwd, userText)
+    const title = await generateConversationTitle(threadId, thread.cwd, userText, resolvedContext)
     if (!title) return
     const target = threadsRef.current.find((candidate) => candidate.id === threadId)
     if (!target || target.name?.trim()) return
@@ -1471,6 +1473,21 @@ export function useHarness() {
       })
     }
   }, [generateConversationTitle, updateDetail, updateThread])
+
+  useEffect(() => {
+    for (const [threadId, pending] of Object.entries(pendingTitleContexts)) {
+      const thread = threads.find(candidate => candidate.id === threadId)
+      const turn = details[threadId]?.turns.find(candidate => candidate.id === pending.turnId)
+      if (!thread || (!thread.name?.trim() && (!turn || turn.status === 'inProgress'))) continue
+      setPendingTitleContexts(current => {
+        const next = { ...current }
+        delete next[threadId]
+        return next
+      })
+      const context = completedTitleContext(turn, details[threadId]?.items.filter(entry => entry.turnId === pending.turnId).map(entry => entry.item))
+      if (!thread.name?.trim() && context) void maybeGenerateThreadTitle(threadId, pending.userText, context)
+    }
+  }, [details, maybeGenerateThreadTitle, pendingTitleContexts, threads])
 
   // --- Recap: mirror the Codex CLI's "Conversation recap" state machine. ---
   const RECAP_DELAY_MS = 3 * 60_000
@@ -1896,7 +1913,7 @@ export function useHarness() {
         const routedInput = previousRoute?.status === 'selected' && previousRoute.choice ? [...input, ...relatedWorkspaceInput(previousRoute.choice, previousRoute.candidates)] : input
         const migratedProject = migratedDraftProjectsRef.current.get(startedThreadId)
         const submission = migratedProject ? retargetDraftProjectInput(routedInput, references, migratedProject.projectId, migratedProject.previousThreadId, startedThreadId) : { input: routedInput, references }
-        await startTurn(startedThreadId, null, submission.input, undefined, submission.references, previousRoute?.status === 'selected' ? previousRoute : undefined)
+        const startedTurnId = await startTurn(startedThreadId, null, submission.input, undefined, submission.references, previousRoute?.status === 'selected' ? previousRoute : undefined)
         if (text.trim()) {
           updateThread(startedThreadId, (thread) => withInitialThreadPreview(thread, text))
           updateDetail(startedThreadId, (detail) => ({
@@ -1904,7 +1921,17 @@ export function useHarness() {
             thread: withInitialThreadPreview(detail.thread, text),
           }))
         }
-        if (shouldEvaluateTitle) void maybeGenerateThreadTitle(startedThreadId, titleSource ?? text)
+        if (shouldEvaluateTitle) {
+          const userText = titleSource ?? text
+          if (titleNeedsResolvedContext(userText)) {
+            // State-based scheduling also handles turn/completed arriving before turn/start returns.
+            setPendingTitleContexts(current => ({ ...current, [startedThreadId]: { userText, turnId: startedTurnId } }))
+            recordTitleDiagnostic({ level: 'info', event: 'generation.deferred', threadId: startedThreadId,
+              stage: 'context', reason: 'waiting_for_conversation', trigger: 'first-user-input' })
+          } else {
+            void maybeGenerateThreadTitle(startedThreadId, userText)
+          }
+        }
         return
       }
 

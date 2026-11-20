@@ -1,4 +1,4 @@
-import type { JsonObject, Turn } from '../../core/domain/codex'
+import type { JsonObject, ThreadItem, Turn } from '../../core/domain/codex'
 import { itemText } from '../../core/domain/codex'
 import { parseTitleResult } from './projectTitle'
 import type { ProjectMeta } from '../project-doc/types'
@@ -15,6 +15,18 @@ export interface TitleGeneratorState {
 export type TitleGeneratorEventResult =
   | { kind: 'pending'; state: TitleGeneratorState }
   | { kind: 'completed'; state: TitleGeneratorState; turn: Turn | null; generatedText: string; title: string | null }
+
+export function titleNeedsResolvedContext(userText: string): boolean {
+  return /seatalk:\/\/conversation\?/i.test(userText)
+}
+
+export function completedTitleContext(turn: Turn | undefined, items: ThreadItem[] = turn?.items ?? []): string | null {
+  if (turn?.status !== 'completed') return null
+  const answers = items.filter(item => item.type === 'agentMessage' && item.phase === 'final_answer')
+  const text = (answers.length ? answers : items.filter(item => item.type === 'agentMessage' && item.phase == null).slice(-1))
+    .map(itemText).join('\n').trim()
+  return text ? text.slice(0, 4_000) : null
+}
 
 export function reduceTitleGeneratorEvent(
   state: TitleGeneratorState,
