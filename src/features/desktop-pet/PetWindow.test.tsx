@@ -18,6 +18,7 @@ vi.mock('../../core/runtime/bridge', () => ({
     desktopPetDrag: vi.fn().mockResolvedValue(undefined),
     desktopPetMenu: vi.fn().mockResolvedValue(undefined),
     desktopPetSetHitBounds: vi.fn().mockResolvedValue(undefined),
+    desktopPetSetLayout: vi.fn().mockResolvedValue(undefined),
   },
 }))
 beforeEach(() => {
@@ -58,6 +59,27 @@ it('starts a drag only after a long press and suppresses the trailing click', as
   fireEvent.pointerUp(pet, { pointerId: 1 })
   fireEvent.click(pet, { detail: 1 })
   expect(runtime.desktopPetOpen).not.toHaveBeenCalled()
+})
+
+it('fixes the Dafeiyu window and badge when activity changes without publishing per-frame hit bounds', async () => {
+  const snapshot: DesktopPetSnapshot = {
+    visible: true, hdMovieCount: 0,
+    pet: { key: { source: 'builtin', directory: 'dafeiyu' }, name: '大肥鱼', description: '', version: 1, idleFrames: 6, idleAnimationDurations: [] },
+    activity: { status: 'running', count: 2, threadId: null, notificationId: null },
+  }
+  vi.mocked(runtime.desktopPetSnapshot).mockResolvedValueOnce(snapshot)
+  render(<PetWindow />)
+  await screen.findByLabelText('会话正在运行，2 项')
+  expect(runtime.desktopPetSetLayout).toHaveBeenCalledExactlyOnceWith('dafeiyu-still')
+  expect(runtime.desktopPetSetHitBounds).not.toHaveBeenCalled()
+  const button = screen.getByRole('button', { name: '打开 Harness 助理' })
+  expect(button.style.inset).toBe('0px')
+  expect(button.style.width).toBe('100%')
+  vi.mocked(runtime.desktopPetSnapshot).mockResolvedValueOnce({ ...snapshot, activity: { ...snapshot.activity, status: 'waiting' } })
+  await act(async () => { vi.mocked(runtime.listenDesktopPetChanges).mock.calls[0][0]() })
+  expect(runtime.desktopPetSetLayout).toHaveBeenCalledTimes(1)
+  expect(runtime.desktopPetSetHitBounds).not.toHaveBeenCalled()
+  expect(button.style.inset).toBe('0px')
 })
 
 it('plays a single random idle action each minute and yields to session activity and hiding', async () => {
