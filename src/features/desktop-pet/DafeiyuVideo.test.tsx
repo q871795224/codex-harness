@@ -62,7 +62,27 @@ it('holds the last rendered frame until the next movie is decoded and releases o
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:movie-2')
 })
 
-it('immediately yields to activity, loops that state, and resumes breathing after becoming idle', async () => {
+it.each(['running', 'waiting', 'failed', 'ready'] as const)('plays %s once, then keeps alternating bridges and actions while that status persists', async status => {
+  const { container, rerender } = render(<DafeiyuVideo status={status} idleCount={89} />)
+  const video = () => container.querySelector<HTMLVideoElement>('video:last-child')!
+  const finish = async () => { fireEvent.loadedData(video()); fireEvent.ended(video()); await flush() }
+  await flush()
+  expect(runtime.desktopPetMovie).toHaveBeenCalledExactlyOnceWith(status, null)
+  expect(video().loop).toBe(false)
+  await finish()
+  expect(runtime.desktopPetMovie).toHaveBeenLastCalledWith('idle', null)
+  await finish()
+  expect(runtime.desktopPetMovie).toHaveBeenLastCalledWith('idle', 0)
+  // Publishing the same activity again must not restart the status clip.
+  rerender(<DafeiyuVideo status={status} idleCount={89} />)
+  await finish()
+  expect(runtime.desktopPetMovie).toHaveBeenLastCalledWith('idle', movies.idle.indexOf('哈欠连天.mov'))
+  await finish()
+  expect(runtime.desktopPetMovie).toHaveBeenLastCalledWith('idle', 1)
+  expect(vi.mocked(runtime.desktopPetMovie).mock.calls.filter(([requested]) => requested === status)).toHaveLength(1)
+})
+
+it('immediately yields to a changed activity and resumes breathing after becoming idle', async () => {
   const { container, rerender, unmount } = render(<DafeiyuVideo status="idle" idleCount={1} />)
   await flush()
   fireEvent.loadedData(container.querySelector<HTMLVideoElement>('video')!)
@@ -72,9 +92,8 @@ it('immediately yields to activity, loops that state, and resumes breathing afte
   expect(container.querySelector<HTMLVideoElement>('video')).toBeNull()
   await flush()
   expect(runtime.desktopPetMovie).toHaveBeenLastCalledWith('waiting', null)
-  expect(container.querySelector<HTMLVideoElement>('video')?.loop).toBe(true)
+  expect(container.querySelector<HTMLVideoElement>('video')?.loop).toBe(false)
   const count = vi.mocked(runtime.desktopPetMovie).mock.calls.length
-  fireEvent.ended(container.querySelector<HTMLVideoElement>('video')!)
   await advance(60_000)
   expect(runtime.desktopPetMovie).toHaveBeenCalledTimes(count)
   rerender(<DafeiyuVideo status="idle" idleCount={1} />)
@@ -84,6 +103,14 @@ it('immediately yields to activity, loops that state, and resumes breathing afte
   unmount()
   await advance(60_000)
   expect(runtime.desktopPetMovie).toHaveBeenCalledTimes(count + 1)
+})
+
+it('recovers from an unreadable status clip by continuing the playlist', async () => {
+  vi.mocked(runtime.desktopPetMovie).mockRejectedValueOnce(new Error('missing status'))
+  render(<DafeiyuVideo status="running" idleCount={89} />)
+  await flush()
+  await advance(2000)
+  expect(runtime.desktopPetMovie).toHaveBeenLastCalledWith('idle', null)
 })
 
 it('skips unreadable clips after a bounded delay and cancels retry when activity changes', async () => {
