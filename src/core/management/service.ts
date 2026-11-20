@@ -1,3 +1,4 @@
+import { isDiagnosticNotification } from '../notifications/store'
 import { settingsCatalog, settingsGroup, readSettings, updateSettings } from './settings'
 import { readMessage } from './messages'
 import { pluginSettings, validatePluginPatch } from './pluginSettings'
@@ -181,7 +182,7 @@ export function createManagementHandler(get: () => ManagementContext) {
         const limit = p.limit === undefined ? 50 : number(p.limit, 1, 100, 'limit')
         if (p.unread !== undefined && typeof p.unread !== 'boolean') throw new Error('unread 必须是布尔值')
         const threadId = p.threadId === undefined ? undefined : text(p, 'threadId')
-        const records = state.records.filter(r => (!threadId || r.threadId === threadId) && (!p.unread || !r.read))
+        const records = state.records.filter(r => isDiagnosticNotification(r) && (!threadId || r.threadId === threadId) && (!p.unread || !r.read))
         return { data: records.slice(offset, offset + limit).map(({ details: _details, ...record }) => record), hasMore: offset + limit < records.length, inAppReminderOverlay: false }
       }
       case 'notifications.markRead': {
@@ -190,8 +191,9 @@ export function createManagementHandler(get: () => ManagementContext) {
         if (notifications.snapshot().storageError) throw new Error('通知历史尚未加载')
         const id = p.all === true ? undefined : text(p, 'id')
         if (p.all !== undefined && typeof p.all !== 'boolean') throw new Error('all 必须是布尔值')
-        if (id && !notifications.snapshot().records.some(r => r.id === id)) throw new Error('通知不存在')
-        notifications.markRead(id)
+        if (id && !notifications.snapshot().records.some(r => r.id === id && isDiagnosticNotification(r))) throw new Error('通知不存在')
+        if (id) notifications.markRead(id)
+        else notifications.markDiagnosticsRead()
         await notifications.flushed()
         if (notifications.snapshot().storageError) throw new Error('通知已标记，但保存未确认，请先查询状态')
         return { id: id ?? null, all: !id, read: true, sourceActionsResolved: false }

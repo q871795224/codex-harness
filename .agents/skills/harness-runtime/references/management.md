@@ -51,7 +51,7 @@ Codex默认设置仍用`config read`、`config set model MODEL`、`config set mo
 
 `seatalk status`看远程续聊通道是否reachable/connected及账号信息，`seatalk bindings`列threadId/rootId映射。这两个命令只诊断，不发送消息、不领取手机指令、不回答审批。续聊通道由核心挂载，旧SeaTalk草稿插件启停不代表续聊通道状态。
 
-`notifications list --unread --thread-id THREAD_ID`分页查通知摘要（省略原始details），`notifications read ID`或`notifications read --all`标记已读。已读与源问题/审批是否处理相互独立；这不是批准操作或提交回答的入口。
+`notifications list --unread --thread-id THREAD_ID`分页查通知中心的错误和告警（省略原始 details），`notifications read ID`或`notifications read --all`标记已读。已读与源问题/审批是否处理相互独立；这不是批准操作或提交回答的入口。
 
 ## 工作区、会话与异步等待
 

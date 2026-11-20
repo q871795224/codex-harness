@@ -5,6 +5,10 @@ import { appServer } from '../runtime/appServerClient'
 import { listAllActiveThreads } from '../../features/conversation/threadCatalog'
 import { SeaTalkSync } from './service'
 
+function logSyncIssue(event: string) {
+  void runtime.recordClientDiagnostic({ level: 'info', area: 'seatalk-sync', event }).catch(() => undefined)
+}
+
 export function useSeaTalkSync(harness: ReturnType<typeof useUnifiedHarness>) {
   const current = useRef(harness)
   current.current = harness
@@ -16,7 +20,7 @@ export function useSeaTalkSync(harness: ReturnType<typeof useUnifiedHarness>) {
     void listAllActiveThreads(appServer).then(threads => {
       if (disposed) return
       for (const thread of threads) if (!catalog.current.has(thread.id)) catalog.current.set(thread.id, thread)
-    }).catch(() => current.current.notify('SeaTalk 会话目录未加载完整，当前已加载会话仍可同步。', 'warning'))
+    }).catch(() => logSyncIssue('catalog.read_failed'))
     return () => { disposed = true }
   }, [harness.phase])
   useEffect(() => {
@@ -29,7 +33,7 @@ export function useSeaTalkSync(harness: ReturnType<typeof useUnifiedHarness>) {
       send: (threadId, text) => current.current.sendRemoteMessage(threadId, text),
       stop: threadId => current.current.stopRemoteTurn(threadId),
       answer: (request, decision) => current.current.answerRemoteApproval(request, decision),
-      warn: message => current.current.notify(message, 'warning'),
+      warn: message => logSyncIssue(message.startsWith('会话「') ? 'thread.delivery_unconfirmed' : 'bridge.sync_warning'),
     })
     const unsubscribe = current.current.onTurnCompleted(event => service.noteTurnCompleted(event.threadId, event.turnId))
     void service.tick()

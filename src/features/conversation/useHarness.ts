@@ -334,12 +334,12 @@ export function useHarness() {
   }, [])
 
   const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string; silent?: boolean }) => {
-    notifications.publish({
-      source: '会话', level: kind, title: message, silent: context?.silent,
-      details: error === undefined ? undefined : errorDetails(error),
-      threadId: context?.threadId,
-      workspaceRoot: context?.workspaceRoot ?? (context?.threadId ? threadsRef.current.find((thread) => thread.id === context.threadId)?.cwd : undefined),
-    })
+    if (context?.silent) return
+    const feedback = { id: crypto.randomUUID(), level: kind, title: message, threadId: context?.threadId,
+      details: error === undefined ? undefined : errorDetails(error) }
+    notifications.showFeedback(feedback)
+    // Keep the existing desktop-pet error signal while excluding operation feedback from the center.
+    if (kind === 'error') notifications.publish({ ...feedback, source: '会话', diagnostic: false, workspaceRoot: context?.workspaceRoot })
   }, [])
 
   const setAutomaticWorkspace = useCallback(async (threadId: string, automatic: boolean) => {
@@ -2566,6 +2566,7 @@ export function useHarness() {
             turnId: turn.id,
             title: threadTitle(completedThread),
             status: turn.status,
+            errorMessage: turn.error?.message,
           }
           for (const listener of turnCompletedListenersRef.current) listener(completedEvent)
         }

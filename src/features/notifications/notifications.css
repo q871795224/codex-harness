@@ -105,3 +105,8 @@
 .app-shell[data-theme='dark'] .reminder-rail small, .app-shell[data-theme='dark'] .reminder-rail h3, .app-shell[data-theme='dark'] .reminder-empty { color: #aab4c3; }
 .app-shell[data-theme='dark'] .thread-reminder-form input[type='datetime-local'] { color-scheme: dark; }
 @media (max-width: 700px) { .notification-viewport { top: 54px; right: 12px; width: min(360px, calc(100% - var(--h-sidebar-width, 0px) - 24px)); max-height: calc(100% - 70px); } }
+
+.notification-operation-feedback { margin: 6px 12px; padding: 8px 10px; display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--project-border); border-radius: 8px; background: var(--project-surface); color: var(--project-text); font-size: 13px; }
+.notification-operation-feedback > :last-child { margin-left: auto; }
+.notification-operation-feedback button { background: none; border: 0; color: inherit; cursor: pointer; }
+.notification-operation-feedback pre { white-space: pre-wrap; overflow-wrap: anywhere; }

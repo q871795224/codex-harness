@@ -15,6 +15,7 @@ export interface ReleaseRunStatus {
   status: 'running' | 'succeeded' | 'failed'
   phase: ReleaseRunPhase
   error: string | null
+  failureSummary?: string
   warning: boolean
   pid: number
   startedAt: number

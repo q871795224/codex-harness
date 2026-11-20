@@ -1,3 +1,4 @@
+import { notifications } from '../../core/notifications/service'
 import { PetSettings } from '../desktop-pet/PetSettings'
 import { useSettingsReload } from '../../core/runtime/settingsEvents'
 import { InputCorrectionSettings } from './InputCorrectionSettings'
@@ -6,7 +7,7 @@ import { RouterSettings } from './RouterSettings'
 import { HistorySettings } from './HistorySettings'
 import type { useCodexUpdate } from '../codex/useCodexUpdate'
 import { MemorySettings } from './MemorySettings'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Activity, ArrowDown, ArrowUp, Blocks, BrainCircuit, CircleHelp, FolderOpen, GripVertical, Keyboard, LoaderCircle, MessageSquareText, Minus, Moon, Palette, PawPrint, Plus, Power, RefreshCw, Server, Sparkles, Sun, Type, X } from 'lucide-react'
 import { usePluginHost } from '../../core/plugins/react'
 import type { CodexSkill, FollowUpMode, FontSize, FontSizeArea, FontSizePreferences, HarnessActionId, HarnessActionShortcuts, RecapGenerationSettings, RuntimeVersions, SendShortcut, Theme, Thread, ThreadTitleGenerationSettings, Workspace } from '../../core/domain/codex'
@@ -36,6 +37,8 @@ import {
 } from '../conversation/conversationStatsConfig'
 
 interface SettingsDialogProps {
+  initialPage?: SettingsPage
+  onRestoreCodexProvider?: () => Promise<void>
   workspaces: Workspace[]
   onAddWorkspace: () => Promise<unknown>
   onRemoveWorkspace: (root: string) => void
@@ -87,8 +90,8 @@ const fontSizeAreas: Array<{ area: FontSizeArea; label: string }> = [
   { area: 'plugins', label: '插件界面' },
 ]
 
-export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, sidebarUnpinnedCount, onSidebarUnpinnedCount, theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, codexUpdate, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
-  const [page, setPage] = useState<SettingsPage>('appearance')
+export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, sidebarUnpinnedCount, onSidebarUnpinnedCount, theme, fontSizes, sendShortcut, followUpMode, actionShortcuts, selectedWorkspaceRoot, codex, codexUpdate, claudeModels = [], threadTitleGeneration, recapGeneration, conversationStats, conversationStatsData, initialPage = 'appearance', onRestoreCodexProvider, onTheme, onFontSize, onResetFontSizes, onSendShortcut, onFollowUpMode, onActionShortcut, onResetActionShortcuts, onThreadTitleGeneration, onRecapGeneration, onConversationStats, onOpenPlugins, onClose }: SettingsDialogProps) {
+  const [page, setPage] = useState<SettingsPage>(initialPage)
   const [versions, setVersions] = useState<RuntimeVersions | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
   const [versionsError, setVersionsError] = useState<string | null>(null)
@@ -217,7 +220,7 @@ export function SettingsDialog({ workspaces, onAddWorkspace, onRemoveWorkspace, 
           {page === 'conversation-stats' && <ConversationStatsSettings preferences={conversationStats} data={conversationStatsData} onChange={onConversationStats} />}
           {page === 'history' && <HistorySettings />}
           {page === 'keyboard' && <KeyboardSettings sendShortcut={sendShortcut} followUpMode={followUpMode} actionShortcuts={actionShortcuts} onSendShortcut={onSendShortcut} onFollowUpMode={onFollowUpMode} onActionShortcut={onActionShortcut} onResetActionShortcuts={onResetActionShortcuts} />}
-          {page === 'models' && <ModelsSettings codex={codex} claudeModels={claudeModels} />}
+          {page === 'models' && <><CodexProviderStatus onRestore={onRestoreCodexProvider} /><ModelsSettings codex={codex} claudeModels={claudeModels} /></>}
           {page === 'compass' && <CompassSettings />}
           {page === 'thread-title' && <ThreadTitleSettings codex={codex} settings={threadTitleGeneration} onChange={onThreadTitleGeneration} />}
           {page === 'router' && <RouterSettings models={codex.models} workspaces={workspaces} />}
@@ -500,6 +503,26 @@ export function SettingsVersions({
       </div>
     </footer>
   )
+}
+
+function CodexProviderStatus({ onRestore }: { onRestore?: () => Promise<void> }) {
+  const { records } = useSyncExternalStore(notifications.subscribe, notifications.snapshot)
+  const [saving, setSaving] = useState(false)
+  const current = records.filter(record =>
+    !record.resolved && record.source === 'Codex 配置' && record.id !== 'codex-provider:restored')
+  const provider = current.find(record => record.id === 'codex-provider:restore-error') ??
+    current.find(record => record.id === 'codex-provider:custom') ?? current[0]
+  if (!provider) return null
+  return <div className="settings-section codex-settings">
+    <section className="codex-setting-card">
+      <h3>{provider.title}</h3><p>{provider.message}</p>
+      {provider.actions?.some(action => action.kind === 'codex-provider-restore') && onRestore &&
+        <button type="button" disabled={saving} onClick={() => {
+          setSaving(true)
+          void onRestore().finally(() => setSaving(false))
+        }}>改回 OpenAI</button>}
+    </section>
+  </div>
 }
 
 function ModelsSettings({ codex, claudeModels }: { codex: ReturnType<typeof useCodexCore>; claudeModels: ClaudeModel[] }) {
