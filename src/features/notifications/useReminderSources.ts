@@ -105,7 +105,7 @@ export function useReminderSources(sources: Sources) {
     if (pending?.eventKey?.startsWith(`${event.turnId}:`)) notifications.resolve(pending.id)
     if (event.status === 'failed') {
       notifications.publish({ id: `failure:${event.threadId}`, source: '会话', threadId: event.threadId, title: event.title,
-        message: '这一轮执行失败，请查看原会话后处理。', attention: 'action', level: 'error', eventKey: event.turnId })
+        message: '这一轮执行失败，请查看原会话后处理。', details: event.errorMessage, attention: 'action', level: 'error', diagnostic: true, state: 'done', eventKey: event.turnId })
     } else if (event.status === 'completed') {
       notifications.resolve(`failure:${event.threadId}`)
       if (includeWatch && notifications.snapshot().records.some((record) => record.id === `watch:${event.threadId}` && record.watchThread)) {
@@ -130,14 +130,14 @@ export function useReminderSources(sources: Sources) {
         if (disposed || version !== sequence || !snapshot) return
         notifications.resolve('async-wait:read')
         waits.current = snapshot.data
-        if (snapshot.schedulerError) notifications.publish({ id: 'async-wait:scheduler', source: '异步等待', title: '后台等待检查异常', message: '请打开异步任务查看状态。', level: 'error', attention: 'action', state: 'pending' })
+        if (snapshot.schedulerError) notifications.publish({ id: 'async-wait:scheduler', source: '异步等待', title: '后台等待检查异常', message: '请打开异步任务查看状态。', level: 'error', diagnostic: true, attention: 'action', state: 'pending' })
         else notifications.resolve('async-wait:scheduler')
         snapshot.data.forEach((task) => {
           publishWaitRef.current(task)
           if (task.status === 'delivered' && task.turnId && !completions.current.has(`${task.threadId}:${task.turnId}`)) recover.current(task.threadId, `wait:${task.id}:${task.turnId}`)
         })
       } catch (error) {
-        if (!disposed) notifications.publish({ id: 'async-wait:read', source: '异步等待', title: '无法读取异步等待状态', message: '将继续尝试读取，已有任务状态请在原会话核对。', level: 'warning' })
+        if (!disposed) console.warn('暂时无法读取异步等待状态', error)
       }
     }
     void runtime.listenAsyncWaits(() => { void refresh() }).then((stop) => {

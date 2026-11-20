@@ -78,7 +78,7 @@ it('cancels a scheduled transport recovery after a non-retryable size failure', 
   await act(async () => { await result.current.selectThread('active') })
   vi.mocked(appServer.resumeThread).mockClear()
   const onTransport = vi.mocked(runtime.listenTransport).mock.calls.at(-1)![0]
-  const publish = vi.spyOn(notifications, 'publish')
+  const publish = vi.spyOn(notifications, 'showFeedback')
   vi.useFakeTimers()
   try {
     act(() => {
@@ -97,13 +97,13 @@ it('cancels a scheduled transport recovery after a non-retryable size failure', 
 
 describe('archive view navigation', () => {
   it('keeps successful archive notifications silent but reports archive failures', async () => {
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     const { result } = await ready()
     await act(async () => { await result.current.archiveThread('active') })
-    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已归档会话', silent: true, threadId: 'active' }))
+    expect(publish).not.toHaveBeenCalledWith(expect.objectContaining({ title: '已归档会话' }))
     vi.mocked(appServer.archiveThread).mockRejectedValueOnce(new Error('offline'))
     await act(async () => { await result.current.archiveThread('other') })
-    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '无法归档会话', level: 'error', silent: undefined }))
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '无法归档会话', level: 'error' }))
     publish.mockRestore()
   })
 
@@ -173,7 +173,7 @@ describe('archive view navigation', () => {
     await act(async () => { await result.current.setViewMode('archived') })
     expect(result.current.viewMode).toBe('archived')
     expect(result.current.threads).toEqual([])
-    expect(notifications.snapshot().records[0]?.details).toContain('offline')
+    expect(notifications.snapshot().feedback?.details).toContain('offline')
   })
 
   it('keeps the latest search when responses arrive out of order', async () => {
@@ -234,7 +234,7 @@ describe('archive view navigation', () => {
     vi.mocked(appServer.resumeThread).mockRejectedValueOnce(new Error('session active is archived. Run `codex unarchive active` to unarchive it first.'))
     vi.mocked(appServer.readThread).mockResolvedValue({ thread: thread('active') })
     vi.mocked(appServer.listConversationTurns).mockResolvedValue({ data: [turn('turn-1')], nextCursor: null })
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     await act(async () => { await result.current.selectThread('active') })
     expect(appServer.readThread).toHaveBeenCalledWith({ threadId: 'active', includeTurns: false })
     expect(result.current.details.active.thread.id).toBe('active')
@@ -251,7 +251,7 @@ describe('archive view navigation', () => {
     await act(async () => { await result.current.selectThread('archived') })
     vi.mocked(appServer.listThreads).mockImplementation(async (params) => params.archived ? { data: [], nextCursor: null } : page('archived'))
     vi.mocked(appServer.resumeThread).mockResolvedValue(resumeResponse('archived'))
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     await act(async () => { await result.current.unarchiveThread('archived') })
     expect(appServer.unarchiveThread).toHaveBeenCalledWith('archived')
     expect(result.current.viewMode).toBe('active')
@@ -387,7 +387,7 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
 
   it.each([false, true])('closes a known empty draft instead of archiving it (missing rollout: %s)', async (missing) => {
     const { result } = await draft()
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     if (missing) vi.mocked(appServer.deleteThread).mockRejectedValueOnce(new Error('no rollout found for thread id draft'))
     await act(async () => { await result.current.archiveThread('draft') })
     expect(appServer.deleteThread).toHaveBeenCalledWith('draft')
@@ -397,13 +397,13 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
     expect(result.current.threads.some((item) => item.id === 'draft')).toBe(false)
     await act(async () => { await result.current.refresh() })
     expect(result.current.threads.some((item) => item.id === 'draft')).toBe(false)
-    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ title: '已关闭空白会话', silent: true }))
+    expect(publish).not.toHaveBeenCalledWith(expect.objectContaining({ title: '已关闭空白会话' }))
     publish.mockRestore()
   })
 
   it('preserves a draft with unsent content when archiving or switching conversations', async () => {
     const { result } = await draft()
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     act(() => { result.current.setThreadDraftContent('draft', true) })
     await act(async () => { await result.current.archiveThread('draft') })
     expect(result.current.selectedThreadId).toBe('draft')
@@ -418,7 +418,7 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
 
   it('keeps the empty draft available and reports real delete failures', async () => {
     const { result } = await draft()
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     vi.mocked(appServer.deleteThread).mockRejectedValueOnce(new Error('connection offline'))
     await act(async () => { await result.current.archiveThread('draft') })
     expect(result.current.selectedThreadId).toBe('draft')
@@ -433,7 +433,7 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
 
   it.each(['no rollout found for thread id draft', 'connection offline'])('handles automatic draft cleanup failure: %s', async (error) => {
     const { result } = await draft()
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     vi.mocked(appServer.deleteThread).mockRejectedValueOnce(new Error(error))
     vi.mocked(appServer.resumeThread).mockResolvedValueOnce(resumeResponse('active'))
     await act(async () => { await result.current.selectThread('active') })
@@ -448,7 +448,7 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
 
   it('does not treat an unknown thread with missing rollout as an empty draft', async () => {
     const { result } = await ready()
-    const publish = vi.spyOn(notifications, 'publish')
+    const publish = vi.spyOn(notifications, 'showFeedback')
     vi.mocked(appServer.archiveThread).mockRejectedValueOnce(new Error('no rollout found for thread id active'))
     await act(async () => { await result.current.archiveThread('active') })
     expect(appServer.deleteThread).not.toHaveBeenCalled()
@@ -517,8 +517,8 @@ describe('draft lifecycle and first-turn catalog refresh', () => {
     await act(async () => { await result.current.sendMessage(input, 'queue') })
     expect(result.current.activeTurnId).toBe('turn-1')
     expect(result.current.currentThread?.id).toBe('draft')
-    expect(notifications.snapshot().records[0]?.details).toContain('list offline')
-    expect(notifications.snapshot().records[0]).toMatchObject({ level: 'warning', title: '消息已发送，但会话列表暂未更新。' })
+    expect(notifications.snapshot().feedback?.details).toContain('list offline')
+    expect(notifications.snapshot().feedback).toMatchObject({ level: 'warning', title: '消息已发送，但会话列表暂未更新。' })
     await act(async () => { await result.current.refresh() })
     expect(result.current.currentThread?.id).toBe('draft')
     const listener = vi.mocked(runtime.listenEvents).mock.calls.at(-1)![0]

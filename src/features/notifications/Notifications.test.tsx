@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { useState } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createNotificationStore } from '../../core/notifications/store'
-import { NotificationCenter, NotificationViewport as Viewport } from './Notifications'
+import { ConversationReminders, NotificationCenter, OperationFeedback, NotificationViewport as Viewport } from './Notifications'
 import type { ComponentProps } from 'react'
 function NotificationViewport(props: ComponentProps<typeof Viewport>) {
   const [open, setOpen] = useState(false)
@@ -32,7 +32,7 @@ it('shows at most three readable floating notices, expires them, and keeps all h
 it('opens a full page with filtering, expandable raw details, read state and source actions', async () => {
   const notifications = store()
   await notifications.initialize()
-  const id = notifications.publish({ level: 'error', source: '发布', title: '发布未完成', details: 'RAW_ERROR', threadId: 'thread-a', actions: [{ kind: 'release-log', target: '/repo', runId: '123', label: '查看日志' }] })
+  const id = notifications.publish({ diagnostic: true, level: 'error', source: '发布', title: '发布未完成', details: 'RAW_ERROR', threadId: 'thread-a', actions: [{ kind: 'release-log', target: '/repo', runId: '123', label: '查看日志' }] })
   notifications.publish({ level: 'info', source: '快捷命令', title: 'VPN 已连接', threadId: 'thread-b' })
   const onAction = vi.fn(async () => undefined)
   const onBack = vi.fn()
@@ -45,7 +45,7 @@ it('opens a full page with filtering, expandable raw details, read state and sou
   expect(notifications.snapshot().records.find((record) => record.id === id)?.read).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: '查看日志' }))
   expect(onAction).toHaveBeenCalledWith({ kind: 'release-log', target: '/repo', runId: '123', label: '查看日志' })
-  fireEvent.click(within(screen.getByRole('group', { name: '通知类型' })).getByRole('button', { name: '警告' }))
+  fireEvent.click(within(screen.getByRole('group', { name: '通知类型' })).getByRole('button', { name: '告警' }))
   expect(screen.getByText('没有符合筛选条件的通知')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: '返回会话' }))
   expect(onBack).toHaveBeenCalledOnce()
@@ -151,12 +151,40 @@ it('keeps the independent reminder rail open while the conversation is being use
   expect(screen.queryByRole('button', { name: /展开提醒/ })).toBeNull()
 })
 
-it('lets a desktop pet user follow the active thread from the notification center', async () => {
+it('lets the user follow a thread from the conversation reminder control', async () => {
   const notifications = store()
   await notifications.initialize()
-  render(<NotificationCenter store={notifications} currentThreadId="thread-a"
-    reminderThread={{ id: 'thread-a', title: '会话 A' }} onBack={vi.fn()} onAction={vi.fn()} />)
+  render(<ConversationReminders store={notifications} thread={{ id: 'thread-a', title: '会话 A' }} />)
   fireEvent.click(screen.getByText('提醒当前会话'))
   fireEvent.click(screen.getByRole('checkbox', { name: '有新一轮结果时提醒' }))
   expect(notifications.snapshot().records.find(record => record.threadId === 'thread-a')?.watchThread).toBe(true)
+})
+
+it('leaves pending workflows alone when reading all diagnostics', async () => {
+  const notifications = store()
+  await notifications.initialize()
+  const waiting = notifications.publish({ source: '会话', title: '待回答', level: 'warning', state: 'pending' })
+  notifications.publish({ source: '会话', title: 'SeaTalk 同步未完成', level: 'warning' })
+  notifications.publish({ id: 'release:1', source: '发布', title: '发布已完成', level: 'info', state: 'done' })
+  notifications.publish({ id: 'async-wait:scheduler', source: '异步等待', title: '调度器出错', level: 'error', diagnostic: true, state: 'pending' })
+  render(<NotificationCenter store={notifications} currentThreadId={null} selectedId={waiting}
+    onBack={vi.fn()} onAction={vi.fn()} />)
+  expect(screen.getByText(/1 条未读/)).toBeTruthy()
+  expect(screen.queryByText('待回答')).toBeNull()
+  expect(screen.queryByText('SeaTalk 同步未完成')).toBeNull()
+  expect(screen.queryByText('发布已完成')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '全部已读' }))
+  expect(notifications.snapshot().records.find(record => record.id === waiting)?.read).toBe(false)
+  expect(notifications.snapshot().records.find(record => record.id === 'async-wait:scheduler')?.read).toBe(true)
+})
+
+it('shows operation feedback in the conversation without creating a history record', async () => {
+  const notifications = store()
+  await notifications.initialize()
+  render(<OperationFeedback store={notifications} threadId="thread-a" />)
+  act(() => notifications.showFeedback({ id: 'feedback', threadId: 'thread-a', level: 'error', title: '排队消息保存失败' }))
+  expect(screen.getByRole('alert')).toBeTruthy()
+  expect(notifications.snapshot().records).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: '关闭操作提示' }))
+  expect(screen.queryByRole('alert')).toBeNull()
 })

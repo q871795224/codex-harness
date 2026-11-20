@@ -1,7 +1,7 @@
 import { useDesktopAssistantHost } from './features/desktop-pet/desktopAssistantHost'
 import type { AssistantSession } from './features/assistant/sessionAssistant'
 import type { AssistantMutation } from './core/desktop-pet/assistantTypes'
-import { DesktopPetNotifications, useDesktopPet } from './features/desktop-pet/useDesktopPet'
+import { HarnessNotificationSources, useDesktopPet } from './features/desktop-pet/useDesktopPet'
 import { HarnessAssistant } from './features/assistant/HarnessAssistant'
 import { SuperbotView } from './features/superbot/SuperbotView'
 import { useAsyncWaitPrefill } from './core/async-waits/useAsyncWaitPrefill'
@@ -26,7 +26,7 @@ import { appServer } from './core/runtime/appServerClient'
 import { ONBOARDING_REQUEST_STATE_PREFIX, type ProjectOnboardingService } from './core/project-onboarding/types'
 import { notifications } from './core/notifications/service'
 import type { NotificationAction } from './core/notifications/store'
-import { NotificationCenter } from './features/notifications/Notifications'
+import { ConversationReminders, NotificationCenter, OperationFeedback } from './features/notifications/Notifications'
 import { useReleaseNotifications } from './features/notifications/useReleaseNotifications'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Bell, Bot, ChevronLeft, ChevronRight, ChevronUp, Clock3, GitBranch, MessageSquareText, PanelLeftClose, RotateCw } from 'lucide-react'
@@ -283,10 +283,16 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
   const [tabDrop, setTabDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const tabDragRef = useRef<{ id: string; pointerId: number; startX: number; startY: number; moved: boolean; preview: string[] | null } | null>(null)
   const suppressTabClickRef = useRef(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState<false | 'appearance' | 'models'>(false)
   const [pluginsOpen, setPluginsOpen] = useState(false)
   const petVisible = useDesktopPet(target => {
     if (!target.threadId) {
+      const notice = notifications.snapshot().records.find(record => record.id === target.notificationId)
+      if (notice?.source === 'Codex 配置') {
+        setPluginsOpen(false)
+        setSettingsOpen('models')
+        return
+      }
       openNotifications(target.notificationId ?? undefined)
       return
     }
@@ -879,7 +885,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
               setTab('chat'); setFocusedTab(null); setNotificationsOpen(false); selectMode('conversation')
             }).catch((error) => harness.notify('无法打开成员会话', 'error', error))
           }}
-          onSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
+          onSettings={() => { setPluginsOpen(false); setSettingsOpen('appearance') }}
           onNotifications={() => openNotifications()}
           unreadNotifications={0}
         /></Suspense>
@@ -926,7 +932,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
         onSidebarListSplitRatio={harness.setSidebarListSplitRatio}
         onOpenNotifications={() => openNotifications()}
         notificationsOpen={notificationsOpen}
-        onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
+        onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen('appearance') }}
         onOpenPlugins={() => { setSettingsOpen(false); setPluginsOpen(true) }}
         onVisibleThreadOrder={setVisibleThreadIds}
       />
@@ -937,10 +943,9 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
       />
       <main className="main-pane">
         {notificationsOpen && <NotificationCenter store={notifications} currentThreadId={harness.selectedThreadId} selectedId={selectedNotificationId}
-          reminderThread={petVisible && harness.currentThread && harness.viewMode === 'active' ? {
-            id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd,
-          } : undefined} onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
+          onBack={() => setNotificationsOpen(false)} onAction={handleNotificationAction} />}
         <div className="notification-conversation" hidden={notificationsOpen}>
+        <OperationFeedback store={notifications} threadId={harness.selectedThreadId} />
         {superbotConversation && harness.selectedThreadId ? <SuperbotView
           key={harness.selectedThreadId} id={harness.selectedThreadId}
           session={harness.superbot.sessions.find(s => `superbot:${s.id}` === harness.selectedThreadId)}
@@ -1006,6 +1011,8 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
                 />
               ))}
             />
+            {harness.viewMode === 'active' && <ConversationReminders store={notifications}
+              thread={{ id: harness.currentThread.id, title: threadTitle(harness.currentThread), cwd: harness.currentThread.cwd }} />}
             <div className="tab-bar">
               <div className="thread-tabs">
                 {orderedTabIds.map((tabId, tabIndex) => {
@@ -1342,12 +1349,14 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
           />
         </div>
       )}
-      {petVisible && <DesktopPetNotifications harness={harness} />}
+      <HarnessNotificationSources harness={harness} petVisible={petVisible} />
       <HarnessAssistant hideLauncher={petVisible} harness={harness} codex={codex} disabled={harness.phase !== 'ready'}
         pinned={harness.navigation.pinnedThreadIds} onMutate={mutateAssistantSession} />
       {settingsOpen && (
         <Suspense fallback={<div className="dialog-loading">正在加载设置…</div>}><SettingsDialog
+          initialPage={settingsOpen}
           codexUpdate={codexUpdate}
+          onRestoreCodexProvider={restoreCodexProvider}
           workspaces={harness.workspaces}
           onAddWorkspace={harness.chooseWorkspace}
           onRemoveWorkspace={harness.removeWorkspace}
@@ -1397,7 +1406,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
           threads={harness.threads}
           selectedThreadId={harness.selectedThreadId}
           models={codex.models}
-          onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen(true) }}
+          onOpenSettings={() => { setPluginsOpen(false); setSettingsOpen('appearance') }}
           onClose={() => {
             setPluginsOpen(false)
             setComposerFocusRequest((current) => current + 1)

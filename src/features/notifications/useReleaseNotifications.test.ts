@@ -37,6 +37,15 @@ it('keeps polling the originating workspace after switching away and records com
 it('maps partial success to warning and keeps raw errors and historical log target in details', () => {
   const result = releaseNotification(status({ status: 'succeeded', warning: true, error: 'RAW_VERIFY_ERROR' }))
   expect(result).toMatchObject({ level: 'warning', details: 'RAW_VERIFY_ERROR', actions: [{ kind: 'release-log', target: '/repo', runId: '123-456', label: '查看日志' }] })
-  expect(result.title + result.message).not.toContain('RAW_VERIFY_ERROR')
+  expect(result.message).toContain('RAW_VERIFY_ERROR')
   expect(releaseNotification(status({ status: 'failed' })).level).toBe('error')
+})
+
+it('shows the failed phase and the extracted cause without opening the log', () => {
+  const notice = releaseNotification(status({
+    status: 'failed', error: 'generic wrapper', failureSummary: 'Rust 测试未通过：turn_ownership',
+  }))
+  expect(notice.message).toContain('运行检查')
+  expect(notice.message).toContain('Rust 测试未通过：turn_ownership')
+  expect(notice.details).toContain('generic wrapper')
 })

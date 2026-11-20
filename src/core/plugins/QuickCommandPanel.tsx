@@ -40,17 +40,16 @@ export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRo
   const run = async (entry: ResolvedContribution<QuickCommandContribution>) => {
     const key = entry.instanceId
     setStates((current) => ({ ...current, [key]: { phase: 'running', message: '后台执行中…' } }))
-    const id = notifications.publish({ level: 'info', source: '快捷命令', title: `${entry.contribution.label}：执行中`, workspaceRoot, threadId, state: 'running' })
     try {
       const result = await entry.contribution.run()
       const message = result.success ? `${entry.contribution.label}：已完成` : `${entry.contribution.label}：未完成，请查看详情后重试。`
-      notifications.publish({ id, level: result.success ? 'info' : 'error', source: '快捷命令', title: message, details: result.message, workspaceRoot, threadId, state: 'done' })
+      if (!result.success) notifications.publish({ diagnostic: true, level: 'error', source: '快捷命令', title: message, message: result.message.trim().split('\n').find(line => line.trim())?.slice(0, 240), details: result.message, workspaceRoot, threadId, state: 'done' })
       setStates((current) => ({
         ...current,
         [key]: { phase: result.success ? 'success' : 'failed', message },
       }))
     } catch (error) {
-      notifications.publish({ id, level: 'error', source: '快捷命令', title: `${entry.contribution.label}：未完成`, message: '请查看详情后重试。', details: errorDetails(error), workspaceRoot, threadId, state: 'done' })
+      notifications.publish({ diagnostic: true, level: 'error', source: '快捷命令', title: `${entry.contribution.label}：未完成`, message: error instanceof Error ? error.message : String(error), details: errorDetails(error), workspaceRoot, threadId, state: 'done' })
       setStates((current) => ({
         ...current,
         [key]: { phase: 'failed', message: '执行失败，请在通知中心查看详情。' },
@@ -66,7 +65,7 @@ export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRo
       await release.start(version)
     } catch (error) {
       setReleaseError('发布操作未完成，请在通知中心查看详情。')
-      notifications.publish({ level: 'error', source: '发布', title: '发布操作未完成', message: '请查看详情后重新选择发布版本。', details: errorDetails(error), workspaceRoot })
+      notifications.publish({ diagnostic: true, level: 'error', source: '发布', title: '发布操作未完成', message: error instanceof Error ? error.message : String(error), details: errorDetails(error), workspaceRoot })
     }
   }
 
@@ -82,7 +81,7 @@ export function QuickCommandPanel({ commands, release, anchorBottom, workspaceRo
     void release.refresh()
       .catch((error) => {
         setReleaseError('发布版本暂时无法读取，请在通知中心查看详情。')
-        notifications.publish({ level: 'error', source: '发布', title: '发布操作未完成', message: '请查看详情后重新选择发布版本。', details: errorDetails(error), workspaceRoot })
+        notifications.publish({ diagnostic: true, level: 'error', source: '发布', title: '发布操作未完成', message: error instanceof Error ? error.message : String(error), details: errorDetails(error), workspaceRoot })
       })
       .finally(() => setReleaseRefreshing(false))
   }

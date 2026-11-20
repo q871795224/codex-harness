@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     fs::{self, File},
-    io::Write,
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
@@ -76,6 +76,8 @@ pub struct ReleaseStatus {
     pub status: String,
     pub phase: String,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_summary: Option<String>,
     #[serde(default)]
     pub warning: bool,
     pub pid: u32,
@@ -231,6 +233,7 @@ pub fn start(path: &str, version: &str, base_sha: Option<&str>) -> Result<Releas
         status: "running".to_string(),
         phase: "starting".to_string(),
         error: None,
+        failure_summary: None,
         warning: false,
         pid: 0,
         started_at: now_ms(),
@@ -478,7 +481,56 @@ fn read_status(workspace_root: &str) -> Result<Option<ReleaseStatus>, String> {
         status.updated_at = now_ms();
         write_status(&path, &status)?;
     }
+    if status.status == "failed" && status.failure_summary.is_none() {
+        status.failure_summary = read_failure_summary(&data_dir, &status.run_id);
+    }
     Ok(Some(status))
+}
+
+fn read_failure_summary(directory: &Path, run_id: &str) -> Option<String> {
+    let path = historical_log_path(directory, run_id)
+        .ok()?
+        .canonicalize()
+        .ok()?;
+    if path.parent()? != directory.canonicalize().ok()?.as_path() {
+        return None;
+    }
+    let mut log = File::open(path).ok()?;
+    let length = log.metadata().ok()?.len();
+    log.seek(SeekFrom::Start(length.saturating_sub(64 * 1024)))
+        .ok()?;
+    let mut tail = Vec::new();
+    log.take(64 * 1024).read_to_end(&mut tail).ok()?;
+    release_failure_summary(&String::from_utf8_lossy(&tail))
+}
+
+fn release_failure_summary(log: &str) -> Option<String> {
+    if let Some(test) = log.lines().rev().find_map(|line| {
+        line.trim()
+            .strip_prefix("test ")?
+            .strip_suffix(" ... FAILED")
+    }) {
+        return Some(format!(
+            "Rust 测试未通过：{}",
+            test.chars().take(200).collect::<String>()
+        ));
+    }
+    log.lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| {
+            let lower = line.to_ascii_lowercase();
+            (lower.starts_with("error:")
+                || lower.starts_with("fatal:")
+                || lower.starts_with("error[")
+                || lower.starts_with("failed to ")
+                || line.starts_with("错误：")
+                || line.starts_with("发布失败"))
+                && !lower.contains("error: test failed")
+                && !lower.contains("could not compile")
+                && !lower.contains("returned non-zero exit status")
+        })
+        .map(|line| format!("关键错误：{}", line.chars().take(240).collect::<String>()))
 }
 
 fn process_alive(pid: u32) -> bool {
@@ -595,6 +647,22 @@ mod tests {
 #[cfg(test)]
 mod notification_log_tests {
     use super::*;
+
+    #[test]
+    fn extracts_specific_release_failures_before_generic_wrappers() {
+        assert_eq!(
+            release_failure_summary(
+                "test turn_ownership::restart ... FAILED\nerror: test failed, to rerun pass --lib"
+            ),
+            Some("Rust 测试未通过：turn_ownership::restart".into()),
+        );
+        assert_eq!(
+            release_failure_summary(
+                "error[E0308]: mismatched types\nerror: could not compile codex-harness"
+            ),
+            Some("关键错误：error[E0308]: mismatched types".into()),
+        );
+    }
 
     #[test]
     fn historical_logs_are_bound_to_the_requested_run() {

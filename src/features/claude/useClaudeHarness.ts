@@ -63,12 +63,12 @@ export function useClaudeHarness() {
   }, [])
 
   const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string; silent?: boolean }) => {
-    notifications.publish({
-      source: 'Claude', level: kind, title: message, silent: context?.silent,
-      details: error === undefined ? undefined : errorDetails(error),
-      threadId: context?.threadId,
-      workspaceRoot: context?.workspaceRoot,
-    })
+    if (context?.silent) return
+    const feedback = { id: crypto.randomUUID(), level: kind, title: message, threadId: context?.threadId,
+      details: error === undefined ? undefined : errorDetails(error) }
+    notifications.showFeedback(feedback)
+    // Keep the existing desktop-pet error signal while excluding operation feedback from the center.
+    if (kind === 'error') notifications.publish({ ...feedback, source: 'Claude', diagnostic: false, workspaceRoot: context?.workspaceRoot })
   }, [])
 
   const onMessageAccepted = useCallback((listener: (threadId: string) => void) => {
@@ -505,7 +505,16 @@ export function useClaudeHarness() {
       activeTurnIdsRef.current = nextActive
       setActiveTurnIds(nextActive)
       replaceApprovals({ ...approvalsRef.current, [sessionId]: [] })
-      if (event.method === 'turn/failed') notify('Claude 执行失败，请查看详情后重试。', 'error', params.message)
+      if (event.method === 'turn/failed') {
+        const session = sessionsRef.current.find(candidate => candidate.id === sessionId)
+        notifications.publish({
+          id: `failure:${sessionId}`, source: 'Claude', diagnostic: true, level: 'error', state: 'done',
+          title: session?.title ?? 'Claude 执行失败', threadId: sessionId, workspaceRoot: session?.cwd,
+          eventKey: typeof params.turnId === 'string' ? params.turnId : undefined,
+          message: '这一轮执行失败，可打开原会话查看。',
+          details: typeof params.message === 'string' ? params.message : undefined,
+        })
+      }
       if (event.method === 'turn/completed') {
         const providerSessionId = typeof params.providerSessionId === 'string' ? params.providerSessionId : null
         if (providerSessionId) {

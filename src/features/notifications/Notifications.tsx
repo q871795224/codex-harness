@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { ArrowLeft, Bell, Check, CheckCheck, CircleAlert, Copy, LoaderCircle, TriangleAlert, Clock3, X } from 'lucide-react'
-import { attentionGroups, notificationAttention, type AppNotification, type NotificationAction, type NotificationLevel, type NotificationStore } from '../../core/notifications/store'
+import { attentionGroups, isDiagnosticNotification, notificationAttention, type AppNotification, type NotificationAction, type NotificationLevel, type NotificationStore } from '../../core/notifications/store'
 import './notifications.css'
 
-const labels = { info: '通知', warning: '警告', error: '错误' }
+const labels = { info: '通知', warning: '告警', error: '错误' }
 function LevelIcon({ level, state }: { level: NotificationLevel; state: AppNotification['state'] }) {
   if (state === 'running') return <LoaderCircle size={16} className="notification-spinner" aria-label="进行中" />
   const Icon = level === 'error' ? CircleAlert : level === 'warning' ? TriangleAlert : Check
@@ -129,43 +129,69 @@ function ThreadReminderForm({ store, thread, watching, loaded }: { store: Notifi
   </details>
 }
 
-export function NotificationCenter({ store, currentThreadId, selectedId, reminderThread, onBack, onAction }: {
+export function ConversationReminders({ thread, store }: { thread: ReminderThread; store: NotificationStore }) {
+  const { records, loaded } = useSyncExternalStore(store.subscribe, store.snapshot)
+  const reminder = records.find(record => record.id === `reminder:${thread.id}` && !record.resolved)
+  return <>
+    <ThreadReminderForm key={thread.id} store={store} thread={thread} loaded={loaded}
+      watching={records.some(record => record.threadId === thread.id && record.watchThread)} />
+    {reminder?.state === 'done' && <div className="notification-operation-feedback" role="status">
+      <span>已到设定的跟进时间。</span>
+      <button type="button" onClick={() => store.resolve(reminder.id)}>知道了</button>
+    </div>}
+  </>
+}
+
+export function OperationFeedback({ store, threadId }: { store: NotificationStore; threadId: string | null }) {
+  const { feedback } = useSyncExternalStore(store.subscribe, store.snapshot)
+  useEffect(() => {
+    if (!feedback) return
+    const timeout = window.setTimeout(() => store.dismissFeedback(feedback.id), feedback.level === 'info' ? 6000 : 10000)
+    return () => window.clearTimeout(timeout)
+  }, [feedback, store])
+  if (!feedback || (feedback.threadId && feedback.threadId !== threadId)) return null
+  return <div className="notification-operation-feedback" role={feedback.level === 'error' ? 'alert' : 'status'}>
+    <LevelIcon level={feedback.level} state={undefined} />
+    <div>{feedback.title}{feedback.details && <details><summary>详情</summary><pre>{feedback.details}</pre></details>}</div>
+    <button type="button" aria-label="关闭操作提示" onClick={() => store.dismissFeedback(feedback.id)}><X size={15} /></button>
+  </div>
+}
+
+export function NotificationCenter({ store, currentThreadId, selectedId, onBack, onAction }: {
   store: NotificationStore
   currentThreadId: string | null
   selectedId?: string
-  reminderThread?: ReminderThread
   onBack: () => void
   onAction: (action: NotificationAction) => Promise<void>
 }) {
   const state = useSyncExternalStore(store.subscribe, store.snapshot)
-  const [level, setLevel] = useState<NotificationLevel | 'all'>('all')
+  const [level, setLevel] = useState<'warning' | 'error' | 'all'>('all')
   const [scope, setScope] = useState('all')
   const [limit, setLimit] = useState(50)
-  const records = state.records.filter((record) => (level === 'all' || level === record.level) && (scope === 'all' || record.threadId === currentThreadId))
+  const diagnostics = state.records.filter(isDiagnosticNotification)
+  const records = diagnostics.filter((record) => (level === 'all' || level === record.level) && (scope === 'all' || record.threadId === currentThreadId))
   useEffect(() => {
     if (selectedId) document.getElementById(`notification-${selectedId}`)?.scrollIntoView?.({ block: 'nearest' })
   }, [selectedId])
-  const selected = selectedId ? state.records.find((record) => record.id === selectedId) : undefined
+  const selected = selectedId ? diagnostics.find((record) => record.id === selectedId) : undefined
   return (
     <section className="notification-center" aria-label="通知中心">
       <header className="notification-page-header">
         <button type="button" onClick={onBack}><ArrowLeft size={16} />返回会话</button>
-        <button type="button" onClick={() => store.markRead()} disabled={!state.records.some((record) => !record.read)}><CheckCheck size={16} />全部已读</button>
+        <button type="button" onClick={store.markDiagnosticsRead} disabled={!diagnostics.some((record) => !record.read)}><CheckCheck size={16} />全部已读</button>
       </header>
       <div className="notification-page-body">
-        <div className="notification-heading"><Bell size={22} /><div><h1>通知中心</h1><p>按最新时间排列 · {state.records.filter((record) => !record.read).length} 条未读</p></div></div>
-        {reminderThread && <ThreadReminderForm store={store} thread={reminderThread} loaded={state.loaded}
-          watching={state.records.some(record => record.threadId === reminderThread.id && record.watchThread)} />}
+        <div className="notification-heading"><Bell size={22} /><div><h1>通知中心</h1><p>错误与告警 · {diagnostics.filter((record) => !record.read).length} 条未读</p></div></div>
         {state.storageError && <div className="notification-storage-error" role="alert">通知历史暂时无法{state.loaded ? '保存' : '读取'}，本次提醒仍可查看。<button onClick={() => void store.retryStorage()}>重试</button><details><summary>错误详情</summary><pre>{state.storageError}</pre></details></div>}
         <div className="notification-filters">
           <div role="group" aria-label="通知类型">
-            {(['all', 'info', 'warning', 'error'] as const).map((value) => <button key={value} type="button" aria-pressed={level === value} onClick={() => { setLevel(value); setLimit(50) }}>{value === 'all' ? '全部' : labels[value]}</button>)}
+            {(['all', 'error', 'warning'] as const).map((value) => <button key={value} type="button" aria-pressed={level === value} onClick={() => { setLevel(value); setLimit(50) }}>{value === 'all' ? '全部' : labels[value]}</button>)}
           </div>
           <select aria-label="通知范围" value={scope} onChange={(event) => { setScope(event.target.value); setLimit(50) }}><option value="all">所有会话与工作区</option><option value="thread" disabled={!currentThreadId}>当前会话</option></select>
         </div>
         {selected && !records.slice(0, limit).some((record) => record.id === selected.id) && <NotificationRow key={`selected-${selected.id}`} record={selected} store={store} expanded onAction={onAction} />}
         {!state.loaded && !state.storageError && <p className="notification-empty">正在读取通知历史…</p>}
-        {state.loaded && records.length === 0 && <div className="notification-empty"><Bell size={28} /><p>{state.records.length ? '没有符合筛选条件的通知' : '暂无通知'}</p></div>}
+        {state.loaded && records.length === 0 && <div className="notification-empty"><Bell size={28} /><p>{diagnostics.length ? '没有符合筛选条件的通知' : '暂无错误或告警'}</p></div>}
         <div className="notification-list">
           {records.slice(0, limit).map((record) => <NotificationRow key={record.id} record={record} store={store} expanded={selectedId === record.id} onAction={onAction} />)}
         </div>
@@ -183,6 +209,11 @@ function NotificationRow({ record, expanded, store, onAction }: {
 }) {
   const [open, setOpen] = useState(expanded)
   const [copyState, setCopyState] = useState('复制详情')
+  const [actionError, setActionError] = useState('')
+  const runAction = (action: NotificationAction) => {
+    setActionError('')
+    void onAction(action).catch(error => setActionError(`无法打开关联内容：${error instanceof Error ? error.message : String(error)}`))
+  }
   useEffect(() => { if (expanded) setOpen(true) }, [expanded])
   return (
     <article id={`notification-${record.id}`} className={`notification-row ${record.level}${record.state === 'running' ? ' running' : ''}${record.read ? '' : ' unread'}`}>
@@ -194,12 +225,13 @@ function NotificationRow({ record, expanded, store, onAction }: {
       {open && <div className="notification-details">
         <dl><dt>首次通知</dt><dd>{new Date(record.createdAt).toLocaleString()}</dd>{record.threadId && <><dt>会话</dt><dd>{record.threadId}</dd></>}{record.workspaceRoot && <><dt>工作区</dt><dd>{record.workspaceRoot}</dd></>}</dl>
         {record.details && <pre>{record.details}</pre>}
+        {actionError && <p role="alert">{actionError}</p>}
         <div className="notification-detail-actions">
           <button type="button" onClick={() => {
             void navigator.clipboard.writeText([record.title, record.message, record.details, record.threadId, record.workspaceRoot].filter(Boolean).join('\n')).then(() => setCopyState('已复制')).catch(() => setCopyState('复制失败，请手动选择详情'))
           }}><Copy size={13} />{copyState}</button>
-          {record.actions?.map((action) => <button type="button" key={`${action.kind}:${action.target}`} onClick={() => { void onAction(action).catch((error) => store.publish({ level: 'error', source: '通知中心', title: '无法打开通知关联内容', message: '请稍后重试，或复制详情后手动查找。', details: String(error) })) }}>{action.label}</button>)}
-          {record.threadId && !record.actions?.some((action) => action.kind === 'thread') && <button type="button" onClick={() => { void onAction({ kind: 'thread', label: '打开会话', target: record.threadId! }).catch((error) => store.publish({ level: 'error', source: '通知中心', title: '无法打开关联会话', details: String(error) })) }}>打开会话</button>}
+          {record.actions?.map((action) => <button type="button" key={`${action.kind}:${action.target}`} onClick={() => runAction(action)}>{action.label}</button>)}
+          {record.threadId && !record.actions?.some((action) => action.kind === 'thread') && <button type="button" onClick={() => runAction({ kind: 'thread', label: '打开会话', target: record.threadId! })}>打开会话</button>}
         </div>
       </div>}
     </article>
