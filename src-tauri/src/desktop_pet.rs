@@ -16,6 +16,7 @@ pub(crate) const LABEL: &str = "desktop-pet";
 const SELECTED: &str = "desktopPet.selected";
 const DEFAULT_PET: &str = "dafeiyu";
 const SCALE: &str = "desktopPet.scalePercent";
+const PET_SCALE: std::ops::RangeInclusive<u16> = 20..=400;
 const VISIBLE: &str = "desktopPet.visible";
 #[cfg(target_os = "macos")]
 const POSITION: &str = "desktopPet.position";
@@ -399,7 +400,7 @@ fn scale_percent(state: &AppState) -> u16 {
         .ok()
         .flatten()
         .and_then(|value| value.parse().ok())
-        .filter(|value| (20..=200).contains(value))
+        .filter(|value| PET_SCALE.contains(value))
         .unwrap_or(100)
 }
 
@@ -614,12 +615,22 @@ pub(crate) async fn desktop_pet_set_scale(
     percent: u16,
 ) -> Result<(), String> {
     main_only(&window)?;
-    if !(20..=200).contains(&percent) {
-        return Err("桌面宠物大小需在 20%–200% 之间。".into());
+    if !PET_SCALE.contains(&percent) {
+        return Err("桌面宠物大小需在 20%–400% 之间。".into());
     }
     let _window = state.desktop_pet_window.lock().await;
     if let Some(pet) = app.get_webview_window(LABEL) {
+        #[cfg(target_os = "macos")]
+        let position = pet.outer_position().ok();
         pet.set_size(window_size(percent)).map_err(io)?;
+        #[cfg(target_os = "macos")]
+        if let Some(point) =
+            position.and_then(|point| window_position(&pet, Some((point.x, point.y))))
+        {
+            if Some(point) != position {
+                let _ = pet.set_position(point);
+            }
+        }
     }
     state.store.set_app_state(SCALE, &percent.to_string())
 }
@@ -812,6 +823,22 @@ pub(crate) async fn desktop_pet_menu(window: WebviewWindow, app: AppHandle) -> R
     window.popup_menu(&menu).map_err(io)
 }
 
+#[cfg(target_os = "macos")]
+fn drag_offset(
+    origin: objc2_foundation::NSPoint,
+    pointer: objc2_foundation::NSPoint,
+) -> objc2_foundation::NSPoint {
+    objc2_foundation::NSPoint::new(origin.x - pointer.x, origin.y - pointer.y)
+}
+
+#[cfg(target_os = "macos")]
+fn drag_origin(
+    pointer: objc2_foundation::NSPoint,
+    offset: objc2_foundation::NSPoint,
+) -> objc2_foundation::NSPoint {
+    objc2_foundation::NSPoint::new(pointer.x + offset.x, pointer.y + offset.y)
+}
+
 #[tauri::command]
 pub(crate) async fn desktop_pet_drag(window: WebviewWindow) -> Result<(), String> {
     pet_only(&window)?;
@@ -819,28 +846,49 @@ pub(crate) async fn desktop_pet_drag(window: WebviewWindow) -> Result<(), String
     return Err("此版本的桌面宠物仅支持 macOS。".into());
     #[cfg(target_os = "macos")]
     {
+        use objc2_app_kit::{NSEvent, NSWindow};
+
         #[link(name = "CoreGraphics", kind = "framework")]
         extern "C" {
             fn CGEventSourceButtonState(source_state: i32, button: u32) -> bool;
         }
-        let initial = window.outer_position().map_err(io)?;
-        let pointer = window.cursor_position().map_err(io)?;
-        let mut last = initial;
-        // Session button state lets an asynchronous long press continue tracking
-        // the same held button without relying on the WebKit event's lifetime.
-        while unsafe { CGEventSourceButtonState(0, 0) } {
-            let current = window.cursor_position().map_err(io)?;
-            let point = tauri::PhysicalPosition::new(
-                initial.x + (current.x - pointer.x).round() as i32,
-                initial.y + (current.y - pointer.y).round() as i32,
-            );
-            if point != last {
-                window.set_position(point).map_err(io)?;
-                last = point;
+
+        let mut offset = None;
+        loop {
+            let (send, receive) = tokio::sync::oneshot::channel();
+            let pet = window.clone();
+            window
+                .run_on_main_thread(move || {
+                    let step = (|| {
+                        // Global button state outlives the WebKit event that began the hold.
+                        if !unsafe { CGEventSourceButtonState(0, 0) }
+                            || !pet.is_visible().map_err(io)?
+                        {
+                            return Ok::<_, String>(None);
+                        }
+                        let native = pet.ns_window().map_err(io)?.cast::<NSWindow>();
+                        // Tauri owns the NSWindow. Only borrow it within this main-thread tick.
+                        let native = unsafe { native.as_ref() }.ok_or("找不到桌宠窗口。")?;
+                        // Read and write AppKit screen points. Tauri's cursor and window
+                        // physical coordinates use different scales on mixed-DPI displays.
+                        let pointer = NSEvent::mouseLocation();
+                        let origin = native.frame().origin;
+                        let offset = offset.unwrap_or_else(|| drag_offset(origin, pointer));
+                        let next = drag_origin(pointer, offset);
+                        if next != origin {
+                            native.setFrameOrigin(next);
+                        }
+                        Ok(Some(offset))
+                    })();
+                    let _ = send.send(step);
+                })
+                .map_err(io)?;
+            offset = receive.await.map_err(io)??;
+            if offset.is_none() {
+                return Ok(());
             }
             tokio::time::sleep(std::time::Duration::from_millis(16)).await;
         }
-        Ok(())
     }
 }
 
@@ -980,9 +1028,10 @@ fn window_position(
         }
     }
     let monitor = window
-        .primary_monitor()
+        .current_monitor()
         .ok()
         .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
         .or_else(|| monitors.into_iter().next())?;
     let area = monitor.work_area();
     let margin = (18.0 * monitor.scale_factor()) as u32;
@@ -1000,6 +1049,24 @@ mod tests {
         let mut picture = RgbaImage::new(width, height);
         picture.put_pixel(width / 2, height / 2, image::Rgba(color));
         picture.save(path).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn drag_keeps_the_pointer_offset_when_crossing_display_origins() {
+        use objc2_foundation::NSPoint;
+        let window = NSPoint::new(-73.5, 100.0);
+        let start = NSPoint::new(-20.0, 160.0);
+        let offset = drag_offset(window, start);
+        assert_eq!(drag_origin(start, offset), window);
+        assert_eq!(
+            drag_origin(NSPoint::new(8.0, 145.5), offset),
+            NSPoint::new(-45.5, 85.5),
+        );
+        assert_eq!(
+            drag_origin(NSPoint::new(9.0, 145.5), offset),
+            NSPoint::new(-44.5, 85.5),
+        );
     }
 
     #[test]
