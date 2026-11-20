@@ -30,3 +30,11 @@ it('requests an idle animation by its index in the selected pet package', async 
   expect([...new Uint8Array(await runtime.desktopPetAsset(key, 0))]).toEqual([0x52, 0x49])
   expect(invoke).toHaveBeenLastCalledWith('desktop_pet_asset', { key, animation: 0 })
 })
+
+it('publishes the same normalized bounds used by the character button, including empty frames', async () => {
+  const bounds = { x: .3, y: .25, width: .4, height: .6 }
+  await runtime.desktopPetSetHitBounds(bounds)
+  expect(invoke).toHaveBeenLastCalledWith('desktop_pet_set_hit_bounds', { bounds })
+  await runtime.desktopPetSetHitBounds(null)
+  expect(invoke).toHaveBeenLastCalledWith('desktop_pet_set_hit_bounds', { bounds: null })
+})

@@ -1,5 +1,5 @@
 import type { DesktopAssistantOperations, DesktopAssistantRequest, DesktopAssistantSnapshot } from '../desktop-pet/assistantTypes'
-import type { DesktopPetActivity, DesktopPetCatalog, DesktopPetOpenTarget, DesktopPetSnapshot, DesktopPetStatus, PetKey } from '../desktop-pet/types'
+import type { DesktopPetActivity, DesktopPetCatalog, DesktopPetHitBounds, DesktopPetOpenTarget, DesktopPetSnapshot, DesktopPetStatus, PetKey } from '../desktop-pet/types'
 import type { SuperbotRequest } from '../superbot/types'
 import type { RouterSummary, RouterSummaryClaim, RouterPromptInput, RouterPrompt, RouterCorrection, RouterFeedbackPage, DecisionPrompt, DecisionResult } from '../workspace-router/types'
 import type { CreateAsyncWait, AsyncWaitTask, AsyncWaitAction, AsyncWaitSnapshot } from '../async-waits/types'
@@ -355,6 +355,7 @@ export const runtime = {
   desktopPetOpen: () => invoke<void>('desktop_pet_open'),
   desktopPetMenu: () => invoke<void>('desktop_pet_menu'),
   desktopPetDrag: () => invoke<void>('desktop_pet_drag'),
+  desktopPetSetHitBounds: (bounds: DesktopPetHitBounds | null) => invoke<void>('desktop_pet_set_hit_bounds', { bounds }),
   desktopAssistantHide: () => invoke<void>('desktop_assistant_hide'),
   desktopAssistantRequest: <Action extends keyof DesktopAssistantOperations>(action: Action, args: DesktopAssistantOperations[Action]['args']) =>
     invoke<DesktopAssistantOperations[Action]['result']>('desktop_assistant_request', { action, args }),

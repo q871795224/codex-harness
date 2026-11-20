@@ -5,6 +5,7 @@ import { runtime } from '../../core/runtime/bridge'
 import { PetSprite, usePetImage, useReducedMotion } from './PetSprite'
 import { useIdleAnimation } from './useIdleAnimation'
 import { DafeiyuVideo } from './DafeiyuVideo'
+import { usePetBounds } from './usePetBounds'
 import './desktopPet.css'
 
 const labels: Record<DesktopPetActivity['status'], string> = {
@@ -25,6 +26,7 @@ export default function PetWindow() {
   const pet = snapshot?.pet
   const activity = snapshot?.activity
   const { url, error } = usePetImage(pet?.key)
+  const { artwork, bounds } = usePetBounds(url)
   const hdCount = snapshot?.hdMovieCount ?? 0
   const reducedMotion = useReducedMotion()
   const idleAnimation = useIdleAnimation(pet, Boolean(
@@ -50,6 +52,10 @@ export default function PetWindow() {
   }, [])
 
   const handle = (action: Promise<unknown>) => { void action.catch(reason => setLoadError(String(reason))) }
+
+  useEffect(() => {
+    handle(runtime.desktopPetSetHitBounds(bounds))
+  }, [bounds])
 
   function beginPress(event: PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || press.current) return
@@ -82,17 +88,22 @@ export default function PetWindow() {
   }
 
   return <main className="desktop-pet" data-status={activity?.status ?? 'idle'}>
-    <button className="desktop-pet-character" type="button" aria-label="打开 Harness 助理"
-      title={pet?.name ?? 'Harness 助理'} onPointerDown={beginPress} onPointerMove={movePointer}
-      onPointerUp={finishPress} onPointerCancel={finishPress} onLostPointerCapture={finishPress} onPointerLeave={() => setDirection(undefined)}
-      onClick={event => { if (event.detail === 0 || !suppressClick.current) handle(runtime.desktopPetOpen()) }}
-      onContextMenu={event => { event.preventDefault(); cancelPress(); handle(runtime.desktopPetMenu()) }}>
+    <div className="desktop-pet-artwork" ref={artwork}>
       {idleAnimation
         ? <img className="desktop-pet-idle-animation" src={idleAnimation} alt="" draggable={false} />
         : pet && url ? <PetSprite pet={pet} url={url} status={activity?.status} direction={direction} /> : <PawPrint size={38} />}
       {hdCount > 0 && snapshot?.visible && !reducedMotion && (
         <DafeiyuVideo status={activity?.status ?? 'idle'} idleCount={hdCount} />
       )}
+    </div>
+    <button className="desktop-pet-character" type="button" aria-label="打开 Harness 助理" style={bounds ? {
+      left: `${bounds.x * 100}%`, top: `${bounds.y * 100}%`,
+      width: `${bounds.width * 100}%`, height: `${bounds.height * 100}%`,
+    } : { visibility: 'hidden' }}
+      title={pet?.name ?? 'Harness 助理'} onPointerDown={beginPress} onPointerMove={movePointer}
+      onPointerUp={finishPress} onPointerCancel={finishPress} onLostPointerCapture={finishPress} onPointerLeave={() => setDirection(undefined)}
+      onClick={event => { if (event.detail === 0 || !suppressClick.current) handle(runtime.desktopPetOpen()) }}
+      onContextMenu={event => { event.preventDefault(); cancelPress(); handle(runtime.desktopPetMenu()) }}>
       {activity?.count ? <span className="desktop-pet-notice" role="status" aria-label={`${labels[activity.status]}，${activity.count} 项`}>{Math.min(activity.count, 99)}</span> : null}
     </button>
     {(error || loadError) && <p className="desktop-pet-error" role="alert">{error ?? loadError}</p>}

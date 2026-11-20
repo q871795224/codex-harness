@@ -5,6 +5,10 @@ import type { DesktopPetSnapshot } from '../../core/desktop-pet/types'
 import { runtime } from '../../core/runtime/bridge'
 import PetWindow from './PetWindow'
 
+vi.mock('./usePetBounds', () => ({ usePetBounds: () => ({
+  artwork: { current: null }, bounds: { x: .3, y: .25, width: .4, height: .6 },
+}) }))
+
 vi.mock('../../core/runtime/bridge', () => ({
   runtime: {
     listenDesktopPetChanges: vi.fn().mockResolvedValue(() => {}),
@@ -13,6 +17,7 @@ vi.mock('../../core/runtime/bridge', () => ({
     desktopPetOpen: vi.fn().mockResolvedValue(undefined),
     desktopPetDrag: vi.fn().mockResolvedValue(undefined),
     desktopPetMenu: vi.fn().mockResolvedValue(undefined),
+    desktopPetSetHitBounds: vi.fn().mockResolvedValue(undefined),
   },
 }))
 beforeEach(() => {
@@ -27,6 +32,11 @@ it('opens the standalone conversation on click and shows the menu on right click
   await screen.findByLabelText('会话需要你处理，2 项')
   const pet = screen.getByRole('button', { name: '打开 Harness 助理' })
   expect(screen.getAllByRole('button')).toEqual([pet])
+  expect(pet.style.left).toBe('30%')
+  expect(pet.style.top).toBe('25%')
+  expect(pet.style.width).toBe('40%')
+  expect(pet.style.height).toBe('60%')
+  expect(runtime.desktopPetSetHitBounds).toHaveBeenCalledWith({ x: .3, y: .25, width: .4, height: .6 })
   fireEvent.pointerDown(pet, { pointerId: 1, button: 0 })
   fireEvent.pointerUp(pet, { pointerId: 1, button: 0 })
   fireEvent.click(pet, { detail: 1 })
