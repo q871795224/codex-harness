@@ -2,6 +2,12 @@
 
 这里只记录已经从代码、协议或复现中确认的问题，不把猜测写成项目规则。
 
+## macOS 桌宠需要单独排除窗口切换
+
+- **问题**：透明、无边框、置顶及 `focused(false)` 仍会创建可成为 key/main 的普通窗口。Tauri 2 的 `skip_taskbar` 在 macOS 上不生效，不能用它实现桌宠隐藏。
+- **正确做法**：仅对桌宠设置 `focusable(false)`，在 AppKit 主线程设置 `Transient | IgnoresCycle` 和 `excludedFromWindowsMenu`，同时声明 `AXFloatingWindow` 供 AltTab 等按无障碍子角色筛选的切换器识别。组合标记时移除互斥的 `Managed`、`Stationary`、`ParticipatesInCycle`，保留跨 Space 属性；不要修改整个 Harness 的 activation policy。
+- **适用范围**：桌宠和同类无需键盘输入的辅助浮窗。主窗口和可输入的独立助理保留正常焦点与窗口切换；回归入口见 [test.md](test.md#桌面宠物与助理窗口)。
+
 ## Enter 提交必须避开输入法合成
 
 - **问题**：项目创建框仅判断 Enter，中文输入法确认候选词时会误创建项目。

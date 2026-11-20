@@ -10,6 +10,7 @@
 - 支持 App Server 原生插话、服务器队列、停止与审批卡片。
 - 支持从指定 turn 分支为新会话；分支复制对话历史，但不会复制或回滚工作目录中的文件。
 - Codex 原生子 Agent 活动会按会话汇总状态、任务和待审批数，可跳转或停止仍在运行的子 Agent。
+- macOS [桌面宠物](docs/desktop-pet.md)，内置大肥鱼、可选原画动作和通知角标；单击角色打开独立助理窗口。
 - 输入框支持图片 / 文件、模型、推理强度、审批模式和上下文窗口；模型、Skills 与 MCP 默认项在设置中管理。
 - Codex 回复中的本地文件链接和文件修改列表可直接跳转到 GoLand；不在 Harness 内重复实现 diff。
 - 会话标题栏可打开 GoLand、复制当前分支，并从 `origin` 跳转到 GitHub PR 或 GitLab MR 创建页。
@@ -45,7 +46,7 @@ pnpm test:coverage
 
 覆盖率阈值以当前代码基线为起点，用于阻止回退；新增可独立验证的逻辑应同步补测试。
 
-构建未签名 macOS App：
+构建 macOS App（使用仓库配置的签名身份）：
 
 ```bash
 pnpm tauri:build

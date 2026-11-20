@@ -53,10 +53,10 @@ item 类型取值：`userMessage` / `agentMessage` / `commandExecution` / `fileC
 | 术语 | 归属 | 指什么 |
 | --- | --- | --- |
 | Thread | [协议] | Codex 协议会话实体 |
-| **Conversation** | [Harness] | UI 统一层的会话抽象（`ConversationView`、`selectedConversationId`），底下可能是 Codex thread 或 Claude session |
+| **Conversation** | [Harness] | UI 统一层的会话抽象（`ConversationView`、`selectedConversationId`），底下可能是 Codex thread、Claude session 或 Superbot 云端会话 |
 | Session | [Claude] | Claude provider 侧会话，id 前缀 `claude:` |
 
-> 约定：日常说"会话"默认指 UI 上的 Conversation；涉及协议细节说 thread；明确 Claude 的才说 session。另：Codex 落盘的会话文件叫 `rollout`（`Thread.sessionId` 指向它），平时很少提到。
+> 约定：日常说“会话”默认指 UI 上的 Conversation；涉及 Codex 协议细节说 thread；Claude 与 Superbot 的 session 按 Provider 标明。Superbot 会话 ID 使用 `superbot:` 前缀，没有本机 cwd。Codex 落盘的会话文件称为 `rollout`。
 
 ### 4. 插话 vs 排队（steer vs queue）
 
@@ -72,7 +72,7 @@ item 类型取值：`userMessage` / `agentMessage` / `commandExecution` / `fileC
 | 术语 | 中文 | 定义 |
 | --- | --- | --- |
 | **Job**（`QuickAgentJob`） | 快捷 Agent / 任务模板 | 保存好的快捷 Agent 配置（prompt/model/effort/工作区模式…），是"模板" |
-| **Run**（`AgentRun`） | 运行实例 | 跑一次 job 产生的实例，底层对应一个真实的 Codex child thread + turn |
+| **Run**（`AgentRun`） | 运行实例 | 跑一次 job 产生的实例，底层对应一个独立 Codex child thread 或 Claude 会话的一次执行 |
 
 > job 是模板，run 是实例。"提交、推送并创建 MR"是一个 job；点一下跑出来的那次是一个 run。
 
@@ -89,7 +89,9 @@ item 类型取值：`userMessage` / `agentMessage` / `commandExecution` / `fileC
 
 ### 7. 输入附件（UserInput 五种）
 
-`text`（文本）/ `localImage`（本地图片）/ `mention`（文件提及，"@了个文件"）/ `skill`（技能引用，"用了个 $skill"）/ `image`（网络图片）。
+类型包括 `text`（文本）、`localImage`（本地图片）、`mention`（协议引用）、`skill`（技能引用）和 `image`（网络图片）。
+
+Harness 选普通文件时发送路径文本，由 Agent 读取；不因界面展示了 `@` 标签就发送结构化 `mention`。选择 Skill 时发送文本 marker、UTF-8 `text_elements` 和独立 `skill` 项；本地图片使用 `localImage`。协议类型与实际构造见 [codex.ts](../src/core/domain/codex.ts) 和 [composerInput.ts](../src/features/conversation/composerInput.ts)。
 
 ### 8. 其他高频协议词
 
@@ -106,10 +108,10 @@ item 类型取值：`userMessage` / `agentMessage` / `commandExecution` / `fileC
 | --- | --- | --- |
 | **委托 / delegate** | 主从 | 主 Agent 派子 Agent 干活，主 Agent 存续。分单次（fire-and-forget）与带反馈（多轮验收）两种 |
 | **接力 / 继任 / succession** | 接力 | 上一棒会话退役，把状态快照交给新会话接管，不回头。与委托的区别是**主权转移** |
-| **Handover** | 交接命令 | `/handover`，模式 C 的入口：主 Agent 生成交接文档 → 开启继任会话并注入草稿 → 双向血缘标记 |
+| **Handover** | 交接命令 | `/handover`，模式 C 的入口：主 Agent 生成交接文档 → 开启新会话并注入草稿；文档头记录来源，双向会话血缘和自动退役尚未实现 |
 | **交接文档** | handover document | 自包含的状态快照（目标/决策/失败方案/当前状态/下一步 + Harness 生成的工作区状态），新会话靠它冷启动，不回读旧会话。正文存文件 `~/.codex-harness/handover/` 并注入新会话草稿；簿记元数据（doc id、血缘、时间戳）由 Harness 生成文档文件头，不进草稿 |
-| **回传卡片** | — | 子 Agent run 完成后 Harness 在发起会话生成的待审批卡片（注入/查看/忽略）。只有"子→主"方向自动生成；"主→子"方向靠消息级回传按钮由人显式指定 |
-| **completion** | 完成语义 | run 的完成语义枚举：`silent / notify / return-to-parent / succession` |
+| **回传卡片** | — | 子 Agent run 完成后 Harness 在发起会话生成的待审批卡片（注入/查看/忽略）。“子→主”显示结果卡；“主→子”通过卡片意见输入框填入草稿，消息级回传按钮仍属规划 |
+| **completion** | 完成语义 | 快捷 Job 当前为 `detached / return-to-parent`，映射到核心 Run 的 `mode: detached / delegated`；`succession` 是 handover 的设计语义，非当前字段 |
 
 ---
 
@@ -150,7 +152,7 @@ item 类型取值：`userMessage` / `agentMessage` / `commandExecution` / `fileC
 | --- | --- | --- |
 | **侧边栏 / 侧栏** | `<aside class="sidebar">`（`Sidebar.tsx`） | 整个左侧导航 |
 | **品牌行** | `.brand-row` | 侧栏顶部 logo + "codex HARNESS" |
-| **新会话按钮组** | `.new-chat-split` | 新会话 + Codex/Claude provider 切换 |
+| **新会话按钮组** | `.new-chat-split` | 新会话 + Codex/Claude/Superbot Provider 轮换 |
 | **会话列表** | `.thread-list` / `.thread-row` | 中部会话条目（状态点+标题+时间） |
 | **侧栏底部区** | `.sidebar-footer` | 归档切换 + 设置/插件入口 |
 
@@ -221,7 +223,7 @@ item 类型取值：`userMessage` / `agentMessage` / `commandExecution` / `fileC
 
 | 易混 | 区分 |
 | --- | --- |
-| thread / conversation / session | 协议实体 / UI 统一抽象 / Claude 会话 |
+| thread / conversation / session | Codex 协议实体 / UI 统一抽象 / 按 Provider 标明的 Claude 或 Superbot 会话 |
 | turn / item / event | 一轮 / turn 内每一条（含用户输入）/ 实时变动通知（还分协议通知与内部 reducer 事件两层） |
 | run / job | 运行实例 / 任务模板 |
 | steer / queue | 插进当前轮 / 排队等下一轮 |

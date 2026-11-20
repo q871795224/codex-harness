@@ -1087,7 +1087,7 @@ pub(crate) async fn desktop_pet_visibility(
             }
             return Err("请先选择宠物。".into());
         }
-        show_pet(&app, &state)?;
+        show_pet(&app, &state).await?;
     } else {
         hide_pet(&app, window.label() == LABEL)?;
     }
@@ -1103,18 +1103,19 @@ pub(crate) async fn desktop_pet_visibility(
 }
 
 #[cfg(not(target_os = "macos"))]
-fn show_pet(_app: &AppHandle, _state: &AppState) -> Result<(), String> {
+async fn show_pet(_app: &AppHandle, _state: &AppState) -> Result<(), String> {
     Err("此版本的桌面宠物仅支持 macOS。".into())
 }
 
 #[cfg(target_os = "macos")]
-fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
+async fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
     use std::sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
     };
 
     if let Some(window) = app.get_webview_window(LABEL) {
+        exclude_from_window_switchers(&window).await?;
         return window.show().map_err(io);
     }
     let key = selected(state)?;
@@ -1142,10 +1143,12 @@ fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
     .visible_on_all_workspaces(true)
     .shadow(false)
     .focused(false)
+    .focusable(false)
     .accept_first_mouse(true)
     .visible(false)
     .build()
     .map_err(io)?;
+    exclude_from_window_switchers(&window).await?;
     *state.desktop_pet_hit_bounds.lock().map_err(io)? = None;
     *state.desktop_pet_layout.lock().map_err(io)? = layout;
     window
@@ -1199,6 +1202,42 @@ fn show_pet(app: &AppHandle, state: &AppState) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
+fn pet_collection_behavior(
+    current: objc2_app_kit::NSWindowCollectionBehavior,
+) -> objc2_app_kit::NSWindowCollectionBehavior {
+    use objc2_app_kit::NSWindowCollectionBehavior as Behavior;
+    // Managed/Transient/Stationary and ParticipatesInCycle/IgnoresCycle are exclusive groups.
+    (current & !(Behavior::Managed | Behavior::Stationary | Behavior::ParticipatesInCycle))
+        | Behavior::Transient
+        | Behavior::IgnoresCycle
+}
+
+#[cfg(target_os = "macos")]
+async fn exclude_from_window_switchers(window: &WebviewWindow) -> Result<(), String> {
+    use objc2_app_kit::{NSAccessibility, NSAccessibilityFloatingWindowSubrole, NSWindow};
+
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let pet = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let result = (|| {
+                let native = pet.ns_window().map_err(io)?.cast::<NSWindow>();
+                // Tauri owns the NSWindow; AppKit access stays on the main thread.
+                let native = unsafe { native.as_ref() }.ok_or("找不到桌宠窗口。")?;
+                native.setCollectionBehavior(pet_collection_behavior(native.collectionBehavior()));
+                native.setExcludedFromWindowsMenu(true);
+                // AltTab uses AX subroles rather than AppKit's window-cycle flags.
+                native
+                    .setAccessibilitySubrole(Some(unsafe { NSAccessibilityFloatingWindowSubrole }));
+                Ok(())
+            })();
+            let _ = send.send(result);
+        })
+        .map_err(io)?;
+    receive.await.map_err(io)?
+}
+
+#[cfg(target_os = "macos")]
 fn window_position(
     window: &WebviewWindow,
     saved: Option<(i32, i32)>,
@@ -1235,6 +1274,28 @@ fn window_position(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pet_stays_on_all_spaces_without_participating_in_window_switching() {
+        use objc2_app_kit::NSWindowCollectionBehavior as Behavior;
+        let existing = Behavior::CanJoinAllSpaces | Behavior::FullScreenAuxiliary;
+        for management in [
+            Behavior::Default,
+            Behavior::Managed,
+            Behavior::Stationary,
+            Behavior::Transient,
+        ] {
+            let result =
+                pet_collection_behavior(existing | management | Behavior::ParticipatesInCycle);
+            assert!(result.contains(existing));
+            assert!(result.contains(Behavior::Transient | Behavior::IgnoresCycle));
+            assert!(!result.intersects(
+                Behavior::Managed | Behavior::Stationary | Behavior::ParticipatesInCycle
+            ));
+            assert_eq!(pet_collection_behavior(result), result);
+        }
+    }
 
     #[test]
     fn dafeiyu_uses_fixed_compact_native_windows() {

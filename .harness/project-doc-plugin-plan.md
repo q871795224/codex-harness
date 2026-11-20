@@ -3,7 +3,7 @@
 > 历史设计记录：文中的全局软链与命令安装方案已被 App 托管的版本化真实文件副本替代；当前实现及后续规则以 [skills.md](skills.md) 为准。
 
 > 状态：历史设计。旧“归档到项目”入口及专属设置已下线，当前维护方式见 [项目架构：项目文档维护](architecture.md#项目文档维护)。下文保留原设计供追溯，不作为恢复旧入口的依据。
-> 背景与协议本体见 [agent-interaction.md](agent-interaction.md) 第七节与 `src/features/project-doc/`。
+> 现行协议与接入边界见 [skills.md](skills.md) 和 [原生项目工具](../docs/native-project-tools.md)；下文的首轮全文注入仅用于追溯兼容链路。
 
 ## 一、要解决的核心问题
 

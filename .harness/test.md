@@ -11,9 +11,41 @@
 
 改动纯前端领域逻辑时至少运行相关 Vitest；改动 UI、bridge 或 IPC 流程时至少运行 `pnpm build`，并补对应测试。Rust 测试必须使用临时目录或注入依赖，不得读写真实 `~/.codex`、`~/.codex-harness`。
 
+## CI 覆盖边界
+
+| 检查 | 自动验证 | 未覆盖部分 |
+| --- | --- | --- |
+| [`test-and-build`](../.github/workflows/ci.yml)（当前必需） | Node / Vitest、发布与运行时 CLI、异步检查器、项目文档 Python 测试、前端构建 | 不编译 Rust，不验证原生窗口 |
+| [`linux-deb`](../.github/workflows/linux.yml) | Ubuntu 上构建 `.deb` 并执行 `cargo test --locked` | `cfg(target_os = "macos")` 分支不参与编译或测试；不验证 WSLg 实机行为 |
+| macOS 本地检查 | 按改动运行 Rust 测试、前端构建及必要的图形验收 | 当前没有对应的 macOS CI 门禁，不能用 Linux CI 代替 |
+
+当前必需项仍以 GitHub 分支保护为准。macOS AppKit、通知、剪贴板或窗口行为发生改动时，保留本机编译与测试结果，并明确图形验收是否已执行。
+
 ## 发布门禁
 
 完整发布顺序和发布授权边界在 `.agents/skills/harness-release/SKILL.md`。普通开发任务不执行 release commit、tag、稳定版安装、上传或 GitHub Release。
+
+## 桌面宠物与助理窗口
+
+改动桌宠窗口、交互或播放时执行：
+
+```bash
+pnpm exec vitest run src/core/desktop-pet src/features/desktop-pet src/core/runtime/desktopPetBridge.test.ts
+(cd src-tauri && cargo test desktop_pet --lib)
+pnpm build
+```
+
+现有测试覆盖通知优先级及按会话计数、窗口命令白名单、图集与随机动作导入、路径与体积限制、原画白名单读取、固定布局和缩放、混合 DPI 拖动的坐标计算、透明命中区，以及视频状态插播、轮播连续性和 Blob URL 清理。macOS 的窗口策略回归验证排除轮换时保留跨 Space 属性，移除互斥标记且重复应用不变。
+
+以下行为需要在 macOS 图形会话人工验收，单元测试不覆盖真实系统切换器和鼠标事件：
+
+1. 显示大肥鱼，系统窗口轮换及 AltTab 中没有桌宠条目；主窗口和已打开的独立助理仍可切换。首次显示和长按拖动不抢其他应用的输入焦点；单击打开助理后能正常输入。
+2. 隐藏再显示桌宠、切换宠物并重启应用，仍保持上述窗口行为。
+3. 在不同缩放的显示器间长按拖动，指针偏移连续；释放后不误开助理。通用宠物透明留白允许点击下方应用，大肥鱼各缩放下角色、命中区与角标对齐。
+4. 可见时连续播放待机与随机动作；运行、待回应及失败状态各插播一次后继续轮播，重复快照不重置。隐藏或减少动态效果时停止视频播放，缺少素材时有静态预览。
+5. 桌宠可见时关闭主窗口，通知采集继续；通过 Dock 或“查看通知”恢复主窗口，关闭助理后执行继续，完全退出后所有窗口结束。
+
+自动测试使用临时目录和模拟素材，不读取真实宠物目录、不下载原画包。素材、窗口与权限的实现入口见 [desktop-pet.md](desktop-pet.md)。
 
 ## Radar 诊断
 
@@ -34,10 +66,10 @@ Harness 与 CLI 的核对要区分两个层次：
 
 对 `@` 文件和 `$skill` 至少覆盖：空格/中文路径、多文件、重复选择、删除 Skill 标记、相对路径、无 workspace，以及 CLI 支持而 Harness 可能未实现的行号或范围语法。对照结果应保存为结构化 fixture，不保存真实 prompt、回复或凭据。
 
-本次对照已确认一个 CLI 细节：交互式选中 `$demo-skill` 后，CLI 的 `turn/start.input` 会同时包含文本项
+历史隔离对照已确认一个 CLI 细节：交互式选中 `$demo-skill` 后，CLI 的 `turn/start.input` 会同时包含文本项
 `$demo-skill ...`、文本项里的 `text_elements` 占位信息，以及独立的 `{ type: "skill", name, path }` 项；其中
 `text_elements[].byteRange` 是 UTF-8 字节范围，不是 JavaScript 字符下标。位置参数里直接写 `@README.md`
-则仍然只是普通文本，不能代替在交互 Composer 中实际选中文件建议项。对当前 CLI 0.151.0 的交互式文件选择也捕获到：选中后 `turn/start.input` 是不带 `@` 的路径文本，未带结构化 `mention`。2026-09-16 已确认按 CLI 行为对齐：Harness 选中文件后把路径写回输入框文本随消息发出（App Server 不会把结构化 `mention` 放进模型上下文，此前 @ 文件后模型收不到路径即由此产生）；文件选择器/旧草稿残留的文件附件也在 `composerInputs` 兜底内联为路径文本。
+则仍然只是普通文本，不能代替在交互 Composer 中实际选中文件建议项。该次 CLI 0.151.0 的交互式文件选择也捕获到：选中后 `turn/start.input` 是不带 `@` 的路径文本，未带结构化 `mention`。2026-09-16 已确认按 CLI 行为对齐：Harness 选中文件后把路径写回输入框文本随消息发出（App Server 不会把结构化 `mention` 放进模型上下文，此前 @ 文件后模型收不到路径即由此产生）；文件选择器/旧草稿残留的文件附件也在 `composerInputs` 兜底内联为路径文本。上述版本是验证时的快照，升级后按实际版本 schema 与隔离对照复验。
 
 ## 项目文档原生 Skill 加载
 
