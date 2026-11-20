@@ -1,0 +1,364 @@
+{
+  "id": "dafeiyu",
+  "displayName": "大肥鱼",
+  "description": "社区二创鲸鱼娘 · 89 个随机待机动作",
+  "spritesheetPath": "spritesheet.webp",
+  "idleAnimations": [
+    {
+      "path": "idle/三球抛接.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/下五子棋.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/中秋赏月吃月饼.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/优雅女仆舞.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/偷吃零食被抓住.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/写代码.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/写福字.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/凭空生花.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/动物环绕.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/原地专心玩魔方.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/原地小憩沉眠.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/原地敲击桌面互动.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/原地跳跃抓碎头顶物品.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/原地蹲下玩玩具汽车.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/原地重力下蹲压缩.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/变鸽子.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/可爱宅舞.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃Token.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃冰淇淋融化.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃午餐.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃大闸蟹.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃年糕.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃早餐.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃晚餐.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃汤圆.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃白饭.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃粽子.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃糖葫芦.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃腊八粥.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃西瓜.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃重阳糕.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃长寿面.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃青团.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吃饺子.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吹气球.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/吹笛子.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/哈欠连天.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/堆雪人.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/大口吃零食.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/女仆屈膝礼仪.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/小幅度原地360度旋转展示.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/小提琴演奏.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/工作状态-原地踱步张望.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/工作状态-垂头叹气冒汗.webp",
+      "durationMs": 4933
+    },
+    {
+      "path": "idle/工作状态-忙碌点按.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/工作状态-思考冒泡.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/工作状态-清点归档.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/工作状态-雀跃庆祝.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/悠闲哼歌.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/扑克魔术.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/打瞌睡被惊醒.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/抽陀螺.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/拆礼物.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/插茱萸赏菊.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/摇扇纳凉.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/撸猫.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/收红包.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/放孔明灯.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/放河灯.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/放烟花.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/放风筝.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/整体换装试色.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/是啊，吃什么.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/晨间刷牙.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/涮火锅.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/深度思考碎碎念.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/照镜子.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/玩水枪.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/玩游戏气急败坏.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/用鲸鱼尾巴拍打地面.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/碎碎念-发呆碎碎念.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/碎碎念-对屏碎碎念.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/碎碎念-擦桌碎碎念.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/穿针乞巧.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/舞狮头.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/荡秋千.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/萌化小幽灵.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/蓝鲸现世.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/蝴蝶蜜蜂环绕头顶开花.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/被吓一跳.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/被落叶淹没.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/装点圣诞树.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/讨糖南瓜灯.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/超大伸懒腰.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/踢毽子.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/轻快摇摆舞.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/轻快记录.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/骑木马.webp",
+      "durationMs": 10067
+    },
+    {
+      "path": "idle/鲸鱼吐泡泡特效.webp",
+      "durationMs": 10067
+    }
+  ]
+}
