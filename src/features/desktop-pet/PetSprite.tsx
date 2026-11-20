@@ -73,7 +73,7 @@ export function PetSprite({ pet, url, status = 'idle', direction }: { pet: Deskt
     return () => window.clearTimeout(timeout)
   }, [count, custom, direction, frame, pet.version, reduced, status, timings])
   const { row, col, rows } = petFrame(pet, straight, frame, reduced ? undefined : direction)
-  return <span className="desktop-pet-sprite" aria-hidden="true" style={{
+  return <span className="desktop-pet-sprite" aria-hidden="true" data-row={row} data-col={col} data-rows={rows} style={{
     backgroundImage: `url("${url}")`, backgroundSize: `800% ${rows * 100}%`,
     backgroundPosition: `${col * 100 / 7}% ${rows > 1 ? row * 100 / (rows - 1) : 0}%`,
   }} />
