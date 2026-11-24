@@ -97,7 +97,7 @@ function decodeHrefForCompare(href: string): string {
   }
 }
 
-const OPENABLE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:'])
+const OPENABLE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:', 'seatalk:'])
 
 export function isOpenableExternalUrl(value: string): boolean {
   try {

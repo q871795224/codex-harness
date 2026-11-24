@@ -58,6 +58,19 @@ describe('UserInputRequestCard', () => {
     expect(onAnswer).not.toHaveBeenCalled()
   })
 
+  it('opens a SeaTalk conversation without submitting an answer', () => {
+    const href = 'seatalk://conversation?v=1&owner_id=123&target_type=group&target_id=456&message_id=000000009d2c9290'
+    const onAnswer = vi.fn()
+    render(<UserInputRequestCard request={request({ questions: [{
+      id: 'review', header: '确认', question: `先查看[群聊分支](${href})再确认。`,
+    }] })} sendShortcut="mod-enter" onAnswer={onAnswer} />)
+    const link = screen.getByRole('link', { name: '群聊分支' })
+    expect(link.getAttribute('href')).toBe(href)
+    expect(fireEvent.click(link)).toBe(false)
+    expect(runtime.openExternalUrl).toHaveBeenCalledWith(href)
+    expect(onAnswer).not.toHaveBeenCalled()
+  })
+
   it('does not turn unsafe links or raw HTML into navigation', () => {
     render(<UserInputRequestCard request={request({ questions: [{
       id: 'unsafe', header: '安全',
