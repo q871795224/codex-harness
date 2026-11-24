@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, CircleHelp, LockKeyhole } from 'lucide-react
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MarkdownLink } from '../markdown/MarkdownLink'
+import { markdownUrlTransform } from '../markdown/markdownUrlTransform'
 import { remarkRepairCjkAutolink } from '../markdown/remarkRepairCjkAutolink'
 import type { SendShortcut } from '../../core/domain/codex'
 import type { ApprovalRequest } from '../../core/domain/codex'
@@ -183,6 +184,7 @@ export function UserInputRequestCard({ request, sendShortcut, onAnswer, draftAns
                     allowedElements={['a']}
                     unwrapDisallowed
                     skipHtml
+                    urlTransform={markdownUrlTransform}
                     components={{ a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink> }}
                   >{question.question}</ReactMarkdown>
                 </h3>

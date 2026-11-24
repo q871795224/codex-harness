@@ -119,6 +119,26 @@ it('opens external links through the runtime when cwd is provided', () => {
   expect(runtime.openExternalUrl).toHaveBeenCalledWith('https://example.com/docs')
 })
 
+it.each([undefined, '/repo'])('opens SeaTalk conversation links directly through the runtime (cwd: %s)', (cwd) => {
+  const href = 'seatalk://conversation?v=1&owner_id=123&target_type=group&target_id=456&message_id=000000009d2c9290'
+  runtime.openExternalUrl.mockResolvedValue(undefined)
+  render(<Markdown text={`[查看群聊分支](${href})`} cwd={cwd} />)
+  const link = screen.getByRole('link', { name: /查看群聊分支/ })
+  expect(link.getAttribute('href')).toBe(href)
+  expect(fireEvent.click(link)).toBe(false)
+  expect(runtime.openExternalUrl).toHaveBeenCalledWith(href)
+  expect(runtime.openWorkspacePath).not.toHaveBeenCalled()
+})
+
+it.each(['javascript:alert%281%29', 'data:text/html,test', 'command:run', 'unknown://conversation'])('keeps unsupported Markdown schemes inert: %s', (href) => {
+  render(<Markdown text={`[链接](${href})`} cwd="/repo" />)
+  expect(screen.queryByRole('link')).toBeNull()
+  expect(screen.queryByRole('button')).toBeNull()
+  fireEvent.click(screen.getByText('链接'))
+  expect(runtime.openExternalUrl).not.toHaveBeenCalled()
+  expect(runtime.openWorkspacePath).not.toHaveBeenCalled()
+})
+
 it('opens external links before and after workspace context becomes available', () => {
   runtime.openExternalUrl.mockResolvedValue(undefined)
   const text = '[#104](https://github.com/q871795224/codex-harness/pull/104)'
