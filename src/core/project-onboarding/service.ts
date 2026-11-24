@@ -1,34 +1,9 @@
-import type { AgentRunService } from '../agent-runs/types'
 import type { ProjectDocService } from '../project-docs/types'
 import type { ProjectOnboardingService, OnboardingPorts, OnboardingState, StoredOnboardingRequest } from './types'
 import { chunkHistory, historySummaryPrompt, onboardingPrompt, parsePlan } from './prompt'
 import { watchProjectVersion, withAbort } from './versionWatch'
 
-async function waitForRun(runs: AgentRunService, id: string, signal?: AbortSignal): Promise<string> {
-  let stop = () => {}
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const cancel = () => { void runs.cancel(id).catch(() => {}) }
-  signal?.addEventListener('abort', cancel, { once: true })
-  try {
-    if (signal?.aborted) { cancel(); signal.throwIfAborted() }
-    return await withAbort(new Promise<string>((resolve, reject) => {
-      timer = setTimeout(() => { cancel(); reject(new Error('整理超时，项目文档未保存')) }, 300_000)
-      const check = () => {
-        if (signal?.aborted) return
-        const run = runs.snapshot().find(r => r.runId === id)
-        if (!run || !['completed', 'failed', 'cancelled'].includes(run.status)) return
-        clearTimeout(timer); stop()
-        if (run.status === 'completed') void runs.loadResult(id).then(resolve, reject)
-        else reject(new Error(run.errorSummary || '整理未完成，项目文档未保存'))
-      }
-      stop = runs.subscribe(check); check()
-    }), signal)
-  } finally {
-    clearTimeout(timer); stop(); signal?.removeEventListener('abort', cancel)
-  }
-}
-
-export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDocService, runs: AgentRunService): ProjectOnboardingService {
+export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDocService): ProjectOnboardingService {
   let cards: ReadonlyMap<string, OnboardingState> = new Map()
   const listeners = new Set<() => void>(), finishing = new Set<string>()
   const requesting = new Map<string, ReturnType<ProjectOnboardingService['request']>>()
@@ -112,17 +87,11 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
       const target = selection.mode === 'join' ? await ports.project(card.projectId) : null
       if (target && (!target.consistent || target.content.length > 180_000)) throw new Error('目标文档过长或存在协议外修改，请先检查或人工精简后重试')
       if (target) version = watchProjectVersion(docs, target.projectId, target.currentSeq)
-      const run = async (prompt: string, title: string) => {
+      const run = async (prompt: string) => {
         await writes.get(card.id)
         await version?.check()
-        const starting = runs.start({ instanceId: settings.instanceId, provider: 'codex', title, mode: 'detached', workspaceAccess: 'read-only',
-          workspaceRoot: source.cwd, parentThreadId: threadId, prompt,
-          settings: { model: settings.model, effort: settings.effort, serviceTier: null, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxMode: 'read-only' } }).then(task => {
-          if (version?.signal.aborted) void runs.cancel(task.runId).catch(() => {})
-          return task
-        })
-        const task = await withAbort(starting, version?.signal)
-        return waitForRun(runs, task.runId, version?.signal)
+        return withAbort(docs.generateArchive({ workspaceRoot: source.cwd, prompt,
+          model: settings.model, effort: settings.effort, signal: version?.signal }), version?.signal)
       }
       let chunks = chunkHistory(history)
       update({ phase: 'running', messages: history.length, chunks: chunks.length, completedChunks: 0, detail: '正在整理会话结论' })
@@ -131,14 +100,14 @@ export function createProjectOnboarding(ports: OnboardingPorts, docs: ProjectDoc
         const summaries: string[] = []
         for (let i = 0; i < chunks.length; i++) {
           update({ detail: `正在整理历史 ${i + 1}/${chunks.length}`, chunks: chunks.length, completedChunks: i })
-          summaries.push(await run(historySummaryPrompt(chunks[i], i, chunks.length), '整理会话历史'))
+          summaries.push(await run(historySummaryPrompt(chunks[i], i, chunks.length)))
         }
         const previousLength = chunks.join('').length
         chunks = chunkHistory(summaries)
         if (chunks.length > 1 && chunks.join('').length >= previousLength) throw new Error('分段历史未能缩短，请重试；未丢弃历史内容')
       }
       update({ detail: '正在生成项目记忆' })
-      const plan = parsePlan(await run(onboardingPrompt(chunks[0], target, card.name), selection.mode === 'create' ? '从会话建立项目' : '补记会话到项目'))
+      const plan = parsePlan(await run(onboardingPrompt(chunks[0], target, card.name)))
       if (!target && !plan.status) throw new Error('新项目整理结果缺少概况')
       await version?.check()
       version?.stop()

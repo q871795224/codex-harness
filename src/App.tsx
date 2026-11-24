@@ -123,7 +123,7 @@ export default function App() {
     binding: projectDocs.threadBinding,
     commit: projectDocs.commitOnboarding,
     finish: projectDocs.finishOnboarding,
-  }, projectDocs, agentRuns), [agentRuns])
+  }, projectDocs), [])
   useEffect(() => harness.onMessageAccepted(onboarding.messageAccepted), [harness.onMessageAccepted, onboarding])
   useEffect(() => { void onboarding.resumeBindings() }, [onboarding, harness.workingThreadIds])
   useEffect(() => { if (harness.phase === 'ready') void onboarding.restoreSaved().catch(() => {}) }, [onboarding, harness.phase])

@@ -95,7 +95,7 @@ export function OnboardingButton({ service, docs, threadId, disabled, instanceId
   }, [docs, threadId])
   if (bound || !threadId) return null
   return <span className="project-archive-action">
-    <button type="button" className="composer-icon-button" title="从会话新建或加入项目" aria-label="新建或加入项目" disabled={disabled}
+    <button type="button" className="composer-icon-button" data-tip="从会话新建或加入项目" aria-label="新建或加入项目" disabled={disabled}
       onClick={() => { setError(''); void service.request(threadId,{instanceId}).catch(e => setError(String(e))) }}><FolderPlus size={15} /></button>
     {error && <span role="alert" className="project-archive-error">{error}</span>}
   </span>

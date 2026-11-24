@@ -113,7 +113,7 @@ export function CompactionButton({ deps, threadId, disabled }: { deps: Compactio
     catch (error) { setError(String(error)) }
   }
   return <span className="project-archive-action">
-    <button type="button" className="composer-icon-button" title="精简项目文档" aria-label="精简项目文档" disabled={disabled || !threadId} onClick={() => void request()}><FileArchive size={15} /></button>
+    <button type="button" className="composer-icon-button" data-tip="精简项目文档" aria-label="精简项目文档" disabled={disabled || !threadId} onClick={() => void request()}><FileArchive size={15} /></button>
     {error && <span className="project-archive-error" role="alert">{error}</span>}
   </span>
 }
