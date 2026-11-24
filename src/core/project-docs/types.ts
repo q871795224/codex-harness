@@ -43,6 +43,7 @@ export interface ProjectArchiveInput {
   prompt: string
   model: string
   effort: ThreadCodexSettings['effort']
+  signal?: AbortSignal
 }
 
 export interface ProjectDocService {

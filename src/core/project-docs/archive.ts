@@ -5,7 +5,8 @@ import type { ProjectArchiveInput } from './types'
 
 /** The draft is read from live events: ephemeral threads have no persisted rollout. */
 export async function generateProjectArchive(input: ProjectArchiveInput): Promise<string> {
-  const { workspaceRoot: cwd, prompt, model, effort } = input
+  const { workspaceRoot: cwd, prompt, model, effort, signal } = input
+  signal?.throwIfAborted()
   const response = await appServer.startThread({
     cwd, runtimeWorkspaceRoots: [cwd], model,
     approvalPolicy: 'never', sandbox: 'read-only', ephemeral: true,
@@ -16,11 +17,15 @@ export async function generateProjectArchive(input: ProjectArchiveInput): Promis
   let unlisten: (() => void) | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let terminal = false
+  let abort: (() => void) | undefined
   try {
+    signal?.throwIfAborted()
     let resolve!: (text: string) => void
     let reject!: (error: Error) => void
     const result = new Promise<string>((yes, no) => { resolve = yes; reject = no })
     void result.catch(() => undefined)
+    abort = () => reject(signal?.reason)
+    signal?.addEventListener('abort', abort, { once: true })
     let text = ''
     const finish = (turn: Turn) => {
       if (turn.status === 'inProgress') return
@@ -40,6 +45,7 @@ export async function generateProjectArchive(input: ProjectArchiveInput): Promis
       }
       if (event.method === 'turn/completed') finish(params.turn as Turn)
     })
+    signal?.throwIfAborted()
     timer = setTimeout(() => reject(new Error('归档超时（5 分钟未完成）。')), 5 * 60 * 1000)
     const started = await appServer.startTurn({
       threadId, clientUserMessageId: crypto.randomUUID(), input: [textInput(prompt)],
@@ -48,9 +54,11 @@ export async function generateProjectArchive(input: ProjectArchiveInput): Promis
       turnTrigger: 'quick-agent',
     })
     turnId = started.turn.id
+    signal?.throwIfAborted()
     finish(started.turn)
     return await result
   } finally {
+    if (abort) signal?.removeEventListener('abort', abort)
     if (timer) clearTimeout(timer)
     unlisten?.()
     if (!terminal && turnId) await appServer.interruptTurn(threadId, turnId).catch(() => undefined)

@@ -72,3 +72,38 @@ it('releases the temporary thread when starting the turn fails', async () => {
   expect(appServer.unsubscribeThread).toHaveBeenCalledWith('temporary')
   expect(unlisten).toHaveBeenCalledOnce()
 })
+
+it('does not start an already cancelled generation', async () => {
+  const controller = new AbortController()
+  controller.abort(new Error('目标版本变化'))
+  await expect(createProjectDocService().generateArchive({ ...input, signal: controller.signal })).rejects.toThrow('目标版本变化')
+  expect(appServer.startThread).not.toHaveBeenCalled()
+})
+
+it('releases a late-started thread without starting its turn after cancellation', async () => {
+  const controller = new AbortController()
+  let started!: (value: Awaited<ReturnType<typeof appServer.startThread>>) => void
+  vi.mocked(appServer.startThread).mockImplementationOnce(() => new Promise(resolve => { started = resolve }))
+  const result = expect(createProjectDocService().generateArchive({ ...input, signal: controller.signal })).rejects.toThrow('目标版本变化')
+  controller.abort(new Error('目标版本变化'))
+  started({ thread: { id: 'late' } } as never)
+  await result
+  expect(appServer.startTurn).not.toHaveBeenCalled()
+  expect(appServer.unsubscribeThread).toHaveBeenCalledWith('late')
+})
+
+it('interrupts a late-started turn and releases its thread after cancellation', async () => {
+  vi.useFakeTimers()
+  const controller = new AbortController()
+  let started!: (value: Awaited<ReturnType<typeof appServer.startTurn>>) => void
+  vi.mocked(appServer.startTurn).mockImplementationOnce(() => new Promise(resolve => { started = resolve }))
+  const result = expect(createProjectDocService().generateArchive({ ...input, signal: controller.signal })).rejects.toThrow('目标版本变化')
+  await vi.advanceTimersByTimeAsync(0)
+  controller.abort(new Error('目标版本变化'))
+  started({ turn: turn('inProgress') })
+  await result
+  expect(appServer.interruptTurn).toHaveBeenCalledWith('temporary', 'turn')
+  expect(appServer.unsubscribeThread).toHaveBeenCalledWith('temporary')
+  expect(unlisten).toHaveBeenCalledOnce()
+  expect(vi.getTimerCount()).toBe(0)
+})

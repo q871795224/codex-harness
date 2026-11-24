@@ -8,7 +8,8 @@ it('shows the requested hover text and saves the current conversation without pr
   const service: MemoryService = { subscribe: () => () => {}, isRunning: () => false, saveConversation: vi.fn(async () => []) }
   render(<MemoryButton service={service} threadId="current" cwd="/repo" disabled={false} />)
   const button = screen.getByRole('button', { name: '保存到记忆' })
-  expect(button.getAttribute('title')).toBe('保存到记忆')
+  expect(button.getAttribute('data-tip')).toBe('保存到记忆')
+  expect(button.hasAttribute('title')).toBe(false)
   fireEvent.click(button)
   await waitFor(() => expect(service.saveConversation).toHaveBeenCalledWith({ threadId: 'current', cwd: '/repo' }))
 })

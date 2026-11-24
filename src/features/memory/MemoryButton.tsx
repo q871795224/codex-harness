@@ -12,7 +12,7 @@ export function MemoryButton({ service, threadId, cwd, disabled }: { service: Me
     catch (next) { setError(next instanceof Error ? next.message : String(next)) }
   }
   return <span className="project-archive-action">
-    <button type="button" className="composer-icon-button" title="保存到记忆" aria-label="保存到记忆"
+    <button type="button" className="composer-icon-button" data-tip="保存到记忆" aria-label="保存到记忆"
       disabled={disabled || busy || !threadId || !cwd}
       onClick={() => void save()}>
       {busy ? <LoaderCircle className="spin" size={15} /> : <Brain size={15} />}
