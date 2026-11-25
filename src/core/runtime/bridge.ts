@@ -1,4 +1,5 @@
 import type { DesktopAssistantOperations, DesktopAssistantRequest, DesktopAssistantSnapshot } from '../desktop-pet/assistantTypes'
+import { nativeSeaTalkUrl } from '../domain/seatalkLinks'
 import type { DesktopPetLayout } from '../desktop-pet/types'
 import type { DesktopPetActivity, DesktopPetCatalog, DesktopPetHitBounds, DesktopPetOpenTarget, DesktopPetSnapshot, DesktopPetStatus, PetKey } from '../desktop-pet/types'
 import type { SuperbotRequest } from '../superbot/types'
@@ -319,8 +320,8 @@ export const runtime = {
     return getCurrentWindow().setTheme(theme)
   },
 
-  openExternalUrl(url: string): Promise<void> {
-    return openUrl(url)
+  async openExternalUrl(url: string): Promise<void> {
+    return openUrl(nativeSeaTalkUrl(url))
   },
 
   listWorkspaces(): Promise<Workspace[]> {
