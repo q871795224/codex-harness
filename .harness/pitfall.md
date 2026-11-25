@@ -2,6 +2,12 @@
 
 这里只记录已经从代码、协议或复现中确认的问题，不把猜测写成项目规则。
 
+## SeaTalk 消息引用需要转换为客户端路由
+
+- **问题**：`seatalk://conversation?...` 是 Bridge 的消息读取引用，直接交给系统只会唤起 SeaTalk，客户端不识别其中的会话定位。
+- **正确做法**：保留原引用用于复制和读取，仅在 `runtime.openExternalUrl` 打开时转换为 `seatalk://application/message/open?sid=...&mid=...`。`sid` 为 `group-<id>` 或 `buddy-<id>` 经 `spark` 循环 XOR 后的 Base64；`mid` 优先使用被选中的消息，保留十六进制字符串及前导零。客户端自行从消息恢复回复分支，定位依赖本机可用消息记录。
+- **验证依据**：SeaTalk Web 3.72 的原生 `/message/open` 处理器读取 `sid`、`mid` 并调用 `chatAssistantAgent.jumpToMessage`；既有原生链接样本用于转换回归测试。
+
 ## macOS 桌宠需要单独排除窗口切换
 
 - **问题**：透明、无边框、置顶及 `focused(false)` 仍会创建可成为 key/main 的普通窗口。Tauri 2 的 `skip_taskbar` 在 macOS 上不生效，不能用它实现桌宠隐藏。
