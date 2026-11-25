@@ -27,6 +27,7 @@
     "@xterm/xterm": "^6.0.0",
     "buffer": "6.0.3",
     "events": "3.3.0",
+    "hast-util-to-text": "^4.0.3",
     "lucide-react": "^0.468.0",
     "mermaid": "^12.0.0",
     "postman-collection": "5.3.1",

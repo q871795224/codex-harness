@@ -3,6 +3,7 @@ import { createContext, useContext, isValidElement, useMemo, type ComponentProps
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MarkdownCodeBlock } from './MarkdownCodeBlock'
+import { MarkdownBlockquote } from './MarkdownBlockquote'
 import { JsonBlock } from './JsonBlock'
 import { MarkdownLink } from './MarkdownLink'
 import { markdownUrlTransform } from './markdownUrlTransform'
@@ -15,6 +16,7 @@ export const MarkdownLocalFilesContext = createContext(true)
 export function Markdown({ text, cwd, collapsibleJson = false }: { text: string; cwd?: string; collapsibleJson?: boolean }) {
   const localFiles = useContext(MarkdownLocalFilesContext)
   const components: Components = useMemo(() => ({
+    blockquote: MarkdownBlockquote,
     table: ({ node: _node, ...props }) => <MarkdownTable {...props} />,
     img: ({ src, alt, title }) => !localFiles && imageSource(src ?? '')?.kind === 'local'
       ? <span>{alt || '图片'}（在云端查看）</span>
