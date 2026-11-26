@@ -169,7 +169,7 @@ export function Composer({ threadId, onMessageAccepted, variant, standaloneAssis
   const [correctionFeedbackVisible, setCorrectionFeedbackVisible] = useState(false)
   const [correctionHover, setCorrectionHover] = useState<{ original: string; left: number; top: number } | null>(null)
   useEffect(() => { setCorrectionHover(null) }, [text, composing, disabled, busy])
-  const correction = useInputCorrection(text, composing, !!disabled || !!busy, collapsedPastes, ref, (next, edits) => {
+  const correction = useInputCorrection(text, composing, !!disabled || !!busy, collapsedPastes, ref, (next, edits, nextCursor) => {
     let pastes = collapsedPastes
     let offset = 0
     const changes = edits.map((edit) => {
@@ -184,7 +184,7 @@ export function Composer({ threadId, onMessageAccepted, variant, standaloneAssis
     }
     setCollapsedPastes(pastes)
     setText(next)
-    setCursor(ref.current?.selectionStart ?? next.length)
+    setCursor(nextCursor)
   }, !standaloneAssistant)
   useEffect(() => { if (correction.revision > 0) setCorrectionFeedbackVisible(true) }, [correction.revision])
   useEffect(() => onMessageAccepted?.((acceptedId) => {
