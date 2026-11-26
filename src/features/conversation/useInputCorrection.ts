@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { correctInput, moveCorrections, manuallyEditedRanges, type Correction, type Range } from '../../core/input-correction/engine'
 import { loadCorrectionSettings, useCorrectionSettings } from '../../core/input-correction/settings'
 
-export function useInputCorrection(text: string, composing: boolean, disabled: boolean, ranges: Range[], textarea: RefObject<HTMLTextAreaElement | null>, apply: (text: string, edits: Correction[]) => void, loadSettings = true) {
+export function useInputCorrection(text: string, composing: boolean, disabled: boolean, ranges: Range[], textarea: RefObject<HTMLTextAreaElement | null>, apply: (text: string, edits: Correction[], cursor: number) => void, loadSettings = true) {
   const settings = useCorrectionSettings()
   const [edits, setEdits] = useState<Correction[]>([])
   const [error, setError] = useState('')
@@ -12,8 +12,16 @@ export function useInputCorrection(text: string, composing: boolean, disabled: b
   const pending = useRef(false)
   const pasted = useRef<Correction[]>([])
   const nextPaste = useRef<Range | null>(null)
+  const pendingSelection = useRef<{ text: string; start: number; end: number; direction: 'forward' | 'backward' | 'none' } | null>(null)
   const latest = useRef({ apply, ranges, edits })
   latest.current = { apply, ranges, edits }
+  useLayoutEffect(() => {
+    const selection = pendingSelection.current
+    if (!selection) return
+    pendingSelection.current = null
+    // Restore only after React commits the corrected textarea value.
+    if (selection.text === text) textarea.current?.setSelectionRange(selection.start, selection.end, selection.direction)
+  }, [text, textarea])
   useEffect(() => {
     if (!loadSettings) return
     let disposed = false
@@ -67,8 +75,9 @@ export function useInputCorrection(text: string, composing: boolean, disabled: b
       previous.current = result.text
       setEdits([...existing, ...result.edits])
       setRevision((value) => value + 1)
-      latest.current.apply(result.text, result.edits)
-      requestAnimationFrame(() => element?.setSelectionRange(shift(selectionStart), shift(selectionEnd)))
+      const start = shift(selectionStart)
+      pendingSelection.current = { text: result.text, start, end: shift(selectionEnd), direction: element?.selectionDirection ?? 'none' }
+      latest.current.apply(result.text, result.edits, start)
     }, 600)
     return () => clearTimeout(timer)
   }, [text, composing, disabled, settings, textarea, loaded])

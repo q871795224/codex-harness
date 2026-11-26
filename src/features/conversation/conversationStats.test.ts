@@ -61,9 +61,26 @@ describe('conversation stats preferences', () => {
         { id: 'removed-field', visible: true },
       ],
     }).items.slice(0, 2)).toEqual([
-      { id: 'credits', visible: true },
+      { id: 'usd', visible: true },
       { id: 'activity', visible: false },
     ])
+  })
+
+  it.each([
+    [true, false, true],
+    [false, true, true],
+    [true, true, true],
+    [false, false, false],
+  ])('merges legacy credit visibility %s and dollar visibility %s into one cost field', (credits, usd, visible) => {
+    const migrated = normalizeConversationStatsPreferences({ items: [
+      { id: 'credits', visible: credits },
+      { id: 'activity', visible: false },
+      { id: 'usd', visible: usd },
+    ] })
+    expect(migrated.items.filter((item) => item.id === 'usd')).toEqual([{ id: 'usd', visible }])
+    expect(migrated.items[0]).toEqual({ id: 'usd', visible })
+    expect(migrated.items.some((item) => String(item.id) === 'credits')).toBe(false)
+    expect(normalizeConversationStatsPreferences(migrated)).toEqual(migrated)
   })
 
   it('renders only enabled fields with real values and preserves configured order', () => {
@@ -79,14 +96,14 @@ describe('conversation stats preferences', () => {
       turns: [turn],
       items: [{ turnId: turn.id, item: { id: 'tool-1', type: 'commandExecution', durationMs: 1_500 } }],
       tokenUsage,
-      creditUsage: { creditsMicros: 1_250_000, usdMicros: 250_000 },
+      creditUsage: { creditsMicros: 1_250_000, usdMicros: 250_000, nativeUsdMicros: null },
       thread,
       workspace,
       taskPlan: null,
     })
 
     expect(segments.slice(0, 3).map((segment) => segment.text)).toEqual([
-      '$0.25 USD',
+      '$0.25',
       '上下文 4K / 20K · 20%',
       '缓存命中 75%',
     ])
@@ -96,10 +113,10 @@ describe('conversation stats preferences', () => {
   it('omits enabled fields when the App Server has no value for them', () => {
     const preferences = normalizeConversationStatsPreferences({ items: [{ id: 'usd', visible: true }] })
     expect(conversationStatSegments(preferences, {
-      turns: [],
+      turns: [turn],
       items: [],
       tokenUsage: null,
-      creditUsage: { creditsMicros: 0, usdMicros: null },
+      creditUsage: { creditsMicros: 0, usdMicros: null, nativeUsdMicros: null },
       thread: null,
       workspace: null,
       taskPlan: null,
@@ -112,11 +129,42 @@ describe('conversation stats preferences', () => {
       turns: [],
       items: [],
       tokenUsage: null,
-      creditUsage: { creditsMicros: 0, usdMicros: 0 },
+      creditUsage: { creditsMicros: 0, usdMicros: 0, nativeUsdMicros: 0 },
       thread,
       workspace,
       taskPlan: null,
     })).toEqual([])
+  })
+
+  it.each([
+    [0, '$0.00'],
+    [1, '<$0.01'],
+    [4_200, '<$0.01'],
+    [7_714, '<$0.01'],
+    [9_999, '<$0.01'],
+    [10_000, '$0.01'],
+    [434_819, '$0.43'],
+    [999_999, '$1.00'],
+    [1_005_000, '$1.01'],
+    [6_025_165, '$6.03'],
+    [33_654_355, '$33.65'],
+  ])('renders native dollar usage %s with the agreed two-decimal format', (nativeUsdMicros, text) => {
+    const segments = conversationStatSegments(defaultConversationStatsPreferences(), {
+      turns: [turn], items: [], tokenUsage, costUsd: null,
+      creditUsage: { creditsMicros: 0, usdMicros: 0, nativeUsdMicros },
+      thread, workspace, taskPlan: null,
+    })
+    expect(segments.find((segment) => segment.id === 'usd')?.text).toBe(text)
+    expect(segments.some((segment) => String(segment.id) === 'credits')).toBe(false)
+  })
+
+  it('keeps native zero usage ahead of a nonzero credit-based dollar estimate', () => {
+    const segments = conversationStatSegments(defaultConversationStatsPreferences(), {
+      turns: [turn], items: [], tokenUsage,
+      creditUsage: { creditsMicros: 1, usdMicros: 1_000_000, nativeUsdMicros: 0 },
+      thread, workspace, taskPlan: null,
+    })
+    expect(segments.find((segment) => segment.id === 'usd')?.text).toBe('$0.00')
   })
 
   it('formats App Server and workspace status fields after conversation activity starts', () => {

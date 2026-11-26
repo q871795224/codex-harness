@@ -14,6 +14,31 @@ beforeEach(() => { vi.useFakeTimers(); vi.clearAllMocks() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 async function settle() { await act(async () => { vi.advanceTimersByTime(650) }) }
 const input = () => screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement
+it('keeps the caret between corrected double quotes after the text commits', async () => {
+  await act(async () => { render(<Composer {...props} />) })
+  const editor = input()
+  editor.focus()
+  fireEvent.change(editor, { target: { value: '请输入""内容' } })
+  editor.setSelectionRange(4, 4)
+  await settle()
+  expect(editor.value).toBe('请输入“”内容')
+  expect(editor.selectionStart).toBe(4)
+  expect(editor.selectionEnd).toBe(4)
+})
+
+it('preserves a backwards selection while corrections before it change length', async () => {
+  await act(async () => { render(<Composer {...props} />) })
+  const editor = input()
+  editor.focus()
+  fireEvent.change(editor, { target: { value: '哈尼斯"内容"继续' } })
+  editor.setSelectionRange(4, 6, 'backward')
+  await settle()
+  expect(editor.value).toBe('Harness“内容”继续')
+  expect(editor.selectionStart).toBe(8)
+  expect(editor.selectionEnd).toBe(10)
+  expect(editor.selectionDirection).toBe('backward')
+})
+
 it('keeps only a feedback box above the editor and retains later typing', async () => {
   await act(async () => { render(<Composer {...props} />) })
   expect(screen.queryByRole('textbox', { name: '纠正反馈' })).toBeNull()

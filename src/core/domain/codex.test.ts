@@ -128,7 +128,13 @@ describe('thread credit usage', () => {
   it('reads numeric and serialized micro-credit values from account usage', () => {
     expect(parseThreadCreditUsage({
       threadUsage: { estimatedUsageCreditsMicros: '1250000', estimatedUsageUsdMicros: 42000 },
-    })).toEqual({ creditsMicros: 1_250_000, usdMicros: 42_000 })
+    })).toEqual({ creditsMicros: 1_250_000, usdMicros: 42_000, nativeUsdMicros: null })
+  })
+
+  it('reads native dollar usage independently of zero credit estimates', () => {
+    expect(parseThreadCreditUsage({
+      threadUsage: { estimatedUsageCreditsMicros: 0, estimatedUsageUsdMicros: 0, nativeUsageUsdMicros: '6025165' },
+    })).toEqual({ creditsMicros: 0, usdMicros: 0, nativeUsdMicros: 6_025_165 })
   })
 
   it('returns null when thread usage is unavailable', () => {
