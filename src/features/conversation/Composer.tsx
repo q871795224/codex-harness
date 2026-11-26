@@ -335,6 +335,8 @@ export function Composer({ threadId, onMessageAccepted, variant, standaloneAssis
     const previous = previousInitialDraft.current
     previousInitialDraft.current = initialDraft
     if (!initialDraft || initialDraft === previous) return
+    // Parent echoes of the same editable draft must preserve the local project card projection.
+    if (sameComposerDraft(currentDraftRef.current, initialDraft)) return
     const empty = { text: '', attachments: [], collapsedPastes: [] }
     if (!sameComposerDraft(currentDraftRef.current, previous ?? empty)) return
     setText(initialDraft.text)

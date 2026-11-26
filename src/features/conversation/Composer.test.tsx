@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Composer, type ComposerDraft } from './Composer'
-import { expandCollapsedPastes } from './composerInput'
+import { expandCollapsedPastes, insertCollapsedPaste } from './composerInput'
 
 afterEach(cleanup)
 const props = {
@@ -11,6 +12,24 @@ const props = {
   settings: { model: 'test', effort: 'high', serviceTier: null, approvalPolicy: 'never' as const, approvalsReviewer: 'user' as const, sandboxMode: 'danger-full-access' as const },
   rawMode: false, followUpMode: 'queue' as const, onSettingsChange: vi.fn(), onFollowUpModeChange: vi.fn(), onSend: vi.fn(), onCommand: vi.fn(), onStop: vi.fn(),
 }
+
+it('does not restore a draft echoed by the parent after removing the project card', () => {
+  const saved = insertCollapsedPaste('\n未发送草稿', 0, 0, '项目背景', [], '[项目: 项目 (seq 1)]', {
+    kind: 'project-doc', projectId: 'one',
+  })
+  const draftChanged = vi.fn()
+  function ControlledComposer() {
+    const [draft, setDraft] = useState<ComposerDraft>({ text: saved.text, collapsedPastes: saved.pastes, attachments: [] })
+    return <Composer {...props} initialDraft={draft} onDraftChange={(next) => {
+      draftChanged(next)
+      setDraft(next)
+    }} />
+  }
+
+  render(<ControlledComposer />)
+  expect((screen.getByPlaceholderText('给 Codex 发送消息') as HTMLTextAreaElement).value).toBe('\n未发送草稿')
+  expect(draftChanged).toHaveBeenLastCalledWith({ text: '\n未发送草稿', collapsedPastes: [], attachments: [] })
+})
 
 it('keeps an actionable stop button for a working Claude session', () => {
   const onStop = vi.fn()
