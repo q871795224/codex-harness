@@ -427,6 +427,7 @@ export interface TurnPlanStep {
 export interface ThreadCreditUsage {
   creditsMicros: number
   usdMicros: number | null
+  nativeUsdMicros: number | null
 }
 
 export function parseThreadCreditUsage(value: unknown): ThreadCreditUsage | null {
@@ -439,6 +440,7 @@ export function parseThreadCreditUsage(value: unknown): ThreadCreditUsage | null
   return {
     creditsMicros: Math.max(0, creditsMicros),
     usdMicros: finiteNumber(raw.estimatedUsageUsdMicros),
+    nativeUsdMicros: finiteNumber(raw.nativeUsageUsdMicros),
   }
 }
 

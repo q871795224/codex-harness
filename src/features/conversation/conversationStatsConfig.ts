@@ -18,7 +18,6 @@ export type ConversationStatId =
   | 'runState'
   | 'taskProgress'
   | 'usedTokens'
-  | 'credits'
   | 'usd'
 
 export interface ConversationStatPreference {
@@ -71,8 +70,7 @@ export const CONVERSATION_STAT_DEFINITIONS: ConversationStatDefinition[] = [
   { id: 'runState', name: '运行状态', description: 'App Server 会话状态，包括就绪、工作中、等待操作和错误', defaultVisible: false },
   { id: 'taskProgress', name: '任务进度', description: 'App Server 最近一次 turn/plan/updated 通知中的计划进度', defaultVisible: false },
   { id: 'usedTokens', name: '已用 Token', description: 'App Server 返回的会话累计 token 数', defaultVisible: false },
-  { id: 'credits', name: 'Credits', description: '账户接口返回的会话预估 credit 消耗', defaultVisible: true },
-  { id: 'usd', name: '预估费用', description: '账户接口返回的会话预估美元费用', defaultVisible: false },
+  { id: 'usd', name: '费用', description: '会话累计美元费用，优先使用原生美元费用', defaultVisible: true },
 ]
 
 const definitionById = new Map(CONVERSATION_STAT_DEFINITIONS.map((definition) => [definition.id, definition]))
@@ -89,14 +87,22 @@ export function normalizeConversationStatsPreferences(value: unknown): Conversat
     return defaultConversationStatsPreferences()
   }
   const saved = (value as { items: unknown[] }).items
+  const hasLegacyCredits = saved.some((candidate) => candidate && typeof candidate === 'object' && (candidate as { id?: unknown }).id === 'credits')
   const seen = new Set<ConversationStatId>()
   const items: ConversationStatPreference[] = []
   for (const candidate of saved) {
     if (!candidate || typeof candidate !== 'object') continue
-    const id = (candidate as { id?: unknown }).id
-    if (typeof id !== 'string' || !definitionById.has(id as ConversationStatId) || seen.has(id as ConversationStatId)) continue
+    const savedId = (candidate as { id?: unknown }).id
+    const id = savedId === 'credits' ? 'usd' : savedId
+    if (typeof id !== 'string' || !definitionById.has(id as ConversationStatId)) continue
+    const visible = (candidate as { visible?: unknown }).visible === true
+    if (seen.has(id as ConversationStatId)) {
+      // Merge the two former cost toggles without hiding a previously visible cost.
+      if (id === 'usd' && hasLegacyCredits && visible) items.find((item) => item.id === 'usd')!.visible = true
+      continue
+    }
     seen.add(id as ConversationStatId)
-    items.push({ id: id as ConversationStatId, visible: (candidate as { visible?: unknown }).visible === true })
+    items.push({ id: id as ConversationStatId, visible })
   }
   for (const definition of CONVERSATION_STAT_DEFINITIONS) {
     if (!seen.has(definition.id)) items.push({ id: definition.id, visible: definition.defaultVisible })
@@ -117,6 +123,8 @@ export function conversationStatSegments(preferences: ConversationStatsPreferenc
   const total = data.tokenUsage?.total ?? null
   const last = data.tokenUsage?.last ?? null
   const contextWindow = data.tokenUsage?.modelContextWindow ?? null
+  const usdMicros = data.creditUsage?.nativeUsdMicros ?? data.creditUsage?.usdMicros
+  const costUsd = data.costUsd ?? (usdMicros === null || usdMicros === undefined ? null : usdMicros / 1_000_000)
 
   return preferences.items.flatMap((preference): ConversationStatSegment[] => {
     if (!preference.visible) return []
@@ -173,14 +181,10 @@ export function conversationStatSegments(preferences: ConversationStatsPreferenc
       }
       case 'usedTokens':
         return total && total.totalTokens > 0 ? [{ id: preference.id, text: `已用 ${formatTokens(total.totalTokens)} tok` }] : []
-      case 'credits':
-        return data.creditUsage ? [{ id: preference.id, text: `${formatCredits(data.creditUsage.creditsMicros)} credits` }] : []
       case 'usd':
-        return data.costUsd !== null && data.costUsd !== undefined
-          ? [{ id: preference.id, text: `$${formatUsdDollars(data.costUsd)} USD` }]
-          : data.creditUsage?.usdMicros !== null && data.creditUsage?.usdMicros !== undefined
-            ? [{ id: preference.id, text: `$${formatUsd(data.creditUsage.usdMicros)} USD` }]
-            : []
+        return costUsd !== null
+          ? [{ id: preference.id, text: formatUsdDollars(costUsd), title: '会话累计美元费用' }]
+          : []
     }
   })
 }
@@ -202,17 +206,9 @@ function sumDurations(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0), 0)
 }
 
-function formatCredits(micros: number): string {
-  const credits = micros / 1_000_000
-  return credits.toLocaleString(undefined, { maximumFractionDigits: credits < 10 ? 3 : 2 })
-}
-
-function formatUsd(micros: number): string {
-  return (micros / 1_000_000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
-}
-
 function formatUsdDollars(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+  if (value > 0 && value < 0.01) return '<$0.01'
+  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}`
 }
 
 function formatTokens(value: number): string {
