@@ -268,6 +268,25 @@ class ReleaseScriptTest(unittest.TestCase):
         restore.assert_called_once_with("0.8.9", "head", details)
         build.assert_not_called()
 
+    def test_prunes_app_backups_to_trash_keeping_the_newest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            applications = root / "Applications"
+            trash = root / ".Trash"
+            applications.mkdir()
+            trash.mkdir()
+            (applications / "Codex Harness.app").mkdir()
+            names = [f"Codex Harness.app.backup-2026112{day}-120000" for day in range(1, 5)]
+            for name in names:
+                (applications / name).mkdir()
+            (trash / names[0]).mkdir()
+            with redirect_stdout(StringIO()):
+                moved = release.prune_app_backups(applications, trash)
+            remaining = sorted(path.name for path in applications.iterdir())
+            self.assertEqual(remaining, ["Codex Harness.app", names[2], names[3]])
+            self.assertEqual(sorted(path.name for path in moved), [f"{names[0]}-1", names[1]])
+            self.assertTrue((trash / names[0]).is_dir())
+
     def test_command_logging_includes_duration(self):
         completed = release.subprocess.CompletedProcess(
             args=("echo", "ok"), returncode=0, stdout="ok\n", stderr=""

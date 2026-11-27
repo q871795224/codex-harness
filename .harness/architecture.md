@@ -66,7 +66,7 @@
 
 ## Codex 运行时
 
-- Harness 启动时复用或启动共享 `codex app-server daemon`，初始化一次连接并转发事件。关闭 Harness 不停止 daemon。
+- Harness 启动时复用或启动共享 `codex app-server daemon`，初始化一次连接并转发事件。关闭 Harness 不停止 daemon。Harness 通过 `detached_spawn.rs` 执行 `daemon start/restart`，用 `responsibility_spawnattrs_setdisclaim` 放弃 macOS 责任进程归属，避免发布把旧 bundle 改名为 `.app.backup-*` 后系统仍以它的名义弹隐私授权。
 - Codex 活跃轮次归属由原生层写入 `state.sqlite.active_turn_owners`，只保存 thread、turn 和随机运行实例 ID；`instances/` 下的 OS 文件锁随进程退出释放，用于区分旧实例退出与稳定版/开发版同时运行。`thread/resume` 按 daemon 返回的活跃轮次在 SQLite 写事务中恢复归属，原生层通过 `harnessOwnership` 元数据告知前端；不根据会话 originator 或旧内存布尔值自动认领未知轮次。
 - 旧实例仍存活时保持只读；用户可通过原生 `app_server_take_over` 显式接管，先核对 daemon 当前轮次与 expected turn ID，再转交归属。未知归属的升级前轮次也需显式接管。原实例后续插话、停止与审批响应由原生层检查归属并拒绝；此约束只协调 Harness 实例，不能撤销 CLI 等外部客户端的权限。团队调度恢复规则不受会话操作权恢复影响。
 - 待处理 server request 不落库，由 App Server 在 `thread/resume` 后重放；前端按请求 ID 去重，原生层仅允许响应当前连接实际收到且尚未 resolved/完成的请求，断线后重新获取，不重试磁盘上的旧请求 ID。实例锁文件保留以避免 unlink 后出现不同 inode 的锁竞争。
@@ -133,7 +133,7 @@
 - 选择器引用的草稿标签复用 `collapsedPastes.reference`；手打路径不自动识别。已发送引用的 UI 元数据通过 `message.references.v1:<clientUserMessageId>` 保存类型、UTF-16 正文区间和文件路径，以正文 SHA-256 校验，恢复时由 App Server `userMessage.clientId` 关联；不保存消息或粘贴正文。队列正文被编辑后旧区间失效。
 - 用量分析的新 `analysis_*` 表永久保存在 `state.sqlite`，不自动过期；旧 `codex_analytics_*` 表保留但不混入新口径。每日统计按事件时间与本机时区分桶；会话/轮次列表分页，汇总覆盖完整筛选范围。只保存 thread/turn ID、低基数标签、细分计数和官方数值 usage。Skill 文件路径和待分词正文只在后台计数期间短暂存在，Skill/MCP/Prompt/Response 正文均不落库。官方计数模式从进程环境读取 `OPENAI_API_KEY`，插件配置和数据库均不得保存密钥。
 - API Workbench 使用独立的 `~/.codex-harness/api-workbench.sqlite`；Secret 变量只保存在 macOS Keychain。
-- Claude Provider 由 `src-tauri/claude-adapter/daemon.mjs` 常驻进程承载，通过 `~/.codex-harness/claude-provider.sock` 通信。首次运行要把 daemon/SDK 安装到 `~/.codex-harness/claude-provider/`，注册 `com.local.codex-harness.claude-provider` LaunchAgent，并把 `available`、`managed`、`running` 分开显示。关闭 Harness 不停止 daemon 或 active turn；transport 断开时收口 active turn 并自动重连，只有 LaunchAgent 不可用时才按需启动。`adapter.mjs` 只能作为实验参考，不能作为生产入口。除非任务明确涉及 Claude，不要把 Claude 路径混入 Codex 改动。
+- Claude Provider 由 `src-tauri/claude-adapter/daemon.mjs` 常驻进程承载，通过 `~/.codex-harness/claude-provider.sock` 通信。首次运行要把 daemon/SDK 安装到 `~/.codex-harness/claude-provider/`，注册 `com.local.codex-harness.claude-provider` LaunchAgent，并把 `available`、`managed`、`running` 分开显示。关闭 Harness 不停止 daemon 或 active turn；transport 断开时收口 active turn 并自动重连，只有 LaunchAgent 不可用时才按需启动（同样放弃责任进程归属）。发布更新 daemon/SDK 文件后不强杀进程：`initialize` 返回 `runtimeId`（`sha256(daemon.mjs):sha256(sdk.mjs)`），与已安装文件不一致时 Harness 发送 `daemon/restartWhenIdle`，daemon 在没有 active turn、待审批和用户后台任务时自行退出，由 LaunchAgent 拉起新代码；不支持该方法的旧 daemon 仅在 initialize 快照空闲时 `kickstart -k`。`adapter.mjs` 只能作为实验参考，不能作为生产入口。除非任务明确涉及 Claude，不要把 Claude 路径混入 Codex 改动。
 - Claude 对话 query 按会话复用开放的流式输入；`result` 只暂存结果，收到 SDK `session_state_changed: idle` 后才释放当前 turn 并发出一次终态，不能等整个 query 退出或在第一个 result 强制关闭 query。停止通过 SDK `interrupt()`，异常流退出必须收口所属 turn；上下文查询复用已有 query。空闲且没有后台任务的 query 在 5 分钟后回收；模型、权限、cwd 或环境变更在安全空闲时重建，后台任务仍运行时拒绝配置切换，避免中断工作。
 - Claude 每次创建 Agent SDK query（对话、模型发现、上下文查询）时读取 `~/.codex-harness/secrets`，在启动环境白名单清理之后，把显式配置传给子进程；不修改 daemon 自身环境，文件修改或删除在下次 query 生效。文件为明文 `KEY=value`，忽略空行和 `#` 开头的注释，按首个 `=` 分割并去除两端空白，不执行 shell 展开或去除引号。白名单保留的进程变量优先于文件，`CLAUDE_AGENT_SDK_CLIENT_APP` 固定为 `codex-harness`；文件缺失允许继续，其他读取错误报错，值不进入 Harness 状态库或诊断日志。Codex 仍只在 daemon 启动时读取该文件。
 
