@@ -157,32 +157,31 @@ impl ClaudeRuntime {
         }
 
         let socket_path = provider_socket_path()?;
-        let stream = match UnixStream::connect(&socket_path).await {
-            Ok(stream) => stream,
-            Err(_) if launch_agent_loaded() => {
-                kickstart_launch_agent(false)?;
-                connect_with_retry(&socket_path).await?
+        let (mut connection, mut result) = self.open_connection(&socket_path).await?;
+        let mut upgrade_pending = false;
+        if let Some(expected) = installed_runtime_id() {
+            if result.get("runtimeId").and_then(Value::as_str) != Some(expected.as_str()) {
+                match self.request_restart_when_idle(&connection, &result).await {
+                    UpgradeOutcome::Restarting => {
+                        // The daemon exits now; launchd relaunches the new code.
+                        wait_until_closed(&connection).await;
+                        (connection, result) = self.open_connection(&socket_path).await?;
+                    }
+                    UpgradeOutcome::Deferred => upgrade_pending = true,
+                }
             }
-            Err(_) => {
-                self.spawn_daemon(&socket_path)?;
-                connect_with_retry(&socket_path).await?
-            }
-        };
-        let connection = self.attach(stream);
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let result = send_request(
-            &connection,
-            id,
-            "initialize",
-            json!({ "lastEventSeq": self.latest_event_seq.load(Ordering::Acquire) }),
-        )
-        .await?;
+        }
         let version = result
             .get("protocolVersion")
             .and_then(Value::as_u64)
             .ok_or_else(|| "Claude Provider initialize 缺少 protocolVersion。".to_string())?;
         if version != PROTOCOL_VERSION {
             connection.alive.store(false, Ordering::Release);
+            if upgrade_pending {
+                return Err(format!(
+                    "Claude Provider 正在等待进行中的会话结束后升级（Harness={PROTOCOL_VERSION}, daemon={version}），请稍后重试。"
+                ));
+            }
             return Err(format!(
                 "Claude Provider 协议版本不兼容：Harness={PROTOCOL_VERSION}, daemon={version}"
             ));
@@ -206,6 +205,66 @@ impl ClaudeRuntime {
         );
         *guard = Some(connection.clone());
         Ok(connection)
+    }
+
+    async fn open_connection(
+        &self,
+        socket_path: &Path,
+    ) -> Result<(Arc<ClaudeConnection>, Value), String> {
+        let stream = match UnixStream::connect(socket_path).await {
+            Ok(stream) => stream,
+            Err(_) if launch_agent_loaded() => {
+                kickstart_launch_agent(false)?;
+                connect_with_retry(socket_path).await?
+            }
+            Err(_) => {
+                self.spawn_daemon(socket_path)?;
+                connect_with_retry(socket_path).await?
+            }
+        };
+        let connection = self.attach(stream);
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let result = send_request(
+            &connection,
+            id,
+            "initialize",
+            json!({ "lastEventSeq": self.latest_event_seq.load(Ordering::Acquire) }),
+        )
+        .await?;
+        Ok((connection, result))
+    }
+
+    /// Asks a daemon running outdated code to restart itself once idle, so a
+    /// release never interrupts running turns. Daemons predating this request
+    /// are only restarted when their initialize snapshot shows nothing running.
+    async fn request_restart_when_idle(
+        &self,
+        connection: &ClaudeConnection,
+        snapshot: &Value,
+    ) -> UpgradeOutcome {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let outcome = match send_request(connection, id, "daemon/restartWhenIdle", json!({})).await
+        {
+            Ok(value) if value["restarting"] == true => UpgradeOutcome::Restarting,
+            Ok(_) => UpgradeOutcome::Deferred,
+            Err(_) if snapshot_is_idle(snapshot) && kickstart_launch_agent(true).is_ok() => {
+                UpgradeOutcome::Restarting
+            }
+            Err(_) => UpgradeOutcome::Deferred,
+        };
+        self.diagnostics.record(
+            "info",
+            "claude-runtime",
+            "daemon.upgrade",
+            json!({
+                "outcome": match outcome {
+                    UpgradeOutcome::Restarting => "restarting",
+                    UpgradeOutcome::Deferred => "deferred-until-idle",
+                },
+                "daemonPid": snapshot.get("daemonPid"),
+            }),
+        );
+        outcome
     }
 
     fn attach(&self, stream: UnixStream) -> Arc<ClaudeConnection> {
@@ -279,25 +338,21 @@ impl ClaudeRuntime {
             .append(true)
             .open(log_dir.join("claude-provider.log"))
             .map_err(|error| format!("无法打开 Claude Provider 日志: {error}"))?;
-        let error_log = log
-            .try_clone()
-            .map_err(|error| format!("无法复制 Claude Provider 日志句柄: {error}"))?;
         let root = daemon
             .parent()
             .and_then(Path::parent)
             .and_then(Path::parent)
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")));
-        let mut command = std::process::Command::new(&node);
+        // Disclaimed so macOS does not attribute the long-lived daemon to this
+        // Harness bundle, which a later release may rename to a backup.
+        let mut command = crate::detached_spawn::DetachedCommand::new(&node);
         command
             .arg(&daemon)
             .current_dir(root)
             .env_clear()
             .env("CODEX_HARNESS_CLAUDE_PATH", &claude)
-            .env("CODEX_HARNESS_CLAUDE_SOCKET", socket_path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(log))
-            .stderr(Stdio::from(error_log));
+            .env("CODEX_HARNESS_CLAUDE_SOCKET", socket_path);
         if let Some(home) = real_home() {
             command.env("HOME", home);
         }
@@ -319,7 +374,7 @@ impl ClaudeRuntime {
             }
         }
         command
-            .spawn()
+            .spawn_logged(&log)
             .map_err(|error| format!("无法启动 Claude Provider daemon: {error}"))?;
         self.diagnostics.record(
             "info",
@@ -333,6 +388,64 @@ impl ClaudeRuntime {
     fn ensure_launch_agent(&self) -> Result<&'static str, String> {
         ensure_launch_agent(&self.app)
     }
+}
+
+enum UpgradeOutcome {
+    Restarting,
+    Deferred,
+}
+
+async fn wait_until_closed(connection: &ClaudeConnection) {
+    for _ in 0..CONNECT_ATTEMPTS {
+        if !connection.alive.load(Ordering::Acquire) {
+            return;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    connection.alive.store(false, Ordering::Release);
+}
+
+/// Mirrors `daemonIsIdle()` in daemon.mjs using the initialize snapshot.
+fn snapshot_is_idle(snapshot: &Value) -> bool {
+    let empty = |key: &str| snapshot[key].as_array().is_some_and(Vec::is_empty);
+    empty("activeTurns")
+        && empty("pendingApprovals")
+        && snapshot["sessionActivities"]
+            .as_array()
+            .is_some_and(|activities| {
+                activities.iter().all(|activity| {
+                    activity["state"] == "idle"
+                        && activity["backgroundTaskCount"].as_u64() == Some(0)
+                })
+            })
+}
+
+/// Runtime id of the daemon files installed for the LaunchAgent, in the format
+/// daemon.mjs reports: `sha256(daemon.mjs):sha256(sdk.mjs)`.
+fn installed_runtime_id() -> Option<String> {
+    if !launch_agent_loaded() {
+        return None;
+    }
+    let state_dir = real_home()?.join(".codex-harness/claude-provider");
+    Some(runtime_id(
+        &state_dir.join("daemon.mjs"),
+        &state_dir.join("sdk.mjs"),
+    ))
+}
+
+fn runtime_id(daemon: &Path, sdk: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = |path: &Path| {
+        fs::read(path)
+            .map(|bytes| {
+                Sha256::digest(bytes)
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            })
+            .unwrap_or_else(|_| "none".to_string())
+    };
+    format!("{}:{}", digest(daemon), digest(sdk))
 }
 
 async fn connect_with_retry(socket_path: &Path) -> Result<UnixStream, String> {
@@ -419,9 +532,10 @@ fn ensure_launch_agent(app: &AppHandle) -> Result<&'static str, String> {
     set_owner_only_directory(&log_dir)?;
     let installed_daemon = state_dir.join("daemon.mjs");
     let installed_sdk = state_dir.join("sdk.mjs");
-    let daemon_changed = install_runtime_file(&source_daemon, &installed_daemon)?;
-    let sdk_changed = install_runtime_file(&source_sdk, &installed_sdk)?;
-    let runtime_changed = daemon_changed || sdk_changed;
+    // Never kill a running daemon after updating these files: it may own active
+    // turns. `connection()` compares runtime ids and asks it to restart when idle.
+    install_runtime_file(&source_daemon, &installed_daemon)?;
+    install_runtime_file(&source_sdk, &installed_sdk)?;
 
     let launch_agents_dir = home.join("Library/LaunchAgents");
     fs::create_dir_all(&launch_agents_dir)
@@ -444,7 +558,7 @@ fn ensure_launch_agent(app: &AppHandle) -> Result<&'static str, String> {
     install_bytes(plist.as_bytes(), &plist_path, 0o644)?;
 
     if launch_agent_loaded() {
-        kickstart_launch_agent(runtime_changed)?;
+        kickstart_launch_agent(false)?;
         return Ok("loaded");
     }
     if std::os::unix::net::UnixStream::connect(&socket_path).is_ok() {
@@ -498,7 +612,7 @@ fn kickstart_launch_agent(restart: bool) -> Result<(), String> {
     let service = format!("{}/{}", launch_agent_domain(), LAUNCH_AGENT_LABEL);
     let mut args = vec!["kickstart"];
     if restart {
-        // 运行中的 daemon 仍持有旧代码；文件已更新时必须杀掉重启才能加载新版本。
+        // 仅用于确认空闲的旧版 daemon：杀掉重启以加载新安装的代码。
         args.push("-k");
     }
     args.push(&service);
@@ -770,6 +884,45 @@ fn set_owner_only_directory(_path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_id_matches_daemon_format_and_tracks_file_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = dir.path().join("daemon.mjs");
+        let sdk = dir.path().join("sdk.mjs");
+        fs::write(&daemon, "abc").unwrap();
+        assert_eq!(
+            runtime_id(&daemon, &sdk),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad:none"
+        );
+        fs::write(&sdk, "abc").unwrap();
+        let before = runtime_id(&daemon, &sdk);
+        fs::write(&daemon, "abd").unwrap();
+        assert_ne!(runtime_id(&daemon, &sdk), before);
+    }
+
+    #[test]
+    fn only_an_empty_snapshot_counts_as_idle() {
+        let idle = json!({
+            "activeTurns": [],
+            "pendingApprovals": [],
+            "sessionActivities": [{ "sessionId": "s", "state": "idle", "backgroundTaskCount": 0 }],
+        });
+        assert!(snapshot_is_idle(&idle));
+        let mut busy = idle.clone();
+        busy["activeTurns"] = json!([{ "sessionId": "s", "turnId": "t" }]);
+        assert!(!snapshot_is_idle(&busy));
+        let mut background = idle.clone();
+        background["sessionActivities"][0]["backgroundTaskCount"] = json!(1);
+        assert!(!snapshot_is_idle(&background));
+        let mut running = idle.clone();
+        running["sessionActivities"][0]["state"] = json!("running");
+        assert!(!snapshot_is_idle(&running));
+        let mut approval = idle.clone();
+        approval["pendingApprovals"] = json!([{ "requestId": "r" }]);
+        assert!(!snapshot_is_idle(&approval));
+        assert!(!snapshot_is_idle(&json!({})), "missing fields are not proof of idle");
+    }
 
     #[test]
     fn extracts_bounded_provider_error() {

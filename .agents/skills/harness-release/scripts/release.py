@@ -507,7 +507,37 @@ def install_app(app: Path, version: str) -> tuple[Path, Path | None]:
         time.sleep(1)
     else:
         raise ReleaseError("installed app process did not start within 15 seconds")
+    prune_app_backups(applications, Path.home() / ".Trash")
     return destination, backup
+
+
+APP_BACKUP_PREFIX = "Codex Harness.app.backup-"
+APP_BACKUPS_KEPT = 2
+
+
+def prune_app_backups(applications: Path, trash: Path, keep: int = APP_BACKUPS_KEPT) -> list[Path]:
+    """Move all but the newest `keep` app backups to the Trash (never delete)."""
+    backups = sorted(
+        (path for path in applications.glob(f"{APP_BACKUP_PREFIX}*") if path.is_dir()),
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    moved = []
+    for backup in backups[keep:]:
+        target = trash / backup.name
+        suffix = 1
+        while target.exists():
+            target = trash / f"{backup.name}-{suffix}"
+            suffix += 1
+        try:
+            shutil.move(str(backup), str(target))
+        except OSError as error:
+            log_event("release.backup-prune-failed", backup=str(backup), error=str(error))
+            continue
+        moved.append(target)
+    if moved:
+        log_event("release.backups-pruned", kept=keep, moved=[str(path) for path in moved])
+    return moved
 
 
 def tag_message(tag: str) -> str:
