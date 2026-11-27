@@ -7,7 +7,7 @@ import type { ClaudeAdapterEvent, ClaudeSessionRecord } from '../../core/claude/
 import { useClaudeHarness } from './useClaudeHarness'
 
 vi.mock('../../core/runtime/bridge', () => ({ runtime: {
-  getAppState: vi.fn().mockResolvedValue(null),
+  getAppState: vi.fn().mockResolvedValue(JSON.stringify({ 'claude:fixture': { model: 'fixture', effort: null, permissionMode: 'bypassPermissions' } })),
   listenClaudeEvents: vi.fn().mockResolvedValue(() => {}),
   listenClaudeTransport: vi.fn().mockResolvedValue(() => {}),
   claudeRuntimeStatus: vi.fn().mockResolvedValue({ available: false }),

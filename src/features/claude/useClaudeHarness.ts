@@ -5,7 +5,7 @@ import { emptyThreadDetail, textInput, type ApprovalRequest, type QueuedSubmissi
 import { runtime } from '../../core/runtime/bridge'
 import { approvalRequestFromEvent, reconcileClaudeApprovalSnapshot } from '../../core/claude/approvalState'
 import type { ClaudeAdapterEvent, ClaudeContextUsage, ClaudeModel, ClaudeProviderSnapshot, ClaudeRuntimeStatus, ClaudeSessionActivity, ClaudeSessionRecord, ClaudeSessionSettings, ClaudeTransportEvent } from '../../core/claude/types'
-import { DEFAULT_CLAUDE_SESSION_SETTINGS, isClaudeSessionWorking } from '../../core/claude/types'
+import { DEFAULT_CLAUDE_SESSION_SETTINGS, findClaudeModel, isClaudeSessionWorking } from '../../core/claude/types'
 import { initialClaudeSessionSettings } from './initialClaudeSessionSettings'
 import { reduceClaudeEvent } from '../../core/claude/eventReducer'
 import { hydrateClaudeHistory, mergeClaudeHistory } from '../../core/claude/history'
@@ -38,6 +38,9 @@ export function useClaudeHarness() {
   const approvalsRef = useRef<Record<string, ApprovalRequest[]>>({})
   const queuesRef = useRef<Record<string, QueuedSubmission[]>>({})
   const settingsRef = useRef<Record<string, ClaudeSessionSettings>>({})
+  const settingsLoadRef = useRef<Promise<void>>(Promise.resolve())
+  const settingsWriteRef = useRef<Promise<void>>(Promise.resolve())
+  const settingsErrorRef = useRef<unknown>(null)
   const messageAcceptedListenersRef = useRef(new Set<(threadId: string) => void>())
   const turnCompletedListenersRef = useRef(new Set<(event: TurnCompletedEvent) => void>())
   const manualStopRef = useRef(new Set<string>())
@@ -52,14 +55,14 @@ export function useClaudeHarness() {
   useEffect(() => { activeTurnIdsRef.current = activeTurnIds }, [activeTurnIds])
   useEffect(() => { approvalsRef.current = approvals }, [approvals])
   useEffect(() => { queuesRef.current = queues }, [queues])
-  useEffect(() => { settingsRef.current = sessionSettings }, [sessionSettings])
 
   useEffect(() => {
-    void runtime.getAppState(CLAUDE_SESSION_SETTINGS_KEY).then((value) => {
+    settingsLoadRef.current = runtime.getAppState(CLAUDE_SESSION_SETTINGS_KEY).then((value) => {
       const parsed = parseSessionSettings(value)
-      settingsRef.current = parsed
-      setSessionSettings(parsed)
-    }).catch(() => undefined)
+      const next = { ...parsed, ...settingsRef.current }
+      settingsRef.current = next
+      setSessionSettings(next)
+    }).catch(error => { settingsErrorRef.current = error })
   }, [])
 
   const notify = useCallback((message: string, kind: NotificationLevel = 'info', error?: unknown, context?: { threadId?: string; workspaceRoot?: string; silent?: boolean }) => {
@@ -112,17 +115,31 @@ export function useClaudeHarness() {
     return sessionSettings[sessionId] ?? DEFAULT_CLAUDE_SESSION_SETTINGS
   }, [sessionSettings])
 
-  const updateSessionSettings = useCallback((sessionId: string, patch: Partial<ClaudeSessionSettings>) => {
-    setSessionSettings((current) => {
-      const next = {
-        ...current,
-        [sessionId]: { ...DEFAULT_CLAUDE_SESSION_SETTINGS, ...(current[sessionId] ?? {}), ...patch },
-      }
-      settingsRef.current = next
-      void runtime.setAppState(CLAUDE_SESSION_SETTINGS_KEY, JSON.stringify(next)).catch(() => undefined)
-      return next
-    })
+  const saveSessionSettings = useCallback(async (sessionId: string, patch: Partial<ClaudeSessionSettings>) => {
+    await settingsLoadRef.current
+    if (settingsErrorRef.current) throw new Error('无法读取 Claude 会话模型设置，请重新加载后重试')
+    const current = settingsRef.current
+    const next = {
+      ...current,
+      [sessionId]: { ...DEFAULT_CLAUDE_SESSION_SETTINGS, ...(current[sessionId] ?? {}), ...patch },
+    }
+    settingsRef.current = next
+    setSessionSettings(next)
+    const saved = settingsWriteRef.current.catch(() => undefined).then(() => runtime.setAppState(CLAUDE_SESSION_SETTINGS_KEY, JSON.stringify(next)))
+    settingsWriteRef.current = saved
+    await saved
   }, [])
+
+  const updateSessionSettings = useCallback((sessionId: string, patch: Partial<ClaudeSessionSettings>) => {
+    const selected = findClaudeModel(models, patch.model)
+    const selection = Object.hasOwn(patch, 'model') ? {
+      model: selected?.resolvedModel ?? patch.model,
+      modelOption: selected?.value ?? null,
+      modelDisplayName: selected?.displayName ?? null,
+    } : {}
+    void saveSessionSettings(sessionId, { ...patch, ...selection })
+      .catch(error => notify('无法保存 Claude 会话设置', 'error', error))
+  }, [models, notify, saveSessionSettings])
 
   const refreshContext = useCallback(async (sessionId: string) => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
@@ -209,6 +226,14 @@ export function useClaudeHarness() {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session || input.length === 0) return
     if (activeTurnIdsRef.current[sessionId]) throw new Error('Claude 会话当前正在运行')
+    await settingsLoadRef.current
+    if (settingsErrorRef.current) throw new Error('无法读取 Claude 会话模型设置，请重新加载后重试')
+    await settingsWriteRef.current
+    const settings = settingsRef.current[sessionId] ?? DEFAULT_CLAUDE_SESSION_SETTINGS
+    if (!settings.model || settings.model === 'default') throw new Error('该 Claude 会话未保存固定模型，请先选择模型后继续')
+    // Keep the stored request ID even when discovery is unavailable or changes order.
+    const model = settings.model
+    const effort = settings.effort
     await loadSessionHistory(sessionId)
     const latestSession = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!latestSession) return
@@ -238,12 +263,6 @@ export function useClaudeHarness() {
       })
       return { ...current, [sessionId]: { ...withUser, activeTurnId: turnId } }
     })
-    const settings = settingsRef.current[sessionId] ?? DEFAULT_CLAUDE_SESSION_SETTINGS
-    const selectedModel = models.find((model) => model.value === settings.model) ?? models[0] ?? null
-    const model = selectedModel?.value
-    const effort = selectedModel && selectedModel.supportedEffortLevels.includes(settings.effort ?? '')
-      ? settings.effort!
-      : selectedModel?.supportedEffortLevels[0]
     try {
       await runtime.startClaudeTurn({
         sessionId,
@@ -277,7 +296,7 @@ export function useClaudeHarness() {
     } finally {
       setBusy((current) => ({ ...current, composer: false }))
     }
-  }, [loadSessionHistory, models, notify])
+  }, [loadSessionHistory, notify])
 
   const drainQueue = useCallback(async (sessionId: string) => {
     if (activeTurnIdsRef.current[sessionId]) return
@@ -650,6 +669,14 @@ export function useClaudeHarness() {
       const runtimeStatus = await runtime.claudeRuntimeStatus()
       setStatus(runtimeStatus)
       if (!runtimeStatus.available) throw new Error(runtimeStatus.error ?? 'Claude runtime 不可用')
+      const initial = await initialClaudeSessionSettings()
+      // Snapshot the SDK's default/alias into a concrete request ID once, before
+      // creating the session. Global defaults and catalog order cannot alter it later.
+      const catalog = await runtime.listClaudeModels(cwd)
+      const selected = initial.model ? findClaudeModel(catalog.models, initial.model)
+        : catalog.models.find(model => model.value === 'default')
+      const model = selected?.resolvedModel ?? initial.model
+      if (!model || model === 'default') throw new Error('无法确定 Claude 默认模型，请先在设置中选择模型')
       const session = await runtime.upsertClaudeSession({
         id: `claude:${crypto.randomUUID()}`,
         providerSessionId: null,
@@ -662,13 +689,8 @@ export function useClaudeHarness() {
         return next
       })
       setDetails((current) => ({ ...current, [session.id]: emptyThreadDetail(sessionThread(session)) }))
-      // 新会话 settings：读全局默认模型（若有）覆盖 DEFAULT_CLAUDE_SESSION_SETTINGS.model。
-      const initial = await initialClaudeSessionSettings()
-      setSessionSettings((current) => {
-        const next = { ...current, [session.id]: current[session.id] ?? initial }
-        settingsRef.current = next
-        return next
-      })
+      await saveSessionSettings(session.id, { ...initial, model,
+        modelOption: selected?.value ?? null, modelDisplayName: selected?.displayName ?? null })
       return session.id
     } catch (error) {
       notify(`无法创建 Claude 会话`, 'error', error)
@@ -676,7 +698,7 @@ export function useClaudeHarness() {
     } finally {
       setBusy((current) => ({ ...current, createThread: false }))
     }
-  }, [notify])
+  }, [notify, saveSessionSettings])
 
   const stopTurn = useCallback(async (sessionId: string, propagateError = false) => {
     if (!activeTurnIdsRef.current[sessionId] && !isClaudeSessionWorking(sessionActivitiesRef.current[sessionId])) return
@@ -867,6 +889,8 @@ function parseSessionSettings(value: string | null): Record<string, ClaudeSessio
         : 'default'
       result[sessionId] = {
         model: typeof input.model === 'string' && input.model ? input.model : null,
+        ...(typeof input.modelOption === 'string' && input.modelOption ? { modelOption: input.modelOption } : {}),
+        ...(typeof input.modelDisplayName === 'string' && input.modelDisplayName ? { modelDisplayName: input.modelDisplayName } : {}),
         effort: typeof input.effort === 'string' && input.effort ? input.effort : null,
         permissionMode,
       }

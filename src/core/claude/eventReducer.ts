@@ -20,7 +20,7 @@ export function reduceClaudeEvent(detail: ThreadDetail, event: ClaudeAdapterEven
     return reduceThreadDetailEvent(detail, {
       type: 'itemUpserted',
       turnId,
-      item: { id: itemId, type: 'userMessage', content: params.content as UserInput[], providerMessageId: stringParam(params, 'providerMessageId') },
+      item: { id: itemId, type: 'userMessage', content: params.content as UserInput[], providerMessageId: stringParam(params, 'providerMessageId'), providerTurnId: stringParam(params, 'providerMessageId') },
     })
   }
   if (event.method === 'message/delta') {
@@ -40,10 +40,14 @@ export function reduceClaudeEvent(detail: ThreadDetail, event: ClaudeAdapterEven
     const itemId = stringParam(params, 'itemId')
     const text = stringParam(params, 'text') ?? ''
     if (!itemId) return detail
+    const existing = detail.items.find(entry => entry.item.id === itemId)?.item
+    const user = detail.items.find(entry => entry.turnId === turnId && entry.item.type === 'userMessage')?.item
     return reduceThreadDetailEvent(detail, {
       type: 'itemUpserted',
       turnId,
-      item: { id: itemId, type: 'agentMessage', text, phase: 'final_answer' },
+      item: { id: itemId, type: 'agentMessage', text, phase: 'final_answer',
+        providerMessageId: existing?.providerMessageId ?? stringParam(params, 'providerMessageId'),
+        providerTurnId: user?.providerMessageId ?? null },
     })
   }
   if (event.method === 'tool/started') {

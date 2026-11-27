@@ -53,8 +53,8 @@ describe('initialClaudeSessionSettings', () => {
     })
   })
 
-  it('falls back to DEFAULT on read failure', async () => {
+  it('reports read failure instead of silently changing the configured default', async () => {
     runtime.getAppState.mockRejectedValue(new Error('io'))
-    expect(await initialClaudeSessionSettings()).toEqual(DEFAULT_CLAUDE_SESSION_SETTINGS)
+    await expect(initialClaudeSessionSettings()).rejects.toThrow('io')
   })
 })

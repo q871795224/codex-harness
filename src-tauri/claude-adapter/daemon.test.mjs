@@ -203,6 +203,23 @@ test('lists the SDK command surface without submitting a model prompt', async (t
   assert.deepEqual(result.data, [{ name: 'fixture-skill', description: 'Fixture skill', argumentHint: 'file' }])
 })
 
+test('exposes the native assistant UUID for durable message references', async t => {
+  const daemon = await fixture(t, `
+export function query({prompt}) {
+  return { async *[Symbol.asyncIterator]() {
+    for await (const message of prompt) {
+      yield {type:'assistant', uuid:'native-answer', message:{content:[{type:'text',text:'answer'}]}}
+      yield {type:'result', subtype:'success', user_message_uuid:message.uuid, result:'{}'}
+      yield {type:'system', subtype:'session_state_changed', state:'idle'}
+    }
+  } }
+}`)
+  await daemon.turn()
+  const answer = daemon.messages.find(message => message.method === 'message/completed')
+  assert.equal(answer.params.providerMessageId, 'native-answer')
+  assert.equal(answer.params.text, 'answer')
+})
+
 test('reloads edits, empty values, and removals without restarting the daemon', async (t) => {
   const daemon = await fixture(t)
   await writeFile(daemon.secrets, 'DB_PASSWORD=first\nENV=dev')

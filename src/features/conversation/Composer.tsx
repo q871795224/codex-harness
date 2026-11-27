@@ -6,7 +6,7 @@ import { addReplacement } from '../../core/input-correction/settings'
 import type { Correction } from '../../core/input-correction/engine'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react'
 import { ChevronDown, Clock3, FileText, Image, NotebookPen, Plus, ShieldOff, Sparkles, Square, Terminal, X, Zap } from 'lucide-react'
-import type { ClaudeModel, ClaudeSessionSettings } from '../../core/claude/types'
+import { findClaudeModel, type ClaudeModel, type ClaudeSessionSettings } from '../../core/claude/types'
 import type { ApprovalPolicy, CodexModel, CodexSkill, FollowUpMode, SendShortcut, ThreadCodexSettings, ThreadTokenUsage, UserInput, MessageReference } from '../../core/domain/codex'
 import type { ComposerCompletionItem } from '../../extensions/types'
 import { runtime } from '../../core/runtime/bridge'
@@ -206,7 +206,7 @@ export function Composer({ threadId, onMessageAccepted, variant, standaloneAssis
   const completionProvidersRef = useRef(completionProviders)
   const selectedModel = models.find((model) => model.model === settings.model) ?? models[0] ?? null
   const selectedSuperbotModel = superbotModels.find(model => model.id === superbotSettings?.model)
-  const selectedClaudeModel = claudeModels.find((model) => model.value === claudeSettings?.model) ?? claudeModels[0] ?? null
+  const selectedClaudeModel = findClaudeModel(claudeModels, claudeSettings?.model, claudeSettings?.modelOption)
   const fastTier = fastServiceTier(selectedModel)
   const fastEnabled = fastTier?.id === settings.serviceTier
   const yoloEnabled = provider === 'claude'
@@ -890,14 +890,19 @@ export function Composer({ threadId, onMessageAccepted, variant, standaloneAssis
               </select>
             </div>}
             {provider === 'claude' && claudeSettings && <div className="model-effort-control">
-              <select value={claudeSettings.model ?? selectedClaudeModel?.value ?? ''} disabled={settingsLocked || claudeModels.length === 0} onChange={(event) => {
+              <select value={selectedClaudeModel?.value ?? claudeSettings.model ?? ''} disabled={settingsLocked || claudeModels.length === 0} onChange={(event) => {
                 const model = claudeModels.find((candidate) => candidate.value === event.target.value)
-                updateClaudeSettings({ model: event.target.value, effort: model?.supportedEffortLevels[0] ?? null })
+                updateClaudeSettings({ model: event.target.value,
+                  effort: model?.supportedEffortLevels.includes(claudeSettings.effort ?? '') ? claudeSettings.effort : null })
               }} aria-label="Claude 模型" title={selectedClaudeModel?.description ?? 'Claude 模型'}>
+                {!claudeSettings.model && <option value="" disabled>选择模型</option>}
+                {claudeSettings.model && !selectedClaudeModel && <option value={claudeSettings.model}>{claudeSettings.modelDisplayName ?? '已保存的模型'}</option>}
                 {claudeModels.map((model) => <option key={model.value} value={model.value}>{model.displayName}</option>)}
               </select>
-              {selectedClaudeModel?.supportedEffortLevels.length ? <select className="effort-select" value={claudeSettings.effort ?? selectedClaudeModel.supportedEffortLevels[0]} disabled={settingsLocked} onChange={(event) => updateClaudeSettings({ effort: event.target.value })} aria-label="Claude 推理强度" title={`推理强度：${claudeSettings.effort ?? selectedClaudeModel.supportedEffortLevels[0]}`}>
-                {selectedClaudeModel.supportedEffortLevels.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
+              {selectedClaudeModel?.supportedEffortLevels.length || claudeSettings.effort ? <select className="effort-select" value={claudeSettings.effort ?? ''} disabled={settingsLocked} onChange={(event) => updateClaudeSettings({ effort: event.target.value || null })} aria-label="Claude 推理强度" title={`推理强度：${claudeSettings.effort ?? '默认'}`}>
+                <option value="">默认</option>
+                {claudeSettings.effort && !selectedClaudeModel?.supportedEffortLevels.includes(claudeSettings.effort) && <option value={claudeSettings.effort}>{claudeSettings.effort}</option>}
+                {selectedClaudeModel?.supportedEffortLevels.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
               </select> : null}
             </div>}
             {provider === 'superbot' && superbotSettings && <div className="model-effort-control">

@@ -332,6 +332,7 @@ function assistantBlocks(message, sessionId, turnId) {
         sessionId,
         turnId,
         itemId: `${turnId}:assistant`,
+        providerMessageId: message.uuid ?? null,
         text: block.text,
       })
     } else if (block.type === 'tool_use') {
