@@ -22,7 +22,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
@@ -119,6 +119,7 @@ pub struct AppServerManager {
     runtime_skill: crate::runtime_skill::RuntimeSkill,
     project_skill: Arc<crate::project_doc_skill::ProjectDocSkill>,
     project_tools: Arc<crate::project_tools::ProjectTools>,
+    state: Arc<crate::store::HarnessStore>,
     connection: Mutex<Option<Connection>>,
     next_request_id: AtomicU64,
     max_response_bytes: usize,
@@ -159,6 +160,25 @@ fn annotate_assistant_threads(response: &mut Value, workspace: Option<&std::path
     }
 }
 
+/// Turn settings from a `thread/start` or `thread/resume` response.
+pub(crate) fn thread_context(response: &Value) -> Value {
+    let mut context = json!({});
+    for (source, target) in [
+        ("cwd", "cwd"),
+        ("model", "model"),
+        ("reasoningEffort", "effort"),
+        ("approvalPolicy", "approvalPolicy"),
+        ("approvalsReviewer", "approvalsReviewer"),
+        ("sandbox", "sandboxPolicy"),
+        ("runtimeWorkspaceRoots", "runtimeWorkspaceRoots"),
+    ] {
+        if let Some(value) = response.get(source) {
+            context[target] = value.clone();
+        }
+    }
+    context
+}
+
 fn wait_thread_idle(value: &Value) -> bool {
     matches!(
         value.pointer("/thread/status/type").and_then(Value::as_str),
@@ -181,6 +201,7 @@ impl AppServerManager {
         runtime_skill: crate::runtime_skill::RuntimeSkill,
         project_skill: Arc<crate::project_doc_skill::ProjectDocSkill>,
         project_tools: Arc<crate::project_tools::ProjectTools>,
+        state: Arc<crate::store::HarnessStore>,
         max_response_bytes: usize,
     ) -> Self {
         Self {
@@ -191,6 +212,7 @@ impl AppServerManager {
             runtime_skill,
             project_skill,
             project_tools,
+            state,
             connection: Mutex::new(None),
             next_request_id: AtomicU64::new(1),
             max_response_bytes,
@@ -323,21 +345,7 @@ impl AppServerManager {
         if !wait_thread_idle(&resumed) {
             return Ok(WaitThreadState::Busy);
         }
-        let mut context = json!({});
-        for (source, target) in [
-            ("cwd", "cwd"),
-            ("model", "model"),
-            ("reasoningEffort", "effort"),
-            ("approvalPolicy", "approvalPolicy"),
-            ("approvalsReviewer", "approvalsReviewer"),
-            ("sandbox", "sandboxPolicy"),
-            ("runtimeWorkspaceRoots", "runtimeWorkspaceRoots"),
-        ] {
-            if let Some(value) = resumed.get(source) {
-                context[target] = value.clone();
-            }
-        }
-        Ok(WaitThreadState::Ready(context))
+        Ok(WaitThreadState::Ready(thread_context(&resumed)))
     }
 
     pub async fn start_wait_continuation(
@@ -345,12 +353,24 @@ impl AppServerManager {
         thread: &str,
         client_id: &str,
         message: &str,
+        context: Value,
+    ) -> Result<String, String> {
+        self.start_continuation(thread, client_id, message, context, "async-wait").await
+    }
+
+    /// Start a native-originated turn. The frontend adopts it through `async-waits:started`.
+    pub async fn start_continuation(
+        &self,
+        thread: &str,
+        client_id: &str,
+        message: &str,
         mut context: Value,
+        trigger: &str,
     ) -> Result<String, String> {
         context["threadId"] = json!(thread);
         context["clientUserMessageId"] = json!(client_id);
         context["input"] = json!([{"type":"text","text":message,"text_elements":[]}]);
-        context["turnTrigger"] = json!("async-wait");
+        context["turnTrigger"] = json!(trigger);
         let response = self.request("turn/start".into(), context).await?;
         let turn = response
             .pointer("/turn/id")
@@ -378,7 +398,38 @@ impl AppServerManager {
         } else {
             None
         };
+        let relay_workspace = if thread_response {
+            crate::store::harness_data_dir().ok()
+                .map(|data_dir| crate::relay_sessions::workspace_path(&data_dir))
+                .and_then(|path| path.canonicalize().ok())
+        } else {
+            None
+        };
+        // Relay roots get the session tools and fixed instructions instead of project tools.
+        let relay_start = method == "thread/start" && params["ephemeral"] != true
+            && is_assistant_cwd(&params, relay_workspace.as_deref());
+        if relay_start {
+            let object = params.as_object_mut().ok_or("thread/start 参数无效")?;
+            object.insert("developerInstructions".into(), json!(crate::relay_sessions::DEVELOPER_INSTRUCTIONS));
+            let tools = object.entry("dynamicTools").or_insert_with(|| json!([]));
+            let tools = tools.as_array_mut().ok_or("dynamicTools 必须是数组")?;
+            for tool in crate::relay_sessions::definitions().as_array().unwrap() {
+                if tools.iter().any(|existing| existing["name"] == tool["name"]) {
+                    return Err("Harness 会话工具名称冲突".into());
+                }
+                tools.push(tool.clone());
+            }
+        }
+        // developerInstructions only lives for one load; restore it whenever a relay root resumes.
+        if method == "thread/resume" {
+            if let Some(thread) = params["threadId"].as_str() {
+                if crate::relay_sessions::is_relay(&self.state, thread)? {
+                    params["developerInstructions"] = json!(crate::relay_sessions::DEVELOPER_INSTRUCTIONS);
+                }
+            }
+        }
         let register_tools = method == "thread/start" && params["ephemeral"] != true
+            && !relay_start
             && !is_assistant_cwd(&params, assistant_workspace.as_deref());
         if register_tools {
             let tools = params.as_object_mut().ok_or("thread/start 参数无效")?
@@ -511,8 +562,14 @@ impl AppServerManager {
                     self.project_tools.register(thread)?;
                 }
             }
+            if relay_start {
+                if let Some(thread) = response.pointer("/thread/id").and_then(Value::as_str) {
+                    crate::relay_sessions::mark_relay(&self.state, thread)?;
+                }
+            }
             if thread_response {
                 self.project_tools.annotate(response)?;
+                crate::relay_sessions::annotate(&self.state, response)?;
                 annotate_assistant_threads(response, assistant_workspace.as_deref());
             }
         }
@@ -836,6 +893,20 @@ impl AppServerManager {
                                     // sending an error here would resolve its request too.
                                     if let (Some(thread), Some(turn)) = (params["threadId"].as_str(), params["turnId"].as_str()) {
                                         if reader_ownership.check(thread, turn).is_err() { continue; }
+                                    }
+                                    if params["tool"].as_str().is_some_and(crate::relay_sessions::is_tool) {
+                                        let relay = app.try_state::<Arc<crate::relay_sessions::RelaySessions>>().map(|s| s.inner().clone());
+                                        let params = params.clone();
+                                        let id = payload["id"].clone();
+                                        let outgoing = tool_outgoing.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            let result = match relay {
+                                                Some(relay) => relay.execute(params).await,
+                                                None => json!({"success":false,"contentItems":[{"type":"inputText","text":"Harness 会话工具尚未就绪"}]}),
+                                            };
+                                            let _ = outgoing.send(json!({"id":id,"result":result}).to_string()).await;
+                                        });
+                                        continue;
                                     }
                                     let tools = reader_project_tools.clone();
                                     let params = params.clone();

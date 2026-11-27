@@ -173,16 +173,25 @@ struct PauseParams {
 struct PauseTurn {
     status: Option<String>,
 }
-fn pause_event_thread(payload: &str) -> Option<String> {
+/// Returns the thread to pause and whether only its current turn was interrupted.
+fn pause_event_thread(payload: &str) -> Option<(String, bool)> {
     let event: PauseEvent = serde_json::from_str(payload).ok()?;
-    if matches!(event.method.as_str(), "thread/archived" | "thread/deleted")
-        || (event.method == "turn/completed"
-            && event.params.turn.and_then(|t| t.status).as_deref() == Some("interrupted"))
+    if matches!(event.method.as_str(), "thread/archived" | "thread/deleted") {
+        event.params.thread_id.map(|thread| (thread, false))
+    } else if event.method == "turn/completed"
+        && event.params.turn.and_then(|t| t.status).as_deref() == Some("interrupted")
     {
-        event.params.thread_id
+        event.params.thread_id.map(|thread| (thread, true))
     } else {
         None
     }
+}
+/// Any finished turn may complete a relay child wait; check it now instead of at the next poll.
+fn completed_turn_thread(payload: &str) -> Option<String> {
+    let event: PauseEvent = serde_json::from_str(payload).ok()?;
+    (event.method == "turn/completed")
+        .then_some(event.params.thread_id)
+        .flatten()
 }
 
 type SettingsReader = Arc<dyn Fn(&str) -> Result<Option<String>, String> + Send + Sync>;
@@ -204,6 +213,11 @@ trait WaitTransport: Send + Sync {
         message: &'a str,
         context: Value,
     ) -> futures_util::future::BoxFuture<'a, Result<String, String>>;
+    fn turn_report<'a>(
+        &'a self,
+        thread: &'a str,
+        turn: &'a str,
+    ) -> futures_util::future::BoxFuture<'a, Result<Option<crate::relay_sessions::TurnReport>, String>>;
 }
 impl WaitTransport for AppServerManager {
     fn cwd<'a>(
@@ -227,6 +241,13 @@ impl WaitTransport for AppServerManager {
         context: Value,
     ) -> futures_util::future::BoxFuture<'a, Result<String, String>> {
         Box::pin(self.start_wait_continuation(thread, id, message, context))
+    }
+    fn turn_report<'a>(
+        &'a self,
+        thread: &'a str,
+        turn: &'a str,
+    ) -> futures_util::future::BoxFuture<'a, Result<Option<crate::relay_sessions::TurnReport>, String>> {
+        Box::pin(crate::relay_sessions::finished_turn(self, thread, turn))
     }
 }
 
@@ -262,11 +283,18 @@ impl AsyncWaits {
         let weak = Arc::downgrade(&this);
         events.listen("app-server:event", move |event| {
             if let (Some(thread), Some(this)) =
+                (completed_turn_thread(event.payload()), weak.upgrade())
+            {
+                if this.store.nudge_sessions(&thread, now()).unwrap_or(false) {
+                    this.changed();
+                }
+            }
+            if let (Some((thread, interrupted)), Some(this)) =
                 (pause_event_thread(event.payload()), weak.upgrade())
             {
                 tauri::async_runtime::spawn(async move {
                     let _gate = this.gate.lock().await;
-                    if this.pause_thread(&thread).is_err() {
+                    if this.pause_thread(&thread, interrupted).is_err() {
                         if let Ok(mut error) = this.error.lock() {
                             *error = Some("会话暂停状态未能保存，请暂停异步任务后再继续".into());
                         }
@@ -287,6 +315,19 @@ impl AsyncWaits {
         })
     }
     pub async fn create(&self, input: CreateWait) -> Result<WaitTask, String> {
+        if matches!(input.target, Target::Session { .. }) {
+            return Err("会话回调只能由路由会话工具创建".into());
+        }
+        self.create_unchecked(input).await
+    }
+    /// Relay tools register child callbacks here after Harness itself started the child turn.
+    pub async fn create_session(&self, input: CreateWait) -> Result<WaitTask, String> {
+        if !matches!(input.target, Target::Session { .. }) {
+            return Err("仅用于会话回调".into());
+        }
+        self.create_unchecked(input).await
+    }
+    async fn create_unchecked(&self, input: CreateWait) -> Result<WaitTask, String> {
         let _gate = self.gate.lock().await;
         let cwd = self.server.cwd(&input.thread_id).await?;
         let task = self.store.create(input, cwd, now())?;
@@ -310,8 +351,8 @@ impl AsyncWaits {
         self.changed();
         Ok(task)
     }
-    pub fn pause_thread(&self, id: &str) -> Result<(), String> {
-        self.store.pause_thread(id, now())?;
+    pub fn pause_thread(&self, id: &str, keep_sessions: bool) -> Result<(), String> {
+        self.store.pause_thread(id, now(), keep_sessions)?;
         self.changed();
         Ok(())
     }
@@ -400,6 +441,9 @@ impl AsyncWaits {
                         .into(),
                         summary: format!("定时唤醒：{wake_at}"),
                     }),
+                    Target::Session { thread_id, turn_id } => {
+                        session_observation(self.server.turn_report(thread_id, turn_id).await)
+                    }
                     target => check_builtin(target, &task.cwd).await,
                 };
                 apply_observation(&mut task, result, now());
@@ -463,7 +507,7 @@ impl AsyncWaits {
         let context = match state {
             WaitThreadState::Busy => return Ok(()),
             WaitThreadState::Unavailable => {
-                self.pause_thread(thread)?;
+                self.pause_thread(thread, false)?;
                 return Ok(());
             }
             WaitThreadState::Ready(context) => context,
@@ -542,13 +586,42 @@ impl AsyncWaits {
         Ok(())
     }
 }
+fn session_observation(
+    result: Result<Option<crate::relay_sessions::TurnReport>, String>,
+) -> Result<Observation, String> {
+    Ok(match result? {
+        None => Observation {
+            status: "waiting".into(),
+            summary: "子会话仍在执行".into(),
+        },
+        Some(report) => Observation {
+            status: "ready".into(),
+            summary: report.callback_summary(),
+        },
+    })
+}
 fn continuation_message(tasks: &[WaitTask]) -> String {
-    let items = tasks
+    let (sessions, others): (Vec<&WaitTask>, Vec<&WaitTask>) = tasks
         .iter()
-        .map(|t| format!("{}（{}）", t.title.replace(['\n', '\r'], " "), t.id))
-        .collect::<Vec<_>>()
-        .join("；");
-    format!("Harness 异步任务已就绪：{items}。\n请用随附 CLI 的 async-waits get ID 读取任务观察和后续动作，核对外部状态后继续。")
+        .partition(|t| matches!(t.target, Target::Session { .. }));
+    let mut parts = Vec::new();
+    if !sessions.is_empty() {
+        parts.push(crate::relay_sessions::callback_message(
+            &sessions
+                .iter()
+                .map(|t| (t.title.as_str(), t.summary.as_str()))
+                .collect::<Vec<_>>(),
+        ));
+    }
+    if !others.is_empty() {
+        let items = others
+            .iter()
+            .map(|t| format!("{}（{}）", t.title.replace(['\n', '\r'], " "), t.id))
+            .collect::<Vec<_>>()
+            .join("；");
+        parts.push(format!("Harness 异步任务已就绪：{items}。\n请用随附 CLI 的 async-waits get ID 读取任务观察和后续动作，核对外部状态后继续。"));
+    }
+    parts.join("\n\n")
 }
 
 #[cfg(test)]
@@ -593,6 +666,7 @@ mod tests {
         unavailable: AtomicBool,
         prepare_fail: AtomicBool,
         calls: Mutex<Vec<(String, String)>>,
+        report: Mutex<Option<crate::relay_sessions::TurnReport>>,
     }
     impl WaitTransport for FakeServer {
         fn cwd<'a>(
@@ -635,6 +709,13 @@ mod tests {
                 }
             })
         }
+        fn turn_report<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> futures_util::future::BoxFuture<'a, Result<Option<crate::relay_sessions::TurnReport>, String>> {
+            Box::pin(async move { Ok(self.report.lock().unwrap().clone()) })
+        }
     }
     fn fixture() -> (tempfile::TempDir, AsyncWaits, Arc<FakeServer>) {
         let dir = tempfile::tempdir().unwrap();
@@ -645,6 +726,7 @@ mod tests {
             unavailable: AtomicBool::new(false),
             prepare_fail: AtomicBool::new(false),
             calls: Mutex::new(Vec::new()),
+            report: Mutex::new(None),
         });
         let waits = AsyncWaits {
             store: WaitStore::open(dir.path().join("waits")).unwrap(),
@@ -719,7 +801,7 @@ mod tests {
         waits.tick().await.unwrap();
         assert_eq!(waits.list().unwrap().data[0].status, "ready");
         assert!(server.calls.lock().unwrap().is_empty());
-        waits.pause_thread("thread-1").unwrap();
+        waits.pause_thread("thread-1", false).unwrap();
         server.busy.store(false, Ordering::SeqCst);
         waits.tick().await.unwrap();
         assert_eq!(waits.list().unwrap().data[0].status, "paused");
@@ -969,18 +1051,70 @@ mod tests {
         );
         assert!(server.calls.lock().unwrap().is_empty());
     }
+    #[tokio::test]
+    async fn relay_child_callbacks_wait_for_the_turn_then_deliver_the_report() {
+        let (_dir, waits, server) = fixture();
+        let session = |id: &str, turn: &str| CreateWait {
+            id: id.into(),
+            thread_id: "thread-1".into(),
+            title: "子会话「A」".into(),
+            continuation: "整理".into(),
+            condition: String::new(),
+            checker_path: String::new(),
+            target: Target::Session { thread_id: "child".into(), turn_id: turn.into() },
+        };
+        // IPC/CLI may never forge a session callback.
+        assert!(waits.create(session("relay-forged", "t0")).await.is_err());
+        waits.create_session(session("relay-t1", "t1")).await.unwrap();
+        waits.tick().await.unwrap();
+        assert_eq!(waits.list().unwrap().data[0].status, "waiting");
+        assert!(server.calls.lock().unwrap().is_empty());
+        *server.report.lock().unwrap() = Some(crate::relay_sessions::TurnReport {
+            thread_id: "child".into(),
+            turn_id: "t1".into(),
+            status: "completed".into(),
+            request: "任务".into(),
+            reply: "已完成，产物见 MR !1".into(),
+        });
+        assert!(waits.store.nudge_sessions("child", now()).unwrap());
+        assert!(!waits.store.nudge_sessions("other", now()).unwrap());
+        waits.tick().await.unwrap();
+        let calls = server.calls.lock().unwrap().clone();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].1.contains("Harness 路由回调"));
+        assert!(calls[0].1.contains("已完成，产物见 MR !1"));
+        assert!(!calls[0].1.contains("async-waits get"));
+        assert_eq!(waits.list().unwrap().data[0].status, "delivered");
+    }
+    #[test]
+    fn parent_interrupt_keeps_child_callbacks_but_archive_pauses_them() {
+        let (_dir, waits, _server) = fixture();
+        let at = now();
+        waits.store.create(CreateWait {
+            id: "relay-t1".into(),
+            thread_id: "thread-1".into(),
+            title: "子会话".into(),
+            continuation: "整理".into(),
+            condition: String::new(),
+            checker_path: String::new(),
+            target: Target::Session { thread_id: "child".into(), turn_id: "t1".into() },
+        }, "/tmp".into(), at).unwrap();
+        waits.pause_thread("thread-1", true).unwrap();
+        assert_eq!(waits.list().unwrap().data[0].status, "waiting");
+        waits.pause_thread("thread-1", false).unwrap();
+        assert_eq!(waits.list().unwrap().data[0].status, "paused");
+    }
     #[test]
     fn external_stop_and_archive_events_pause_but_normal_completions_do_not() {
         for method in ["thread/archived", "thread/deleted"] {
             assert_eq!(
                 pause_event_thread(
                     &json!({"method":method,"params":{"threadId":"origin"}}).to_string()
-                )
-                .as_deref(),
-                Some("origin")
+                ),
+                Some(("origin".into(), false))
             );
         }
-        assert_eq!(pause_event_thread(r#"{"method":"turn/completed","params":{"threadId":"origin","turn":{"status":"interrupted"}}}"#).as_deref(), Some("origin"));
+        assert_eq!(pause_event_thread(r#"{"method":"turn/completed","params":{"threadId":"origin","turn":{"status":"interrupted"}}}"#), Some(("origin".into(), true)));
         assert!(pause_event_thread(r#"{"method":"turn/completed","params":{"threadId":"origin","turn":{"status":"completed"}}}"#).is_none());
         assert!(pause_event_thread(
             r#"{"method":"item/completed","params":{"threadId":"origin","item":{"text":"secret"}}}"#

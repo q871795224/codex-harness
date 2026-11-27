@@ -395,9 +395,31 @@ impl WaitStore {
         self.write(&task)?;
         Ok(task)
     }
-    pub fn pause_thread(&self, thread: &str, now: u64) -> Result<(), String> {
+    /// A child turn finished: make its waiting relay callbacks due immediately.
+    pub fn nudge_sessions(&self, child: &str, now: u64) -> Result<bool, String> {
+        let _guard = self.writer()?;
+        let mut changed = false;
+        for mut task in self.list_unlocked()? {
+            if task.status == "waiting"
+                && matches!(&task.target, Target::Session { thread_id, .. } if thread_id == child)
+                && task.next_check_at > now
+            {
+                task.next_check_at = now;
+                task.revision += 1;
+                self.write(&task)?;
+                changed = true;
+            }
+        }
+        Ok(changed)
+    }
+    /// `keep_sessions` keeps relay child callbacks alive when only the parent's
+    /// current turn was stopped; archive/delete still pauses everything.
+    pub fn pause_thread(&self, thread: &str, now: u64, keep_sessions: bool) -> Result<(), String> {
         let _guard = self.writer()?;
         for mut task in self.list_unlocked()? {
+            if keep_sessions && matches!(task.target, Target::Session { .. }) {
+                continue;
+            }
             if task.thread_id == thread && task.active() {
                 task.status = "paused".into();
                 task.summary = "会话已停止、归档或删除；自动继续已暂停".into();

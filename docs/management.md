@@ -119,6 +119,8 @@ CI／SDP 的成功和失败终态都通知用户并预填来源草稿，不提�
 
 任务定义、脚本和摘要保存在 `~/.codex-harness/async-waits/` 原子文件中，SQLite 不保存这些正文。稳定版／开发版使用 OS 文件锁协调单个执行者。自动续跑在发起前重新核对来源 cwd、可用性及观察新鲜度，先持久化 `dispatching` 再发带 `clientUserMessageId`、`turnTrigger: async-wait` 的轮次。结果未知保留 `dispatching`／`uncertain`，不自动重发；由用户核对后结束记录。
 
+内部目标 `session` 只由路由会话的派发工具登记，用于子会话轮次结束后回调路由会话；`asyncWaits.create` 和 CLI 拒绝该类型。它监听 `turn/completed` 立即检查，回退仍按5分钟轮询；父会话本轮被中断不暂停该类回调。规则见 [Agent 交互第十节](../.harness/agent-interaction.md#十路由会话relay)。
+
 实现：[原生调度](../src-tauri/src/async_waits/mod.rs)、[目标校验](../src-tauri/src/async_waits/target.rs)、[只读适配器](../src-tauri/src/async_waits/checkers.py)、[存储及审批](../src-tauri/src/async_waits/store.rs)、[任务页](../src/core/async-waits/AsyncWaitPanel.tsx)。
 
 ## 自带 CLI 与异步任务展示

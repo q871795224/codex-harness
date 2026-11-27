@@ -194,6 +194,8 @@ export function titleEditorKeyAction(key: string, isComposing: boolean, keyCode 
 
 interface ConversationViewProps {
   threadId?: string
+  /** 路由会话不选工作区，子会话的目录由它派活时指定。 */
+  relay?: boolean
   provider?: 'codex' | 'claude' | 'superbot'
   items: ThreadItemEntry[]
   turns: Turn[]
@@ -246,7 +248,7 @@ interface ConversationViewProps {
   renderTurnActions?: (turnId: string) => ReactNode
 }
 
-export function ConversationView({ threadId, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, automaticWorkspace = false, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions, banners }: ConversationViewProps) {
+export function ConversationView({ threadId, relay = false, provider = 'codex', items, turns, cwd, approvals, questionNavigation, pendingSteers = [], sendShortcut = 'mod-enter', workspace, workspaces, workspaceChanging, initialScrollTop, scrollToLatestRequest, hasOlderTurns, loadingOlderTurns, onAnswerApproval, onLoadOlderTurns, onScrollPosition, onWorkspaceChange, onChooseWorkspace, onForkTurn, forkingTurnId = null, onOpenThread, rawOverrides, onRawOverrideToggle, agentApprovalCounts = {}, activeTurnIds = {}, onInterruptAgent, newThreadHeader, newThreadPanels, automaticWorkspace = false, recap, rawMode, working, backgroundWorking = false, workingTurnId, workingStartedAt, onRawModeToggle, onContinueAfterFailure, continueDisabled = false, conversationFocusRequest = 0, renderTurnActions, banners }: ConversationViewProps) {
   const skillCatalog = useSkillCatalog(cwd, provider === 'codex' && items.some(({ item }) => skillReads(item).length > 0))
   const scrollRef = useRef<HTMLDivElement>(null)
   const initiallyPositioned = useRef(false)
@@ -384,7 +386,7 @@ export function ConversationView({ threadId, provider = 'codex', items, turns, c
                 <div className="fresh-thread">
                   <div className="fresh-thread-mark"><Bot size={18} /></div>
                   <p>
-                    {provider === 'superbot' ? '在公司云端开启一段新的 Superbot 会话吧。' : <>
+                    {relay ? '这是路由会话：把要做的事交给它，它会开子会话去完成，子会话做完后自动汇报回来。' : provider === 'superbot' ? '在公司云端开启一段新的 Superbot 会话吧。' : <>
                     在
                     <span className="fresh-workspace-select">
                       <select
