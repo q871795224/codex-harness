@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Thread, ThreadDetail } from '../../core/domain/codex'
 import { textInput } from '../../core/domain/codex'
-import { activityStatusLabel, CHOOSE_WORKSPACE_VALUE, collabToolLabel, copyableTranscriptText, isChooseWorkspaceSelection, isNearConversationBottom, latestAgentMessageIndex, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
+import { activityStatusLabel, collabToolLabel, copyableTranscriptText, isNearConversationBottom, latestAgentMessageIndex, threadGitContextLabel, titleEditorKeyAction } from './ConversationView'
 import { formatWorkingElapsed, workingElapsedMilliseconds, turnStartedAtMilliseconds } from './ConversationStats'
 import { parseThreadTitleGenerationSettings } from './useHarness'
 import { draftThreadStartRequest, isFirstUserTurn, resolveNewThreadWorkspaceRoot, shouldDiscardDraftThread, shouldRecreateDraftThread, threadTitlePrompt, threadTurnContext } from './threadLifecycle'
@@ -100,11 +100,6 @@ describe('working status', () => {
 })
 
 describe('new thread workspace', () => {
-  it('routes only the directory option to the native picker', () => {
-    expect(isChooseWorkspaceSelection(CHOOSE_WORKSPACE_VALUE)).toBe(true)
-    expect(isChooseWorkspaceSelection('/repo/current')).toBe(false)
-  })
-
   it('inherits the workspace of the open thread', () => {
     expect(resolveNewThreadWorkspaceRoot('thread-1', [makeThread('/repo/current')], '/repo/sidebar')).toBe('/repo/current')
   })
