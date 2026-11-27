@@ -228,6 +228,10 @@ export interface Thread {
   /** Harness has registered client-executed project tools for this conversation. */
   harnessProjectTools?: boolean
   harnessAssistant?: boolean
+  /** Harness 路由会话：注册了子会话派发工具。 */
+  harnessRelay?: boolean
+  /** 由路由会话派出的子会话，值为父会话 ID。 */
+  harnessRelayParent?: string
   id: string
   provider?: 'codex' | 'claude' | 'superbot'
   channelSource?: 'seatalk'

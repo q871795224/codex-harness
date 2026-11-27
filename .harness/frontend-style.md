@@ -27,6 +27,7 @@
 
 - 「主按钮 + 右侧提供者切换」用 `new-chat-split` / `new-chat-button` / `new-chat-provider` 这套结构；右侧保持紧凑图标按钮，按 Codex → Claude → Superbot 轮换（Claude 不可用时跳过），不改为下拉框。
 - 基色（浅色）与 dark 覆盖必须成对维护：dark 下既要改 `background`/`border-color`，也要显式设 `color`（含 `:hover`），不能只改背景漏掉文字。
+- 「新建路由会话」是主按钮与提供者切换之间的图标按钮，同时带 `new-chat-provider new-chat-relay` 两个类：尺寸、边框和深浅主题全部复用 `new-chat-provider`，`new-chat-relay` 只把圆角改为 0。不要为它另写一套颜色。
 
 ## 会话 tab 栏（对话 / 待办 + 右侧工具区）
 

@@ -152,6 +152,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .new-chat-provider:hover { background: #f7f8fa; color: #303640; }
 .new-chat-provider:disabled { cursor: not-allowed; opacity: .48; }
 .new-chat-provider-icon { display: block; width: 18px; height: 18px; object-fit: contain; }
+/* 路由会话入口：夹在主按钮和提供者切换之间，复用 new-chat-provider 的尺寸与深浅主题。 */
+.new-chat-relay { border-radius: 0; }
 
 .sidebar-split-list { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .sidebar-split-pane { display: flex; min-height: 44px; flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #d9dce1 transparent; }

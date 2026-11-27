@@ -136,6 +136,7 @@ export const runtime = {
   saveCompassModel: (model: string) => invoke<string>('compass_save_model', { model }),
   probeCompass: (api: CompassApi) => invoke<void>('compass_probe', { api }),
   assistantWorkspaceDirectory: () => invoke<string>('assistant_workspace_directory'),
+  relayWorkspaceDirectory: () => invoke<string>('relay_workspace_directory'),
 
   routerWorkspaceDirectory: () => invoke<string>('workspace_router_directory'),
   routerGeneralDirectory: () => invoke<string>('workspace_router_general_directory'),

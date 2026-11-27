@@ -916,6 +916,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
         onSelectWorkspace={harness.setSelectedWorkspaceRoot}
         onArchiveOldThreads={() => void harness.archiveOldThreads()}
         onNewThread={(provider) => { setNotificationsOpen(false); void harness.createThread(provider) }}
+        onNewRelayThread={() => { setNotificationsOpen(false); void harness.createRelayThread() }}
         newThreadProvider={harness.newThreadProvider}
         onToggleNewThreadProvider={harness.toggleNewThreadProvider}
         claudeStatus={harness.claudeStatus}
@@ -1060,6 +1061,7 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
             {tab === 'chat' ? (
               <ConversationView
                 threadId={harness.currentThread.id}
+                relay={harness.currentThread.harnessRelay === true}
                 provider={localProvider}
                 items={harness.currentDetail?.items ?? []}
                 turns={harness.currentDetail?.turns ?? []}

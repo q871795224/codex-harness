@@ -5,6 +5,8 @@ export type AsyncWaitTarget =
   | { type: 'githubCi'; repo: string; pr: number; sha: string }
   | { type: 'sdp'; service: string; environment: string; callback: string; sha: string; tasks: string[] }
   | { type: 'seatalk'; reference: string; after: string; excludeSender: string }
+  /** 路由会话的子会话回调，只由 Harness 内部创建。 */
+  | { type: 'session'; threadId: string; turnId: string }
 export interface CreateAsyncWait {
   id: string
   threadId: string

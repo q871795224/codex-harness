@@ -55,6 +55,15 @@ describe('sidebar conversation controls', () => {
     fireEvent.click(screen.getByRole('button', { name:'切换到 Codex 新会话' }))
     expect(screen.getByAltText('Codex')).toBeTruthy()
   })
+  it('creates a relay conversation from its own entry and marks relay rows', () => {
+    const onNewRelayThread = vi.fn()
+    const relay: Thread = { id:'relay', name:'发布协调', preview:'', cwd:'/data/workspaces/relay', createdAt:1, updatedAt:1, recencyAt:1,
+      status:{ type:'idle' }, ephemeral:false, canAcceptDirectInput:false, harnessRelay:true }
+    render(<Sidebar {...props()} threads={[relay]} onNewRelayThread={onNewRelayThread} />)
+    fireEvent.click(screen.getByRole('button', { name:'新建路由会话' }))
+    expect(onNewRelayThread).toHaveBeenCalledTimes(1)
+    expect(screen.getByLabelText('路由会话')).toBeTruthy()
+  })
   it('keeps the short Superbot group label and identifies SeaTalk sessions', () => {
     const base = props()
     const normal = { id:'normal', title:'Normal chat', status:'active',read_only:false, created_at:'2026-11-17T08:00:00Z',updated_at:'2026-11-17T08:00:00Z' } as SuperbotSession

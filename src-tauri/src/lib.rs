@@ -31,6 +31,7 @@ mod management;
 mod project_doc_proposals;
 mod project_doc_server;
 mod project_tools;
+mod relay_sessions;
 mod project_doc_store;
 mod project_doc_skill;
 mod quick_command;
@@ -621,7 +622,7 @@ async fn app_server_request(
 ) -> Result<Value, String> {
     if matches!(method.as_str(), "turn/interrupt" | "thread/archive" | "thread/delete") {
         let _gate = state.async_waits.gate.lock().await;
-        if let Some(thread) = params.get("threadId").and_then(Value::as_str) { state.async_waits.pause_thread(thread)?; }
+        if let Some(thread) = params.get("threadId").and_then(Value::as_str) { state.async_waits.pause_thread(thread, method == "turn/interrupt")?; }
         return state.app_server.request(method, params).await;
     }
     state.app_server.request(method, params).await
@@ -701,6 +702,11 @@ fn assistant_directory_at(data_dir: &std::path::Path) -> Result<String, String> 
 #[tauri::command]
 fn assistant_workspace_directory() -> Result<String, String> {
     assistant_directory_at(&store::harness_data_dir()?)
+}
+
+#[tauri::command]
+fn relay_workspace_directory() -> Result<String, String> {
+    relay_sessions::directory_at(&store::harness_data_dir()?)
 }
 
 #[cfg(test)]
@@ -1617,6 +1623,7 @@ pub fn run() {
                 store::harness_data_dir()?.join("project-doc-skills"),
             ));
             let ownership = Arc::new(turn_ownership::TurnOwnership::new(store.clone())?);
+            let relay_ownership = ownership.clone();
             let docs = Arc::new(project_doc_store::ProjectDocStore::open()?);
             let dir = store::harness_data_dir()?;
             let connection = rusqlite::Connection::open(dir.join("projects/project_docs.sqlite"))?;
@@ -1632,6 +1639,7 @@ pub fn run() {
                 crate::runtime_skill::RuntimeSkill::new(store.clone()),
                 project_skill.clone(),
                 project_tools,
+                store.clone(),
                 app_server::history_response_limit(
                     store.get_app_state("conversationHistoryPreferences")?.as_deref(),
                 ),
@@ -1664,6 +1672,12 @@ pub fn run() {
                 manager.clone(), app.handle().clone(),
             )?;
             async_waits.spawn();
+            let relay_dir = relay_sessions::directory_at(&store::harness_data_dir()?)
+                .ok()
+                .map(std::path::PathBuf::from);
+            app.manage(Arc::new(relay_sessions::RelaySessions::new(
+                store.clone(), manager.clone(), async_waits.clone(), relay_ownership, relay_dir,
+            )));
             app.manage(AppState {
                 app_server: manager,
                 async_waits,
@@ -1742,6 +1756,7 @@ pub fn run() {
             workspace_router_directory,
             assistant_workspace_directory,
             workspace_router_general_directory,
+            relay_workspace_directory,
             workspace_router_summaries,
             workspace_router_corrections,
             workspace_router_feedback,

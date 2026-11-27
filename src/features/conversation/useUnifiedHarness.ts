@@ -293,6 +293,12 @@ export function useUnifiedHarness() {
 
   const openThread = useCallback((threadId: string) => selectThread(threadId, 'open-thread'), [selectThread])
 
+  const createRelayThread = useCallback(async () => {
+    restoredSelection.current = true
+    ++selectionRequestRef.current
+    return codex.createRelayThread()
+  }, [codex])
+
   const createThread = useCallback(async (provider: ConversationProvider = 'codex', explicitCwd?: string) => {
     restoredSelection.current = true
     const requestId = ++selectionRequestRef.current
@@ -497,6 +503,7 @@ export function useUnifiedHarness() {
     selectThread,
     openThread,
     createThread,
+    createRelayThread,
     resetThread,
     sendMessage,
     prepareRemoteThread,

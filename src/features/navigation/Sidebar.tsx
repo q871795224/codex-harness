@@ -17,6 +17,7 @@ import {
   Bell,
   Bot,
   MessageSquareText,
+  Network,
   Blocks,
   CheckCheck,
   ChevronDown,
@@ -80,6 +81,7 @@ interface SidebarProps {
   onSelectWorkspace: (root: string) => void
   onArchiveOldThreads: () => void
   onNewThread: (provider?: ConversationProvider) => void
+  onNewRelayThread?: () => void
   newThreadProvider: ConversationProvider
   onToggleNewThreadProvider: () => void
   claudeStatus?: ClaudeRuntimeStatus | null
@@ -129,6 +131,7 @@ export function Sidebar({
   onSelectWorkspace,
   onArchiveOldThreads,
   onNewThread,
+  onNewRelayThread,
   newThreadProvider,
   onToggleNewThreadProvider,
   claudeStatus = null,
@@ -481,6 +484,12 @@ export function Sidebar({
           {creatingThread ? <LoaderCircle size={16} className="spin" /> : <CirclePlus size={17} />}
           新会话
         </button>
+        {onNewRelayThread && (
+          <button className="new-chat-provider new-chat-relay" type="button" onClick={onNewRelayThread} disabled={creatingThread}
+            aria-label="新建路由会话" title="新建路由会话：把事情交给它，由它开子会话去做">
+            <Network size={16} aria-hidden />
+          </button>
+        )}
         <button className="new-chat-provider" type="button" onClick={onToggleNewThreadProvider} disabled={creatingThread}
           aria-label={`切换到 ${conversationProviderLabels[nextProvider]} 新会话`}
           title={`${conversationProviderLabels[newThreadProvider]} · 点击切换到 ${conversationProviderLabels[nextProvider]}`}>
@@ -833,6 +842,7 @@ function ThreadList({
               <StatusDot badge={badge} />
               <NumberBadge number={numberHint ?? 0} visible={showNumberHint && numberHint !== undefined} />
               {thread.channelSource === 'seatalk' && <MessageSquareText size={12} aria-label="SeaTalk 会话" />}
+              {thread.harnessRelay && <Network size={12} aria-label="路由会话" />}
               <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
               <time title={archived ? '归档时间' : undefined}>{archived
                 ? thread.archivedAt == null ? '已归档' : relativeTime(thread.archivedAt)

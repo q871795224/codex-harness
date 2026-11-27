@@ -33,6 +33,13 @@ pub enum Target {
         #[serde(rename = "excludeSender")]
         exclude_sender: String,
     },
+    /// Internal only: a relay child turn. Created by Harness relay tools, never by IPC/CLI.
+    Session {
+        #[serde(rename = "threadId")]
+        thread_id: String,
+        #[serde(rename = "turnId")]
+        turn_id: String,
+    },
 }
 impl Target {
     pub fn notify_only(&self) -> bool {
@@ -86,6 +93,7 @@ impl Target {
                         .iter()
                         .all(|t| identifier(t) && t.starts_with(&format!("{service}.")))
             }
+            Self::Session { thread_id, turn_id } => identifier(thread_id) && identifier(turn_id),
             Self::Seatalk {
                 reference,
                 after,
