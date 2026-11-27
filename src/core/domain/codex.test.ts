@@ -18,6 +18,7 @@ import {
   parseThreadCreditUsage,
   rebaseSandboxPolicy,
   sortThreads,
+  sortArchivedThreads,
   sortWorkspaces,
   sortWorkspacesByRecentThread,
   textInput,
@@ -230,6 +231,29 @@ describe('isActive', () => {
 })
 
 describe('thread list activity', () => {
+  it('orders each archive pin group by archive time regardless of activity or runtime status', () => {
+    const threads = [
+      makeThread({ id: 'old-unpinned', archivedAt: 10, recencyAt: 999, updatedAt: 999, status: { type: 'active', activeFlags: [] } }),
+      makeThread({ id: 'new-pinned', archivedAt: 30, recencyAt: 1 }),
+      makeThread({ id: 'old-pinned', archivedAt: 20, recencyAt: 999 }),
+      makeThread({ id: 'new-unpinned', archivedAt: 40, recencyAt: 1 }),
+    ]
+    expect(sortArchivedThreads(threads, ['old-pinned', 'new-pinned']).map(t => t.id))
+      .toEqual(['new-pinned', 'old-pinned', 'new-unpinned', 'old-unpinned'])
+    const touched = threads.map(t => touchThreadActivity(t, 5000))
+    expect(sortArchivedThreads(touched, ['old-pinned', 'new-pinned']).map(t => t.id))
+      .toEqual(['new-pinned', 'old-pinned', 'new-unpinned', 'old-unpinned'])
+    expect(threads[0].id).toBe('old-unpinned')
+  })
+
+  it('keeps missing archive dates last and equal archive dates stable when activity changes', () => {
+    const a = makeThread({ id: 'a', archivedAt: 10, recencyAt: 999 })
+    const b = makeThread({ id: 'b', archivedAt: 10, recencyAt: 1 })
+    const unknown = makeThread({ id: 'unknown', recencyAt: 5000 })
+    expect(sortArchivedThreads([unknown, b, a]).map(t => t.id)).toEqual(['a', 'b', 'unknown'])
+    expect(sortArchivedThreads([b, a, unknown]).map(t => t.id)).toEqual(['a', 'b', 'unknown'])
+  })
+
   it('pins active threads only in recent mode and respects explicit manual order', () => {
     const active = makeThread({ id: 'active', updatedAt: 10, recencyAt: 10, status: { type: 'active', activeFlags: [] } })
     const idle = makeThread({ id: 'idle', updatedAt: 20, recencyAt: 20 })

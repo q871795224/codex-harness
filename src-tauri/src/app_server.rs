@@ -1,3 +1,6 @@
+#[path = "app_server_archive.rs"]
+mod archive_metadata;
+
 use crate::{
     codex_analytics::CodexAnalytics,
     diagnostics::{error_code, DiagnosticLog},
@@ -361,6 +364,7 @@ impl AppServerManager {
         Ok(turn)
     }
     pub async fn request(&self, method: String, mut params: Value) -> Result<Value, String> {
+        let archived_listing = method == "thread/list" && params["archived"] == true;
         let thread_response = matches!(
             method.as_str(), "thread/start" | "thread/resume" | "thread/fork" |
             "thread/read" | "thread/list" | "thread/unarchive"
@@ -486,6 +490,13 @@ impl AppServerManager {
             }
         }
         if let Ok(response) = &mut result {
+            if archived_listing {
+                if self.annotate_archive_times(response).await.is_err() {
+                    // Keep history accessible if a future Codex schema changes;
+                    // unknown dates are shown explicitly, never as activity dates.
+                    self.diagnostics.record("warning", "app-server", "archive_metadata.unavailable", json!({}));
+                }
+            }
             if method == "turn/start" && native_project {
                 if let Some(thread) = request_context.as_ref().and_then(|c| c["threadId"].as_str()) {
                     if self.project_tools.accepted_turn(thread).is_err() {
@@ -555,6 +566,19 @@ impl AppServerManager {
             ),
         }
         result
+    }
+
+    async fn annotate_archive_times(&self, response: &mut Value) -> Result<(), String> {
+        let ids: Vec<String> = response["data"].as_array().into_iter().flatten()
+            .filter_map(|thread| thread["id"].as_str().map(str::to_owned)).collect();
+        if ids.is_empty() { return Ok(()); }
+        let connection = self.connection().await?;
+        let config = self.send_request_with_timeout(&connection, "config/read".into(), json!({"includeLayers":false}), Duration::from_secs(6)).await?;
+        let path = archive_metadata::database_path(&config, &resolved_codex_home()?, env::var("CODEX_SQLITE_HOME").ok().as_deref())?;
+        let times = tokio::task::spawn_blocking(move || archive_metadata::read_archive_times(&path, &ids))
+            .await.map_err(|error| error.to_string())??;
+        archive_metadata::annotate(response, &times);
+        Ok(())
     }
 
     pub async fn pending_user_input(&self, thread: &str, turn: &str, request_id: &str) -> Result<Option<Value>, String> {

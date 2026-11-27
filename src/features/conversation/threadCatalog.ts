@@ -34,12 +34,12 @@ export function listAllActiveThreads(transport: ThreadCatalogTransport): Promise
   return listAllThreads(transport, 'active')
 }
 
-export async function listAllThreads(transport: ThreadCatalogTransport, mode: ThreadViewMode): Promise<Thread[]> {
+export async function listAllThreads(transport: ThreadCatalogTransport, mode: ThreadViewMode, searchTerm = ''): Promise<Thread[]> {
   const threads: Thread[] = []
   let cursor: string | null = null
 
   do {
-    const response = await listThreadPage(transport, mode, '', cursor)
+    const response = await listThreadPage(transport, mode, searchTerm, cursor)
     threads.push(...response.data)
     cursor = response.nextCursor
   } while (cursor)

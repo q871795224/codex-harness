@@ -104,7 +104,7 @@ import {
   togglePinnedIdentifier,
 } from './harnessBootstrap'
 import { subscribeHarnessRuntime } from './harnessSubscriptions'
-import { archiveThreadsBefore, listThreadPage, type ThreadViewMode } from './threadCatalog'
+import { archiveThreadsBefore, listAllThreads, listThreadPage, type ThreadViewMode } from './threadCatalog'
 import { prependOlderTurns } from './threadHistory'
 import { createProjectDocService } from '../../core/project-docs/service'
 import { finishProjectTitle, projectTitleInstructions, readTitleProject } from './projectTitle'
@@ -699,7 +699,11 @@ export function useHarness() {
 
   const refreshThreads = useCallback(async (mode: ViewMode = viewModeRef.current, searchTerm = threadSearchRef.current) => {
     const requestId = ++threadListRequestRef.current
-    const response = await listThreadPage(appServer, mode, searchTerm)
+    // App Server pages by activity, so an old conversation archived today may
+    // be on the last page. Gather archive metadata before the sidebar sorts it.
+    const response = mode === 'archived'
+      ? { data: await listAllThreads(appServer, mode, searchTerm), nextCursor: null }
+      : await listThreadPage(appServer, mode, searchTerm)
     // A previous view/search must never replace the current catalog.
     if (requestId !== threadListRequestRef.current || mode !== viewModeRef.current) return response.data
     const selectedId = selectedThreadIdRef.current
