@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { runtime } from '../../core/runtime/bridge'
 import type { ClaudeAdapterEvent, ClaudeSessionHistory, ClaudeSessionRecord } from '../../core/claude/types'
 import { useClaudeHarness } from './useClaudeHarness'
+import { messageLocator } from '../../core/domain/messageLocator'
 
 vi.mock('../../core/runtime/bridge', () => ({ runtime: {
   getAppState: vi.fn().mockResolvedValue(null),
@@ -40,9 +41,11 @@ it.each([false, true])('keeps one prompt and answer when revisiting a completed 
   act(() => {
     emit('turn/started')
     emit('message/user', { itemId: 'live-turn:user', providerMessageId: 'provider-message', content: [{ type: 'text', text: 'fixture prompt' }] })
-    emit('message/completed', { itemId: 'live-turn:assistant', text: 'fixture answer' })
+    emit('message/completed', { itemId: 'live-turn:assistant', providerMessageId: 'assistant-message', text: 'fixture answer' })
     if (!duringLoad) emit('turn/completed')
   })
+
+  const originalReferences = result.current.details[session.id].items.map(entry => messageLocator(session.id, entry))
 
   let finishHistory!: (value: ClaudeSessionHistory) => void
   vi.mocked(runtime.readClaudeHistory).mockImplementationOnce(() => new Promise((resolve) => { finishHistory = resolve }))
@@ -59,6 +62,11 @@ it.each([false, true])('keeps one prompt and answer when revisiting a completed 
   expect(detail.items.filter((entry) => entry.item.type === 'userMessage')).toHaveLength(1)
   expect(detail.items.filter((entry) => entry.item.type === 'agentMessage')).toHaveLength(1)
   expect(detail.turns[0].items).toHaveLength(2)
+  expect(detail.items.map(entry => messageLocator(session.id, entry))).toEqual(originalReferences)
+  expect(originalReferences).toEqual([
+    'harness-message://claude/claude%3Afixture/provider-message/provider-message',
+    'harness-message://claude/claude%3Afixture/provider-message/assistant-message',
+  ])
   expect(runtime.startClaudeTurn).not.toHaveBeenCalled()
   act(() => result.current.selectSession(session.id))
   expect(runtime.readClaudeHistory).toHaveBeenCalledTimes(1)

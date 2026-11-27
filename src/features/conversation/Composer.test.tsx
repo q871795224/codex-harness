@@ -42,6 +42,39 @@ it('keeps an actionable stop button for a working Claude session', () => {
   expect(screen.queryByRole('button', { name: '停止当前回合' })).toBeNull()
 })
 
+it('shows pinned Claude IDs and unset effort without substituting the first catalog entry', () => {
+  const model = { value: 'fable', resolvedModel: 'claude-fable-5-2[1M]', displayName: 'Opus 5.5 (AIS)', description: '',
+    supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'], supportsAdaptiveThinking: true, supportsFastMode: false, supportsAutoMode: false }
+  const settings = { model: 'claude-fable-5-2[1M]', modelOption: 'fable', modelDisplayName: 'Opus 5.5 (AIS)', effort: null, permissionMode: 'bypassPermissions' as const }
+  const onChange = vi.fn()
+  const { rerender } = render(<Composer {...props} provider="claude" claudeModels={[model]} claudeSettings={settings} onClaudeSettingsChange={onChange} />)
+  expect((screen.getByLabelText('Claude 模型') as HTMLSelectElement).value).toBe('fable')
+  expect((screen.getByLabelText('Claude 推理强度') as HTMLSelectElement).value).toBe('')
+  expect(onChange).not.toHaveBeenCalled()
+  rerender(<Composer {...props} provider="claude" claudeModels={[]} claudeSettings={settings} onClaudeSettingsChange={onChange} />)
+  expect((screen.getByLabelText('Claude 模型') as HTMLSelectElement).value).toBe('claude-fable-5-2[1M]')
+  expect((screen.getByLabelText('Claude 模型') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Opus 5.5 (AIS)')
+  expect(screen.queryByText('claude-fable-5-2[1M]')).toBeNull()
+  rerender(<Composer {...props} provider="claude" claudeModels={[{ ...model, resolvedModel: 'different-request-id', displayName: 'Kimi' }]} claudeSettings={settings} onClaudeSettingsChange={onChange} />)
+  expect((screen.getByLabelText('Claude 模型') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Opus 5.5 (AIS)')
+  expect(onChange).not.toHaveBeenCalled()
+  rerender(<Composer {...props} provider="claude" claudeModels={[model]} claudeSettings={{ ...settings, model: null }} onClaudeSettingsChange={onChange} />)
+  expect((screen.getByLabelText('Claude 模型') as HTMLSelectElement).value).toBe('')
+  fireEvent.change(screen.getByLabelText('Claude 模型'), { target: { value: 'fable' } })
+  expect(onChange).toHaveBeenLastCalledWith({ model: 'fable', effort: null })
+})
+
+it('preserves the selected Claude option when multiple display names share a request ID', () => {
+  const shared = { resolvedModel: 'shared-request-id', description: '', supportsEffort: false, supportedEffortLevels: [],
+    supportsAdaptiveThinking: false, supportsFastMode: false, supportsAutoMode: false }
+  render(<Composer {...props} provider="claude" claudeModels={[
+    { ...shared, value: 'default', displayName: 'Default' }, { ...shared, value: 'opus', displayName: 'Kimi' },
+  ]} claudeSettings={{ model: 'shared-request-id', modelOption: 'opus', modelDisplayName: 'Kimi', effort: null, permissionMode: 'bypassPermissions' }} />)
+  const select = screen.getByLabelText('Claude 模型') as HTMLSelectElement
+  expect(select.value).toBe('opus')
+  expect(select.selectedOptions[0].textContent).toBe('Kimi')
+})
+
 it('offers explicit takeover only when provided and disables it during transfer', () => {
   const onTakeOver = vi.fn()
   const { rerender } = render(<Composer {...props} disabled foreignActive working onTakeOver={onTakeOver} />)

@@ -18,6 +18,7 @@ afterEach(() => {
 })
 
 const models: ClaudeModel[] = [
+  { value: 'default', resolvedModel: 'claude-opus-5-5', displayName: 'Default', description: '', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'], supportsAdaptiveThinking: true, supportsFastMode: false, supportsAutoMode: true },
   { value: 'claude-sonnet-4-5', resolvedModel: null, displayName: 'Sonnet 4.5', description: '', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'], supportsAdaptiveThinking: true, supportsFastMode: false, supportsAutoMode: true },
   { value: 'claude-opus-4-1', resolvedModel: null, displayName: 'Opus 4.1', description: '', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'max'], supportsAdaptiveThinking: true, supportsFastMode: false, supportsAutoMode: true },
   { value: 'claude-haiku-4-5', resolvedModel: null, displayName: 'Haiku 4.5', description: '', supportsEffort: false, supportedEffortLevels: [], supportsAdaptiveThinking: false, supportsFastMode: false, supportsAutoMode: true },
@@ -70,14 +71,13 @@ it('disables the select while loading or when models list is empty', async () =>
   // 模型列表为空时也允许选「CLI 默认」（即清空），但整体只读更直观。当前实现：不禁用，因为 value='' 仍然是合法选择。
 })
 
-it('shows effort options of the first model when default model is CLI 默认', async () => {
+it('keeps effort on CLI default instead of implicitly selecting low', async () => {
   mockStored({})
   render(<ClaudeDefaultModelSettings models={models} />)
   const select = await screen.findByLabelText('推理强度') as HTMLSelectElement
   await waitFor(() => expect(select.disabled).toBe(false))
-  // 未存储时按运行时回退规则显示首个支持档位，但不主动写入。
-  expect(select.value).toBe('low')
-  expect(Array.from(select.options).map((option) => option.value)).toEqual(['low', 'medium', 'high'])
+  expect(select.value).toBe('')
+  expect(Array.from(select.options).map((option) => option.value)).toEqual(['', 'low', 'medium', 'high'])
 })
 
 it('shows the stored default effort selected', async () => {
@@ -98,11 +98,11 @@ it('changing the effort persists via setAppState', async () => {
   await waitFor(() => expect(runtime.setAppState).toHaveBeenCalledWith('claude.defaultEffort', 'high'))
 })
 
-it('falls back to the first effort level when the stored effort is not supported by the default model', async () => {
+it('preserves a stored effort instead of silently downgrading it', async () => {
   mockStored({ 'claude.defaultModel': 'claude-sonnet-4-5', 'claude.defaultEffort': 'max' })
   render(<ClaudeDefaultModelSettings models={models} />)
   const select = await screen.findByLabelText('推理强度') as HTMLSelectElement
-  await waitFor(() => expect(select.value).toBe('low'))
+  await waitFor(() => expect(select.value).toBe('max'))
 })
 
 it('clears the stored effort when switching to a model that does not support it', async () => {

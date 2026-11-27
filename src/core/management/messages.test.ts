@@ -2,8 +2,10 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { messageLocator, parseMessageLocator } from '../domain/messageLocator'
 import { createManagementHandler, type ManagementContext } from './service'
 import { appServer } from '../runtime/appServerClient'
+import { runtime } from '../runtime/bridge'
 
 vi.mock('../runtime/appServerClient', () => ({ appServer: { readThread: vi.fn(), listItems: vi.fn() } }))
+vi.mock('../runtime/bridge', () => ({ runtime: { listClaudeSessions: vi.fn(), readClaudeHistory: vi.fn() } }))
 const reference = 'harness-message://codex/origin/turn/message'
 const context = { harness: { phase: 'ready', selectedThreadId: 'unrelated' }, plugins: { loading: false } } as ManagementContext
 const call = (params: Record<string, unknown>) => createManagementHandler(() => context)({ requestId: 'read', method: 'messages.get', params })
@@ -48,4 +50,29 @@ it('roundtrips provider item IDs and omits references without stable identities'
   expect(messageLocator('origin', { ...entry, item: { type: 'userMessage' } })).toBeUndefined()
   expect(messageLocator(null, entry)).toBeUndefined()
   expect(messageLocator('claude:session', entry)).toBeUndefined()
+})
+
+it('uses Claude native UUIDs rather than render IDs, including after a reload', async () => {
+  const entry = { turnId: 'local-turn', item: { id: 'local-assistant', type: 'agentMessage', providerTurnId: 'native-user', providerMessageId: 'native-answer' } }
+  const reference = messageLocator('claude:origin', entry)!
+  expect(reference).toBe('harness-message://claude/claude%3Aorigin/native-user/native-answer')
+  expect(messageLocator('claude:origin', { ...entry, turnId: 'reloaded-turn', item: { ...entry.item, id: 'reloaded-item' } })).toBe(reference)
+  vi.mocked(runtime.listClaudeSessions).mockImplementation(async archived => archived ? [{ id: 'claude:origin', providerSessionId: 'sdk-session', title: '归档会话', cwd: '/repo' }] as never : [])
+  vi.mocked(runtime.readClaudeHistory).mockResolvedValue({ messages: [
+    { type: 'user', uuid: 'native-user', sessionId: 'sdk-session', message: { content: '问题' }, parentToolUseId: null, timestamp: null },
+    { type: 'assistant', uuid: 'native-answer', sessionId: 'sdk-session', message: { content: [{ type: 'text', text: '答案' }] }, parentToolUseId: null, timestamp: null },
+  ] })
+  expect(await call({ reference })).toMatchObject({ provider: 'claude', turnId: 'native-user', itemId: 'native-answer', session: { name: '归档会话' }, item: { text: '答案' }, nativeMessage: { uuid: 'native-answer' } })
+  expect(runtime.readClaudeHistory).toHaveBeenCalledWith('claude:origin', '/repo', 'sdk-session')
+  await expect(call({ reference: reference.replace('native-user', 'wrong-turn') })).rejects.toThrow('消息不存在')
+  await expect(call({ reference: reference.replace('native-answer', 'missing') })).rejects.toThrow('消息不存在')
+  expect(appServer.readThread).not.toHaveBeenCalled()
+})
+
+it('rejects provider mismatches before reading either provider', async () => {
+  for (const reference of ['harness-message://claude/origin/turn/item', 'harness-message://codex/claude%3Aorigin/turn/item', 'harness-message://superbot/origin/turn/item']) {
+    await expect(call({ reference })).rejects.toThrow()
+  }
+  expect(runtime.listClaudeSessions).not.toHaveBeenCalled()
+  expect(appServer.readThread).not.toHaveBeenCalled()
 })

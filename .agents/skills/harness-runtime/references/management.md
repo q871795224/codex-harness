@@ -57,6 +57,6 @@ Codex默认设置仍用`config read`、`config set model MODEL`、`config set mo
 
 `workspaces list/add/hide/show`读取合并目录并沿原有流程登记/隐藏；隐藏不删除目录或会话。`sessions list`只覆盖已加载视图，不读取消息正文。`sessions create --provider codex`建立自动选择工作区的空会话；显式传`--cwd PATH`绑定checkout。创建本身不发模型轮次。select/rename/archive/restore沿用原有命令与运行状态检查。
 
-用户复制了消息引用时，使用 `messages get REF` 精准读取其会话、轮次和原始消息；详见[消息定位](messages.md)。该只读入口支持未加载的 Codex 历史，不切换会话或触发模型。
+用户复制了消息引用时，使用 `messages get REF` 精准读取其会话、轮次和原始消息；详见[消息定位](messages.md)。该只读入口支持未加载的 Codex 和 Claude 历史，不切换会话或触发模型。
 
 `async-waits list/get/create/check/pause/resume/cancel/acknowledge`完整流程见[异步等待](async-waits.md)。具体业务就绪条件与continuation由Agent写清楚；注册后移交Harness，等待结果时不持续空转轮次。

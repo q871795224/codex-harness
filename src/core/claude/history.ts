@@ -24,6 +24,7 @@ export function hydrateClaudeHistory(
           id: `${turnId}:user`,
           type: 'userMessage',
           providerMessageId: message.uuid || null,
+          providerTurnId: message.uuid || null,
           content,
         })
       } else if (currentTurn) {
@@ -150,7 +151,7 @@ function touchTurn(turn: Turn, timestamp: string | null): void {
 function applyAssistantContent(turn: Turn, message: ClaudeSessionMessage, index: number): void {
   const content = messageContent(message)
   if (typeof content === 'string') {
-    addAssistantText(turn, content)
+    addAssistantText(turn, content, message.uuid)
     return
   }
   if (!Array.isArray(content)) return
@@ -158,7 +159,7 @@ function applyAssistantContent(turn: Turn, message: ClaudeSessionMessage, index:
   content.forEach((block, blockIndex) => {
     if (!isRecord(block)) return
     if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-      addAssistantText(turn, block.text)
+      addAssistantText(turn, block.text, message.uuid)
       return
     }
     if (block.type !== 'tool_use' || typeof block.name !== 'string') return
@@ -169,14 +170,16 @@ function applyAssistantContent(turn: Turn, message: ClaudeSessionMessage, index:
   })
 }
 
-function addAssistantText(turn: Turn, text: string): void {
+function addAssistantText(turn: Turn, text: string, providerMessageId: string): void {
   const itemId = `${turn.id}:assistant`
   const existing = turn.items.find((item) => item.id === itemId)
   if (existing?.type === 'agentMessage') {
     addTurnItem(turn, { ...existing, text: joinText(existing.text ?? '', text), phase: 'final_answer' })
     return
   }
-  addTurnItem(turn, { id: itemId, type: 'agentMessage', text, phase: 'final_answer' })
+  const user = turn.items.find(item => item.type === 'userMessage')
+  addTurnItem(turn, { id: itemId, type: 'agentMessage', text, phase: 'final_answer',
+    providerMessageId: providerMessageId || null, providerTurnId: user?.providerMessageId ?? null })
 }
 
 function applyToolResults(turn: Turn, message: ClaudeSessionMessage): void {

@@ -42,3 +42,15 @@ it('does not invent identifiers for unpersisted messages or unsupported provider
   rerender(<ConversationView {...props()} threadId="claude:session" provider="claude" />)
   expect(screen.queryByRole('button', { name: '复制消息引用' })).toBeNull()
 })
+
+it('copies stable Claude user and assistant UUIDs', async () => {
+  const options = props()
+  const items = options.items.map((entry, index) => ({ ...entry, item: { ...entry.item,
+    providerTurnId: 'native-user', providerMessageId: index ? 'native-answer' : 'native-user' } }))
+  render(<ConversationView {...options} items={items} turns={options.turns.map(turn => ({ ...turn, items: items.map(entry => entry.item) }))} threadId="claude:origin" provider="claude" />)
+  const buttons = screen.getAllByRole('button', { name: '复制消息引用' })
+  fireEvent.click(buttons[0])
+  await waitFor(() => expect(writeClipboard).toHaveBeenLastCalledWith('harness-message://claude/claude%3Aorigin/native-user/native-user'))
+  fireEvent.click(buttons[1])
+  await waitFor(() => expect(writeClipboard).toHaveBeenLastCalledWith('harness-message://claude/claude%3Aorigin/native-user/native-answer'))
+})

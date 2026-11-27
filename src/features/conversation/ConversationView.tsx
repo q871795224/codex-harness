@@ -353,7 +353,7 @@ export function ConversationView({ threadId, relay = false, provider = 'codex', 
   return (
     <MarkdownLocalFilesContext.Provider value={provider !== 'superbot'}>
     <SkillCatalogContext.Provider value={skillCatalog}>
-    <MessageThreadContext.Provider value={provider === 'codex' ? threadId ?? null : null}>
+    <MessageThreadContext.Provider value={provider !== 'superbot' ? threadId ?? null : null}>
     <section className="conversation-pane" aria-label="对话内容">
       {working && <div className="conversation-working-line" aria-hidden><span /></div>}
       <div className="conversation-scroll" ref={scrollRef} tabIndex={0} onKeyDown={handleVimKeyDown} onScroll={(event) => {

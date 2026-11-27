@@ -1,5 +1,5 @@
 import { BrainCircuit } from 'lucide-react'
-import type { ClaudeModel } from '../../core/claude/types'
+import { findClaudeModel, type ClaudeModel } from '../../core/claude/types'
 import { useClaudeDefaultModel } from '../claude/useClaudeDefaultModel'
 import { useClaudeDefaultEffort } from '../claude/useClaudeDefaultEffort'
 
@@ -12,15 +12,14 @@ export function ClaudeDefaultModelSettings({ models }: { models: ClaudeModel[] }
   const { defaultModel, loaded, setDefaultModel } = useClaudeDefaultModel()
   const { defaultEffort, loaded: effortLoaded, setDefaultEffort } = useClaudeDefaultEffort()
 
-  // 与会话发送时一致：未选默认模型（CLI 默认）时按模型列表第一项展示可选强度。
-  const selectedModel = models.find((model) => model.value === defaultModel) ?? models[0] ?? null
+  const selectedModel = findClaudeModel(models, defaultModel) ?? (!defaultModel ? models.find(model => model.value === 'default') : null)
   const effortLevels = selectedModel?.supportedEffortLevels ?? []
-  const effort = defaultEffort && effortLevels.includes(defaultEffort) ? defaultEffort : effortLevels[0] ?? ''
+  const effort = defaultEffort ?? ''
 
   const selectModel = (value: string | null) => {
     void setDefaultModel(value)
     // 切换默认模型后，若已存强度不在新模型支持列表内则清除，避免残留无效值。
-    const next = models.find((model) => model.value === value) ?? models[0] ?? null
+    const next = findClaudeModel(models, value) ?? (!value ? models.find(model => model.value === 'default') : null)
     if (defaultEffort && !next?.supportedEffortLevels.includes(defaultEffort)) void setDefaultEffort(null)
   }
 
@@ -38,25 +37,28 @@ export function ClaudeDefaultModelSettings({ models }: { models: ClaudeModel[] }
           <span>模型</span>
           <select
             aria-label="模型"
-            value={defaultModel ?? ''}
+            value={selectedModel && defaultModel ? selectedModel.value : defaultModel ?? ''}
             disabled={!loaded}
             onChange={(event) => selectModel(event.target.value || null)}
           >
             <option value="">CLI 默认</option>
+            {defaultModel && !selectedModel && <option value={defaultModel}>已保存的默认模型</option>}
             {models.map((model) => (
               <option key={model.value} value={model.value}>{model.displayName}</option>
             ))}
           </select>
         </label>
-        {effortLevels.length > 0 && (
+        {(effortLevels.length > 0 || defaultEffort) && (
           <label className="settings-row">
             <span>推理强度</span>
             <select
               aria-label="推理强度"
               value={effort}
               disabled={!effortLoaded}
-              onChange={(event) => void setDefaultEffort(event.target.value)}
+              onChange={(event) => void setDefaultEffort(event.target.value || null)}
             >
+              <option value="">CLI 默认</option>
+              {defaultEffort && !effortLevels.includes(defaultEffort) && <option value={defaultEffort}>{defaultEffort}</option>}
               {effortLevels.map((level) => (
                 <option key={level} value={level}>{level}</option>
               ))}

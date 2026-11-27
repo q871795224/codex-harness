@@ -21,7 +21,8 @@ vi.mock('../../core/runtime/bridge', () => ({
     listClaudeSessions: vi.fn(),
     listWorkspaces: vi.fn().mockResolvedValue([]),
     listThreadStates: vi.fn().mockResolvedValue([]),
-    getAppState: vi.fn().mockResolvedValue(null),
+    getAppState: vi.fn().mockImplementation(async key => key === 'claude.sessionSettings'
+      ? JSON.stringify({ 'claude:active': { model: 'fixture-model', effort: null, permissionMode: 'bypassPermissions' } }) : null),
     setAppState: vi.fn().mockResolvedValue(undefined),
     setThreadState: vi.fn().mockResolvedValue(undefined),
     mapThreadWorkspaces: vi.fn().mockResolvedValue({}),

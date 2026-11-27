@@ -84,9 +84,19 @@ export interface ClaudeModel {
 }
 
 export interface ClaudeSessionSettings {
+  /** Concrete provider request binding; the UI uses modelDisplayName. */
   model: string | null
+  modelOption?: string | null
+  modelDisplayName?: string | null
   effort: string | null
   permissionMode: ClaudePermissionMode
+}
+
+/** Pinned request IDs may outlive, or resolve through, a catalog alias. */
+export function findClaudeModel(models: ClaudeModel[], value: string | null | undefined, option?: string | null): ClaudeModel | null {
+  if (!value) return null
+  if (option) return models.find(model => model.value === option && (model.resolvedModel === value || model.value === value)) ?? null
+  return models.find(model => model.value === value) ?? models.find(model => model.resolvedModel === value) ?? null
 }
 
 export const DEFAULT_CLAUDE_SESSION_SETTINGS: ClaudeSessionSettings = {
