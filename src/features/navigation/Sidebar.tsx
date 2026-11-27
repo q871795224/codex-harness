@@ -46,7 +46,7 @@ import type {
   Workspace,
   WorkspaceSort,
 } from '../../core/domain/codex'
-import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, normalizeSidebarListSplitRatio, sortThreads, sortWorkspaces } from '../../core/domain/codex'
+import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, normalizeSidebarListSplitRatio, sortArchivedThreads, sortThreads, sortWorkspaces } from '../../core/domain/codex'
 import { relativeTime, truncate } from '../../core/domain/format'
 import { resolveThreadBadge } from './threadBadge'
 import { visibleThreadOrder, visibleThreads } from './visibleThreads'
@@ -274,8 +274,10 @@ export function Sidebar({
   }, [onSidebarListSplitRatio, splitResizing])
 
   const orderedThreads = useMemo(
-    () => sortThreads(threads, threadSort, dragPreviewOrder ?? manualThreadOrder, pinnedThreadIds),
-    [dragPreviewOrder, manualThreadOrder, pinnedThreadIds, threadSort, threads],
+    () => viewMode === 'archived'
+      ? sortArchivedThreads(threads, pinnedThreadIds)
+      : sortThreads(threads, threadSort, dragPreviewOrder ?? manualThreadOrder, pinnedThreadIds),
+    [dragPreviewOrder, manualThreadOrder, pinnedThreadIds, threadSort, threads, viewMode],
   )
 
   const orderedWorkspaces = useMemo(
@@ -388,7 +390,7 @@ export function Sidebar({
   }
 
   const startThreadDrag = (event: ReactPointerEvent<HTMLButtonElement>, threadId: string, groupKey: string) => {
-    if (threadSort !== 'manual' || event.button !== 0) return
+    if (viewMode === 'archived' || threadSort !== 'manual' || event.button !== 0) return
     threadDrag.current = { id: threadId, groupKey, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false, preview: null }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -442,7 +444,8 @@ export function Sidebar({
       onSelect={onSelectThread}
       groupKey={groupKey}
       visibleCount={visibleCounts[groupKey]}
-      manualSort={threadSort === 'manual'}
+      manualSort={viewMode === 'active' && threadSort === 'manual'}
+      archived={viewMode === 'archived'}
       sidebarUnpinnedCount={sidebarUnpinnedCount}
       pinnedThreadIds={pinnedThreadIds}
       draggedThreadId={draggedThreadId}
@@ -546,12 +549,18 @@ export function Sidebar({
                   </>
                 )}
                 <p>会话排序</p>
-                <button type="button" className={threadSort === 'recent' ? 'selected' : ''} onClick={() => { onThreadSort('recent'); setOptionsOpen(false) }}>
-                  最近更新
-                </button>
-                <button type="button" className={threadSort === 'manual' ? 'selected' : ''} onClick={() => { onThreadSort('manual'); setOptionsOpen(false) }}>
-                  手动排序
-                </button>
+                {viewMode === 'archived' ? (
+                  <button type="button" className="selected" disabled>最近归档</button>
+                ) : (
+                  <>
+                    <button type="button" className={threadSort === 'recent' ? 'selected' : ''} onClick={() => { onThreadSort('recent'); setOptionsOpen(false) }}>
+                      最近更新
+                    </button>
+                    <button type="button" className={threadSort === 'manual' ? 'selected' : ''} onClick={() => { onThreadSort('manual'); setOptionsOpen(false) }}>
+                      手动排序
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -759,6 +768,7 @@ function ThreadList({
   groupKey,
   visibleCount,
   manualSort,
+  archived,
   sidebarUnpinnedCount = 1,
   pinnedThreadIds,
   draggedThreadId,
@@ -781,6 +791,7 @@ function ThreadList({
   groupKey: string
   visibleCount: number | undefined
   manualSort: boolean
+  archived: boolean
   sidebarUnpinnedCount?: number
   pinnedThreadIds: string[]
   draggedThreadId: string | null
@@ -823,7 +834,9 @@ function ThreadList({
               <NumberBadge number={numberHint ?? 0} visible={showNumberHint && numberHint !== undefined} />
               {thread.channelSource === 'seatalk' && <MessageSquareText size={12} aria-label="SeaTalk 会话" />}
               <span className="thread-row-title">{truncate(thread.name || thread.preview || '新会话', 42)}</span>
-              <time>{badge === 'approval' ? '等待处理' : workingThreadIds[thread.id] || isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
+              <time title={archived ? '归档时间' : undefined}>{archived
+                ? thread.archivedAt == null ? '已归档' : relativeTime(thread.archivedAt)
+                : badge === 'approval' ? '等待处理' : workingThreadIds[thread.id] || isActive(thread.status) ? '运行中' : relativeTime(thread.recencyAt ?? thread.updatedAt)}</time>
             </button>
             <SidebarPinButton
               pinned={pinned}

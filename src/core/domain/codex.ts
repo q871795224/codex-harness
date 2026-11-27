@@ -239,6 +239,8 @@ export interface Thread {
   createdAt: number
   updatedAt: number
   recencyAt: number | null
+  /** Unix seconds from the persisted archive transition, supplied by the native layer. */
+  archivedAt?: number | null
   status: ThreadStatus
   ephemeral: boolean
   canAcceptDirectInput: boolean | null
@@ -605,6 +607,15 @@ export function sortThreads(threads: Thread[], sort: ThreadSort, manualOrder: st
     return leftRank - rightRank
   })
   return prioritizePinned(manuallyOrdered, pinnedThreadIds, (thread) => thread.id)
+}
+
+export function sortArchivedThreads(threads: Thread[], pinnedThreadIds: string[] = []): Thread[] {
+  // Unknown archive dates stay at the bottom of their group. Activity and saved
+  // manual order must never move an archived conversation.
+  const ordered = [...threads].sort((left, right) =>
+    (right.archivedAt ?? 0) - (left.archivedAt ?? 0) || left.id.localeCompare(right.id),
+  )
+  return prioritizePinned(ordered, pinnedThreadIds, (thread) => thread.id)
 }
 
 export function threadsOlderThan(threads: Thread[], cutoff: number): Thread[] {

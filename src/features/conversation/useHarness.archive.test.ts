@@ -96,6 +96,21 @@ it('cancels a scheduled transport recovery after a non-retryable size failure', 
 })
 
 describe('archive view navigation', () => {
+  it('loads all archive pages so a recently archived old conversation can appear first', async () => {
+    const { result } = await ready()
+    const oldArchive = { ...thread('recent-reply'), archivedAt: 10 }
+    const newArchive = { ...thread('recent-archive'), recencyAt: 1, archivedAt: 100 }
+    vi.mocked(appServer.listThreads).mockImplementation(async params => {
+      if (!params.archived) return page('active')
+      return params.cursor === 'next'
+        ? { data: [newArchive], nextCursor: null }
+        : { data: [oldArchive], nextCursor: 'next' }
+    })
+    await act(async () => { await result.current.setViewMode('archived') })
+    expect(result.current.threads.map(t => t.id)).toEqual(['recent-reply', 'recent-archive'])
+    expect(appServer.listThreads).toHaveBeenCalledWith(expect.objectContaining({ archived: true, cursor: 'next' }))
+  })
+
   it('keeps successful archive notifications silent but reports archive failures', async () => {
     const publish = vi.spyOn(notifications, 'showFeedback')
     const { result } = await ready()

@@ -3,6 +3,7 @@ import { useState, type ComponentProps } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextConversationProvider, type ConversationProvider } from '../../core/domain/conversationProvider'
+import type { Thread } from '../../core/domain/codex'
 import { superbotThread, type SuperbotSession } from '../../core/superbot/types'
 import { Sidebar } from './Sidebar'
 afterEach(cleanup)
@@ -13,6 +14,29 @@ function props(): ComponentProps<typeof Sidebar> {
     onNewThread:vi.fn(), onToggleNewThreadProvider:vi.fn(), onSelectThread:vi.fn(), onSelectWorkspace:vi.fn(), onArchiveOldThreads:vi.fn(),onSearch:vi.fn(),onRefresh:vi.fn(),onViewMode:vi.fn(),onNavigationLayout:vi.fn(),onThreadSort:vi.fn(),onWorkspaceSort:vi.fn(),onManualThreadOrder:vi.fn(),onToggleThreadPinned:vi.fn(),onToggleWorkspacePinned:vi.fn(),onSidebarWidth:vi.fn(),onSidebarListSplitRatio:vi.fn(),onOpenSettings:vi.fn(),onOpenPlugins:vi.fn(),onVisibleThreadOrder:vi.fn() }
 }
 describe('sidebar conversation controls', () => {
+  it('uses archive time inside both pin groups even when active sessions use manual ordering', () => {
+    const base = props()
+    const now = Math.floor(Date.now() / 1000)
+    const thread = (id: string, archivedAt: number, recencyAt: number): Thread => ({
+      id, name: id, preview: '', cwd: '/repo', createdAt: 1, updatedAt: recencyAt, recencyAt, archivedAt,
+      status: { type: 'idle' }, ephemeral: false, canAcceptDirectInput: false,
+    })
+    const threads = [
+      thread('old-unpinned', now - 864000, now), thread('old-pinned', now - 864000, now),
+      thread('new-unpinned', now - 60, 1), thread('new-pinned', now - 60, 1),
+    ]
+    const { container, rerender } = render(<Sidebar {...base} viewMode="archived" threads={threads} threadSort="manual"
+      manualThreadOrder={threads.map(t => t.id)} pinnedThreadIds={['old-pinned', 'new-pinned']} />)
+    const order = () => [...container.querySelectorAll('[data-thread-sort-id]')].map(row => row.getAttribute('data-thread-sort-id'))
+    expect(order()).toEqual(['new-pinned', 'old-pinned', 'new-unpinned', 'old-unpinned'])
+    expect(container.querySelectorAll('.manual-sort')).toHaveLength(0)
+    expect(container.querySelectorAll('time[title="归档时间"]')).toHaveLength(4)
+    expect(base.onVisibleThreadOrder).toHaveBeenLastCalledWith(['new-pinned', 'old-pinned', 'new-unpinned', 'old-unpinned'])
+    rerender(<Sidebar {...base} viewMode="active" threads={threads} threadSort="manual"
+      manualThreadOrder={threads.map(t => t.id)} pinnedThreadIds={['old-pinned', 'new-pinned']} />)
+    expect(order()).toEqual(['old-pinned', 'new-pinned', 'old-unpinned', 'new-unpinned'])
+  })
+
   it('switches providers with the icon button and creates the currently selected type', () => {
     const base = props()
     function Controlled() {

@@ -3,6 +3,7 @@ import type { Thread } from '../../core/domain/codex'
 import {
   archiveThreadsBefore,
   listAllActiveThreads,
+  listAllThreads,
   listThreadPage,
   type ThreadCatalogTransport,
 } from './threadCatalog'
@@ -22,6 +23,17 @@ function transport(): ThreadCatalogTransport {
 }
 
 describe('thread catalog listing', () => {
+  it('includes old conversations archived recently from later pages and preserves the search filter', async () => {
+    const client = transport()
+    const oldArchive = { ...thread('replied-today', 500), archivedAt: 10 }
+    const newArchive = { ...thread('archived-today', 1), archivedAt: 100 }
+    vi.mocked(client.listThreads)
+      .mockResolvedValueOnce({ data: [oldArchive], nextCursor: 'page-2' })
+      .mockResolvedValueOnce({ data: [newArchive], nextCursor: null })
+    await expect(listAllThreads(client, 'archived', '  delivery  ')).resolves.toEqual([oldArchive, newArchive])
+    expect(client.listThreads).toHaveBeenNthCalledWith(2, expect.objectContaining({ cursor: 'page-2', archived: true, searchTerm: 'delivery' }))
+  })
+
   it('uses the state DB and trims search terms for visible pages', async () => {
     const client = transport()
     vi.mocked(client.listThreads).mockResolvedValue({ data: [], nextCursor: null })
