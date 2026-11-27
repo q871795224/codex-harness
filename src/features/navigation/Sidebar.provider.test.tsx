@@ -57,7 +57,7 @@ describe('sidebar conversation controls', () => {
   })
   it('creates a relay conversation from its own entry and marks relay rows', () => {
     const onNewRelayThread = vi.fn()
-    const relay: Thread = { id:'relay', name:'发布协调', preview:'', cwd:'/data/workspaces/relay', createdAt:1, updatedAt:1,
+    const relay: Thread = { id:'relay', name:'发布协调', preview:'', cwd:'/data/workspaces/relay', createdAt:1, updatedAt:1, recencyAt:1,
       status:{ type:'idle' }, ephemeral:false, canAcceptDirectInput:false, harnessRelay:true }
     render(<Sidebar {...props()} threads={[relay]} onNewRelayThread={onNewRelayThread} />)
     fireEvent.click(screen.getByRole('button', { name:'新建路由会话' }))
