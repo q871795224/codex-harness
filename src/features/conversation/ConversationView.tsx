@@ -3,6 +3,7 @@ import { readHistoryTurn } from './historyItems'
 import { skillReads, skillReadStatus } from './skillActivity'
 import { SkillCatalogContext, useSkillCatalog } from './SkillCatalog'
 import { ToolCallDetails } from './ItemDetails'
+import { WorkspacePicker } from './WorkspacePicker'
 import { inspectItem } from './itemInspection'
 import { UserMessageContent } from './UserMessageContent'
 import { PersistentUserInputCard, matchesQuestionNavigation } from './PersistentUserInputCard'
@@ -388,22 +389,14 @@ export function ConversationView({ threadId, relay = false, provider = 'codex', 
                   <p>
                     {relay ? '这是路由会话：把要做的事交给它，它会开子会话去完成，子会话做完后自动汇报回来。' : provider === 'superbot' ? '在公司云端开启一段新的 Superbot 会话吧。' : <>
                     在
-                    <span className="fresh-workspace-select">
-                      <select
-                        value={automaticWorkspace ? '' : workspace?.root ?? ''}
-                        aria-label="切换新会话工作区"
-                        disabled={workspaceChanging}
-                        onChange={(event) => {
-                          if (isChooseWorkspaceSelection(event.target.value)) onChooseWorkspace()
-                          else onWorkspaceChange(event.target.value)
-                        }}
-                      >
-                        {provider === 'codex' ? <option value="">自动选择工作区</option> : !workspace && <option value="">当前工作区</option>}
-                        {workspaces.map((candidate) => <option key={candidate.root} value={candidate.root}>{candidate.name}</option>)}
-                        <option value={CHOOSE_WORKSPACE_VALUE}>… 选择其他目录</option>
-                      </select>
-                      <ChevronDown size={14} aria-hidden />
-                    </span>
+                    <WorkspacePicker
+                      value={automaticWorkspace ? '' : workspace?.root ?? ''}
+                      workspaces={workspaces}
+                      allowAutomatic={provider === 'codex'}
+                      disabled={workspaceChanging}
+                      onChange={onWorkspaceChange}
+                      onChooseDirectory={onChooseWorkspace}
+                    />
                     开启一段新的 {provider === 'claude' ? 'Claude' : 'Codex'} 会话吧。</>}
 
                   </p>
@@ -798,12 +791,6 @@ function ProcessGroup({ rows: liveRows, loadHistory, agentLabel, status, hasFina
 
 function isRenderableProcessRow(row: TranscriptItem): boolean {
   return !['reasoning', 'rawResponse', 'internal'].includes(row.entry.item.type)
-}
-
-export const CHOOSE_WORKSPACE_VALUE = '__choose_workspace__'
-
-export function isChooseWorkspaceSelection(value: string): boolean {
-  return value === CHOOSE_WORKSPACE_VALUE
 }
 
 const ThreadItemView = memo(function ThreadItemView({
