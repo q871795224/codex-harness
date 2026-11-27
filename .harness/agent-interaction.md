@@ -46,9 +46,9 @@
 
 无论哪种模式都成立，是范式的地基：
 
-1. **单向数据流，plugin 不直连 App Server。** 一切 Agent 间交互经由 Harness 核心（Rust/bridge）。子 Agent 不能把消息直接塞进主 Agent 会话；用户与 Harness 是唯一编排者，普通委派中 Agent 之间不自治互发；团队模式按第八节的受控调度运行。
+1. **单向数据流，plugin 不直连 App Server。** 一切 Agent 间交互经由 Harness 核心（Rust/bridge）。子 Agent 不能把消息直接塞进主 Agent 会话；用户与 Harness 是唯一编排者，普通委派中 Agent 之间不自治互发；团队模式按第八节、路由会话按第十节的受控调度运行。
 2. **每次 run 只绑定一个发起 thread。** 记录 origin；handover 这类 succession 强制一对一，禁止广播。
-3. **普通委派回传必须由用户触发。** 回传卡先填输入草稿，用户确认后发送；旧快捷回传按钮由用户点击后直接启动父会话一轮，并拒绝 active 父会话。子 Agent 不自行写主 Agent 上下文。团队内部结果由核心组装到下一次独立执行，不注入用户主会话，最终结果仍由人验收。
+3. **普通委派回传必须由用户触发。** 回传卡先填输入草稿，用户确认后发送；旧快捷回传按钮由用户点击后直接启动父会话一轮，并拒绝 active 父会话。子 Agent 不自行写主 Agent 上下文。团队内部结果由核心组装到下一次独立执行，不注入用户主会话，最终结果仍由人验收。例外：路由会话派出的轮次结束后，由核心自动把子会话汇报回调给路由会话（第十节）。
 4. **交接产物是自包含文档，不是会话引用。** 新 Agent 靠文档冷启动，不需回读上一棒会话。会话绑定只用于血缘追溯，不用于取内容。
 5. **交互语义与接口分别定义。** 快捷 Job 的 `completion` 当前只有 `detached / return-to-parent`；核心 Run 的 `mode` 是 `detached / delegated`。`succession` 描述 handover 的接力语义，尚无统一 completion 枚举。
 6. **成本记账是结构一部分。** 每个模式要能讲清谁付 token、省在哪，作为选型依据而非事后分析。
@@ -172,3 +172,20 @@
 ## 九、外部异步等待
 
 外部异步等待使用 `asyncWaits.*`，由 Harness 原生调度。CI / SDP 终态只通知并预填来源会话草稿，不自动发送；SeaTalk、sleep 和获用户批准的自定义任务按登记动作自动继续来源会话，忙时等待空闲，不自动插话。自定义检查器必须经过界面审批。上述行为不改变普通 Agent 委派的人工回传规则，也不扩大后续外部操作授权。生命周期、存储和发送去重见 [架构](architecture.md#异步等待) 与 [管理契约](../docs/management.md)。
+
+## 十、路由会话（relay）
+
+路由会话是用户主动新建的一类 Codex 会话：用户只跟它说话，它把事情拆给若干子会话去做，并整理子会话结果。参考 DeepSeek Super-agent 的 Router / Worker 分层，Router 只路由、不干活、不轮询。
+
+- 入口：侧栏「新会话」旁的路由会话按钮。会话固定在 `~/.codex-harness/workspaces/relay`，不走工作区自动选择；普通会话不能转成路由会话。
+- 能力只在创建时注入：原生层在 `thread/start` 识别该目录，注册 `harness_session_spawn / send / read / list` 四个 dynamicTools，并写入固定 `developerInstructions`。`developerInstructions` 只在一次加载内有效，路由会话每次 `thread/resume` 由原生层补传。子会话和普通会话不注册这组工具，因此不会再开孙会话。
+- 子会话是普通会话，只记录父子关系（`relayParent:` / `relayChildren:`），沿用父会话保存的审批与沙箱设置；派发正文由核心加上来源说明和汇报格式提示。
+- 回调：只有路由会话经 spawn/send 发出的那一轮会回调。核心登记内部异步等待 `Target::Session`，子会话 `turn/completed` 后立即检查，父会话忙时排队、不插话，多个子会话同时完成合并为一轮。IPC/CLI 不能创建该类型。用户直接在子会话里的对话不回调，路由会话用 read 查看。
+- read 由核心记录已读位置：默认返回未读轮次（含用户直接对话），每轮只有请求和最终回复，`all=true` 查看最近历史；回调送达的轮次视为已读。
+- 受控范围：同一路由会话最多 6 个子会话同时等待回调；父会话本轮被中断不影响子会话回调，父会话归档/删除则暂停。自动回调不授权合并、发布或扩大外部操作。
+
+待办：
+
+- Claude Provider 尚无 dynamicTools，下一期补路由会话：工具改走 runtime Skill + harnessctl 子命令，回调复用同一 `Target::Session`。
+- 子会话汇报格式（`relay_sessions::REPORT_FORMAT`）和回调内容截断长度先用宽松版本，需按实际使用效果专门调整一次。
+- 第二个 PR：侧栏把子会话挂在路由会话下形成树；会话标题栏右侧展示子会话标签（状态点、未读角标），子会话可跳回父会话。

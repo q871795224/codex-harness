@@ -1188,6 +1188,14 @@ export function useHarness() {
     return startNewThread(undefined, '创建', cwd)
   }, [startNewThread])
 
+  // 路由会话固定在 Harness 专用目录；原生层据此注册会话工具和固定指令。
+  const createRelayThread = useCallback(async () => {
+    let cwd: string
+    try { cwd = await runtime.relayWorkspaceDirectory() }
+    catch (error) { notify('无法创建路由会话', 'error', error); return undefined }
+    return startNewThread(undefined, '创建', cwd)
+  }, [notify, startNewThread])
+
   const resetThread = useCallback(async () => {
     const threadId = selectedThreadIdRef.current
     if (!threadId) return
@@ -2763,6 +2771,7 @@ export function useHarness() {
     chooseWorkspace,
     removeWorkspace,
     createThread,
+    createRelayThread,
     resetThread,
     setThreadDraftContent,
     generateConversationTitle,
