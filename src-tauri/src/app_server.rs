@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::{
     collections::HashMap,
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
@@ -1095,10 +1097,7 @@ fn ensure_daemon() -> Result<String, String> {
         }
     }
 
-    let mut command = codex_command(&codex);
-    command.args(["app-server", "daemon", "start"]);
-    raise_open_file_limit(&mut command);
-    let output = command
+    let output = codex_daemon_command(&codex, "start")
         .output()
         .map_err(|error| format!("无法启动 Codex App Server: {error}"))?;
     if !output.status.success() {
@@ -1185,10 +1184,7 @@ fn restart_daemon() -> Result<(), String> {
 }
 
 fn run_daemon_restart(codex: &Path) -> Result<(), String> {
-    let mut command = codex_command(&codex);
-    command.args(["app-server", "daemon", "restart"]);
-    raise_open_file_limit(&mut command);
-    let output = command
+    let output = codex_daemon_command(codex, "restart")
         .output()
         .map_err(|error| format!("无法重启 Codex App Server: {error}"))?;
     if !output.status.success() {
@@ -1321,19 +1317,41 @@ fn command_error_detail(stderr: &[u8], stdout: &[u8]) -> String {
 
 fn codex_command(codex: &Path) -> Command {
     let mut command = Command::new(codex);
+    for (key, value) in codex_env_overrides(codex) {
+        command.env(key, value);
+    }
+    command
+}
+
+/// `daemon start|restart` 启动的 daemon 会长期存活：放弃 macOS 责任进程归属，
+/// 避免 Harness 换版后系统仍以旧 bundle（如 `.app.backup-*`）名义弹隐私授权。
+fn codex_daemon_command(codex: &Path, action: &str) -> crate::detached_spawn::DetachedCommand {
+    let mut command = crate::detached_spawn::DetachedCommand::new(codex);
+    command
+        .args(["app-server", "daemon", action])
+        // The daemon inherits this limit from the short-lived `daemon` process.
+        .open_file_soft_limit(4096);
+    for (key, value) in codex_env_overrides(codex) {
+        command.env(key, value);
+    }
+    command
+}
+
+fn codex_env_overrides(codex: &Path) -> Vec<(OsString, OsString)> {
+    let mut overrides = Vec::new();
     if let Some(codex_home) = managed_codex_home(codex) {
         if let Some(home) = codex_home.parent() {
-            command.env("HOME", home);
+            overrides.push(("HOME".into(), home.as_os_str().to_owned()));
         }
-        command.env("CODEX_HOME", codex_home);
+        overrides.push(("CODEX_HOME".into(), codex_home.into_os_string()));
     }
     // 注入 MCP 环境变量（优先级：进程已有 > 文件加载）
     for (key, value) in load_mcp_env() {
         if env::var(&key).is_err() {
-            command.env(&key, &value);
+            overrides.push((key.into(), value.into()));
         }
     }
-    command
+    overrides
 }
 
 /// 加载 MCP 需要的环境变量：
@@ -1500,32 +1518,6 @@ fn codex_home_ancestor(path: &Path) -> Option<PathBuf> {
         .find(|ancestor| ancestor.file_name().is_some_and(|name| name == ".codex"))
         .map(Path::to_path_buf)
 }
-
-#[cfg(unix)]
-fn raise_open_file_limit(command: &mut Command) {
-    use std::os::unix::process::CommandExt;
-
-    // The daemon inherits this limit from the short-lived `daemon start` process.
-    unsafe {
-        command.pre_exec(|| {
-            let mut limit = libc::rlimit {
-                rlim_cur: 0,
-                rlim_max: 0,
-            };
-            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            limit.rlim_cur = limit.rlim_max.min(4096);
-            if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-}
-
-#[cfg(not(unix))]
-fn raise_open_file_limit(_command: &mut Command) {}
 
 fn find_codex_binary() -> Result<PathBuf, String> {
     if let Some(path) = env::var_os("CODEX_HARNESS_CODEX_PATH").map(PathBuf::from) {

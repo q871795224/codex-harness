@@ -93,7 +93,7 @@
 
 - **问题**：`~/.codex-harness/claude-provider/daemon.mjs` 被新版覆盖后，正在运行的 daemon 进程仍执行旧代码，新方法（如 `provider/models`）会报"未知 Claude Provider 方法"。
 - **原因**：`launchctl kickstart`（不带 `-k`）对已在运行的服务是 no-op，不会重启进程。
-- **正确做法**：`install_runtime_file` 返回内容是否变更，`ensure_launch_agent` 在文件变更时用 `kickstart -k` 强制重启 daemon；手动修复可执行 `launchctl kickstart -k gui/$(id -u)/com.local.codex-harness.claude-provider`。
+- **正确做法**：不要在安装文件后直接 `kickstart -k`，那会打断进行中的 Claude turn。连接时比较 daemon 上报的 `runtimeId` 与已安装文件，不一致就请求 `daemon/restartWhenIdle`，由 daemon 空闲时自行退出、LaunchAgent 拉起新代码；升级完成前旧 daemon 仍可能报"未知方法"。确认没有进行中的会话时，可手动执行 `launchctl kickstart -k gui/$(id -u)/com.local.codex-harness.claude-provider`。
 - **适用范围**：Claude Provider 方法新增、daemon 升级和"未知方法"报错排查。
 
 ## Claude 历史合并必须保留消息 UUID
@@ -114,3 +114,10 @@
 - **原因**：macOS `pgrep` 默认排除调用者的祖先进程，而发布 runner 是 Harness 的后代进程。
 - **正确做法**：发布脚本使用 `pgrep -a -f` 查找 Harness 可执行文件，停止检查和启动检查必须复用同一查找方式。
 - **适用范围**：稳定版安装、Harness 内启动的发布任务和启动验证。
+
+## 发布换版后系统以 `.app.backup-*` 名义弹"想访问其他 App 的数据"
+
+- **问题**：发布后反复弹出"Codex Harness.app.backup-<时间> 想访问其他 App 的数据"，点允许或不允许都会再弹。
+- **原因**：macOS 把隐私授权记在子进程的责任进程（拉起它的 app）上，归属随 fork/exec 继承并在父进程退出后保留。常驻 daemon 由旧版 Harness 拉起，发布把旧 bundle 改名为 backup 后，daemon 下的 agent 访问其他 App 数据时就以这个已失效的 bundle 名义请求，授权无法持久。
+- **正确做法**：长期存活的 daemon 一律经 `detached_spawn::DetachedCommand` 启动，放弃责任进程归属；Claude Provider 走 LaunchAgent，本身不受影响。已在运行的旧 daemon 要等它自然重启后才不再弹窗；`release.py` 只保留最近 2 个 app backup，更早的移入废纸篓。
+- **适用范围**：新增常驻子进程、排查以旧 bundle 名义出现的 TCC 弹窗。

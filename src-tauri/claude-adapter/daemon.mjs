@@ -84,7 +84,21 @@ const clients = new Set()
 const replayEvents = []
 let nextSequence = 1
 let stopping = false
+let restartWhenIdle = false
+let restartTimer
 let lockHandle
+
+// Identifies the code this process loaded. Harness compares it with the files
+// it installed and asks an outdated daemon to restart once it is idle, so a
+// release never kills a running turn. Format must match claude_runtime.rs.
+async function fileDigest(url) {
+  try {
+    return createHash('sha256').update(await readFile(url)).digest('hex')
+  } catch {
+    return 'none'
+  }
+}
+const runtimeId = `${await fileDigest(new URL(import.meta.url))}:${await fileDigest(new URL('./sdk.mjs', import.meta.url))}`
 
 const FALLBACK_MODELS = [
   { value: 'sonnet', resolvedModel: null, displayName: 'Claude Sonnet', description: 'Balanced speed and quality.', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'], supportsAdaptiveThinking: true, supportsFastMode: false, supportsAutoMode: false },
@@ -802,7 +816,7 @@ async function handle(client, request) {
   const { id, method, params = {} } = request
   if (method === 'initialize') {
     const lastEventSeq = Number.isSafeInteger(params.lastEventSeq) ? params.lastEventSeq : 0
-    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.4.0', ...runtimeSnapshot() })
+    respond(client, id, { protocolVersion: PROTOCOL_VERSION, daemonVersion: '0.4.0', runtimeId, ...runtimeSnapshot() })
     for (const event of replayEvents) {
       if (event.seq > lastEventSeq) send(client, { ...event, replayed: true })
     }
@@ -891,12 +905,30 @@ async function handle(client, request) {
     respond(client, id, { resolvedSeq: resolution.seq })
     return
   }
+  if (method === 'daemon/restartWhenIdle') {
+    // launchd KeepAlive relaunches the process with the newly installed code.
+    restartWhenIdle = true
+    const restarting = daemonIsIdle()
+    respond(client, id, { restarting })
+    if (restarting) void stopDaemon()
+    else restartTimer ??= setInterval(restartIfIdle, 1_000)
+    return
+  }
   if (method === 'shutdown') {
     respond(client, id, {})
     void stopDaemon()
     return
   }
   throw new Error(`未知 Claude Provider 方法: ${method}`)
+}
+
+function daemonIsIdle() {
+  return activeTurns.size === 0 && pendingApprovals.size === 0
+    && [...sessionQueries.values()].every(runtime => !runtime.busy && userBackgroundTasks(runtime).length === 0)
+}
+
+function restartIfIdle() {
+  if (restartWhenIdle && !stopping && daemonIsIdle()) void stopDaemon()
 }
 
 async function socketIsReachable() {
@@ -964,6 +996,7 @@ const server = net.createServer((client) => {
 async function stopDaemon() {
   if (stopping) return
   stopping = true
+  clearInterval(restartTimer)
   await Promise.allSettled([...sessionQueries.values()].map(closeSessionQuery))
   for (const client of clients) client.end()
   server.close()

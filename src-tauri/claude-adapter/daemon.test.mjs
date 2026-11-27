@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { chmod, copyFile, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -96,6 +97,7 @@ async function fixture(t, sdkSource = sdkFixture, cliSource) {
   return {
     home,
     secrets,
+    exited,
     request,
     messages,
     async turn() {
@@ -384,6 +386,32 @@ test('reports background activity after turn completion, including reconnect sna
   assert.deepEqual((await daemon.request('initialize')).sessionActivities, [activity])
   assert.ok(daemon.messages.some(message => message.method === 'session/activity'
     && message.params.backgroundTaskCount === 1))
+})
+
+test('reports a runtime id derived from the loaded daemon and SDK files', async t => {
+  const daemon = await fixture(t, liveSdkFixture)
+  const digest = async name => createHash('sha256').update(await readFile(join(daemon.home, name))).digest('hex')
+  const { runtimeId } = await daemon.request('initialize')
+  assert.equal(runtimeId, `${await digest('daemon.mjs')}:${await digest('sdk.mjs')}`)
+})
+
+test('restart-when-idle keeps a running turn alive and exits only after it finishes', async t => {
+  const daemon = await fixture(t, liveSdkFixture)
+  await startLiveTurn(daemon, 'first', 'hold-idle')
+  assert.deepEqual(await daemon.request('daemon/restartWhenIdle'), { restarting: false })
+  await setTimeout(1_200)
+  assert.equal((await daemon.request('session/status', { sessionId: 'session' })).active, true)
+  await writeFile(join(daemon.home, 'release-idle'), '')
+  assert.equal((await terminalEvent(daemon, 'first')).method, 'turn/completed')
+  const [code] = await daemon.exited
+  assert.equal(code, 0)
+})
+
+test('restart-when-idle exits right away when nothing is running', async t => {
+  const daemon = await fixture(t, liveSdkFixture)
+  assert.deepEqual(await daemon.request('daemon/restartWhenIdle'), { restarting: true })
+  const [code] = await daemon.exited
+  assert.equal(code, 0)
 })
 
 test('excludes ambient tasks from user activity and replaces the background task list', async t => {
