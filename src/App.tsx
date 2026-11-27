@@ -57,6 +57,7 @@ import { RetainedTab } from './features/conversation/RetainedTab'
 import { ConversationHeader, ConversationView } from './features/conversation/ConversationView'
 import { QueueDock } from './features/conversation/QueueDock'
 import { useUnifiedHarness } from './features/conversation/useUnifiedHarness'
+import { RelayDock } from './features/navigation/RelayDock'
 import { useCodexCore } from './features/codex/useCodexCore'
 import { useCodexProviderRecovery } from './features/codex/useCodexProviderRecovery'
 import { useCodexUpdate } from './features/codex/useCodexUpdate'
@@ -1352,6 +1353,11 @@ function HarnessShell({ harness, agentRuns, teams, codex, onboarding }: {
             }}
           />
         </div>
+      )}
+      {!notificationsOpen && (
+        <RelayDock current={harness.currentThread} threads={harness.threads} threadStates={harness.threadStates}
+          workingThreadIds={harness.workingThreadIds} waitingThreadIds={harness.waitingThreadIds}
+          onOpen={(threadId) => void harness.selectThread(threadId, 'sidebar')} />
       )}
       <HarnessNotificationSources harness={harness} petVisible={petVisible} />
       <HarnessAssistant hideLauncher={petVisible} harness={harness} codex={codex} disabled={harness.phase !== 'ready'}
