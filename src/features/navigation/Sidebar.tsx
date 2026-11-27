@@ -51,6 +51,7 @@ import { isActive, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, normalizeSidebarListSpl
 import { relativeTime, truncate } from '../../core/domain/format'
 import { resolveThreadBadge } from './threadBadge'
 import { visibleThreadOrder, visibleThreads } from './visibleThreads'
+import { relayTree, withRelayChildren } from './relayTree'
 import type { ClaudeRuntimeStatus } from '../../core/claude/types'
 import { NumberBadge } from '../../components/NumberBadge'
 import { useModifierKey } from '../../hooks/useModifierKey'
@@ -283,6 +284,10 @@ export function Sidebar({
     [dragPreviewOrder, manualThreadOrder, pinnedThreadIds, threadSort, threads, viewMode],
   )
 
+  // Relay children are nested under their parent row instead of their own workspace group.
+  const tree = useMemo(() => relayTree(orderedThreads), [orderedThreads])
+  const rootThreads = tree.roots
+
   const orderedWorkspaces = useMemo(
     () => sortWorkspaces(workspaces, workspaceSort, threads, threadRoots, pinnedWorkspaceRoots),
     [pinnedWorkspaceRoots, threadRoots, threads, workspaceSort, workspaces],
@@ -292,16 +297,16 @@ export function Sidebar({
     const byRoot = new Map<string, Thread[]>()
     const unsorted: Thread[] = []
     const roots = new Set(orderedWorkspaces.map((workspace) => workspace.root))
-    for (const thread of orderedThreads) {
+    for (const thread of rootThreads) {
       if (thread.provider === 'superbot') continue
       const root = threadRoots[thread.id]
       if (root && roots.has(root)) byRoot.set(root, [...(byRoot.get(root) ?? []), thread])
       else unsorted.push(thread)
     }
     return { byRoot, unsorted }
-  }, [orderedThreads, orderedWorkspaces, threadRoots])
+  }, [rootThreads, orderedWorkspaces, threadRoots])
 
-  const providerSplit = useMemo(() => splitThreadsByProvider(orderedThreads), [orderedThreads])
+  const providerSplit = useMemo(() => splitThreadsByProvider(rootThreads), [rootThreads])
   const listSections = useMemo(() => {
     const sections: { key: string; threads: Thread[] }[] = [{ key: 'all.codex', threads: providerSplit.codex }]
     if (providerSplit.claude.length > 0) sections.push({ key: 'all.claude', threads: providerSplit.claude })
@@ -313,7 +318,7 @@ export function Sidebar({
   const visibleThreadIds = useMemo(() => {
     const ids = visibleThreadOrder({
     layout: navigationLayout,
-    orderedThreads,
+    orderedThreads: rootThreads,
     orderedWorkspaceRoots: orderedWorkspaces.map((workspace) => workspace.root),
     groupedByRoot: grouped.byRoot,
     unsorted: grouped.unsorted,
@@ -323,8 +328,9 @@ export function Sidebar({
     pinnedThreadIds,
     listSections,
     })
-    return navigationLayout === 'list' ? ids : [...ids, ...visibleThreads(providerSplit.superbot, visibleCounts['all.superbot'], undefined, pinnedThreadIds, sidebarUnpinnedCount).map(t => t.id)]
-  }, [expanded, grouped, listSections, navigationLayout, orderedThreads, orderedWorkspaces, pinnedThreadIds, sidebarUnpinnedCount, visibleCounts, providerSplit.superbot])
+    const rootIds = navigationLayout === 'list' ? ids : [...ids, ...visibleThreads(providerSplit.superbot, visibleCounts['all.superbot'], undefined, pinnedThreadIds, sidebarUnpinnedCount).map(t => t.id)]
+    return withRelayChildren(rootIds, tree.childrenOf)
+  }, [expanded, grouped, listSections, navigationLayout, rootThreads, orderedWorkspaces, pinnedThreadIds, sidebarUnpinnedCount, visibleCounts, providerSplit.superbot, tree.childrenOf])
 
   useEffect(() => onVisibleThreadOrder(visibleThreadIds), [onVisibleThreadOrder, visibleThreadIds])
 
@@ -440,6 +446,7 @@ export function Sidebar({
   const renderThreadList = (items: Thread[], groupKey: string) => (
     <ThreadList
       threads={items}
+      relayChildren={tree.childrenOf}
       states={threadStates}
       workingThreadIds={workingThreadIds}
       waitingThreadIds={waitingThreadIds}
@@ -790,8 +797,10 @@ function ThreadList({
   onShowMore,
   showNumberHint,
   threadNumberById,
+  relayChildren,
 }: {
   threads: Thread[]
+  relayChildren?: Map<string, Thread[]>
   states: Record<string, ThreadUiState>
   workingThreadIds: Record<string, boolean>
   waitingThreadIds: Record<string, boolean>
@@ -818,7 +827,8 @@ function ThreadList({
   const shownThreads = visibleThreads(threads, visibleCount, undefined, pinnedThreadIds, sidebarUnpinnedCount)
   return (
     <div className="thread-list" data-workspace-group={groupKey}>
-      {shownThreads.map((thread) => {
+      {shownThreads.flatMap((root) => [root, ...(relayChildren?.get(root.id) ?? [])].map((thread) => {
+        const nested = thread.id !== root.id
         const badge = resolveThreadBadge(thread, states[thread.id]?.badge ?? null, workingThreadIds[thread.id] === true, waitingThreadIds[thread.id] === true)
         const pinned = pinnedThreadIds.includes(thread.id)
         const numberHint = threadNumberById.get(thread.id)
@@ -827,12 +837,12 @@ function ThreadList({
             <button
               type="button"
               data-thread-sort-id={thread.id}
-              className={`thread-row ${selectedThreadId === thread.id ? 'selected' : ''} ${manualSort ? 'manual-sort' : ''}${pinned ? ' pinned' : ''}${draggedThreadId === thread.id ? ' dragging' : ''}${threadDrop?.id === thread.id && draggedThreadId !== thread.id ? ` drop-${threadDrop.edge}` : ''}`}
+              className={`thread-row ${nested ? 'relay-child ' : ''}${selectedThreadId === thread.id ? 'selected' : ''} ${manualSort && !nested ? 'manual-sort' : ''}${pinned ? ' pinned' : ''}${draggedThreadId === thread.id ? ' dragging' : ''}${threadDrop?.id === thread.id && draggedThreadId !== thread.id ? ` drop-${threadDrop.edge}` : ''}`}
               onClick={(event) => {
                 if (suppressClick()) event.preventDefault()
                 else onSelect(thread.id)
               }}
-              onPointerDown={(event) => onPointerStart(event, thread.id, groupKey)}
+              onPointerDown={nested ? undefined : (event) => onPointerStart(event, thread.id, groupKey)}
               onPointerMove={onPointerMove}
               onPointerUp={(event) => onPointerFinish(event, true)}
               onPointerCancel={(event) => onPointerFinish(event, false)}
@@ -855,7 +865,7 @@ function ThreadList({
             />
           </div>
         )
-      })}
+      }))}
       {shownThreads.length < threads.length && (
         <button className="show-more-sessions" type="button" onClick={onShowMore}>
           显示更多（+{Math.min(5, threads.length - shownThreads.length)}）

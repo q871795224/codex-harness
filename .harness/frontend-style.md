@@ -34,6 +34,12 @@
 - 右侧工具（铃铛、连接状态等）放进 `.notification-tab-tools` 这个居中容器（`height:40px; align-items:center`），与左侧 `.thread-tabs`（撑满整行居中）对齐。
 - 容器内子元素**不要再加 `margin-bottom` 之类的一次性垂直微调**；`connection-state` 自带的下外边距在该容器内已被归零。需要垂直定位时调整容器的 `align-items`，而不是给单个子元素补 margin。
 
+## 右侧路由会话跳转栏
+
+- `RelayDock` 固定在主面板右侧空白列（与快捷 Agent 同一列，位于其上方），只在路由会话或其子会话中出现：路由会话列出子会话，子会话只显示返回路由会话的入口。团队视图和 tab 聚焦模式下隐藏。
+- 芯片 `relay-dock-chip` 复用 `quick-action-trigger` 的浅色与深色色板（深色写进同一共用选择器组），状态点直接复用侧栏 `StatusDot`，不另造角标。
+- 侧栏中子会话行加 `relay-child`：缩进 + 左侧细引导线，不参与拖拽排序；父会话不在当前列表时子会话回到原位置显示。
+
 ## 新会话提示行（工作区 / 项目绑定）
 
 - 提示与紧凑插件入口使用 `fresh-thread-row` 的 flex 换行布局；插件通过 `newThreadPanels` 的 `placement: 'header'` 接入。

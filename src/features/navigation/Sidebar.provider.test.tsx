@@ -64,6 +64,17 @@ describe('sidebar conversation controls', () => {
     expect(onNewRelayThread).toHaveBeenCalledTimes(1)
     expect(screen.getByLabelText('路由会话')).toBeTruthy()
   })
+  it('nests relay children under the relay row across workspaces', () => {
+    const base = props()
+    const make = (id: string, extra: Partial<Thread>): Thread => ({ id, name: id, preview:'', cwd:'/repo', createdAt:1, updatedAt:1, recencyAt:1,
+      status:{ type:'idle' }, ephemeral:false, canAcceptDirectInput:false, ...extra })
+    const threads = [make('child', { harnessRelayParent:'relay', cwd:'/other' }), make('plain', {}), make('relay', { harnessRelay:true })]
+    const { container } = render(<Sidebar {...base} threads={threads} />)
+    const rows = [...container.querySelectorAll('[data-thread-sort-id]')]
+    expect(rows.map(row => row.getAttribute('data-thread-sort-id'))).toEqual(['plain', 'relay', 'child'])
+    expect(rows[2].classList.contains('relay-child')).toBe(true)
+    expect(base.onVisibleThreadOrder).toHaveBeenLastCalledWith(['plain', 'relay', 'child'])
+  })
   it('keeps the short Superbot group label and identifies SeaTalk sessions', () => {
     const base = props()
     const normal = { id:'normal', title:'Normal chat', status:'active',read_only:false, created_at:'2026-11-17T08:00:00Z',updated_at:'2026-11-17T08:00:00Z' } as SuperbotSession
